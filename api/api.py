@@ -313,6 +313,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         task.cancel()
     if _admin_router._tracking_tasks:
         await asyncio.gather(*_admin_router._tracking_tasks.values(), return_exceptions=True)
+    if hasattr(_app.state, "prewarm_task"):
+        _app.state.prewarm_task.cancel()
+        await asyncio.gather(_app.state.prewarm_task, return_exceptions=True)
     if hasattr(_app.state, "collector_task"):
         _app.state.collector_task.cancel()
         await asyncio.gather(_app.state.collector_task, return_exceptions=True)
@@ -344,7 +347,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins or ["http://localhost:3000", "http://localhost:8003"],
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
 

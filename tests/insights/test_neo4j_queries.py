@@ -21,6 +21,9 @@ class _AsyncIterator:
         except StopIteration:
             raise StopAsyncIteration from None
 
+    async def consume(self) -> MagicMock:
+        return MagicMock()
+
 
 class _DictRecord(dict):  # type: ignore[type-arg]
     """A dict subclass that also exposes .data() for backward-compat tests."""

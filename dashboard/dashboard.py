@@ -394,11 +394,11 @@ class DashboardApp:
                 )
             )
         finally:
+            # The resilient connection manages the single connection internally;
+            # do NOT close it here — just ensure any in-progress transaction is rolled back.
             if conn is not None:
                 with contextlib.suppress(Exception):
                     await conn.rollback()
-                with contextlib.suppress(Exception):
-                    await conn.close()
 
         # Check Neo4j
         try:

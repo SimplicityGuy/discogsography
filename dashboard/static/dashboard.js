@@ -76,6 +76,10 @@ class Dashboard {
     // ─── WebSocket ────────────────────────────────────────────────────────────
 
     initializeWebSocket() {
+        // Skip if already connecting or connected — prevents reconnect churn
+        if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
+            return;
+        }
         // Close any existing WebSocket to prevent connection leaks on reconnect
         if (this.ws) {
             try { this.ws.close(); } catch (_) { /* ignore */ }

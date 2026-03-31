@@ -42,6 +42,9 @@ class _MockResult:
     async def single(self) -> dict[str, Any] | None:
         return self._single
 
+    async def consume(self) -> MagicMock:
+        return MagicMock()
+
 
 def _make_driver_with_results(results: list[_MockResult]) -> MagicMock:
     """Build a driver whose session().run() returns a different result on each call."""

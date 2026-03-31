@@ -51,6 +51,7 @@ def get_service_logs(service: str, lines: int = 20) -> str:
             capture_output=True,
             text=True,
             check=True,
+            timeout=60,
         )
         return result.stdout
     except subprocess.CalledProcessError:
@@ -65,14 +66,14 @@ def check_neo4j_status() -> str:
     env["NEO4J_USERNAME"] = neo4j_username
     env["NEO4J_PASSWORD"] = neo4j_password
     try:
-        result = subprocess.run(  # noqa: S603  # nosec B603 B607
+        result = subprocess.run(  # nosec B603 B607
             [  # noqa: S607
                 "docker",
                 "exec",
                 "-e",
-                f"NEO4J_USERNAME={neo4j_username}",
+                "NEO4J_USERNAME",
                 "-e",
-                f"NEO4J_PASSWORD={neo4j_password}",
+                "NEO4J_PASSWORD",
                 "discogsography-neo4j",
                 "cypher-shell",
                 "MATCH (n) RETURN labels(n)[0] as label, count(n) as count ORDER BY count DESC LIMIT 10",
@@ -80,6 +81,7 @@ def check_neo4j_status() -> str:
             capture_output=True,
             text=True,
             check=True,
+            timeout=60,
             env=env,
         )
         return result.stdout

@@ -95,8 +95,9 @@ async def admin_login(request: Request, body: AdminLoginRequest) -> JSONResponse
         _verify_password(body.password, _DUMMY_HASH)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 
+    # Always verify password before checking is_active to prevent timing oracle
     password_ok = verify_admin_password(body.password, admin["hashed_password"])
-    if not admin["is_active"] or not password_ok:
+    if not password_ok or not admin["is_active"]:
         await record_audit_entry(pool=_pool, admin_id=str(admin["id"]), action="admin.login", target=body.email, details={"success": False})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 
@@ -128,7 +129,8 @@ async def admin_logout(
             ttl = max((exp - now), 60) if exp else 3600
             await _redis.setex(f"revoked:jti:{jti}", ttl, "1")
     admin_email = current_admin.get("email", "unknown")
-    await record_audit_entry(pool=_pool, admin_id=current_admin["sub"], action="admin.logout", target=admin_email)
+    if _pool is not None:
+        await record_audit_entry(pool=_pool, admin_id=current_admin["sub"], action="admin.logout", target=admin_email)
     return JSONResponse(content={"logged_out": True})
 
 
@@ -518,7 +520,10 @@ async def purge_dlq(
 
     admin_email = current_admin.get("email", "unknown")
     logger.info("🗑️ DLQ purged", queue=queue, messages_purged=messages_purged, admin_email=admin_email)
-    await record_audit_entry(pool=_pool, admin_id=current_admin["sub"], action="dlq.purge", target=queue, details={"purged_count": messages_purged})
+    if _pool is not None:
+        await record_audit_entry(
+            pool=_pool, admin_id=current_admin["sub"], action="dlq.purge", target=queue, details={"purged_count": messages_purged}
+        )
 
     return JSONResponse(
         content=DlqPurgeResponse(queue=queue, messages_purged=messages_purged).model_dump(),

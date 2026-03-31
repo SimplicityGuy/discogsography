@@ -78,8 +78,8 @@ async def get_label_gap_summary(
     """Get summary counts for a label: total releases, owned, missing."""
     cypher = """
     MATCH (l:Label {id: $label_id})<-[:ON]-(r:Release)
-    WITH count(r) AS total_releases
-    OPTIONAL MATCH (u:User {id: $user_id})-[:COLLECTED]->(c:Release)-[:ON]->(l2:Label {id: $label_id})
+    WITH l, count(r) AS total_releases
+    OPTIONAL MATCH (u:User {id: $user_id})-[:COLLECTED]->(c:Release)-[:ON]->(l)
     WITH total_releases, count(c) AS owned
     RETURN total_releases AS total, owned, total_releases - owned AS missing
     """
@@ -149,8 +149,8 @@ async def get_artist_gap_summary(
     """Get summary counts for an artist: total releases, owned, missing."""
     cypher = """
     MATCH (a:Artist {id: $artist_id})<-[:BY]-(r:Release)
-    WITH count(r) AS total_releases
-    OPTIONAL MATCH (u:User {id: $user_id})-[:COLLECTED]->(c:Release)-[:BY]->(a2:Artist {id: $artist_id})
+    WITH a, count(r) AS total_releases
+    OPTIONAL MATCH (u:User {id: $user_id})-[:COLLECTED]->(c:Release)-[:BY]->(a)
     WITH total_releases, count(c) AS owned
     RETURN total_releases AS total, owned, total_releases - owned AS missing
     """
@@ -223,8 +223,8 @@ async def get_master_gap_summary(
     """Get summary counts for a master: total pressings, owned, missing."""
     cypher = """
     MATCH (m:Master {id: $master_id})<-[:DERIVED_FROM]-(r:Release)
-    WITH count(r) AS total_releases
-    OPTIONAL MATCH (u:User {id: $user_id})-[:COLLECTED]->(c:Release)-[:DERIVED_FROM]->(m2:Master {id: $master_id})
+    WITH m, count(r) AS total_releases
+    OPTIONAL MATCH (u:User {id: $user_id})-[:COLLECTED]->(c:Release)-[:DERIVED_FROM]->(m)
     WITH total_releases, count(c) AS owned
     RETURN total_releases AS total, owned, total_releases - owned AS missing
     """

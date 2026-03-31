@@ -5,6 +5,10 @@ const DLQ_NAMES = [
     'graphinator-masters-dlq', 'graphinator-releases-dlq',
     'tableinator-artists-dlq', 'tableinator-labels-dlq',
     'tableinator-masters-dlq', 'tableinator-releases-dlq',
+    'brainzgraphinator-artists-dlq', 'brainzgraphinator-labels-dlq',
+    'brainzgraphinator-releases-dlq', 'brainzgraphinator-release-groups-dlq',
+    'brainztableinator-artists-dlq', 'brainztableinator-labels-dlq',
+    'brainztableinator-releases-dlq', 'brainztableinator-release-groups-dlq',
 ];
 
 const QUEUE_CHART_COLORS = [

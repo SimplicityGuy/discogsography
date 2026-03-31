@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from typing import Any
@@ -150,18 +151,31 @@ def _stream_response(query: str, user_id: str | None, context: dict[str, Any] | 
             current_entity_type=context.get("entity_type") if context else None,
         )
 
-        status_events: list[str] = []
+        status_queue: asyncio.Queue[str | None] = asyncio.Queue()
 
         async def emit_status(step: str) -> None:
-            status_events.append(step)
+            await status_queue.put(step)
 
         if _engine is None:  # pragma: no cover — guarded by caller
             return
-        result = await _engine.run(query, ctx, on_status=emit_status)
 
-        # Emit collected status events
-        for step in status_events:
+        # Run engine in background so status events can be yielded as they arrive
+        engine_task = asyncio.create_task(_engine.run(query, ctx, on_status=emit_status))
+
+        # Yield status events as they arrive
+        while not engine_task.done():
+            try:
+                step = await asyncio.wait_for(status_queue.get(), timeout=0.1)
+                yield {"event": "status", "data": json.dumps({"step": step})}
+            except TimeoutError:
+                continue
+
+        # Drain any remaining status events
+        while not status_queue.empty():
+            step = status_queue.get_nowait()
             yield {"event": "status", "data": json.dumps({"step": step})}
+
+        result = await engine_task
 
         # Emit final result
         response_data = {

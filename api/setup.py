@@ -37,9 +37,12 @@ def _build_conninfo() -> str:
         print(f"❌ Missing required environment variables: {', '.join(missing)}", file=sys.stderr)
         sys.exit(1)
 
-    # POSTGRES_HOST is a plain hostname; port is always 5432
-    host = address
-    port = "5432"
+    # POSTGRES_HOST may include an optional :port suffix
+    if ":" in address:
+        host, port = address.rsplit(":", 1)
+    else:
+        host = address
+        port = os.getenv("POSTGRES_PORT", "5432")
 
     return f"host={host} port={port} user={username} password={password} dbname={database}"
 

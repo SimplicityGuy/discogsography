@@ -10,6 +10,7 @@ Graph model additions (curator):
   (User)-[:COLLECTED]->(Release)-[:IS]->(Genre)
 """
 
+import asyncio
 import math
 from typing import Any
 
@@ -173,15 +174,20 @@ async def get_user_collection_stats(
     RETURN avg(c.rating) AS average
     """
 
-    genres, decades, labels, total, unique_artists, unique_labels, avg_rating_rows = (
-        await run_query(driver, genre_cypher, user_id=user_id),
-        await run_query(driver, decade_cypher, user_id=user_id),
-        await run_query(driver, label_cypher, user_id=user_id),
-        await run_count(driver, total_cypher, user_id=user_id),
-        await run_count(driver, artists_cypher, user_id=user_id),
-        await run_count(driver, unique_labels_cypher, user_id=user_id),
-        await run_query(driver, avg_rating_cypher, user_id=user_id),
+    _results: list[Any] = list(
+        await asyncio.gather(
+            run_query(driver, genre_cypher, user_id=user_id),
+            run_query(driver, decade_cypher, user_id=user_id),
+            run_query(driver, label_cypher, user_id=user_id),
+            run_count(driver, total_cypher, user_id=user_id),
+            run_count(driver, artists_cypher, user_id=user_id),
+            run_count(driver, unique_labels_cypher, user_id=user_id),
+            run_query(driver, avg_rating_cypher, user_id=user_id),
+        )
     )
+    genres, decades, labels = _results[0], _results[1], _results[2]
+    total, unique_artists, unique_labels = _results[3], _results[4], _results[5]
+    avg_rating_rows = _results[6]
 
     avg_rating = avg_rating_rows[0]["average"] if avg_rating_rows and avg_rating_rows[0]["average"] is not None else None
 
@@ -311,6 +317,10 @@ async def get_user_collection_evolution(
 
     Returns per-year value counts and a summary.
     """
+    _ALLOWED_METRICS = {"genre", "style", "label"}
+    if metric not in _ALLOWED_METRICS:
+        raise ValueError(f"Invalid metric: {metric!r}. Must be one of {_ALLOWED_METRICS}")
+
     if metric == "style":
         rel_type = "IS"
         node_label = "Style"

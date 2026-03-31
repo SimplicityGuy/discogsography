@@ -455,6 +455,12 @@ class PostgreSQLBatchProcessor:
             wait = self._backoff_until[data_type] - time.time()
             if wait > 0:
                 await asyncio.sleep(wait)
+                # Don't count backoff waits as retries — only count actual flush failures
+                await self._flush_queue(data_type)
+                curr_len = len(self.queues.get(data_type, []))
+                if curr_len < prev_len:
+                    retries = 0
+                continue
             await self._flush_queue(data_type)
             curr_len = len(self.queues.get(data_type, []))
             if curr_len >= prev_len:

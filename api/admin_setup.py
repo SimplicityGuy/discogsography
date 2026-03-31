@@ -29,6 +29,8 @@ def _build_conninfo() -> str:
 
 def add_admin(conninfo: str, email: str, password: str) -> None:
     """Insert or promote an admin account in the users table."""
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters")
     hashed = _hash_password(password)
 
     upsert_sql = """

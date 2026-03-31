@@ -48,8 +48,13 @@ def normalize_path(path: str) -> str:
 
 
 def _percentile_index(n: int, p: int) -> int:
-    """Return the 0-based index for the *p*-th percentile in a sorted list of *n* items."""
-    idx = int(n * p / 100) - 1
+    """Return the 0-based index for the *p*-th percentile in a sorted list of *n* items.
+
+    Uses the nearest-rank method (ceiling) to avoid returning index 0 for small datasets.
+    """
+    import math  # noqa: PLC0415
+
+    idx = math.ceil(n * p / 100) - 1
     return max(idx, 0)
 
 

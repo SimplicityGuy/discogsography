@@ -194,6 +194,7 @@ class TimelineScrubber {
         let data = this._emergenceCache.get(year);
         if (!data) {
             data = await window.apiClient.getGenreEmergence(year);
+            if (!data) return;
             // Only cache successful responses (non-empty genres or styles)
             if (data.genres.length > 0 || data.styles.length > 0) {
                 this._emergenceCache.set(year, data);
@@ -340,6 +341,9 @@ class ExploreApp {
         // Trends comparison state
         this.compareMode = false;
         this.primaryTrendsData = null;
+
+        // Request counter for preventing stale node-click responses
+        this._nodeClickRequestId = 0;
 
         // Initialize components
         this.autocomplete = new Autocomplete();
@@ -1093,12 +1097,23 @@ class ExploreApp {
         const body = document.getElementById('infoPanelBody');
         const title = document.getElementById('infoPanelTitle');
 
-        body.innerHTML = '<p class="text-text-mid">Loading...</p>';
+        // Track request to prevent stale responses from overwriting newer ones
+        const requestId = ++this._nodeClickRequestId;
+
+        const loadingP = document.createElement('p');
+        loadingP.className = 'text-text-mid';
+        loadingP.textContent = 'Loading...';
+        body.replaceChildren(loadingP);
         panel.classList.add('open');
 
         const details = await window.apiClient.getNodeDetails(nodeId, type);
+        // Discard stale response if a newer click has occurred
+        if (requestId !== this._nodeClickRequestId) return;
         if (!details) {
-            body.innerHTML = '<p class="text-text-mid">No details available</p>';
+            const noDataP = document.createElement('p');
+            noDataP.className = 'text-text-mid';
+            noDataP.textContent = 'No details available';
+            body.replaceChildren(noDataP);
             return;
         }
 

@@ -14,6 +14,7 @@ def check_service_errors(service: str, time_window: int = 60) -> list[str]:
             capture_output=True,
             text=True,
             check=True,
+            timeout=60,
         )
 
         logs = result.stdout
