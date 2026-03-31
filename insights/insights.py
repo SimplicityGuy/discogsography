@@ -286,6 +286,52 @@ async def label_longevity(limit: int = Query(50, ge=1, le=200)) -> JSONResponse:
     return JSONResponse(content=result)
 
 
+@app.get("/api/insights/release-rarity")
+async def release_rarity(limit: int = Query(50, ge=1, le=500)) -> JSONResponse:
+    """Return releases ranked by rarity score (precomputed)."""
+    if not _pool:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    cache_key = f"insights:release-rarity:{limit}"
+    if _cache:
+        cached = await _cache.get(cache_key)
+        if cached is not None:
+            return JSONResponse(content=cached)
+
+    async with _pool.connection() as conn, conn.cursor() as cursor:
+        cursor = cast("Any", cursor)
+        await cursor.execute(
+            "SELECT release_id, title, artist_name, year, rarity_score, tier, "
+            "hidden_gem_score, pressing_scarcity, label_catalog, "
+            "format_rarity, temporal_scarcity, graph_isolation "
+            "FROM insights.release_rarity ORDER BY rarity_score DESC LIMIT %s",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+
+    items = [
+        {
+            "release_id": r[0],
+            "title": r[1],
+            "artist_name": r[2],
+            "year": r[3],
+            "rarity_score": r[4],
+            "tier": r[5],
+            "hidden_gem_score": r[6],
+            "pressing_scarcity": r[7],
+            "label_catalog": r[8],
+            "format_rarity": r[9],
+            "temporal_scarcity": r[10],
+            "graph_isolation": r[11],
+        }
+        for r in rows
+    ]
+    result = {"items": items, "count": len(items)}
+    if _cache:
+        await _cache.set(cache_key, result)
+    return JSONResponse(content=result)
+
+
 @app.get("/api/insights/this-month")
 async def this_month() -> JSONResponse:
     """Return releases with notable anniversaries this calendar month (precomputed)."""
@@ -321,7 +367,9 @@ async def this_month() -> JSONResponse:
         for r in rows
     ]
     result = {"month": now.month, "year": now.year, "items": items, "count": len(items)}
-    if _cache:
+    if _cache and items:
+        # Only cache non-empty results to avoid caching stale empty data
+        # on the 1st of a new month before the scheduler has run
         await _cache.set(cache_key, result)
     return JSONResponse(content=result)
 

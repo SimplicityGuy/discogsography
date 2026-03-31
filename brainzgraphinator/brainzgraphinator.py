@@ -87,6 +87,9 @@ connection_check_task: asyncio.Task[None] | None = None
 # Global shutdown flag
 shutdown_requested = False
 
+# Lock for safely merging enrichment stats from concurrent handlers
+_stats_lock = asyncio.Lock()
+
 # Enrichment stats
 enrichment_stats = {
     "entities_enriched": 0,
@@ -243,7 +246,6 @@ async def check_file_completion(
 ) -> bool:
     """Check if message is a file completion or extraction completion message."""
     if data.get("type") == "file_complete":
-        completed_files.add(data_type)
         total_processed = data.get("total_processed", 0)
         logger.info(
             f"✅ File processing complete for {data_type}! "
@@ -252,6 +254,10 @@ async def check_file_completion(
 
         if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
             await schedule_consumer_cancellation(data_type, queues[data_type])
+
+        # Mark as completed AFTER scheduling cancellation so the stuck-state
+        # checker still fires for any in-flight messages during the delay.
+        completed_files.add(data_type)
 
         await message.ack()
         return True
@@ -532,9 +538,11 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
                 # Always restore the global reference
                 enrichment_stats = saved_stats
 
-            # Merge local counters into global stats only after transaction succeeds
-            for key in local_stats:
-                enrichment_stats[key] += local_stats[key]
+            # Merge local counters into global stats under lock to prevent
+            # concurrent handlers from corrupting the shared dict
+            async with _stats_lock:
+                for key in local_stats:
+                    enrichment_stats[key] += local_stats[key]
 
             await message.ack()
         except (ServiceUnavailable, SessionExpired) as e:

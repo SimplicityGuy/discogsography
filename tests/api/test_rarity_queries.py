@@ -374,6 +374,68 @@ class TestGetRarityByArtist:
         assert len(items) == 1
         assert total == 1
 
+    @pytest.mark.asyncio
+    async def test_artist_with_non_numeric_release_ids(self) -> None:
+        """Non-numeric release IDs are filtered out instead of raising ValueError."""
+        mock_driver = MagicMock()
+        mock_pool = MagicMock()
+        with patch(
+            "api.queries.rarity_queries.run_query",
+            new=AsyncMock(
+                side_effect=[
+                    [{"id": "123", "name": "Artist"}],  # artist exists
+                    [{"release_id": "abc"}, {"release_id": ""}, {"release_id": "not-a-number"}],  # all non-numeric
+                ]
+            ),
+        ):
+            result = await get_rarity_by_artist(mock_driver, mock_pool, "123")
+        assert result is not None
+        items, total = result
+        assert items == []
+        assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_artist_with_mixed_release_ids(self) -> None:
+        """Mix of numeric and non-numeric release IDs — only valid ones pass through."""
+        mock_driver = MagicMock()
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        mock_cur.fetchall = AsyncMock(
+            return_value=[
+                {
+                    "release_id": 1,
+                    "title": "R1",
+                    "artist_name": "A1",
+                    "year": 1990,
+                    "rarity_score": 90.0,
+                    "tier": "ultra-rare",
+                    "hidden_gem_score": 75.0,
+                }
+            ]
+        )
+        mock_cur.fetchone = AsyncMock(return_value={"total": 1})
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        with patch(
+            "api.queries.rarity_queries.run_query",
+            new=AsyncMock(
+                side_effect=[
+                    [{"id": "123", "name": "Artist"}],  # artist exists
+                    [{"release_id": "1"}, {"release_id": "abc"}, {"release_id": "2"}],  # mixed
+                ]
+            ),
+        ):
+            result = await get_rarity_by_artist(mock_driver, mock_pool, "123")
+        assert result is not None
+        items, _total = result
+        assert len(items) == 1
+
 
 class TestGetRarityByLabel:
     @pytest.mark.asyncio
@@ -444,6 +506,26 @@ class TestGetRarityByLabel:
         items, total = result
         assert len(items) == 1
         assert total == 1
+
+    @pytest.mark.asyncio
+    async def test_label_with_non_numeric_release_ids(self) -> None:
+        """Non-numeric release IDs in label results are filtered out."""
+        mock_driver = MagicMock()
+        mock_pool = MagicMock()
+        with patch(
+            "api.queries.rarity_queries.run_query",
+            new=AsyncMock(
+                side_effect=[
+                    [{"id": "456", "name": "Label"}],  # label exists
+                    [{"release_id": "abc"}, {"release_id": ""}],  # all non-numeric
+                ]
+            ),
+        ):
+            result = await get_rarity_by_label(mock_driver, mock_pool, "456")
+        assert result is not None
+        items, total = result
+        assert items == []
+        assert total == 0
 
 
 # ── Neo4j batch query tests ──────────────────────────────────────────

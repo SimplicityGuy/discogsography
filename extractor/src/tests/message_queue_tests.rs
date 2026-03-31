@@ -5,6 +5,7 @@ fn test_exchange_names_default_prefix() {
     let mq = MessageQueue {
         connection: Arc::new(RwLock::new(None)),
         channel: Arc::new(RwLock::new(None)),
+        reconnect_mutex: tokio::sync::Mutex::new(()),
         url: String::new(),
         max_retries: 1,
         exchange_prefix: DEFAULT_EXCHANGE_PREFIX.to_string(),
@@ -20,6 +21,7 @@ fn test_exchange_names_custom_prefix() {
     let mq = MessageQueue {
         connection: Arc::new(RwLock::new(None)),
         channel: Arc::new(RwLock::new(None)),
+        reconnect_mutex: tokio::sync::Mutex::new(()),
         url: String::new(),
         max_retries: 1,
         exchange_prefix: "musicbrainz".to_string(),
@@ -252,6 +254,30 @@ fn test_message_properties_content_type() {
     let props = MessageQueue::message_properties();
     let content_type = props.content_type().as_ref().expect("content_type should be set");
     assert_eq!(content_type.as_str(), "application/json");
+}
+
+#[tokio::test]
+async fn test_get_channel_with_no_channel_triggers_reconnect() {
+    // When channel is None, get_channel should attempt to reconnect.
+    // With an invalid URL, reconnection fails — exercising the slow path
+    // including the reconnect_mutex lock and double-check pattern.
+    let mq = MessageQueue {
+        connection: Arc::new(RwLock::new(None)),
+        channel: Arc::new(RwLock::new(None)),
+        reconnect_mutex: tokio::sync::Mutex::new(()),
+        url: "amqp://localhost:59999".to_string(),
+        max_retries: 1,
+        exchange_prefix: DEFAULT_EXCHANGE_PREFIX.to_string(),
+    };
+
+    let result = mq.get_channel().await;
+    assert!(result.is_err(), "Expected error when channel is None and reconnect fails");
+    let err_msg = format!("{}", result.err().unwrap());
+    assert!(
+        err_msg.contains("Failed to connect") || err_msg.contains("Failed to get channel"),
+        "Unexpected error: {}",
+        err_msg
+    );
 }
 
 #[tokio::test]

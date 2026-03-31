@@ -8,7 +8,6 @@ from fastapi.responses import JSONResponse, Response
 from neo4j.exceptions import ClientError as Neo4jClientError
 import structlog
 
-import api.dependencies as _dependencies
 from api.dependencies import require_user
 from api.models import (
     BlindSpot,
@@ -38,11 +37,10 @@ _neo4j_driver: Any = None
 _MIN_COLLECTION_ITEMS = 10
 
 
-def configure(neo4j: Any, jwt_secret: str | None) -> None:
+def configure(neo4j: Any, jwt_secret: str | None) -> None:  # noqa: ARG001
     """Configure the taste router with Neo4j driver and JWT secret."""
     global _neo4j_driver
     _neo4j_driver = neo4j
-    _dependencies.configure(jwt_secret)
 
 
 def _peak_decade(cells: list[dict[str, Any]]) -> int | None:

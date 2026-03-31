@@ -190,6 +190,8 @@ services:
       BREVO_SENDER_NAME: "${BREVO_SENDER_NAME:-Discogsography}"
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
+      RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
     secrets:
       - jwt_secret_key
       - neo4j_password
@@ -197,6 +199,8 @@ services:
       - brevo_api_key
       - postgres_username
       - postgres_password
+      - rabbitmq_username
+      - rabbitmq_password
     deploy:
       restart_policy:
         condition: any

@@ -92,7 +92,7 @@ LABEL org.opencontainers.image.title="Discogsography Explore" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.base.name="docker.io/library/python:${PYTHON_VERSION}-slim" \
       com.discogsography.service="explore" \
-      com.discogsography.dependencies="fastapi,uvicorn,neo4j" \
+      com.discogsography.dependencies="fastapi,uvicorn,httpx" \
       com.discogsography.python.version="${PYTHON_VERSION}"
 
 # Install minimal runtime dependencies

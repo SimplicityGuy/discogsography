@@ -165,24 +165,29 @@ pub async fn process_discogs_data(
 
     if pending_files.is_empty() {
         info!("✅ All files already processed");
-        state_marker.complete_processing();
-        state_marker.complete_extraction();
-        state_marker.save(&marker_path).await?;
 
-        // Send extraction_complete with actual record counts from state marker
-        let mut record_counts = HashMap::new();
-        for (file_name, file_state) in &state_marker.processing_phase.progress_by_file {
-            record_counts.insert(file_name.clone(), file_state.records_extracted);
-        }
-        match mq_factory.create(&config.amqp_connection, &config.amqp_exchange_prefix).await {
-            Ok(mq) => {
-                if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::discogs()).await {
-                    error!("❌ Failed to send extraction_complete message: {}", e);
-                }
-                let _ = mq.close().await;
+        // Only send extraction_complete on the first completion, not on
+        // subsequent periodic checks where the version is already complete.
+        if state_marker.summary.overall_status != PhaseStatus::Completed {
+            state_marker.complete_processing();
+            state_marker.complete_extraction();
+            state_marker.save(&marker_path).await?;
+
+            // Send extraction_complete with actual record counts from state marker
+            let mut record_counts = HashMap::new();
+            for (file_name, file_state) in &state_marker.processing_phase.progress_by_file {
+                record_counts.insert(file_name.clone(), file_state.records_extracted);
             }
-            Err(e) => {
-                error!("❌ Failed to connect to AMQP for extraction_complete: {}", e);
+            match mq_factory.create(&config.amqp_connection, &config.amqp_exchange_prefix).await {
+                Ok(mq) => {
+                    if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::discogs()).await {
+                        error!("❌ Failed to send extraction_complete message: {}", e);
+                    }
+                    let _ = mq.close().await;
+                }
+                Err(e) => {
+                    error!("❌ Failed to connect to AMQP for extraction_complete: {}", e);
+                }
             }
         }
 
@@ -914,8 +919,10 @@ pub async fn process_musicbrainz_data(
 
     // Start processing phase — wrap in Arc<Mutex> for shared access across loop iterations
     let file_count = dump_files.len();
-    state_marker.start_processing(file_count);
-    state_marker.save(&marker_path).await?;
+    if state_marker.processing_phase.status != PhaseStatus::Completed {
+        state_marker.start_processing(file_count);
+        state_marker.save(&marker_path).await?;
+    }
     let state_marker = Arc::new(tokio::sync::Mutex::new(state_marker));
     info!("🚀 Starting MusicBrainz processing phase: {} dump file(s)", file_count);
 

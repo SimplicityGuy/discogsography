@@ -307,7 +307,7 @@ class TestInsertRelationship:
 
     @pytest.mark.asyncio
     async def test_insert_relationship_no_target_skips(self):
-        """Empty target_mbid still inserts (with empty string default)."""
+        """Empty target_mbid is skipped to avoid PostgreSQL UUID cast failure."""
         mock_conn, mock_cursor = _make_mock_conn()
         rel = {
             "target_mbid": "",
@@ -317,10 +317,22 @@ class TestInsertRelationship:
 
         await _insert_relationship(mock_conn, "source-mbid-1", "artist", rel)
 
-        # The function inserts with empty string - it does not skip
-        mock_cursor.execute.assert_called_once()
-        params = mock_cursor.execute.call_args[0][1]
-        assert params[2] == ""  # target_mbid is empty string
+        # Empty target_mbid should be skipped (would fail UUID cast)
+        mock_cursor.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_insert_relationship_missing_target_skips(self):
+        """Missing target_mbid key is skipped."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        rel = {
+            "target_type": "artist",
+            "type": "member of band",
+        }
+
+        await _insert_relationship(mock_conn, "source-mbid-1", "artist", rel)
+
+        # Missing target_mbid should be skipped
+        mock_cursor.execute.assert_not_called()
 
 
 class TestInsertExternalLink:

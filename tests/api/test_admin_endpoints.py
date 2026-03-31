@@ -756,6 +756,65 @@ class TestTrackExtraction:
 
         admin_mod._pool = original_pool
 
+    @pytest.mark.asyncio
+    async def test_timeout_after_max_iterations(self) -> None:
+        """Test that extraction tracking times out after _MAX_TRACKING_ITERATIONS."""
+        import api.routers.admin as admin_mod
+
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        mock_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=conn_ctx)
+
+        mock_config = MagicMock()
+        mock_config.extractor_host = "localhost"
+        mock_config.extractor_health_port = 8000
+
+        original_pool = admin_mod._pool
+        original_config = admin_mod._config
+        original_max = admin_mod._MAX_TRACKING_ITERATIONS
+        admin_mod._pool = mock_pool
+        admin_mod._config = mock_config
+        admin_mod._MAX_TRACKING_ITERATIONS = 2  # Low iteration count for test
+
+        extraction_id = str(uuid4())
+
+        with (
+            patch("api.routers.admin.asyncio.sleep", new_callable=AsyncMock),
+            patch("api.routers.admin.httpx.AsyncClient") as mock_client_cls,
+        ):
+            # Return "extracting" status (non-terminal) forever
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "extraction_status": "extracting",
+                "extraction_progress": {"artists": 50, "labels": 25, "masters": 10, "releases": 100},
+            }
+            mock_client_instance = AsyncMock()
+            mock_client_instance.get = AsyncMock(return_value=mock_response)
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client_instance
+
+            await admin_mod._track_extraction(extraction_id)
+
+        # Verify the extraction was marked as failed due to timeout
+        calls = mock_cur.execute.call_args_list
+        final_call_sql = calls[-1][0][0]
+        assert "failed" in final_call_sql
+        assert "timed out" in calls[-1][0][1][0]
+
+        admin_mod._pool = original_pool
+        admin_mod._config = original_config
+        admin_mod._MAX_TRACKING_ITERATIONS = original_max
+
 
 # ---------------------------------------------------------------------------
 # Phase 2 endpoint tests — User Stats, Sync Activity, Storage

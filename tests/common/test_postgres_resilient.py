@@ -1432,10 +1432,12 @@ class TestResilientPostgreSQLPoolUncoveredLines:
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
-    def test_unhealthy_connection_replacement_failure_decrements_active(
+    def test_unhealthy_connection_replacement_failure_preserves_active_for_pool_conn(
         self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
     ) -> None:
-        """Lines 179-184: When replacement of unhealthy connection fails, active_connections is decremented."""
+        """Lines 179-184: When a pool-retrieved connection is unhealthy and replacement
+        fails, active_connections should NOT be decremented because the connection was
+        retrieved from the pool (already tracked), not newly created."""
         mock_connect.return_value = mock_connection
 
         pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5, max_retries=1)
@@ -1455,20 +1457,96 @@ class TestResilientPostgreSQLPoolUncoveredLines:
         pool.active_connections = 1
 
         # Make _create_connection raise so the replacement fails.
-        # This exercises lines 181-184: except block decrements active_connections.
         pool._create_connection = Mock(side_effect=OperationalError("DB down"))  # type: ignore[method-assign]
 
         # With max_retries=1, only one loop iteration runs. After the replacement
-        # failure, active_connections is decremented. The stale conn reference means
-        # the context manager yields the (closed) unhealthy connection rather than raising,
-        # but the key behavior we're testing is the active_connections bookkeeping.
+        # failure, active_connections is NOT decremented because the connection came
+        # from the pool (was already counted). This prevents counter underflow.
         with pool.connection():
             pass
 
-        # active_connections should have been decremented when replacement failed
-        assert pool.active_connections == 0
+        # active_connections should remain 1 — pool-retrieved connections don't
+        # decrement on replacement failure to prevent counter drift
+        assert pool.active_connections == 1
         # The unhealthy connection should have been closed
         unhealthy_conn.close.assert_called()
+
+    @patch("common.postgres_resilient.psycopg.connect")
+    @patch("common.postgres_resilient.threading.Thread")
+    def test_unhealthy_pool_connection_replaced_successfully(
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+    ) -> None:
+        """When a pool-retrieved connection is unhealthy and replacement succeeds,
+        active_connections stays unchanged (1-for-1 swap)."""
+        mock_connect.return_value = mock_connection
+
+        pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5, max_retries=1)
+
+        # Build an unhealthy connection
+        unhealthy_conn = Mock()
+        unhealthy_conn.closed = False
+        unhealthy_conn.close = Mock()
+        unhealthy_cursor = Mock()
+        unhealthy_cursor.execute = Mock(side_effect=OperationalError("gone"))
+        unhealthy_cursor.__enter__ = Mock(return_value=unhealthy_cursor)
+        unhealthy_cursor.__exit__ = Mock(return_value=None)
+        unhealthy_conn.cursor = Mock(return_value=unhealthy_cursor)
+
+        pool.connections.put_nowait(unhealthy_conn)
+        pool.active_connections = 1
+
+        # Replacement succeeds — returns a healthy connection
+        healthy_conn = Mock()
+        healthy_conn.closed = False
+        healthy_cursor = Mock()
+        healthy_cursor.execute = Mock()
+        healthy_cursor.__enter__ = Mock(return_value=healthy_cursor)
+        healthy_cursor.__exit__ = Mock(return_value=None)
+        healthy_conn.cursor = Mock(return_value=healthy_cursor)
+
+        pool._create_connection = Mock(return_value=healthy_conn)  # type: ignore[method-assign]
+
+        with pool.connection() as conn:
+            assert conn is healthy_conn
+
+        # Counter should stay at 1 — it's a 1-for-1 swap from pool
+        assert pool.active_connections == 1
+        unhealthy_conn.close.assert_called()
+
+    @patch("common.postgres_resilient.psycopg.connect")
+    @patch("common.postgres_resilient.threading.Thread")
+    def test_new_connection_unhealthy_replacement_failure_decrements(
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+    ) -> None:
+        """When a NEWLY created connection (not from pool) fails health check and
+        replacement also fails, active_connections IS decremented."""
+        mock_connect.return_value = mock_connection
+
+        pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5, max_retries=1)
+
+        # Pool is empty, so we'll create a new connection (incrementing counter)
+        # Build an unhealthy connection that passes creation but fails health check
+        unhealthy_conn = Mock()
+        unhealthy_conn.closed = False
+        unhealthy_conn.close = Mock()
+        unhealthy_cursor = Mock()
+        unhealthy_cursor.execute = Mock(side_effect=OperationalError("gone"))
+        unhealthy_cursor.__enter__ = Mock(return_value=unhealthy_cursor)
+        unhealthy_cursor.__exit__ = Mock(return_value=None)
+        unhealthy_conn.cursor = Mock(return_value=unhealthy_cursor)
+
+        # First call: create new conn (unhealthy). Second call: replacement fails.
+        pool._create_connection = Mock(  # type: ignore[method-assign]
+            side_effect=[unhealthy_conn, OperationalError("DB down")]
+        )
+
+        pool.active_connections = 0
+
+        with pool.connection():
+            pass
+
+        # Counter should be back to 0: incremented for new conn, decremented on failure
+        assert pool.active_connections == 0
 
 
 class TestAsyncPostgreSQLPoolUncoveredLines:

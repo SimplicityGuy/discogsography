@@ -436,6 +436,8 @@ async def _insert_relationship(
     conn: Any, source_mbid: str, source_type: str, rel: dict[str, Any]
 ) -> None:
     """Insert a relationship record into musicbrainz.relationships."""
+    if not rel.get("target_mbid"):
+        return  # Skip relations without a target MBID (would fail UUID cast)
     async with conn.cursor() as cursor:
         await cursor.execute(
             "INSERT INTO musicbrainz.relationships "

@@ -237,6 +237,12 @@ class Neo4jBatchProcessor:
 
                 success = True
 
+            except asyncio.CancelledError:
+                # Re-enqueue messages before propagating cancellation (e.g. shutdown)
+                for msg in reversed(messages):
+                    queue.appendleft(msg)
+                raise
+
             except (ServiceUnavailable, SessionExpired) as e:
                 logger.error(
                     "❌ Neo4j connection error during batch",

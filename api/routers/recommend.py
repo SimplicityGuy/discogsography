@@ -8,7 +8,6 @@ from fastapi.responses import JSONResponse
 import structlog
 
 from api.cache import RecommendCache
-import api.dependencies as _dependencies
 from api.dependencies import require_user
 from api.limiter import limiter
 from api.models import (
@@ -38,11 +37,10 @@ _neo4j_driver: Any = None
 _cache: RecommendCache | None = None
 
 
-def configure(neo4j: Any, jwt_secret: str | None, redis: Any | None) -> None:
+def configure(neo4j: Any, jwt_secret: str | None, redis: Any | None) -> None:  # noqa: ARG001
     """Configure the recommend router with Neo4j driver, JWT secret, and Redis cache."""
     global _neo4j_driver, _cache
     _neo4j_driver = neo4j
-    _dependencies.configure(jwt_secret)
     if redis is not None:
         _cache = RecommendCache(redis=redis, default_ttl=3600)
 

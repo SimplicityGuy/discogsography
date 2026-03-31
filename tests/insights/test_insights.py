@@ -180,7 +180,7 @@ class TestLabelLongevityCacheIntegration:
 
 
 class TestThisMonthCacheIntegration:
-    def test_cache_miss_queries_pg_and_stores(
+    def test_cache_miss_queries_pg_empty_result_not_cached(
         self,
         test_client_with_cache: TestClient,
         mock_cache: AsyncMock,
@@ -191,7 +191,8 @@ class TestThisMonthCacheIntegration:
         # Cache key includes year-month
         call_key = mock_cache.get.call_args[0][0]
         assert call_key.startswith("insights:this-month:")
-        mock_cache.set.assert_called_once()
+        # Empty results are NOT cached to avoid caching stale data on month boundaries
+        mock_cache.set.assert_not_called()
 
     def test_cache_hit_returns_cached_data(
         self,
@@ -241,6 +242,109 @@ class TestStatusEndpointNeverCached:
         assert response.status_code == 200
         mock_cache.get.assert_not_called()
         mock_cache.set.assert_not_called()
+
+
+# ============================================================
+# Release rarity endpoint tests
+# ============================================================
+
+
+class TestReleaseRarityEndpoint:
+    def test_returns_200(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/insights/release-rarity")
+        assert response.status_code == 200
+
+    def test_with_limit(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/insights/release-rarity?limit=10")
+        assert response.status_code == 200
+
+    def test_not_ready(self) -> None:
+        import insights.insights as _module
+
+        original = _module._pool
+        _module._pool = None
+        try:
+            from insights.insights import app
+
+            client = TestClient(app)
+            response = client.get("/api/insights/release-rarity")
+            assert response.status_code == 503
+        finally:
+            _module._pool = original
+
+
+class TestReleaseRarityCacheIntegration:
+    def test_cache_miss_queries_pg_and_stores(
+        self,
+        mock_http_client: AsyncMock,
+        mock_pg_pool: AsyncMock,
+        mock_cache: AsyncMock,
+    ) -> None:
+        import insights.insights as _module
+
+        _module._http_client = mock_http_client
+        _module._pool = mock_pg_pool
+        _module._cache = mock_cache
+
+        # Return non-empty rows so caching is triggered
+        mock_cursor = mock_pg_pool.connection.return_value.__aenter__.return_value.cursor.return_value.__aenter__.return_value
+        mock_cursor.fetchall = AsyncMock(return_value=[(1, "Title", "Artist", 1990, 95.0, "ultra-rare", 80.0, 90.0, 85.0, 70.0, 60.0, 50.0)])
+
+        mock_cache.get.return_value = None
+
+        from insights.insights import app
+
+        client = TestClient(app)
+        response = client.get("/api/insights/release-rarity?limit=10")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] == 1
+        assert data["items"][0]["release_id"] == 1
+        mock_cache.get.assert_called_once_with("insights:release-rarity:10")
+        mock_cache.set.assert_called_once()
+
+    def test_cache_hit_returns_cached_data(
+        self,
+        test_client_with_cache: TestClient,
+        mock_cache: AsyncMock,
+    ) -> None:
+        cached = {"items": [{"release_id": 1}], "count": 1}
+        mock_cache.get.return_value = cached
+        response = test_client_with_cache.get("/api/insights/release-rarity")
+        assert response.status_code == 200
+        assert response.json() == cached
+        mock_cache.set.assert_not_called()
+
+
+class TestThisMonthCacheWithData:
+    """Test that this-month endpoint caches when results are non-empty."""
+
+    def test_cache_stores_non_empty_results(
+        self,
+        mock_http_client: AsyncMock,
+        mock_pg_pool: AsyncMock,
+        mock_cache: AsyncMock,
+    ) -> None:
+        import insights.insights as _module
+
+        _module._http_client = mock_http_client
+        _module._pool = mock_pg_pool
+        _module._cache = mock_cache
+
+        # Return non-empty rows
+        mock_cursor = mock_pg_pool.connection.return_value.__aenter__.return_value.cursor.return_value.__aenter__.return_value
+        mock_cursor.fetchall = AsyncMock(return_value=[("100", "Album", "Artist", 1990, 25)])
+        mock_cache.get.return_value = None
+
+        from insights.insights import app
+
+        client = TestClient(app)
+        response = client.get("/api/insights/this-month")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] == 1
+        # Non-empty results SHOULD be cached
+        mock_cache.set.assert_called_once()
 
 
 # ============================================================
