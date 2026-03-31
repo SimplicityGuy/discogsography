@@ -157,10 +157,8 @@ class ResilientPostgreSQLPool:
         while retry_count < self.max_retries:
             try:
                 # Try to get existing connection
-                from_pool = False
                 try:
                     conn = self.connections.get_nowait()
-                    from_pool = True
                 except Empty:
                     # Create new connection if pool is not at max
                     with self._lock:
@@ -177,19 +175,20 @@ class ResilientPostgreSQLPool:
                     logger.warning("⚠️ Got unhealthy connection from pool, creating new one")
                     with contextlib.suppress(Exception):
                         conn.close()
-                    # Replace the unhealthy connection — no net change in active_connections
-                    # for pool-retrieved connections (already tracked); new connections were
-                    # already incremented above.
+                    conn = None
+                    # Decrement counter for the closed connection — both pool-retrieved
+                    # and newly created connections were already counted in
+                    # active_connections, so we must account for their removal here.
+                    with self._lock:
+                        self.active_connections = max(0, self.active_connections - 1)
+                    # Create replacement connection (increments counter on success)
                     try:
+                        with self._lock:
+                            self.active_connections += 1
                         conn = self._create_connection()
-                        # Replacement succeeded. For pool-retrieved connections this is
-                        # a 1-for-1 swap (no counter change). For newly created connections,
-                        # the counter was already incremented above.
                     except Exception:
-                        if not from_pool:
-                            # Only decrement if we previously incremented for a new connection
-                            with self._lock:
-                                self.active_connections = max(0, self.active_connections - 1)
+                        with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
                         raise
 
                 if conn:

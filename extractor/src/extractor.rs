@@ -1015,14 +1015,28 @@ pub async fn process_musicbrainz_data(
             }
         };
 
-        if let Err(e) = batcher_handle.await {
-            error!("❌ MusicBrainz batcher task failed for {}: {}", data_type, e);
-            file_success = false;
+        match batcher_handle.await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                error!("❌ MusicBrainz batcher failed for {}: {}", data_type, e);
+                file_success = false;
+            }
+            Err(e) => {
+                error!("❌ MusicBrainz batcher task panicked for {}: {}", data_type, e);
+                file_success = false;
+            }
         }
 
-        if let Err(e) = publisher_handle.await {
-            error!("❌ MusicBrainz publisher task failed for {}: {}", data_type, e);
-            file_success = false;
+        match publisher_handle.await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                error!("❌ MusicBrainz publisher failed for {}: {}", data_type, e);
+                file_success = false;
+            }
+            Err(e) => {
+                error!("❌ MusicBrainz publisher task panicked for {}: {}", data_type, e);
+                file_success = false;
+            }
         }
 
         if !file_success {

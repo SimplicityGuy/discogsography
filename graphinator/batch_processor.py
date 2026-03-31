@@ -207,8 +207,10 @@ class Neo4jBatchProcessor:
         if now < self._backoff_until[data_type]:
             return
 
-        # Update last_flush immediately to prevent concurrent add_message()
-        # calls from triggering redundant flushes while this one is in progress
+        # Mark flush start to prevent concurrent add_message() calls from
+        # triggering redundant flushes while this one is in progress.
+        # On failure this is overwritten by the backoff mechanism which sets
+        # _backoff_until, preventing any flush during the delay window.
         self.last_flush[data_type] = now
 
         # Use effective (adaptive) batch size
@@ -364,16 +366,27 @@ class Neo4jBatchProcessor:
     async def _process_artists_batch(self, messages: list[PendingMessage]) -> None:
         """Process a batch of artist records.
 
-        Uses a single transaction for all artists in the batch.
+        Uses a single session for hash check + write to ensure atomicity.
         """
-        # Separate artists that need updates from those that don't
-        artists_to_process = []
-        existing_hashes: dict[str, str] = {}
+        all_artists = []
+        for msg in messages:
+            artist_id = msg.data.get("id")
+            if not artist_id:
+                logger.warning(
+                    "⚠️ Skipping message with missing 'id' field",
+                    data_keys=list(msg.data.keys()),
+                )
+                continue
+            all_artists.append(msg.data)
 
-        # First, check which artists need updates (by hash)
+        if not all_artists:
+            return
+
+        # Single session for both hash check and write to avoid TOCTOU race
         async with self.driver.session(database="neo4j") as session:
-            # Get all IDs and their hashes
-            ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
+            # Check which artists need updates (by hash)
+            ids = [a.get("id") for a in all_artists]
+            existing_hashes: dict[str, str] = {}
             if ids:
                 result = await session.run(
                     "UNWIND $ids AS id "
@@ -385,25 +398,15 @@ class Neo4jBatchProcessor:
                     if record["hash"]:
                         existing_hashes[record["id"]] = record["hash"]
 
-        # Filter artists that need processing
-        for msg in messages:
-            artist_id = msg.data.get("id")
-            if not artist_id:
-                logger.warning(
-                    "⚠️ Skipping message with missing 'id' field",
-                    data_keys=list(msg.data.keys()),
-                )
-                continue
-            artist_hash = msg.data.get("sha256")
-            if existing_hashes.get(artist_id) != artist_hash:
-                artists_to_process.append(msg.data)
+            artists_to_process = [
+                a
+                for a in all_artists
+                if existing_hashes.get(a["id"]) != a.get("sha256")
+            ]
 
-        if not artists_to_process:
-            logger.debug("🔄 All artists in batch already up to date")
-            return
-
-        # Process artists in a single transaction
-        async with self.driver.session(database="neo4j") as session:
+            if not artists_to_process:
+                logger.debug("🔄 All artists in batch already up to date")
+                return
 
             async def batch_write(tx: Any) -> None:
                 # Create/update all artist nodes
@@ -491,12 +494,28 @@ class Neo4jBatchProcessor:
             await session.execute_write(batch_write)
 
     async def _process_labels_batch(self, messages: list[PendingMessage]) -> None:
-        """Process a batch of label records."""
-        labels_to_process = []
-        existing_hashes: dict[str, str] = {}
+        """Process a batch of label records.
 
+        Uses a single session for hash check + write to ensure atomicity.
+        """
+        all_labels = []
+        for msg in messages:
+            label_id = msg.data.get("id")
+            if not label_id:
+                logger.warning(
+                    "⚠️ Skipping message with missing 'id' field",
+                    data_keys=list(msg.data.keys()),
+                )
+                continue
+            all_labels.append(msg.data)
+
+        if not all_labels:
+            return
+
+        # Single session for both hash check and write to avoid TOCTOU race
         async with self.driver.session(database="neo4j") as session:
-            ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
+            ids = [label.get("id") for label in all_labels]
+            existing_hashes: dict[str, str] = {}
             if ids:
                 result = await session.run(
                     "UNWIND $ids AS id "
@@ -508,23 +527,15 @@ class Neo4jBatchProcessor:
                     if record["hash"]:
                         existing_hashes[record["id"]] = record["hash"]
 
-        for msg in messages:
-            label_id = msg.data.get("id")
-            if not label_id:
-                logger.warning(
-                    "⚠️ Skipping message with missing 'id' field",
-                    data_keys=list(msg.data.keys()),
-                )
-                continue
-            label_hash = msg.data.get("sha256")
-            if existing_hashes.get(label_id) != label_hash:
-                labels_to_process.append(msg.data)
+            labels_to_process = [
+                label
+                for label in all_labels
+                if existing_hashes.get(label["id"]) != label.get("sha256")
+            ]
 
-        if not labels_to_process:
-            logger.debug("🔄 All labels in batch already up to date")
-            return
-
-        async with self.driver.session(database="neo4j") as session:
+            if not labels_to_process:
+                logger.debug("🔄 All labels in batch already up to date")
+                return
 
             async def batch_write(tx: Any) -> None:
                 # Create/update all label nodes
@@ -586,12 +597,28 @@ class Neo4jBatchProcessor:
             await session.execute_write(batch_write)
 
     async def _process_masters_batch(self, messages: list[PendingMessage]) -> None:
-        """Process a batch of master records."""
-        masters_to_process = []
-        existing_hashes: dict[str, str] = {}
+        """Process a batch of master records.
 
+        Uses a single session for hash check + write to ensure atomicity.
+        """
+        all_masters = []
+        for msg in messages:
+            master_id = msg.data.get("id")
+            if not master_id:
+                logger.warning(
+                    "⚠️ Skipping message with missing 'id' field",
+                    data_keys=list(msg.data.keys()),
+                )
+                continue
+            all_masters.append(msg.data)
+
+        if not all_masters:
+            return
+
+        # Single session for both hash check and write to avoid TOCTOU race
         async with self.driver.session(database="neo4j") as session:
-            ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
+            ids = [m.get("id") for m in all_masters]
+            existing_hashes: dict[str, str] = {}
             if ids:
                 result = await session.run(
                     "UNWIND $ids AS id "
@@ -603,23 +630,15 @@ class Neo4jBatchProcessor:
                     if record["hash"]:
                         existing_hashes[record["id"]] = record["hash"]
 
-        for msg in messages:
-            master_id = msg.data.get("id")
-            if not master_id:
-                logger.warning(
-                    "⚠️ Skipping message with missing 'id' field",
-                    data_keys=list(msg.data.keys()),
-                )
-                continue
-            master_hash = msg.data.get("sha256")
-            if existing_hashes.get(master_id) != master_hash:
-                masters_to_process.append(msg.data)
+            masters_to_process = [
+                m
+                for m in all_masters
+                if existing_hashes.get(m["id"]) != m.get("sha256")
+            ]
 
-        if not masters_to_process:
-            logger.debug("🔄 All masters in batch already up to date")
-            return
-
-        async with self.driver.session(database="neo4j") as session:
+            if not masters_to_process:
+                logger.debug("🔄 All masters in batch already up to date")
+                return
 
             async def batch_write(tx: Any) -> None:
                 # Create/update all master nodes
@@ -731,12 +750,28 @@ class Neo4jBatchProcessor:
             await session.execute_write(batch_write)
 
     async def _process_releases_batch(self, messages: list[PendingMessage]) -> None:
-        """Process a batch of release records."""
-        releases_to_process = []
-        existing_hashes: dict[str, str] = {}
+        """Process a batch of release records.
 
+        Uses a single session for hash check + write to ensure atomicity.
+        """
+        all_releases = []
+        for msg in messages:
+            release_id = msg.data.get("id")
+            if not release_id:
+                logger.warning(
+                    "⚠️ Skipping message with missing 'id' field",
+                    data_keys=list(msg.data.keys()),
+                )
+                continue
+            all_releases.append(msg)
+
+        if not all_releases:
+            return
+
+        # Single session for both hash check and write to avoid TOCTOU race
         async with self.driver.session(database="neo4j") as session:
-            ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
+            ids = [m.data.get("id") for m in all_releases]
+            existing_hashes: dict[str, str] = {}
             if ids:
                 result = await session.run(
                     "UNWIND $ids AS id "
@@ -748,25 +783,19 @@ class Neo4jBatchProcessor:
                     if record["hash"]:
                         existing_hashes[record["id"]] = record["hash"]
 
-        for msg in messages:
-            release_id = msg.data.get("id")
-            if not release_id:
-                logger.warning(
-                    "⚠️ Skipping message with missing 'id' field",
-                    data_keys=list(msg.data.keys()),
-                )
-                continue
-            release_hash = msg.data.get("sha256")
-            if existing_hashes.get(release_id) != release_hash:
-                # Enrich with extracted format names for graph storage
-                msg.data["format_names"] = extract_format_names(msg.data.get("formats"))
-                releases_to_process.append(msg.data)
+            releases_to_process = []
+            for msg in all_releases:
+                rid = str(msg.data["id"])
+                release_hash = msg.data.get("sha256")
+                if existing_hashes.get(rid) != release_hash:
+                    msg.data["format_names"] = extract_format_names(
+                        msg.data.get("formats")
+                    )
+                    releases_to_process.append(msg.data)
 
-        if not releases_to_process:
-            logger.debug("🔄 All releases in batch already up to date")
-            return
-
-        async with self.driver.session(database="neo4j") as session:
+            if not releases_to_process:
+                logger.debug("🔄 All releases in batch already up to date")
+                return
 
             async def batch_write(tx: Any) -> None:
                 # Create/update all release nodes

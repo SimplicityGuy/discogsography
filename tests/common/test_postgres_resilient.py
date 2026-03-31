@@ -1459,15 +1459,16 @@ class TestResilientPostgreSQLPoolUncoveredLines:
         # Make _create_connection raise so the replacement fails.
         pool._create_connection = Mock(side_effect=OperationalError("DB down"))  # type: ignore[method-assign]
 
-        # With max_retries=1, only one loop iteration runs. After the replacement
-        # failure, active_connections is NOT decremented because the connection came
-        # from the pool (was already counted). This prevents counter underflow.
-        with pool.connection():
+        # With max_retries=1, only one loop iteration runs. The unhealthy
+        # connection is closed (decrement), replacement attempt (increment)
+        # fails (decrement), so counter returns to 0. The connection()
+        # context manager raises since no connection could be obtained.
+        with pytest.raises(Exception, match="Failed to get PostgreSQL connection"), pool.connection():
             pass
 
-        # active_connections should remain 1 — pool-retrieved connections don't
-        # decrement on replacement failure to prevent counter drift
-        assert pool.active_connections == 1
+        # active_connections should be 0 — the unhealthy connection was closed
+        # and the replacement failed, so no connections remain
+        assert pool.active_connections == 0
         # The unhealthy connection should have been closed
         unhealthy_conn.close.assert_called()
 
@@ -1542,10 +1543,12 @@ class TestResilientPostgreSQLPoolUncoveredLines:
 
         pool.active_connections = 0
 
-        with pool.connection():
+        # Connection should raise since both creation and replacement fail
+        with pytest.raises(Exception, match="Failed to get PostgreSQL connection"), pool.connection():
             pass
 
-        # Counter should be back to 0: incremented for new conn, decremented on failure
+        # Counter should be back to 0: incremented for new conn, decremented
+        # when unhealthy, incremented for replacement, decremented on failure
         assert pool.active_connections == 0
 
 

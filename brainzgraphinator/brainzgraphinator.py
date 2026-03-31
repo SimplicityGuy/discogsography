@@ -274,14 +274,17 @@ async def check_file_completion(
     return False
 
 
-async def enrich_artist(tx: Any, record: dict[str, Any]) -> bool:
+async def enrich_artist(
+    tx: Any, record: dict[str, Any], stats: dict[str, int] | None = None
+) -> bool:
     """Enrich an existing Artist node with MusicBrainz metadata.
 
     If discogs_artist_id is None, skip — entity has no Discogs match.
     """
+    s = stats if stats is not None else enrichment_stats
     discogs_id = record.get("discogs_artist_id")
     if discogs_id is None:
-        enrichment_stats["entities_skipped_no_discogs_match"] += 1
+        s["entities_skipped_no_discogs_match"] += 1
         return True  # Deliberately skipped, not an error
 
     result = await tx.run(
@@ -313,26 +316,29 @@ async def enrich_artist(tx: Any, record: dict[str, Any]) -> bool:
     )
     matched = await result.single()
     if matched:
-        enrichment_stats["entities_enriched"] += 1
+        s["entities_enriched"] += 1
     else:
-        enrichment_stats["entities_skipped_no_discogs_match"] += 1
+        s["entities_skipped_no_discogs_match"] += 1
 
     # Create relationship edges if relations are present
     relations = record.get("relations", [])
     if relations and matched:
-        await create_relationship_edges(tx, discogs_id, relations)
+        await create_relationship_edges(tx, discogs_id, relations, stats=s)
 
     return True
 
 
-async def enrich_label(tx: Any, record: dict[str, Any]) -> bool:
+async def enrich_label(
+    tx: Any, record: dict[str, Any], stats: dict[str, int] | None = None
+) -> bool:
     """Enrich an existing Label node with MusicBrainz metadata.
 
     If discogs_label_id is None, skip — entity has no Discogs match.
     """
+    s = stats if stats is not None else enrichment_stats
     discogs_id = record.get("discogs_label_id")
     if discogs_id is None:
-        enrichment_stats["entities_skipped_no_discogs_match"] += 1
+        s["entities_skipped_no_discogs_match"] += 1
         return True
 
     result = await tx.run(
@@ -358,21 +364,24 @@ async def enrich_label(tx: Any, record: dict[str, Any]) -> bool:
     )
     matched = await result.single()
     if matched:
-        enrichment_stats["entities_enriched"] += 1
+        s["entities_enriched"] += 1
     else:
-        enrichment_stats["entities_skipped_no_discogs_match"] += 1
+        s["entities_skipped_no_discogs_match"] += 1
 
     return True
 
 
-async def enrich_release(tx: Any, record: dict[str, Any]) -> bool:
+async def enrich_release(
+    tx: Any, record: dict[str, Any], stats: dict[str, int] | None = None
+) -> bool:
     """Enrich an existing Release node with MusicBrainz metadata.
 
     If discogs_release_id is None, skip — entity has no Discogs match.
     """
+    s = stats if stats is not None else enrichment_stats
     discogs_id = record.get("discogs_release_id")
     if discogs_id is None:
-        enrichment_stats["entities_skipped_no_discogs_match"] += 1
+        s["entities_skipped_no_discogs_match"] += 1
         return True
 
     result = await tx.run(
@@ -390,9 +399,9 @@ async def enrich_release(tx: Any, record: dict[str, Any]) -> bool:
     )
     matched = await result.single()
     if matched:
-        enrichment_stats["entities_enriched"] += 1
+        s["entities_enriched"] += 1
     else:
-        enrichment_stats["entities_skipped_no_discogs_match"] += 1
+        s["entities_skipped_no_discogs_match"] += 1
 
     return True
 
@@ -401,6 +410,7 @@ async def create_relationship_edges(
     tx: Any,
     source_discogs_id: int,
     relations: list[dict[str, Any]],
+    stats: dict[str, int] | None = None,
 ) -> None:
     """Create MusicBrainz relationship edges between Artist nodes.
 
@@ -414,6 +424,7 @@ async def create_relationship_edges(
     into the query string. This is safe because values come from our map, not
     user input.
     """
+    s = stats if stats is not None else enrichment_stats
     for relation in relations:
         mb_type = relation.get("type", "")
         edge_type = MB_RELATIONSHIP_MAP.get(mb_type)
@@ -422,7 +433,7 @@ async def create_relationship_edges(
 
         target_discogs_id = relation.get("target_discogs_artist_id")
         if target_discogs_id is None:
-            enrichment_stats["relationships_skipped_missing_side"] += 1
+            s["relationships_skipped_missing_side"] += 1
             continue
 
         # Safe: edge_type comes from MB_RELATIONSHIP_MAP, not user input
@@ -435,17 +446,20 @@ async def create_relationship_edges(
             target_id=target_discogs_id,
         )
         await result.consume()
-        enrichment_stats["relationships_created"] += 1
+        s["relationships_created"] += 1
 
 
-async def enrich_release_group(tx: Any, record: dict[str, Any]) -> bool:
+async def enrich_release_group(
+    tx: Any, record: dict[str, Any], stats: dict[str, int] | None = None
+) -> bool:
     """Enrich an existing Master node with MusicBrainz release-group metadata.
 
     If discogs_master_id is None, skip — entity has no Discogs match.
     """
+    s = stats if stats is not None else enrichment_stats
     discogs_id = record.get("discogs_master_id")
     if discogs_id is None:
-        enrichment_stats["entities_skipped_no_discogs_match"] += 1
+        s["entities_skipped_no_discogs_match"] += 1
         return True
 
     result = await tx.run(
@@ -467,9 +481,9 @@ async def enrich_release_group(tx: Any, record: dict[str, Any]) -> bool:
     )
     matched = await result.single()
     if matched:
-        enrichment_stats["entities_enriched"] += 1
+        s["entities_enriched"] += 1
     else:
-        enrichment_stats["entities_skipped_no_discogs_match"] += 1
+        s["entities_skipped_no_discogs_match"] += 1
 
     return True
 
@@ -512,31 +526,26 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
 
             # Use local counters inside the transaction to avoid race conditions
             # with concurrent messages mutating the global enrichment_stats dict.
-            # Temporarily swap global enrichment_stats to local_stats so enrich
-            # functions (which reference the global by name) write to local_stats.
-            global enrichment_stats
+            # We pass local_stats to the enrich function so it writes to a
+            # per-message dict instead of the shared global. This avoids the
+            # race condition of swapping/restoring the global reference under
+            # concurrent message delivery (prefetch=200).
             local_stats: dict[str, int] = {
                 "entities_enriched": 0,
                 "entities_skipped_no_discogs_match": 0,
                 "relationships_created": 0,
                 "relationships_skipped_missing_side": 0,
             }
-            saved_stats = enrichment_stats
-            enrichment_stats = local_stats
 
-            try:
-                async with graph.session(database="neo4j") as session:
+            async with graph.session(database="neo4j") as session:
 
-                    async def tx_fn(tx: Any) -> bool:
-                        # Reset local counters on each retry attempt
-                        for key in local_stats:
-                            local_stats[key] = 0
-                        return bool(await enrich_fn(tx, body))
+                async def tx_fn(tx: Any) -> bool:
+                    # Reset local counters on each retry attempt
+                    for key in local_stats:
+                        local_stats[key] = 0
+                    return bool(await enrich_fn(tx, body, local_stats))
 
-                    await session.execute_write(tx_fn)
-            finally:
-                # Always restore the global reference
-                enrichment_stats = saved_stats
+                await session.execute_write(tx_fn)
 
             # Merge local counters into global stats under lock to prevent
             # concurrent handlers from corrupting the shared dict

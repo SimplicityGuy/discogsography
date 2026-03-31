@@ -37,8 +37,8 @@ def check_service_errors(service: str, time_window: int = 60) -> list[str]:
 
         return errors
 
-    except subprocess.CalledProcessError as e:
-        return [f"Error getting logs: {e.stderr}"]
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        return [f"Error getting logs: {e}"]
 
 
 def main() -> None:

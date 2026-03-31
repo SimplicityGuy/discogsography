@@ -309,16 +309,34 @@ pub fn build_mbid_discogs_map_from_file(path: &Path, entity_type: &str) -> Resul
 
 /// Enrich relationship entries with Discogs IDs from a lookup map.
 ///
-/// For each relation, looks up `target_mbid` in `discogs_map`.
-/// If found, adds `"target_discogs_artist_id": <id>` to the relation object.
-/// If not found, adds `"target_discogs_artist_id": null`.
+/// For each relation, looks up `target_mbid` in `discogs_map` only when
+/// the relation's `target_type` matches the entity type being processed.
+/// Non-matching relations are passed through unchanged since the map only
+/// contains IDs for one entity type.
+///
+/// The inserted field name is always `"target_discogs_artist_id"` for
+/// backward compatibility with downstream consumers (brainzgraphinator).
+///
+/// `entity_type` uses plural form from `DataType::as_str()` (e.g., "artists").
+/// Relation `target_type` uses singular MusicBrainz form (e.g., "artist").
 ///
 /// Expects relations already normalized by [`extract_entity_rels`] with
 /// `target_mbid` and `target_type` fields.
-pub fn enrich_relations(relations: Vec<Value>, discogs_map: &HashMap<String, i64>) -> Vec<Value> {
+pub fn enrich_relations(
+    relations: Vec<Value>,
+    discogs_map: &HashMap<String, i64>,
+    entity_type: &str,
+) -> Vec<Value> {
+    // entity_type is plural ("artists"), target_type in relations is singular ("artist")
+    let singular = entity_type.strip_suffix('s').unwrap_or(entity_type);
     relations
         .into_iter()
         .map(|mut rel| {
+            // Only enrich relations whose target matches the entity type
+            let target_type = rel["target_type"].as_str().unwrap_or("");
+            if target_type != singular {
+                return rel;
+            }
             let target_mbid = rel["target_mbid"].as_str().map(|s| s.to_string());
             let target_discogs_id: Value =
                 target_mbid.as_deref().and_then(|mbid| discogs_map.get(mbid)).copied().map(Value::from).unwrap_or(Value::Null);
@@ -380,7 +398,7 @@ pub fn parse_mb_jsonl_file(
                 if let Some(map) = discogs_map
                     && let Some(relations) = msg.data.get("relations").and_then(|r| r.as_array()).cloned()
                 {
-                    let enriched = enrich_relations(relations, map);
+                    let enriched = enrich_relations(relations, map, data_type.as_str());
                     if let Some(obj) = msg.data.as_object_mut() {
                         obj.insert("relations".to_string(), Value::Array(enriched));
                     }

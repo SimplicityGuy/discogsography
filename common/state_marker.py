@@ -389,7 +389,7 @@ class StateMarker:
                 return {k: convert_value(v) for k, v in value.__dict__.items()}
             return value
 
-        return {k: convert_value(v) for k, v in self.__dict__.items()}
+        return {k: convert_value(v) for k, v in self.__dict__.items() if not k.startswith("_")}
 
     @classmethod
     def _from_dict(cls, data: dict[str, Any]) -> "StateMarker":

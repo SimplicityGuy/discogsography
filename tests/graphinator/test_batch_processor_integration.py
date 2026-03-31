@@ -240,10 +240,10 @@ class TestAsyncDriverIntegration:
 
         processor = Neo4jBatchProcessor(mock_driver, BatchConfig(batch_size=1))
 
-        # Test artists
+        # Test artists — single session for hash check + write (atomic)
         await processor._process_artists_batch([PendingMessage("artists", {"id": "1", "name": "Test", "sha256": "h1"}, AsyncMock(), AsyncMock())])
         artists_calls = mock_driver.session.call_count
-        assert artists_calls == 2, f"Artists should call session twice (got {artists_calls})"
+        assert artists_calls == 1, f"Artists should call session once (got {artists_calls})"
 
         # Reset mocks
         mock_driver.session.reset_mock()
@@ -251,7 +251,7 @@ class TestAsyncDriverIntegration:
         # Test labels
         await processor._process_labels_batch([PendingMessage("labels", {"id": "1", "name": "Test", "sha256": "h1"}, AsyncMock(), AsyncMock())])
         labels_calls = mock_driver.session.call_count
-        assert labels_calls == 2, f"Labels should call session twice (got {labels_calls})"
+        assert labels_calls == 1, f"Labels should call session once (got {labels_calls})"
 
         # Reset mocks
         mock_driver.session.reset_mock()
@@ -261,7 +261,7 @@ class TestAsyncDriverIntegration:
             [PendingMessage("masters", {"id": "1", "title": "Test", "year": 2023, "sha256": "h1"}, AsyncMock(), AsyncMock())]
         )
         masters_calls = mock_driver.session.call_count
-        assert masters_calls == 2, f"Masters should call session twice (got {masters_calls})"
+        assert masters_calls == 1, f"Masters should call session once (got {masters_calls})"
 
         # Reset mocks
         mock_driver.session.reset_mock()
@@ -269,11 +269,11 @@ class TestAsyncDriverIntegration:
         # Test releases
         await processor._process_releases_batch([PendingMessage("releases", {"id": "1", "title": "Test", "sha256": "h1"}, AsyncMock(), AsyncMock())])
         releases_calls = mock_driver.session.call_count
-        assert releases_calls == 2, f"Releases should call session twice (got {releases_calls})"
+        assert releases_calls == 1, f"Releases should call session once (got {releases_calls})"
 
         # All data types successfully used async session patterns
         total_calls = artists_calls + labels_calls + masters_calls + releases_calls
-        assert total_calls == 8, f"All data types should use async session (got {total_calls} total calls)"
+        assert total_calls == 4, f"All data types should use async session (got {total_calls} total calls)"
 
 
 class TestAsyncErrorConditions:

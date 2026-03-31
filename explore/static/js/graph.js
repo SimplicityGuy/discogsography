@@ -351,7 +351,7 @@ class GraphVisualization {
             if (catNode) {
                 const newOffset = offset + children.length;
                 this._categoryMeta.set(d.categoryId, { ...meta, offset: newOffset });
-                catNode.name = `${catNode.displayName || catNode.name.replace(/ \(\d+\)$/, '')} (${newOffset} / ${total})`;
+                catNode.name = `${catNode.displayName || catNode.name.replace(/ \([\d\s/]+\)$/, '')} (${newOffset} / ${total})`;
             }
 
             if (has_more) {
@@ -366,7 +366,8 @@ class GraphVisualization {
     }
 
     _checkExpandsDone() {
-        if (this._pendingExpands === 0) {
+        if (this._pendingExpands <= 0) {
+            this._pendingExpands = 0;
             this._render();
             if (this.onExpandsComplete) {
                 this.onExpandsComplete();
