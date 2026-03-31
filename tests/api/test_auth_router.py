@@ -286,6 +286,30 @@ class TestLoginWith2FA:
         call_args = mock_redis.setex.call_args
         assert "2fa_challenge:" in call_args[0][0]
 
+    def test_login_with_totp_enabled_but_no_redis_returns_503(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+    ) -> None:
+        """Login with totp_enabled=True but Redis unavailable should return 503."""
+        import api.routers.auth as _auth_router
+
+        user_row = make_sample_user_row()
+        user_row["totp_enabled"] = True
+        mock_cur.fetchone = AsyncMock(return_value=user_row)
+
+        original_redis = _auth_router._redis
+        _auth_router._redis = None
+        try:
+            response = test_client.post(
+                "/api/auth/login",
+                json={"email": TEST_USER_EMAIL, "password": "testpassword"},
+            )
+            assert response.status_code == 503
+            assert "Redis required for 2FA" in response.json()["detail"]
+        finally:
+            _auth_router._redis = original_redis
+
     def test_login_without_totp_returns_access_token(
         self,
         test_client: TestClient,

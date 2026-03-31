@@ -624,6 +624,16 @@ class TestMalformedJsonBody:
         assert resp.status_code == 400
         assert "Malformed JSON" in resp.json()["detail"]
 
+    def test_trigger_musicbrainz_non_dict_body_returns_400(self, proxy_client: TestClient) -> None:
+        """POST /admin/api/extractions/trigger-musicbrainz with JSON array body returns 400."""
+        resp = proxy_client.post(
+            "/admin/api/extractions/trigger-musicbrainz",
+            content=b"[1, 2, 3]",
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 400
+        assert "JSON object" in resp.json()["detail"]
+
 
 class TestAuthHeaderForwarding:
     @patch("dashboard.admin_proxy.httpx.AsyncClient")

@@ -161,9 +161,12 @@ class NLQEngine:
 
             messages.append({"role": "assistant", "content": response.content})
             if not tool_results:
-                # Non-tool stop (e.g., max_tokens) — treat as final response
+                # Non-tool stop (e.g., max_tokens) — treat as final response.
+                # Return directly without off-topic guardrail since the response
+                # was truncated, not intentionally off-topic.
                 summary = _extract_text(response)
-                return self._build_result(summary, entities, tools_used)
+                deduped = _deduplicate_entities(entities)
+                return NLQResult(summary=summary, entities=deduped, tools_used=tools_used)
             messages.append({"role": "user", "content": tool_results})
 
         # Max iterations reached — return whatever we have
