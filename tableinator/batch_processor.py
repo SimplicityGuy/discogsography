@@ -32,6 +32,7 @@ class BatchConfig:
     backoff_initial: float = 1.0  # Initial backoff delay on PostgreSQL errors (seconds)
     backoff_max: float = 30.0  # Maximum backoff delay (seconds)
     backoff_multiplier: float = 2.0  # Exponential backoff multiplier
+    max_flush_retries: int = 5  # Max retries per data type during flush_queue drain
 
 
 @dataclass
@@ -293,6 +294,9 @@ class PostgreSQLBatchProcessor:
                     batch_size=len(messages),
                     error=str(e),
                 )
+                # Re-enqueue messages for local retry before AMQP nack
+                for msg in reversed(messages):
+                    queue.appendleft(msg)
                 # Track failures for non-transient errors too, to enable backoff
                 self._consecutive_failures[data_type] = (
                     self._consecutive_failures.get(data_type, 0) + 1
@@ -307,6 +311,8 @@ class PostgreSQLBatchProcessor:
                     self.config.backoff_max,
                 )
                 self._backoff_until[data_type] = time.time() + delay
+                # Messages are back on deque for retry — do NOT nack them
+                return
 
         batch_duration = time.time() - batch_start
 
@@ -440,12 +446,38 @@ class PostgreSQLBatchProcessor:
         Unlike _flush_queue which processes up to one batch, this loops
         until the queue is completely empty. Yields to the event loop
         during backoff periods instead of busy-spinning.
+
+        Enforces a retry limit to prevent infinite loops when persistent
+        errors cause messages to be re-enqueued indefinitely.
         """
+        retries = 0
         while self.queues.get(data_type):
+            prev_len = len(self.queues[data_type])
             wait = self._backoff_until[data_type] - time.time()
             if wait > 0:
                 await asyncio.sleep(wait)
             await self._flush_queue(data_type)
+            curr_len = len(self.queues.get(data_type, []))
+            if curr_len >= prev_len:
+                retries += 1
+                if retries >= self.config.max_flush_retries:
+                    remaining = len(self.queues.get(data_type, []))
+                    logger.error(
+                        "❌ Flush retry limit reached — nacking remaining messages",
+                        data_type=data_type,
+                        remaining=remaining,
+                        max_retries=self.config.max_flush_retries,
+                    )
+                    queue = self.queues[data_type]
+                    while queue:
+                        msg = queue.popleft()
+                        try:
+                            await msg.nack_callback()
+                        except Exception as e:
+                            logger.warning("⚠️ Failed to nack message", error=str(e))
+                    break
+            else:
+                retries = 0
 
     async def periodic_flush(self) -> None:
         """Background task that periodically flushes queues.

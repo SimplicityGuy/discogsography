@@ -193,3 +193,88 @@ class TestSnapshotAuth:
             assert "revoked" in response.json()["detail"].lower()
         finally:
             snap_module._redis = original_redis
+
+
+class TestSnapshotTokenChecks:
+    """Tests for admin token rejection (lines 42-43) and password-changed revocation (lines 56-65)."""
+
+    def test_admin_token_rejected(self, test_client: TestClient) -> None:
+        """snapshot.py:42-43 — Admin tokens are rejected with 403."""
+        import base64
+        import hashlib
+        import hmac
+        import json
+
+        from tests.api.conftest import TEST_JWT_SECRET
+
+        def b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+        body_payload = b64url(
+            json.dumps(
+                {"sub": "admin-1", "email": "admin@test.com", "exp": 9_999_999_999, "type": "admin", "jti": "admin:snap-test"},
+                separators=(",", ":"),
+            ).encode()
+        )
+        signing_input = f"{header}.{body_payload}".encode("ascii")
+        sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
+        admin_token = f"{header}.{body_payload}.{sig}"
+
+        body = {"nodes": [{"id": "1", "type": "artist"}], "center": {"id": "1", "type": "artist"}}
+        response = test_client.post(
+            "/api/snapshot",
+            json=body,
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert response.status_code == 403
+        assert "admin" in response.json()["detail"].lower()
+
+    def test_password_changed_revocation(self, test_client: TestClient) -> None:
+        """snapshot.py:56-65 — Token issued before password change is rejected with 401."""
+        import base64
+        import hashlib
+        import hmac
+        import json
+        from unittest.mock import AsyncMock
+
+        from tests.api.conftest import TEST_JWT_SECRET, TEST_USER_EMAIL, TEST_USER_ID
+
+        def b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        # Token with iat=1000 (old)
+        header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+        body_payload = b64url(
+            json.dumps(
+                {"sub": TEST_USER_ID, "email": TEST_USER_EMAIL, "exp": 9_999_999_999, "iat": 1000, "jti": "pw-change-test"},
+                separators=(",", ":"),
+            ).encode()
+        )
+        signing_input = f"{header}.{body_payload}".encode("ascii")
+        sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
+        token = f"{header}.{body_payload}.{sig}"
+
+        import api.routers.snapshot as snap_module
+
+        original_redis = snap_module._redis
+        mock_redis = AsyncMock()
+
+        async def fake_get(key: str) -> str | None:
+            if key == f"password_changed:{TEST_USER_ID}":
+                return "2000"  # password changed at timestamp 2000, after iat=1000
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=fake_get)
+        snap_module._redis = mock_redis
+        try:
+            body = {"nodes": [{"id": "1", "type": "artist"}], "center": {"id": "1", "type": "artist"}}
+            response = test_client.post(
+                "/api/snapshot",
+                json=body,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert response.status_code == 401
+            assert "password" in response.json()["detail"].lower()
+        finally:
+            snap_module._redis = original_redis

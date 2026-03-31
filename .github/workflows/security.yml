@@ -48,7 +48,7 @@ jobs:
         run: just security
 
       - name: 🌐 Run osv-scanner (multi-ecosystem vulnerability scan)
-        uses: google/osv-scanner-action/osv-scanner-action@v2.3.3
+        uses: google/osv-scanner-action/osv-scanner-action@v2.3.5
 
   semgrep:
     name: Semgrep CE Scan
@@ -147,7 +147,7 @@ jobs:
           fetch-depth: 0 # Full history required for comprehensive secret scanning
 
       - name: 🔑 Run TruffleHog (secret detection)
-        uses: trufflesecurity/trufflehog@v3.94.0
+        uses: trufflesecurity/trufflehog@v3.94.1
         with:
           path: ./
           extra_args: --only-verified

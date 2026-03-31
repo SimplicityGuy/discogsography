@@ -24,8 +24,8 @@ import structlog
 
 from api.auth import decrypt_oauth_token
 from api.cache import RecommendCache
-from api.services.discogs import _build_oauth_header, _hmac_sha1_signature as _hmac_sha1
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver
+from common.oauth import _build_oauth_header, _hmac_sha1_signature as _hmac_sha1
 from common.query_debug import execute_sql, log_cypher_query
 
 

@@ -194,7 +194,7 @@ jobs:
 
       - name: 📊 Upload E2E coverage to Codecov
         if: always()  # Upload coverage even if tests fail
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -210,7 +210,7 @@ jobs:
 
       - name: "📊 Upload E2E JS coverage to Codecov"
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography

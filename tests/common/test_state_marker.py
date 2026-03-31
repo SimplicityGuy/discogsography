@@ -398,9 +398,14 @@ class TestExtractDataType:
         assert _extract_data_type("discogs_20260101_masters.xml.gz") == "masters"
         assert _extract_data_type("discogs_20260101_releases.xml.gz") == "releases"
 
+    def test_extract_data_type_musicbrainz(self):
+        """Test extracting data type from MusicBrainz filenames."""
+        assert _extract_data_type("artist.jsonl.gz") == "artist"
+        assert _extract_data_type("release-group.jsonl.gz") == "release-group"
+        assert _extract_data_type("label.jsonl.gz") == "label"
+
     def test_extract_data_type_invalid(self):
         """Test extracting data type from invalid filename."""
-        assert _extract_data_type("invalid.xml.gz") is None
         assert _extract_data_type("") is None
 
 
@@ -415,9 +420,9 @@ class TestExtractDataTypeMaxsplit:
         """maxsplit=1 on dot split preserves dots after the first."""
         assert _extract_data_type("discogs_20260101_artists.xml.gz") == "artists"
 
-    def test_too_few_underscores_returns_none(self):
-        """Filename with fewer than 2 underscores returns None."""
-        assert _extract_data_type("discogs_artists.xml.gz") is None
+    def test_too_few_underscores_uses_musicbrainz_format(self):
+        """Filename with fewer than 3 underscore parts uses MusicBrainz format."""
+        assert _extract_data_type("discogs_artists.xml.gz") == "discogs_artists"
 
 
 class TestStateMarkerAtomicSave:

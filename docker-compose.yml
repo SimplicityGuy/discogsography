@@ -35,7 +35,7 @@ services:
       # records such as "Various Artists" that can exceed 50 MB.
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: >-
         -rabbit log_levels [{connection,error},{default,warning}]
-        max_message_size 134217728
+        -rabbit max_message_size 134217728
         -rabbitmq_management disable_management_stats false
     ports:
       - "5672:5672"      # AMQP port
@@ -683,6 +683,9 @@ services:
         condition: service_healthy
     networks:
       - discogsography
+    ports:
+      - "8006:8006"
+      - "8007:8007"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
       interval: 30s

@@ -432,18 +432,25 @@ class TestPerformanceRegression:
     async def test_no_performance_regression_tableinator(self):
         """Ensure PostgreSQL batch processing doesn't regress."""
 
-        def mock_get_connection():
-            conn = MagicMock()
-            cursor = MagicMock()
-            conn.cursor.return_value.__enter__.return_value = cursor
-            conn.cursor.return_value.__exit__.return_value = None
-            conn.__enter__.return_value = conn
-            conn.__exit__.return_value = None
-            cursor.fetchall.return_value = []
-            return conn
+        cursor = AsyncMock()
+        cursor.fetchall.return_value = []
+
+        cursor_ctx = MagicMock()
+        cursor_ctx.__aenter__ = AsyncMock(return_value=cursor)
+        cursor_ctx.__aexit__ = AsyncMock(return_value=None)
+
+        conn = MagicMock()
+        conn.cursor.return_value = cursor_ctx
+
+        conn_ctx = MagicMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=None)
+
+        pool = MagicMock()
+        pool.connection.return_value = conn_ctx
 
         config = PostgresBatchConfig(batch_size=500, flush_interval=2.0)
-        processor = PostgreSQLBatchProcessor(mock_get_connection, config)
+        processor = PostgreSQLBatchProcessor(pool, config)
 
         start = time.time()
         for i in range(1000):

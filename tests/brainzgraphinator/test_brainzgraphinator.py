@@ -1103,6 +1103,35 @@ class TestProgressReporterFunction:
         info_calls = " ".join(str(c) for c in mock_logger.info.call_args_list)
         assert "progress" in info_calls.lower() or "enrichment" in info_calls.lower()
 
+    @pytest.mark.asyncio
+    async def test_progress_reporter_exits_idle_when_messages_arrive(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When idle_mode is True but total > 0, idle_mode is set to False."""
+        monkeypatch.setattr(bgmod, "shutdown_requested", False)
+        monkeypatch.setattr(bgmod, "message_counts", {"artists": 5, "labels": 0, "release-groups": 0, "releases": 0})
+        monkeypatch.setattr(bgmod, "completed_files", set())
+        monkeypatch.setattr(bgmod, "idle_mode", True)
+        monkeypatch.setattr(bgmod, "last_message_time", {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0})
+        monkeypatch.setattr(bgmod, "consumer_tags", {"artists": "tag-1"})
+        monkeypatch.setattr(bgmod, "STARTUP_IDLE_TIMEOUT", 99999)
+
+        call_count = 0
+
+        async def mock_sleep(_: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                monkeypatch.setattr(bgmod, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        with patch("brainzgraphinator.brainzgraphinator.logger") as mock_logger:
+            await bgmod.progress_reporter()
+
+        # idle_mode should have been set to False because total > 0
+        assert bgmod.idle_mode is False
+        # Should have logged the resumption message
+        info_calls = " ".join(str(c) for c in mock_logger.info.call_args_list)
+        assert "resuming" in info_calls.lower()
+
 
 # ── Message handler edge case tests ──────────────────────────────────────
 

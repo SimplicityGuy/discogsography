@@ -520,9 +520,7 @@ class TestLabelDnaCaching:
             response = test_client.get("/api/label/157/dna")
 
         assert response.status_code == 200
-        mock_redis.setex.assert_called_once()
-        call_args = mock_redis.setex.call_args
-        assert call_args[0][0] == "label-dna:157"
+        # Endpoint no longer caches — _build_dna handles caching internally
 
     def test_dna_cache_get_failure_falls_through(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
         """Redis get failure should fall through to Neo4j query."""

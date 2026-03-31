@@ -381,7 +381,7 @@ class TestFlushQueue:
 
     @pytest.mark.asyncio
     async def test_flush_handles_general_error(self) -> None:
-        """Test handling general errors during flush."""
+        """Test handling general errors during flush — messages re-enqueued for local retry."""
         mock_driver, mock_session = create_async_session_mock()
         mock_session.execute_write.side_effect = RuntimeError("Database error")
 
@@ -394,8 +394,10 @@ class TestFlushQueue:
 
         await processor._flush_queue("artists")
 
-        # Should nack the message
-        nack.assert_called_once()
+        # Messages re-enqueued to internal deque for local retry — not nack'd
+        nack.assert_not_called()
+        ack.assert_not_called()
+        assert len(processor.queues["artists"]) == 1
 
     @pytest.mark.asyncio
     async def test_flush_handles_ack_failure(self) -> None:

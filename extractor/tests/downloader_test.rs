@@ -603,7 +603,7 @@ async fn test_download_discogs_data_with_mockito() {
     let _dl_checksum = server
         .mock("GET", "/?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt")
         .with_status(200)
-        .with_body(b"checksum data".to_vec())
+        .with_body(b"checksum data")
         .create_async()
         .await;
 
