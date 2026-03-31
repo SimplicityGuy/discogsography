@@ -413,6 +413,43 @@ class TestProcessMessageWithRetry:
         message.ack.assert_called_once()
 
 
+class TestProcessMessageAckFailure:
+    """Tests for process_message_with_retry ack failure path."""
+
+    @pytest.mark.asyncio
+    async def test_process_message_ack_failure_after_success(self) -> None:
+        """Ack failure after successful handler is logged but does not re-process."""
+        message = AsyncMock()
+        message.ack = AsyncMock(side_effect=Exception("ack failed"))
+        handler = AsyncMock()  # succeeds
+
+        # Should not raise -- ack failure is logged but doesn't re-process
+        await process_message_with_retry(message, handler, max_retries=3)
+        handler.assert_called_once()  # handler only called once
+
+
+class TestSyncChannelReuse:
+    """Tests for sync channel() returning existing valid channel."""
+
+    @patch("common.rabbitmq_resilient.BlockingConnection")
+    def test_channel_returns_existing_valid_channel(self, _mock_blocking_connection: Mock) -> None:
+        """Test sync channel() returns existing open channel without creating a new one."""
+        rmq = ResilientRabbitMQConnection(connection_url="amqp://guest:guest@localhost:5672/")
+
+        # Mock an existing open channel
+        mock_channel = Mock()
+        mock_channel.is_open = True
+        rmq._channel = mock_channel
+
+        # Mock the connection
+        rmq._connection = Mock()
+        rmq._connection.is_open = True
+        rmq._connection.is_closed = False
+
+        result = rmq.channel()
+        assert result is mock_channel
+
+
 class TestResilientRabbitMQConnectionExceptionBranch:
     """Tests for ResilientRabbitMQConnection exception branches."""
 

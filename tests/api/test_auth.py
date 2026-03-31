@@ -235,6 +235,30 @@ class TestTotpUtilities:
         assert h1 == h2
         assert len(h1) == 64
 
+    def test_decrypt_totp_secret_invalid_data_raises_valueerror(self) -> None:
+        """decrypt_totp_secret with garbage data raises ValueError."""
+        from cryptography.fernet import Fernet
+        import pytest
+
+        from api.auth import decrypt_totp_secret
+
+        key = Fernet.generate_key().decode("ascii")
+        with pytest.raises(ValueError, match="Failed to decrypt TOTP secret"):
+            decrypt_totp_secret("not-valid-fernet-data", key)
+
+    def test_decrypt_totp_secret_wrong_key_raises_valueerror(self) -> None:
+        """decrypt_totp_secret with wrong key raises ValueError."""
+        from cryptography.fernet import Fernet
+        import pytest
+
+        from api.auth import decrypt_totp_secret, encrypt_totp_secret
+
+        key1 = Fernet.generate_key().decode("ascii")
+        key2 = Fernet.generate_key().decode("ascii")
+        encrypted = encrypt_totp_secret("JBSWY3DPEHPK3PXP", key1)
+        with pytest.raises(ValueError, match="Failed to decrypt TOTP secret"):
+            decrypt_totp_secret(encrypted, key2)
+
     def test_create_challenge_token_format(self) -> None:
         from api.auth import create_challenge_token, decode_token
 

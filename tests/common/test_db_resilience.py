@@ -150,6 +150,39 @@ class TestCircuitBreaker:
         assert breaker.failure_count == 2
         assert breaker.state == CircuitState.OPEN
 
+    def test_sync_call_half_open_trial_succeeds_resets_to_closed(self) -> None:
+        """Test sync call() in HALF_OPEN state: trial succeeds and resets to CLOSED."""
+        config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=2, recovery_timeout=0)
+        breaker = CircuitBreaker(config)
+
+        # Force into HALF_OPEN state
+        breaker.state = CircuitState.HALF_OPEN
+        breaker.failure_count = 2
+
+        func_success = Mock(return_value="ok")
+        result = breaker.call(func_success)
+
+        assert result == "ok"
+        assert breaker.state == CircuitState.CLOSED
+        assert breaker.failure_count == 0
+
+    def test_sync_call_half_open_trial_fails_records_failure(self) -> None:
+        """Test sync call() in HALF_OPEN state: trial fails and records failure."""
+        config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=2, recovery_timeout=0)
+        breaker = CircuitBreaker(config)
+
+        # Force into HALF_OPEN state
+        breaker.state = CircuitState.HALF_OPEN
+        breaker.failure_count = 1
+
+        func_fail = Mock(side_effect=RuntimeError("still broken"))
+
+        with pytest.raises(RuntimeError, match="still broken"):
+            breaker.call(func_fail)
+
+        assert breaker.failure_count == 2
+        assert breaker.state == CircuitState.OPEN
+
     def test_custom_exception_type(self) -> None:
         """Test circuit breaker with custom exception type."""
 
