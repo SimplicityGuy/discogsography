@@ -51,7 +51,7 @@ def monitor_queues(interval: int = 5) -> None:
 
             total_messages = 0
             for queue in sorted(queues, key=lambda x: x["name"]):
-                if "discogsography" in queue["name"]:
+                if "discogsography" in queue["name"] or "musicbrainz" in queue["name"]:
                     name = queue["name"]
                     ready = queue.get("messages_ready", 0)
                     unacked = queue.get("messages_unacknowledged", 0)

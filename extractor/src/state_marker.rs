@@ -348,7 +348,10 @@ impl StateMarker {
             status.status = PhaseStatus::Completed;
             status.completed_at = Some(Utc::now());
             status.records_extracted = records;
-            status.messages_published = records; // Ensure messages match records on completion
+            // Only set messages_published if it was not tracked independently
+            if status.messages_published == 0 {
+                status.messages_published = records;
+            }
         }
 
         self.processing_phase.files_processed += 1;
@@ -410,9 +413,20 @@ pub enum ProcessingDecision {
     Skip,
 }
 
-/// Extract data type from filename (e.g., "discogs_20260101_artists.xml.gz" -> "artists")
+/// Extract data type from filename.
+///
+/// Handles both Discogs filenames (e.g., "discogs_20260101_artists.xml.gz" -> "artists")
+/// and MusicBrainz filenames (e.g., "artist.jsonl.xz" -> "artist").
 fn extract_data_type(filename: &str) -> Option<String> {
-    filename.split('_').nth(2).and_then(|s| s.split('.').next()).map(|s| s.to_string())
+    // Try Discogs format first: third underscore-delimited segment
+    if let Some(data_type) = filename.split('_').nth(2).and_then(|s| s.split('.').next()) {
+        return Some(data_type.to_string());
+    }
+    // MusicBrainz format: no underscores, contains ".jsonl"
+    if !filename.contains('_') && filename.contains(".jsonl") {
+        return filename.split('.').next().filter(|s| !s.is_empty()).map(|s| s.to_string());
+    }
+    None
 }
 
 #[cfg(test)]

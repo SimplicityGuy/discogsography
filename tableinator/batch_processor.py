@@ -356,13 +356,6 @@ class PostgreSQLBatchProcessor:
                 else 0,
                 total_processed=self.processed_counts[data_type],
             )
-        else:
-            # Nack all messages for retry
-            for msg in messages:
-                try:
-                    await msg.nack_callback()
-                except Exception as e:
-                    logger.warning("⚠️ Failed to nack message", error=str(e))
 
     async def _process_batch(
         self, data_type: str, messages: list[PendingMessage]
@@ -415,6 +408,7 @@ class PostgreSQLBatchProcessor:
                     )
 
                 if not records_to_upsert:
+                    await conn.commit()
                     return
 
                 # Step 3: Bulk upsert using executemany

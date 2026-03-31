@@ -5,6 +5,7 @@
 class InsightsPanel {
     constructor() {
         this._loaded = false;
+        this._isLoading = false;
         this._pollInterval = null;
         this._lastComputedAt = null;
         this._selectedGenre = 'Rock';
@@ -16,6 +17,8 @@ class InsightsPanel {
     }
 
     async load() {
+        if (this._isLoading) return; // Prevent concurrent loads
+        this._isLoading = true;
         if (this._loading) this._loading.classList.add('active');
         if (this._placeholder) this._placeholder.classList.add('hidden');
 
@@ -52,6 +55,7 @@ class InsightsPanel {
         } catch {
             this._showEmpty();
         } finally {
+            this._isLoading = false;
             if (this._loading) this._loading.classList.remove('active');
         }
     }

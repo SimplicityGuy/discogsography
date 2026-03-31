@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum, StrEnum
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -148,6 +149,7 @@ class StateMarker:
             with tmp_path.open("w") as f:
                 json.dump(data, f, indent=2, default=str)
                 f.flush()
+                os.fsync(f.fileno())
             tmp_path.replace(path)
         except BaseException:
             # Clean up partial tmp file on any failure

@@ -397,6 +397,8 @@ class DashboardApp:
             if conn is not None:
                 with contextlib.suppress(Exception):
                     await conn.rollback()
+                with contextlib.suppress(Exception):
+                    await conn.close()
 
         # Check Neo4j
         try:

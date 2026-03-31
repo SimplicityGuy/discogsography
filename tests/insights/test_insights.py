@@ -66,8 +66,8 @@ class TestComputationStatusEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "statuses" in data
-        # All 5 insight types should show 'never_run' since fetchone returns None
-        assert len(data["statuses"]) == 5
+        # All 6 insight types should show 'never_run' since fetchone returns None
+        assert len(data["statuses"]) == 6
         for status in data["statuses"]:
             assert status["status"] == "never_run"
 

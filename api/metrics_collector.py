@@ -121,6 +121,8 @@ SERVICE_ENDPOINTS: dict[str, tuple[str, int]] = {
     "api": ("api", 8005),
     "explore": ("explore", 8007),
     "insights": ("insights", 8009),
+    "brainztableinator": ("brainztableinator", 8010),
+    "brainzgraphinator": ("brainzgraphinator", 8011),
 }
 
 
@@ -142,7 +144,7 @@ async def collect_queue_metrics(
         rows: list[dict[str, Any]] = []
         for q in queues:
             name: str = q.get("name", "")
-            if "discogsography" not in name:
+            if "discogsography" not in name and "musicbrainz" not in name:
                 continue
             stats = q.get("message_stats", {})
             rows.append(

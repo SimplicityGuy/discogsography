@@ -372,7 +372,7 @@ async def computation_status() -> JSONResponse:
     if not _pool:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
-    insight_types = ["artist_centrality", "genre_trends", "label_longevity", "anniversaries", "data_completeness"]
+    insight_types = ["artist_centrality", "genre_trends", "label_longevity", "anniversaries", "data_completeness", "release_rarity"]
     statuses: list[dict[str, Any]] = []
 
     async with _pool.connection() as conn, conn.cursor() as cursor:

@@ -94,9 +94,13 @@ class Dashboard {
         };
 
         this.ws.onmessage = (event) => {
-            const message = JSON.parse(event.data);
-            if (message.type === 'metrics_update') {
-                this.updateDashboard(message.data);
+            try {
+                const message = JSON.parse(event.data);
+                if (message.type === 'metrics_update') {
+                    this.updateDashboard(message.data);
+                }
+            } catch {
+                // Ignore malformed WebSocket messages (e.g., partial frames during reconnect)
             }
         };
 

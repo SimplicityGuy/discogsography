@@ -43,8 +43,13 @@ def _auth_header(
     consumer_secret: str,
     access_token: str,
     token_secret: str,
+    query_params: dict[str, str] | None = None,
 ) -> str:
-    """Build a complete OAuth 1.0a Authorization header for a request."""
+    """Build a complete OAuth 1.0a Authorization header for a request.
+
+    Per RFC 5849 section 3.4.1, query parameters present in the request URI
+    must be included in the signature base string.
+    """
     nonce = os.urandom(16).hex()
     timestamp = str(int(time.time()))
 
@@ -56,7 +61,9 @@ def _auth_header(
         "oauth_token": access_token,
         "oauth_version": "1.0",
     }
-    sig = _hmac_sha1(method, url, params, consumer_secret, token_secret)
+    # Merge query params into signature base per RFC 5849
+    sig_params = {**params, **(query_params or {})}
+    sig = _hmac_sha1(method, url, sig_params, consumer_secret, token_secret)
     params["oauth_signature"] = sig
     return _build_oauth_header(params)
 
@@ -92,7 +99,7 @@ async def sync_collection(
             params = {"page": str(page), "per_page": str(PAGE_SIZE), "sort": "added", "sort_order": "desc"}
             full_url = f"{url}?{urllib.parse.urlencode(params)}"
 
-            auth = _auth_header("GET", url, consumer_key, consumer_secret, access_token, token_secret)
+            auth = _auth_header("GET", url, consumer_key, consumer_secret, access_token, token_secret, query_params=params)
             headers = {
                 "Authorization": auth,
                 "User-Agent": user_agent,
@@ -269,7 +276,7 @@ async def sync_wantlist(
             params = {"page": str(page), "per_page": str(PAGE_SIZE)}
             full_url = f"{url}?{urllib.parse.urlencode(params)}"
 
-            auth = _auth_header("GET", url, consumer_key, consumer_secret, access_token, token_secret)
+            auth = _auth_header("GET", url, consumer_key, consumer_secret, access_token, token_secret, query_params=params)
             headers = {
                 "Authorization": auth,
                 "User-Agent": user_agent,

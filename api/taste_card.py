@@ -18,7 +18,7 @@ def render_taste_card(
     drift: list[TasteDriftYear],
 ) -> str:
     """Return a 600x400 SVG string summarising the user's taste fingerprint."""
-    decade_text = html.escape(str(peak_decade)) if peak_decade is not None else "N/A"
+    decade_text = f"{html.escape(str(peak_decade))}s" if peak_decade is not None else "N/A"
     bar_width = max(4, min(200, int(obscurity_score * 200)))
 
     genre_lines = ""
@@ -43,7 +43,7 @@ def render_taste_card(
 
   <!-- Peak Decade -->
   <text x="30" y="70" font-size="14" fill="#888">Peak Decade</text>
-  <text x="30" y="92" font-size="22" font-weight="bold" fill="#fff">{decade_text}s</text>
+  <text x="30" y="92" font-size="22" font-weight="bold" fill="#fff">{decade_text}</text>
 
   <!-- Obscurity -->
   <text x="320" y="70" font-size="14" fill="#888">Obscurity</text>

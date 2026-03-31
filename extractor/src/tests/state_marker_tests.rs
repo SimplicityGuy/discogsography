@@ -126,6 +126,10 @@ fn test_extract_data_type() {
     assert_eq!(extract_data_type("discogs_20260101_labels.xml.gz"), Some("labels".to_string()));
     assert_eq!(extract_data_type("discogs_20260101_masters.xml.gz"), Some("masters".to_string()));
     assert_eq!(extract_data_type("discogs_20260101_releases.xml.gz"), Some("releases".to_string()));
+    // MusicBrainz JSONL filenames
+    assert_eq!(extract_data_type("artist.jsonl.xz"), Some("artist".to_string()));
+    assert_eq!(extract_data_type("release-group.jsonl.xz"), Some("release-group".to_string()));
+    // Non-matching filenames
     assert_eq!(extract_data_type("invalid.xml.gz"), None);
 }
 
@@ -254,10 +258,11 @@ fn test_complete_file_processing_syncs_messages_with_records() {
     let final_records = 1250;
     marker.complete_file_processing("discogs_20260101_artists.xml.gz", final_records);
 
-    // Verify both records and messages are set to the final count
+    // Verify records are set to the final count, but messages_published
+    // preserves the batcher-tracked value (950) since it was already non-zero
     let status = marker.processing_phase.progress_by_file.get("discogs_20260101_artists.xml.gz").unwrap();
     assert_eq!(status.records_extracted, final_records);
-    assert_eq!(status.messages_published, final_records, "messages_published should match records_extracted on completion");
+    assert_eq!(status.messages_published, 950, "messages_published should preserve the batcher-tracked value when non-zero");
 }
 
 #[test]

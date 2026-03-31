@@ -299,10 +299,11 @@ class TestSearchQueryModuleHelpers:
             result = await _run_results(mock_pool, "Rock", ["artist"], [], None, None, 20, 0)
 
         assert result == []
-        # Verify the SQL was built with per_table_limit (LIMIT 20 for limit=20, offset=0)
+        # Verify the SQL was built with per_table_limit = (limit + offset) * 2
+        # For limit=20, offset=0: (20 + 0) * 2 = 40
         executed_sql = mock_exec.call_args[0][1]
         rendered = executed_sql.as_string(None)
-        assert "LIMIT 20" in rendered
+        assert "LIMIT 40" in rendered
 
     def test_build_union_raises_on_empty_types(self) -> None:
         from api.queries.search_queries import _build_union

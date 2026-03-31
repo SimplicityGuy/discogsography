@@ -1,6 +1,7 @@
 """Sync endpoints — migrated from curator service."""
 
 import asyncio
+import contextlib
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -127,28 +128,35 @@ async def trigger_sync(
                 content={"sync_id": str(existing["id"]), "status": "already_running"},
                 status_code=status.HTTP_202_ACCEPTED,
             )
-    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await execute_sql(
-            cur,
-            "INSERT INTO sync_history (user_id, sync_type, status) VALUES (%s::uuid, 'full', 'running') RETURNING id",
-            (user_id,),
+    try:
+        async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await execute_sql(
+                cur,
+                "INSERT INTO sync_history (user_id, sync_type, status) VALUES (%s::uuid, 'full', 'running') RETURNING id",
+                (user_id,),
+            )
+            sync_row = await cur.fetchone()
+        if not sync_row:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create sync record")
+        sync_id = str(sync_row["id"])
+        task = asyncio.create_task(
+            run_full_sync(
+                user_uuid=UUID(user_id),
+                sync_id=sync_id,
+                pg_pool=_pool,
+                neo4j_driver=_neo4j,
+                discogs_user_agent=_config.discogs_user_agent,
+                oauth_encryption_key=get_oauth_encryption_key(_config.encryption_master_key),
+                redis_client=_redis,
+            )
         )
-        sync_row = await cur.fetchone()
-    if not sync_row:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create sync record")
-    sync_id = str(sync_row["id"])
-    task = asyncio.create_task(
-        run_full_sync(
-            user_uuid=UUID(user_id),
-            sync_id=sync_id,
-            pg_pool=_pool,
-            neo4j_driver=_neo4j,
-            discogs_user_agent=_config.discogs_user_agent,
-            oauth_encryption_key=get_oauth_encryption_key(_config.encryption_master_key),
-            redis_client=_redis,
-        )
-    )
-    _running_syncs[user_id] = task
+        _running_syncs[user_id] = task
+    except Exception:
+        # Release Redis lock on failure so user isn't locked out
+        if _redis:
+            with contextlib.suppress(Exception):
+                await _redis.delete(f"sync:lock:{user_id}")
+        raise
 
     # Set per-user cooldown to prevent rapid re-triggers
     if _redis:

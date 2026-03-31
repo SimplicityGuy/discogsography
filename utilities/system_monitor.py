@@ -133,8 +133,8 @@ def monitor_system() -> None:
     if queues:
         total_messages = 0
         for queue in queues:
-            if "discogsography" in queue["name"]:
-                name = queue["name"].replace("discogsography-", "")
+            if "discogsography" in queue["name"] or "musicbrainz" in queue["name"]:
+                name = queue["name"].replace("discogsography-", "").replace("musicbrainz-", "mb-")
                 ready = queue.get("messages_ready", 0)
                 unacked = queue.get("messages_unacknowledged", 0)
                 total = queue.get("messages", 0)

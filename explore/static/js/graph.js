@@ -668,8 +668,9 @@ class GraphVisualization {
             return srcNode && tgtNode;
         });
 
-        // Reset expand state
+        // Reset expand state and clear stale metadata
         this.expandedCategories.clear();
+        this._categoryMeta.clear();
         this._pendingExpands = categories.length;
 
         for (const cat of categories) {
@@ -751,6 +752,7 @@ class GraphVisualization {
         });
 
         this.expandedCategories.clear();
+        this._categoryMeta.clear();
 
         // Fetch and diff each category
         this._pendingExpands = categories.length;

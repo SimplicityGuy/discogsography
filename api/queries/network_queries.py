@@ -144,7 +144,7 @@ async def get_artist_cluster(
     MATCH (a)<-[:BY]-(r:Release)-[:BY]->(neighbor:Artist)
     WHERE neighbor <> a
     WITH a, neighbor, count(DISTINCT r) AS shared_releases
-    OPTIONAL MATCH (neighbor)<-[:BY]-(r2:Release)-[:HAS_GENRE]->(g:Genre)
+    OPTIONAL MATCH (neighbor)<-[:BY]-(r2:Release)-[:IS]->(g:Genre)
     WITH neighbor, shared_releases,
          g.name AS genre, count(r2) AS genre_count
     ORDER BY genre_count DESC

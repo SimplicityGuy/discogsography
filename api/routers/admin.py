@@ -6,7 +6,7 @@ import json
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 import httpx
 from psycopg.rows import dict_row
@@ -536,7 +536,7 @@ async def list_audit_log(
     page: int = 1,
     page_size: int = 50,
     action: str | None = None,
-    admin_id: str | None = None,
+    admin_id: str | None = Query(None, pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"),
 ) -> JSONResponse:
     """Paginated admin audit log (last 90 days by default)."""
     if _pool is None:
