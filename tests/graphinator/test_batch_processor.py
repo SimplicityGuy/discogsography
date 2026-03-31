@@ -431,6 +431,30 @@ class TestFlushQueue:
         await processor._flush_queue("artists")
 
     @pytest.mark.asyncio
+    async def test_flush_handles_cancelled_error_re_enqueues(self) -> None:
+        """Test that CancelledError during flush re-enqueues messages and re-raises."""
+        mock_driver, mock_session = create_async_session_mock()
+        mock_session.execute_write.side_effect = asyncio.CancelledError()
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        ack = AsyncMock()
+        nack = AsyncMock()
+        msg1 = PendingMessage("artists", {"id": "1", "name": "Artist 1", "sha256": "hash1"}, ack, nack)
+        msg2 = PendingMessage("artists", {"id": "2", "name": "Artist 2", "sha256": "hash2"}, AsyncMock(), AsyncMock())
+        processor.queues["artists"].append(msg1)
+        processor.queues["artists"].append(msg2)
+
+        with pytest.raises(asyncio.CancelledError):
+            await processor._flush_queue("artists")
+
+        # Messages should be re-enqueued, not lost
+        assert len(processor.queues["artists"]) == 2
+        # No ack or nack should have been called
+        ack.assert_not_called()
+        nack.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_flush_respects_batch_size_limit(self) -> None:
         """Test that flush respects batch size limit."""
         mock_driver, _mock_session = create_async_session_mock()
