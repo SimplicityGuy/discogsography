@@ -450,6 +450,23 @@ class TestStateMarkerAtomicSave:
         assert not path.exists()
         assert not path.with_suffix(".json.tmp").exists()
 
+    def test_save_cleans_tmp_on_runtime_error(self, tmp_path: Path):
+        """If json.dump raises RuntimeError, the tmp file is cleaned up."""
+        from unittest.mock import patch
+
+        marker = StateMarker(current_version="test")
+        save_path = tmp_path / "state.json"
+
+        with (
+            patch("common.state_marker.json.dump", side_effect=RuntimeError("write error")),
+            pytest.raises(RuntimeError, match="write error"),
+        ):
+            marker.save(save_path)
+
+        # No temp files should remain
+        tmp_files = list(tmp_path.glob("*.json.tmp"))
+        assert len(tmp_files) == 0
+
     def test_save_overwrites_existing_file_atomically(self, tmp_path: Path):
         """Saving twice overwrites via atomic rename."""
         marker = StateMarker(current_version="v1")

@@ -36,7 +36,7 @@ class LabelLongevityItem(BaseModel):
     label_id: str
     label_name: str
     first_year: int
-    last_year: int
+    last_year: int | None
     years_active: int
     total_releases: int
     peak_decade: int | None = None

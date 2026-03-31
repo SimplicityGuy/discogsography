@@ -620,17 +620,6 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
         # This matches the normalization done in graphinator for consistency
         data = normalize_record(data_type, data)
 
-        # Increment counter and log progress
-        if data_type in message_counts:
-            message_counts[data_type] += 1
-            last_message_time[data_type] = time.time()
-            if message_counts[data_type] % progress_interval == 0:
-                logger.info(
-                    "📊 Processed records in PostgreSQL",
-                    count=message_counts[data_type],
-                    data_type=data_type,
-                )
-
         # Extract record details for logging
         record_name = None
         if data_type == "artists":
@@ -696,6 +685,17 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                 )
 
         await message.ack()
+
+        # Increment counter and log progress only after successful DB write and ack
+        if data_type in message_counts:
+            message_counts[data_type] += 1
+            last_message_time[data_type] = time.time()
+            if message_counts[data_type] % progress_interval == 0:
+                logger.info(
+                    "📊 Processed records in PostgreSQL",
+                    count=message_counts[data_type],
+                    data_type=data_type,
+                )
 
     except (InterfaceError, OperationalError) as e:
         logger.warning("⚠️ Database connection issue, will retry", error=str(e))

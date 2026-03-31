@@ -339,6 +339,14 @@ fn test_sync_phase_totals_multiple_files() {
 }
 
 #[test]
+fn test_should_process_reprocesses_interrupted_download() {
+    let mut marker = StateMarker::new("test_version".to_string());
+    marker.start_download(4);
+    // download_phase.status is now InProgress
+    assert_eq!(marker.should_process(), ProcessingDecision::Reprocess);
+}
+
+#[test]
 fn test_complete_extraction_without_download_start() {
     let mut marker = StateMarker::new("20260101".to_string());
 

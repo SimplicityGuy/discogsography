@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Callable
+import contextlib
 import logging
 import re
 from typing import Any
@@ -79,14 +80,15 @@ class ResilientRabbitMQConnection(ResilientConnection[BlockingConnection]):
         """Get a channel with resilient connection."""
         connection = self.get_connection()
 
-        # Check if we have a valid channel
-        if self._channel and self._channel.is_open:
-            return self._channel
+        with self._lock:
+            # Check if we have a valid channel
+            if self._channel and self._channel.is_open:
+                return self._channel
 
-        # Create new channel
-        logger.info("🐰 Creating new RabbitMQ channel")
-        self._channel = connection.channel()
-        return self._channel
+            # Create new channel
+            logger.info("🐰 Creating new RabbitMQ channel")
+            self._channel = connection.channel()
+            return self._channel
 
     def close(self) -> None:
         """Close the RabbitMQ connection and channel."""
@@ -151,50 +153,67 @@ class AsyncResilientRabbitMQ:
         last_error = None
 
         while retry_count < self.max_retries:
+            # Check-and-set connecting flag under the lock, but do I/O outside
+            should_connect = False
             async with self._lock:
                 # Double-check under lock (another task may have connected)
                 if self._connection and not self._connection.is_closed:
                     return self._connection
+                should_connect = True
 
-                try:
-                    logger.info(f"🐰 Creating robust RabbitMQ connection (attempt {retry_count + 1}/{self.max_retries})")
+            if not should_connect:
+                continue  # pragma: no cover
 
-                    async def create_connection() -> Any:
-                        connection = await connect_robust(
-                            self.connection_url,
-                            heartbeat=self.heartbeat,
-                            connection_attempts=self.connection_attempts,
-                            retry_delay=self.retry_delay,
-                        )
+            try:
+                logger.info(f"🐰 Creating robust RabbitMQ connection (attempt {retry_count + 1}/{self.max_retries})")
 
-                        # Add reconnect callback
-                        connection.reconnect_callbacks.add(self._on_reconnect)
+                async def create_connection() -> Any:
+                    connection = await connect_robust(
+                        self.connection_url,
+                        heartbeat=self.heartbeat,
+                        connection_attempts=self.connection_attempts,
+                        retry_delay=self.retry_delay,
+                    )
 
-                        return connection
+                    # Add reconnect callback
+                    connection.reconnect_callbacks.add(self._on_reconnect)
 
-                    self._connection = await self.circuit_breaker.call_async(create_connection)
-                    logger.info("✅ Robust RabbitMQ connection established")
+                    return connection
 
-                    # Notify reconnect callbacks
-                    for callback in self._reconnect_callbacks:
-                        try:
-                            if asyncio.iscoroutinefunction(callback):
-                                await callback()
-                            else:
-                                callback()
-                        except Exception as e:
-                            logger.error(f"❌ Error in reconnect callback: {e}")
+                new_connection = await self.circuit_breaker.call_async(create_connection)
 
-                    return self._connection
+                # Store the connection under the lock
+                async with self._lock:
+                    # Another task may have connected while we were doing I/O
+                    if self._connection and not self._connection.is_closed:
+                        # Close our redundant connection
+                        with contextlib.suppress(Exception):
+                            await new_connection.close()
+                        return self._connection
+                    self._connection = new_connection
 
-                except Exception as e:
-                    last_error = e
-                    retry_count += 1
+                logger.info("✅ Robust RabbitMQ connection established")
 
-                    if retry_count >= self.max_retries:
-                        logger.error("❌ All RabbitMQ connection attempts failed")
+                # Notify reconnect callbacks
+                for callback in self._reconnect_callbacks:
+                    try:
+                        if asyncio.iscoroutinefunction(callback):
+                            await callback()
+                        else:
+                            callback()
+                    except Exception as e:
+                        logger.error(f"❌ Error in reconnect callback: {e}")
 
-            # Sleep OUTSIDE the lock to allow other tasks to proceed
+                return self._connection
+
+            except Exception as e:
+                last_error = e
+                retry_count += 1
+
+                if retry_count >= self.max_retries:
+                    logger.error("❌ All RabbitMQ connection attempts failed")
+
+            # Sleep outside the lock to allow other tasks to proceed
             if retry_count < self.max_retries:
                 delay = self.backoff.get_delay(retry_count - 1)
                 logger.warning(f"⚠️ RabbitMQ connection attempt {retry_count} failed: {last_error}. Retrying in {delay:.1f} seconds...")
@@ -264,6 +283,7 @@ async def process_message_with_retry(
         backoff = ExponentialBackoff(initial_delay=1.0, max_delay=30.0)
 
     retry_count = 0
+    handler_succeeded = False
 
     while retry_count < max_retries:
         try:
@@ -273,9 +293,8 @@ async def process_message_with_retry(
             else:
                 handler(message)
 
-            # Acknowledge on success
-            await message.ack()
-            return
+            handler_succeeded = True
+            break
 
         except Exception as e:
             retry_count += 1
@@ -294,3 +313,9 @@ async def process_message_with_retry(
                     await message.nack(requeue=False)
 
                 raise
+
+    if handler_succeeded:
+        try:
+            await message.ack()
+        except Exception as e:
+            logger.error(f"❌ Failed to ack message after successful processing: {e}")

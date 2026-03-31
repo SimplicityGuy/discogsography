@@ -381,10 +381,12 @@ pub async fn process_single_file(
             async move { message_publisher(batch_receiver, mq, data_type, state).await }
         });
 
-        let total_count = parser_handle.await??;
-        let report: QualityReport = handle.await??;
-        batcher_handle.await??;
-        publisher_handle.await??;
+        let (parser_result, validator_result, batcher_result, publisher_result) =
+            tokio::try_join!(parser_handle, handle, batcher_handle, publisher_handle)?;
+        let total_count = parser_result?;
+        let report: QualityReport = validator_result?;
+        batcher_result?;
+        publisher_result?;
 
         if report.has_violations() {
             // file_name comes from S3 file listing (operator-controlled, not user input)
@@ -910,10 +912,11 @@ pub async fn process_musicbrainz_data(
         mq.setup_exchange(data_type).await?;
     }
 
-    // Start processing phase
+    // Start processing phase — wrap in Arc<Mutex> for shared access across loop iterations
     let file_count = dump_files.len();
     state_marker.start_processing(file_count);
     state_marker.save(&marker_path).await?;
+    let state_marker = Arc::new(tokio::sync::Mutex::new(state_marker));
     info!("🚀 Starting MusicBrainz processing phase: {} dump file(s)", file_count);
 
     // First pass: build MBID→Discogs ID map for artist relationship target resolution
@@ -933,16 +936,22 @@ pub async fn process_musicbrainz_data(
         let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
 
         // Skip files already completed in state marker
-        if let Some(status) = state_marker.processing_phase.progress_by_file.get(file_name)
-            && status.status == PhaseStatus::Completed
         {
-            info!("✅ Skipping already-completed file: {}", file_name);
-            continue;
+            let sm = state_marker.lock().await;
+            if let Some(status) = sm.processing_phase.progress_by_file.get(file_name)
+                && status.status == PhaseStatus::Completed
+            {
+                info!("✅ Skipping already-completed file: {}", file_name);
+                continue;
+            }
         }
 
         info!("🚀 Starting MusicBrainz extraction of {} from {:?}", data_type, file_path);
-        state_marker.start_file_processing(file_name);
-        state_marker.save(&marker_path).await?;
+        {
+            let mut sm = state_marker.lock().await;
+            sm.start_file_processing(file_name);
+            sm.save(&marker_path).await?;
+        }
 
         // Track active connection
         {
@@ -964,13 +973,12 @@ pub async fn process_musicbrainz_data(
         };
         let parser_handle = tokio::task::spawn_blocking(move || parse_mb_jsonl_file(&parser_path, parser_dt, parse_sender, parser_map.as_ref()));
 
-        // Spawn batcher
-        let batcher_state_marker = Arc::new(tokio::sync::Mutex::new(state_marker.clone()));
+        // Spawn batcher — share the same state_marker Arc across all iterations
         let batcher_config = BatcherConfig {
             batch_size: config.batch_size,
             data_type: *data_type,
             state: state.clone(),
-            state_marker: batcher_state_marker.clone(),
+            state_marker: state_marker.clone(),
             marker_path: marker_path.clone(),
             file_name: file_name.to_string(),
             state_save_interval: config.state_save_interval,
@@ -1014,14 +1022,14 @@ pub async fn process_musicbrainz_data(
             success = false;
         }
 
-        // Update state marker with results from batcher
-        state_marker = batcher_state_marker.lock().await.clone();
-
         // Mark file complete only on success; on failure, save current state without marking complete
-        if file_success {
-            state_marker.complete_file_processing(file_name, total_count);
+        {
+            let mut sm = state_marker.lock().await;
+            if file_success {
+                sm.complete_file_processing(file_name, total_count);
+            }
+            sm.save(&marker_path).await?;
         }
-        state_marker.save(&marker_path).await?;
 
         // Update shared state
         {
@@ -1046,9 +1054,10 @@ pub async fn process_musicbrainz_data(
             if let Ok(Ok(compressed_path)) = tokio::task::spawn_blocking(move || compress_jsonl_to_xz(&compress_path)).await {
                 // Register compressed filename in state marker so resume finds it as completed
                 if let Some(compressed_name) = compressed_path.file_name().and_then(|n| n.to_str()) {
-                    state_marker.start_file_processing(compressed_name);
-                    state_marker.complete_file_processing(compressed_name, total_count);
-                    state_marker.save(&marker_path).await?;
+                    let mut sm = state_marker.lock().await;
+                    sm.start_file_processing(compressed_name);
+                    sm.complete_file_processing(compressed_name, total_count);
+                    sm.save(&marker_path).await?;
                 }
             } else {
                 warn!("⚠️ Failed to compress {} (continuing without compression)", file_name);
@@ -1068,14 +1077,17 @@ pub async fn process_musicbrainz_data(
     let _ = mq.close().await;
 
     // Finalize state marker
-    if success {
-        state_marker.complete_processing();
-        state_marker.complete_extraction();
-        state_marker.save(&marker_path).await?;
-        info!("✅ MusicBrainz processing completed: version {}", version);
-    } else {
-        state_marker.save(&marker_path).await?;
-        error!("❌ MusicBrainz processing finished with errors — not marking complete");
+    {
+        let mut sm = state_marker.lock().await;
+        if success {
+            sm.complete_processing();
+            sm.complete_extraction();
+            sm.save(&marker_path).await?;
+            info!("✅ MusicBrainz processing completed: version {}", version);
+        } else {
+            sm.save(&marker_path).await?;
+            error!("❌ MusicBrainz processing finished with errors — not marking complete");
+        }
     }
 
     // Update extraction status

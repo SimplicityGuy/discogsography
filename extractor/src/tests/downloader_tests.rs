@@ -268,8 +268,8 @@ fn test_get_latest_monthly_files_complete_set() {
     let result = downloader.get_latest_monthly_files(&files).unwrap();
     assert_eq!(result.len(), 4); // Should return 4 data files
 
-    // Verify filenames have prefix stripped
-    assert!(result.iter().all(|f| !f.name.starts_with("data/")));
+    // Verify filenames retain the full S3 key (consumers use Path::file_name() for bare names)
+    assert!(result.iter().all(|f| f.name.contains("discogs_20241201_")));
 }
 
 #[tokio::test]

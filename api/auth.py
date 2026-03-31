@@ -129,8 +129,11 @@ def encrypt_totp_secret(secret: str, key: str) -> str:
 
 def decrypt_totp_secret(encrypted: str, key: str) -> str:
     """Decrypt a TOTP secret."""
-    f = Fernet(key.encode("ascii"))
-    return f.decrypt(encrypted.encode("ascii")).decode("utf-8")
+    try:
+        f = Fernet(key.encode("ascii"))
+        return f.decrypt(encrypted.encode("ascii")).decode("utf-8")
+    except (InvalidToken, ValueError, UnicodeDecodeError) as exc:
+        raise ValueError(f"Failed to decrypt TOTP secret: {exc}") from exc
 
 
 def verify_totp_code(secret: str, code: str) -> bool:

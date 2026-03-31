@@ -9,6 +9,7 @@ import asyncio
 from typing import Any
 
 from api.queries.helpers import run_query, run_single
+from api.queries.neo4j_queries import _PATH_REL_TYPES
 from api.queries.similarity import cosine_similarity, to_genre_vector
 from common import AsyncResilientNeo4jDriver
 
@@ -421,7 +422,7 @@ async def get_explore_traversal(
 
     cypher = f"""
     MATCH {match_clause}
-    MATCH path = (start)-[*1..{hops}]-(discovered)
+    MATCH path = (start)-[:{_PATH_REL_TYPES}*1..{hops}]-(discovered)
     WHERE discovered <> start
       AND (discovered:Artist OR discovered:Label OR discovered:Genre OR discovered:Style)
     WITH DISTINCT discovered,

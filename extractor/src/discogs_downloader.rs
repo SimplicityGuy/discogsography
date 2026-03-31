@@ -14,7 +14,8 @@ use async_trait::async_trait;
 use crate::state_marker::StateMarker;
 use crate::types::{LocalFileInfo, S3FileInfo};
 
-const S3_PREFIX: &str = "data/";
+// S3 file names already contain the full key (e.g., "data/2026/discogs_...xml.gz")
+// so no prefix stripping or re-prepending is needed.
 const DISCOGS_DATA_URL: &str = "https://data.discogs.com/";
 const MAX_DOWNLOAD_RETRIES: u32 = 3;
 
@@ -281,8 +282,7 @@ impl Downloader {
                 .iter()
                 .filter(|f| f.name.ends_with(".xml.gz"))
                 .map(|f| {
-                    let filename = f.name.strip_prefix(S3_PREFIX).unwrap_or(&f.name);
-                    S3FileInfo { name: filename.to_string(), size: f.size }
+                    S3FileInfo { name: f.name.clone(), size: f.size }
                 })
                 .collect();
 
@@ -333,8 +333,8 @@ impl Downloader {
     pub async fn download_file(&mut self, file_info: &S3FileInfo) -> Result<u64> {
         use futures::StreamExt;
 
-        // Reconstruct the full S3 key by prepending the prefix
-        let s3_key = format!("{}{}", S3_PREFIX, &file_info.name);
+        // Use the full S3 key directly (name already contains the full path)
+        let s3_key = &file_info.name;
         // Extract just the base filename for local storage (remove path components)
         let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
         let local_path = self.output_directory.join(filename);
@@ -342,7 +342,7 @@ impl Downloader {
         info!("⬇️ Downloading {}...", filename);
 
         // Construct Discogs download URL (URL encode the S3 key)
-        let download_url = format!("{}?download={}", self.base_url, urlencoding::encode(&s3_key));
+        let download_url = format!("{}?download={}", self.base_url, urlencoding::encode(s3_key));
 
         let mut last_error: Option<anyhow::Error> = None;
 

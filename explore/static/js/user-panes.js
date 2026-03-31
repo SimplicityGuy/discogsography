@@ -169,7 +169,15 @@ class UserPanes {
         container.innerHTML = '';
 
         if (!data || !data.recommendations || data.recommendations.length === 0) {
-            container.innerHTML = `<div class="user-pane-empty"><span class="material-symbols-outlined icon-3x mb-3">lightbulb</span><p>No recommendations yet. Sync your collection to get personalised suggestions.</p></div>`;
+            const empty = document.createElement('div');
+            empty.className = 'user-pane-empty';
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-outlined icon-3x mb-3';
+            icon.textContent = 'lightbulb';
+            const msg = document.createElement('p');
+            msg.textContent = 'No recommendations yet. Sync your collection to get personalised suggestions.';
+            empty.append(icon, msg);
+            container.appendChild(empty);
             return;
         }
 

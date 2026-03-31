@@ -152,7 +152,12 @@ async def _try_sql_profile(cursor: Any, query: Any, params: Any) -> None:
     """
     try:
         rendered = _render_sql(query, cursor)
-        explain_query = f"EXPLAIN (ANALYZE, BUFFERS, VERBOSE) {rendered}"
+        # Only run EXPLAIN ANALYZE for SELECT queries to avoid re-executing DML
+        normalized = rendered.strip().upper()
+        if normalized.startswith("SELECT") or normalized.startswith("WITH"):
+            explain_query = f"EXPLAIN (ANALYZE, BUFFERS, VERBOSE) {rendered}"
+        else:
+            explain_query = f"EXPLAIN (BUFFERS, VERBOSE) {rendered}"
         async with cursor.connection.cursor() as explain_cur:
             await explain_cur.execute(explain_query, params)  # nosemgrep
             rows = await explain_cur.fetchall()

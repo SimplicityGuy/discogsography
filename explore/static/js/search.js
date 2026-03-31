@@ -342,7 +342,7 @@
         nextIcon.className = 'material-symbols-outlined';
         nextIcon.textContent = 'chevron_right';
         nextBtn.appendChild(nextIcon);
-        nextBtn.disabled = currentPage >= totalPages;
+        nextBtn.disabled = currentPage >= totalPages || !pagination.has_more;
         nextBtn.addEventListener('click', () => {
             currentOffset += PAGE_SIZE;
             triggerSearch();

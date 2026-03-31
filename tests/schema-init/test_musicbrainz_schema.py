@@ -36,7 +36,7 @@ def test_musicbrainz_indexes_use_if_not_exists():
 def test_relationships_has_unique_constraint():
     for name, sql in _MUSICBRAINZ_TABLES:
         if name == "musicbrainz.relationships table":
-            assert "UNIQUE (source_mbid, target_mbid, relationship_type)" in sql
+            assert "UNIQUE (source_mbid, target_mbid, source_entity_type, target_entity_type, relationship_type)" in sql
 
 
 def test_external_links_has_unique_constraint():

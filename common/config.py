@@ -1,6 +1,6 @@
 """Configuration management for discogsography services."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 from os import getenv
 from pathlib import Path
@@ -81,7 +81,7 @@ def _build_redis_url() -> str:
 class ExtractorConfig:
     """Configuration for the extractor service."""
 
-    amqp_connection: str
+    amqp_connection: str = field(repr=False)
     discogs_root: Path
     max_temp_size: int = int(1e9)  # 1000 MB
     periodic_check_days: int = 15  # Default to 15 days
@@ -119,7 +119,7 @@ class ExtractorConfig:
 class GraphinatorConfig:
     """Configuration for the graphinator service."""
 
-    amqp_connection: str
+    amqp_connection: str = field(repr=False)
     neo4j_host: str
     neo4j_username: str
     neo4j_password: str
@@ -154,7 +154,7 @@ class GraphinatorConfig:
 class BrainzgraphinatorConfig:
     """Configuration for the brainzgraphinator service."""
 
-    amqp_connection: str
+    amqp_connection: str = field(repr=False)
     neo4j_host: str
     neo4j_username: str
     neo4j_password: str
@@ -189,7 +189,7 @@ class BrainzgraphinatorConfig:
 class TableinatorConfig:
     """Configuration for the tableinator service."""
 
-    amqp_connection: str
+    amqp_connection: str = field(repr=False)
     postgres_host: str
     postgres_username: str
     postgres_password: str
@@ -229,7 +229,7 @@ class TableinatorConfig:
 class BrainztableinatorConfig:
     """Configuration for the brainztableinator service."""
 
-    amqp_connection: str
+    amqp_connection: str = field(repr=False)
     postgres_host: str
     postgres_username: str
     postgres_password: str
@@ -429,7 +429,7 @@ def setup_logging(
 class DashboardConfig:
     """Configuration for the dashboard service."""
 
-    amqp_connection: str
+    amqp_connection: str = field(repr=False)
     neo4j_host: str
     neo4j_username: str
     neo4j_password: str

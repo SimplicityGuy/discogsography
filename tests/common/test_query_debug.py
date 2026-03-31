@@ -311,6 +311,36 @@ class TestExecuteSql:
         assert "RuntimeError: relation does not exist" in content
 
     @pytest.mark.asyncio
+    async def test_profiles_dml_without_analyze(self, tmp_path: Path) -> None:
+        """execute_sql uses EXPLAIN without ANALYZE for INSERT/UPDATE/DELETE queries."""
+        log_file = tmp_path / "profiling.log"
+
+        explain_cursor = AsyncMock()
+        explain_cursor.fetchall = AsyncMock(return_value=[("Insert on artists",)])
+        explain_cursor.__aenter__ = AsyncMock(return_value=explain_cursor)
+        explain_cursor.__aexit__ = AsyncMock(return_value=False)
+
+        cursor = AsyncMock()
+        cursor.connection.cursor = MagicMock(return_value=explain_cursor)
+
+        with (
+            patch("common.query_debug.is_db_profiling", return_value=True),
+            patch("common.query_debug.PROFILING_LOG_PATH", log_file),
+        ):
+            import common.query_debug as mod
+
+            mod._profiling_logger = None
+
+            from common.query_debug import execute_sql
+
+            await execute_sql(cursor, "INSERT INTO artists (name) VALUES (%s)", ("Test",))
+
+        # Verify EXPLAIN was called WITHOUT ANALYZE
+        explain_call = explain_cursor.execute.call_args[0][0]
+        assert "EXPLAIN (BUFFERS, VERBOSE)" in explain_call
+        assert "ANALYZE" not in explain_call
+
+    @pytest.mark.asyncio
     async def test_no_profiling_when_disabled(self) -> None:
         """execute_sql does not run EXPLAIN when profiling is disabled."""
         cursor = AsyncMock()

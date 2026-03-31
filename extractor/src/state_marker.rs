@@ -232,6 +232,12 @@ impl StateMarker {
             return ProcessingDecision::Reprocess;
         }
 
+        // If download was interrupted (still InProgress), need to re-download
+        if self.download_phase.status == PhaseStatus::InProgress {
+            warn!("⚠️ Download phase interrupted, will re-download");
+            return ProcessingDecision::Reprocess;
+        }
+
         // If processing failed, can resume
         if self.processing_phase.status == PhaseStatus::Failed {
             warn!("⚠️ Processing phase failed, will resume");

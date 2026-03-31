@@ -364,6 +364,4 @@ async def run_all_computations(
 
     total = sum(results.values())
     logger.info("✅ All insight computations complete", total_rows=total, breakdown=results, failed=list(errors.keys()) or None)
-    if errors:
-        raise RuntimeError(f"Some computations failed: {', '.join(errors.keys())}")
     return results

@@ -28,9 +28,24 @@ async def get_optional_user(
     if credentials is None or _jwt_secret is None:
         return None
     try:
-        return decode_token(credentials.credentials, _jwt_secret)
+        payload = decode_token(credentials.credentials, _jwt_secret)
     except ValueError:
         return None
+    # Check JTI revocation
+    jti: str | None = payload.get("jti")
+    if jti and _redis:
+        revoked = await _redis.get(f"revoked:jti:{jti}")
+        if revoked:
+            return None
+    # Check password-changed revocation
+    user_id = payload.get("sub")
+    if user_id and _redis:
+        pw_changed = await _redis.get(f"password_changed:{user_id}")
+        if pw_changed:
+            issued_at = payload.get("iat", 0)
+            if issued_at < int(pw_changed):
+                return None
+    return payload
 
 
 async def require_user(

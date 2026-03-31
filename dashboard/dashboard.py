@@ -141,6 +141,7 @@ class DashboardApp:
         self.neo4j_driver: AsyncResilientNeo4jDriver | None = None
         self.postgres_conn: AsyncResilientPostgreSQL | None = None
         self.update_task: asyncio.Task | None = None
+        self._db_info_lock: asyncio.Lock = asyncio.Lock()
 
     async def startup(self) -> None:
         """Initialize connections on startup."""
@@ -345,6 +346,11 @@ class DashboardApp:
 
     async def get_database_info(self) -> list[DatabaseInfo]:
         """Get database information."""
+        async with self._db_info_lock:
+            return await self._get_database_info_locked()
+
+    async def _get_database_info_locked(self) -> list[DatabaseInfo]:
+        """Get database information (must be called under _db_info_lock)."""
         databases = []
 
         # Check PostgreSQL

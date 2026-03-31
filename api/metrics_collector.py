@@ -91,14 +91,14 @@ class MetricsBuffer:
         if not self._entries:
             return {}
 
+        entries, self._entries = self._entries, deque()
+
         groups: dict[str, list[float]] = {}
         error_counts: dict[str, int] = {}
-        for entry in self._entries:
+        for entry in entries:
             groups.setdefault(entry.path, []).append(entry.duration_ms)
             if entry.status_code >= 500:
                 error_counts[entry.path] = error_counts.get(entry.path, 0) + 1
-
-        self._entries.clear()
 
         result: dict[str, dict[str, Any]] = {}
         for path, durations in groups.items():

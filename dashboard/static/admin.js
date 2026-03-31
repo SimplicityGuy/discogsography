@@ -335,6 +335,7 @@ class AdminDashboard {
             this.token = null;
             localStorage.removeItem('admin_token');
             this.showLogin();
+            throw new Error('Session expired');
         }
         return response;
     }

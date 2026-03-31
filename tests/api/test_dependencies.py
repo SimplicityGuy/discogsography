@@ -326,6 +326,75 @@ def _make_token_with_claims(extra_claims: dict, secret: str = TEST_SECRET) -> st
     return f"{header}.{body}.{sig}"
 
 
+class TestGetOptionalUserRevocationChecks:
+    """Tests for JTI revocation and password-changed checks in get_optional_user."""
+
+    @pytest.mark.asyncio
+    async def test_revoked_jti_returns_none(self) -> None:
+        """Token with a revoked JTI returns None."""
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value="1")
+        configure(TEST_SECRET, redis=mock_redis)
+
+        token = _make_token_with_claims({"jti": "test-jti-123"})
+        creds = _make_credentials(token)
+        result = await get_optional_user(creds)
+
+        assert result is None
+        mock_redis.get.assert_any_call("revoked:jti:test-jti-123")
+
+    @pytest.mark.asyncio
+    async def test_revoked_jti_no_redis_returns_payload(self) -> None:
+        """Token with a JTI but no redis configured returns the payload normally."""
+        configure(TEST_SECRET)  # no redis
+
+        token = _make_token_with_claims({"jti": "test-jti-123"})
+        creds = _make_credentials(token)
+        result = await get_optional_user(creds)
+
+        assert result is not None
+        assert result["sub"] == "user-1"
+
+    @pytest.mark.asyncio
+    async def test_password_changed_before_token_returns_none(self) -> None:
+        """Token issued before password change returns None."""
+        mock_redis = AsyncMock()
+
+        async def redis_get(key: str) -> str | None:
+            if key.startswith("password_changed:"):
+                return "2000"
+            return None  # revoked:jti:... returns None
+
+        mock_redis.get = AsyncMock(side_effect=redis_get)
+        configure(TEST_SECRET, redis=mock_redis)
+
+        token = _make_token_with_claims({"iat": 1000})
+        creds = _make_credentials(token)
+        result = await get_optional_user(creds)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_password_changed_after_token_returns_payload(self) -> None:
+        """Token issued after password change returns the payload."""
+        mock_redis = AsyncMock()
+
+        async def redis_get(key: str) -> str | None:
+            if key.startswith("password_changed:"):
+                return "2000"
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=redis_get)
+        configure(TEST_SECRET, redis=mock_redis)
+
+        token = _make_token_with_claims({"iat": 3000})
+        creds = _make_credentials(token)
+        result = await get_optional_user(creds)
+
+        assert result is not None
+        assert result["sub"] == "user-1"
+
+
 class TestRequireUserTokenChecks:
     """Tests for admin-token rejection, JTI revocation, and password-changed revocation in require_user."""
 
