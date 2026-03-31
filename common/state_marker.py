@@ -150,7 +150,7 @@ class StateMarker:
         # Snapshot under lock to ensure consistent state across fields
         with self._lock:
             data = self._to_dict()
-        data["last_updated"] = datetime.now(UTC).isoformat()
+            data["last_updated"] = datetime.now(UTC).isoformat()
 
         fd = None
         tmp_path = None

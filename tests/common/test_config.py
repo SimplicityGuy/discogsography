@@ -415,42 +415,33 @@ class TestDashboardConfig:
 class TestExploreConfig:
     """Test ExploreConfig from_env."""
 
-    def test_from_env_with_all_vars(self) -> None:
-        """Test ExploreConfig with all required vars."""
+    def test_from_env_with_defaults(self) -> None:
+        """Test ExploreConfig uses default API base URL."""
         from common import ExploreConfig
 
         config = ExploreConfig.from_env()
 
-        assert config.neo4j_host == "bolt://localhost:7687"
-        assert config.neo4j_username == "test"
-        assert config.neo4j_password == "test"
+        assert config.api_base_url == "http://api:8004"
 
-    def test_missing_neo4j_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test NEO4J_HOST missing raises ValueError (line 375)."""
+    def test_from_env_with_custom_api_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test ExploreConfig reads API_BASE_URL from environment."""
+        from common import ExploreConfig
+
+        monkeypatch.setenv("API_BASE_URL", "http://custom-api:9000")
+        config = ExploreConfig.from_env()
+
+        assert config.api_base_url == "http://custom-api:9000"
+
+    def test_no_neo4j_vars_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test ExploreConfig does not require Neo4j env vars (explore serves static files only)."""
         from common import ExploreConfig
 
         monkeypatch.delenv("NEO4J_HOST", raising=False)
-
-        with pytest.raises(ValueError, match="NEO4J_HOST"):
-            ExploreConfig.from_env()
-
-    def test_missing_neo4j_username(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test NEO4J_USERNAME missing raises ValueError (line 377)."""
-        from common import ExploreConfig
-
         monkeypatch.delenv("NEO4J_USERNAME", raising=False)
-
-        with pytest.raises(ValueError, match="NEO4J_USERNAME"):
-            ExploreConfig.from_env()
-
-    def test_missing_neo4j_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test NEO4J_PASSWORD missing raises ValueError (line 379)."""
-        from common import ExploreConfig
-
         monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
 
-        with pytest.raises(ValueError, match="NEO4J_PASSWORD"):
-            ExploreConfig.from_env()
+        config = ExploreConfig.from_env()
+        assert config.api_base_url == "http://api:8004"
 
 
 class TestGetConfig:
@@ -897,26 +888,14 @@ class TestGetSecretViaFromEnv:
         assert config.jwt_secret_key == "api_jwt_secret"
         assert config.encryption_master_key == "api_master_key"
 
-    def test_explore_config_reads_credentials_from_files(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """ExploreConfig reads NEO4J_PASSWORD and JWT key via _FILE."""
-        neo_pass_file = tmp_path / "neo_pass.txt"
-        jwt_file = tmp_path / "jwt.txt"
-        neo_pass_file.write_text("exp_neo_pass\n")
-        jwt_file.write_text("exp_jwt_secret\n")
-
-        monkeypatch.setenv("NEO4J_HOST", "localhost")
-        monkeypatch.setenv("NEO4J_USERNAME", "exp_neo_user")
-        monkeypatch.setenv("NEO4J_PASSWORD_FILE", str(neo_pass_file))
-        monkeypatch.setenv("JWT_SECRET_KEY_FILE", str(jwt_file))
-        monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
-        monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    def test_explore_config_reads_api_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """ExploreConfig reads API_BASE_URL from environment (no Neo4j vars needed)."""
+        monkeypatch.setenv("API_BASE_URL", "http://custom:9000")
 
         from common.config import ExploreConfig
 
         config = ExploreConfig.from_env()
-        assert config.neo4j_username == "exp_neo_user"
-        assert config.neo4j_password == "exp_neo_pass"
-        assert config.jwt_secret_key == "exp_jwt_secret"
+        assert config.api_base_url == "http://custom:9000"
 
     def test_dashboard_config_reads_rabbitmq_credentials_from_files(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """DashboardConfig reads RABBITMQ_PASSWORD via _FILE."""

@@ -202,7 +202,7 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
         count_cypher = """
         UNWIND $label_ids AS lid
         MATCH (l:Label {id: lid})<-[:ON]-(r:Release)
-        RETURN l.id AS label_id, l.name AS label_name, count(r) AS release_count
+        RETURN l.id AS label_id, l.name AS label_name, count(DISTINCT r) AS release_count
         """
         genre_cypher = """
         UNWIND $label_ids AS lid

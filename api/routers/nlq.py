@@ -175,7 +175,12 @@ def _stream_response(query: str, user_id: str | None, context: dict[str, Any] | 
             step = status_queue.get_nowait()
             yield {"event": "status", "data": json.dumps({"step": step})}
 
-        result = await engine_task
+        try:
+            result = await engine_task
+        except Exception as exc:
+            logger.error("❌ NLQ engine error", error=str(exc))
+            yield {"event": "error", "data": json.dumps({"error": str(exc)})}
+            return
 
         # Emit final result
         response_data = {

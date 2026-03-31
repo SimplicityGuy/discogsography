@@ -93,11 +93,11 @@ async def trigger_sync(
     request: Request,  # noqa: ARG001 — required by slowapi rate limiter
     current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
 ) -> JSONResponse:
-    if _pool is None or _neo4j is None or _config is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
     user_id = current_user.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    if _pool is None or _neo4j is None or _config is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
 
     # Redis-based per-user sync cooldown (prevents rapid re-triggers)
     if _redis:

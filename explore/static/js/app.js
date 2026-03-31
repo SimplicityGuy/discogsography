@@ -1,4 +1,14 @@
 /**
+ * Get Alpine.js reactive data for a DOM element.
+ * Works with Alpine v3 ($data API) and falls back to v2 (__x) for test environments.
+ */
+function _alpineData(el) {
+    if (typeof Alpine !== 'undefined' && Alpine.$data) return Alpine.$data(el);
+    if (el.__x) return el.__x.$data;
+    return {};
+}
+
+/**
  * Timeline scrubber controller for time-travel filtering.
  */
 class TimelineScrubber {
@@ -564,13 +574,13 @@ class ExploreApp {
         document.getElementById('forgotPasswordLink')?.addEventListener('click', (e) => {
             e.preventDefault();
             const modal = document.getElementById('authModal');
-            modal.__x.$data.tab = 'reset-request';
+            _alpineData(modal).tab = 'reset-request';
         });
 
         document.getElementById('backToLoginFromReset')?.addEventListener('click', (e) => {
             e.preventDefault();
             const modal = document.getElementById('authModal');
-            modal.__x.$data.tab = 'login';
+            _alpineData(modal).tab = 'login';
         });
 
         document.getElementById('resetRequestBtn')?.addEventListener('click', async () => {
@@ -608,7 +618,7 @@ class ExploreApp {
                 history.replaceState(null, '', window.location.pathname);
                 setTimeout(() => {
                     const modal = document.getElementById('authModal');
-                    modal.__x.$data.tab = 'login';
+                    _alpineData(modal).tab = 'login';
                 }, 2000);
             } else {
                 const data = await response.json().catch(() => ({}));
@@ -624,7 +634,7 @@ class ExploreApp {
                 // Wait for Alpine to process
                 requestAnimationFrame(() => {
                     const modal = document.getElementById('authModal');
-                    if (modal && modal.__x) modal.__x.$data.tab = 'reset-confirm';
+                    if (modal) _alpineData(modal).tab = 'reset-confirm';
                 });
             }
         })();
@@ -667,13 +677,13 @@ class ExploreApp {
         document.getElementById('useRecoveryCodeLink')?.addEventListener('click', (e) => {
             e.preventDefault();
             const modal = document.getElementById('authModal');
-            modal.__x.$data.tab = '2fa-recovery';
+            _alpineData(modal).tab = '2fa-recovery';
         });
 
         document.getElementById('backToTotpLink')?.addEventListener('click', (e) => {
             e.preventDefault();
             const modal = document.getElementById('authModal');
-            modal.__x.$data.tab = '2fa-verify';
+            _alpineData(modal).tab = '2fa-verify';
         });
 
         document.getElementById('twoFactorRecoveryBtn')?.addEventListener('click', async () => {
@@ -732,7 +742,7 @@ class ExploreApp {
             if (result.requires_2fa) {
                 window.authManager.setChallengeToken(result.challenge_token);
                 const modal = document.getElementById('authModal');
-                modal.__x.$data.tab = '2fa-verify';
+                _alpineData(modal).tab = '2fa-verify';
                 document.querySelectorAll('#totpInputGroup input').forEach(i => { i.value = ''; });
                 document.querySelector('#totpInputGroup input')?.focus();
                 return;
@@ -905,11 +915,14 @@ class ExploreApp {
             const data = await window.apiClient.explore(name, type);
             if (data) {
                 await new Promise((resolve) => {
+                    // Set callback BEFORE setExploreData to avoid race where
+                    // all expansions complete before the callback is registered
                     this.graph.onExpandsComplete = () => {
                         this.graph.onExpandsComplete = null;
                         resolve();
                     };
                     this.graph.setExploreData(data);
+                    // Fallback: if no expansions were needed, resolve immediately
                     if (this.graph._pendingExpands <= 0) {
                         this.graph.onExpandsComplete = null;
                         resolve();

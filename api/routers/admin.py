@@ -337,64 +337,64 @@ async def _track_extraction(extraction_id: str) -> None:
     iterations = 0
 
     try:
-        while iterations < _MAX_TRACKING_ITERATIONS:
-            iterations += 1
-            await asyncio.sleep(10)
-            try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            while iterations < _MAX_TRACKING_ITERATIONS:
+                iterations += 1
+                await asyncio.sleep(10)
+                try:
                     resp = await client.get(url)
-                if resp.status_code == 200:
-                    consecutive_failures = 0
-                    data = resp.json()
-                    extraction_status = data.get("extraction_status", "")
-                    progress = data.get("extraction_progress", {})
-                    record_counts = {
-                        "artists": progress.get("artists", 0),
-                        "labels": progress.get("labels", 0),
-                        "masters": progress.get("masters", 0),
-                        "releases": progress.get("releases", 0),
-                    }
+                    if resp.status_code == 200:
+                        consecutive_failures = 0
+                        data = resp.json()
+                        extraction_status = data.get("extraction_status", "")
+                        progress = data.get("extraction_progress", {})
+                        record_counts = {
+                            "artists": progress.get("artists", 0),
+                            "labels": progress.get("labels", 0),
+                            "masters": progress.get("masters", 0),
+                            "releases": progress.get("releases", 0),
+                        }
 
-                    # Update progress
-                    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-                        await cur.execute(
-                            "UPDATE extraction_history SET record_counts = %s WHERE id = %s",
-                            (json.dumps(record_counts), extraction_id),
-                        )
-
-                    if extraction_status == "completed":
+                        # Update progress
                         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
                             await cur.execute(
-                                "UPDATE extraction_history SET status = 'completed', completed_at = NOW(), record_counts = %s WHERE id = %s",
+                                "UPDATE extraction_history SET record_counts = %s WHERE id = %s",
                                 (json.dumps(record_counts), extraction_id),
                             )
-                        logger.info("✅ Extraction completed", extraction_id=extraction_id, record_counts=record_counts)
-                        return
 
-                    if extraction_status == "failed":
-                        error_msg = data.get("error_message", "Extraction failed")
-                        async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-                            await cur.execute(
-                                "UPDATE extraction_history SET status = 'failed', completed_at = NOW(), error_message = %s, record_counts = %s WHERE id = %s",
-                                (error_msg, json.dumps(record_counts), extraction_id),
-                            )
-                        logger.error("❌ Extraction failed", extraction_id=extraction_id, error=error_msg)
-                        return
-                else:
+                        if extraction_status == "completed":
+                            async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+                                await cur.execute(
+                                    "UPDATE extraction_history SET status = 'completed', completed_at = NOW(), record_counts = %s WHERE id = %s",
+                                    (json.dumps(record_counts), extraction_id),
+                                )
+                            logger.info("✅ Extraction completed", extraction_id=extraction_id, record_counts=record_counts)
+                            return
+
+                        if extraction_status == "failed":
+                            error_msg = data.get("error_message", "Extraction failed")
+                            async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+                                await cur.execute(
+                                    "UPDATE extraction_history SET status = 'failed', completed_at = NOW(), error_message = %s, record_counts = %s WHERE id = %s",
+                                    (error_msg, json.dumps(record_counts), extraction_id),
+                                )
+                            logger.error("❌ Extraction failed", extraction_id=extraction_id, error=error_msg)
+                            return
+                    else:
+                        consecutive_failures += 1
+                        logger.warning("⚠️ Extractor health check returned non-200", status_code=resp.status_code)
+                except (httpx.ConnectError, httpx.RequestError):
                     consecutive_failures += 1
-                    logger.warning("⚠️ Extractor health check returned non-200", status_code=resp.status_code)
-            except (httpx.ConnectError, httpx.RequestError):
-                consecutive_failures += 1
-                logger.warning("⚠️ Extractor unreachable", extraction_id=extraction_id, attempt=consecutive_failures)
+                    logger.warning("⚠️ Extractor unreachable", extraction_id=extraction_id, attempt=consecutive_failures)
 
-            if consecutive_failures >= max_failures:
-                async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-                    await cur.execute(
-                        "UPDATE extraction_history SET status = 'failed', completed_at = NOW(), error_message = %s WHERE id = %s",
-                        ("Extractor became unreachable", extraction_id),
-                    )
-                logger.error("❌ Extraction tracking failed — extractor unreachable after %d attempts", max_failures, extraction_id=extraction_id)
-                return
+                if consecutive_failures >= max_failures:
+                    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+                        await cur.execute(
+                            "UPDATE extraction_history SET status = 'failed', completed_at = NOW(), error_message = %s WHERE id = %s",
+                            ("Extractor became unreachable", extraction_id),
+                        )
+                    logger.error("❌ Extraction tracking failed — extractor unreachable after %d attempts", max_failures, extraction_id=extraction_id)
+                    return
 
         # Wall-clock timeout reached
         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:

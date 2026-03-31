@@ -80,7 +80,7 @@ class TestResetConfirm:
         test_client: TestClient,
         mock_redis: AsyncMock,
     ) -> None:
-        mock_redis.get = AsyncMock(
+        mock_redis.getdel = AsyncMock(
             return_value=json.dumps(
                 {
                     "user_id": TEST_USER_ID,
@@ -94,14 +94,14 @@ class TestResetConfirm:
         )
         assert response.status_code == 200
         assert "reset" in response.json()["message"].lower()
-        mock_redis.delete.assert_called()
+        mock_redis.getdel.assert_called()
 
     def test_reset_confirm_invalid_token(
         self,
         test_client: TestClient,
         mock_redis: AsyncMock,
     ) -> None:
-        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.getdel = AsyncMock(return_value=None)
         response = test_client.post(
             "/api/auth/reset-confirm",
             json={"token": "invalid-token", "new_password": "newpassword123"},

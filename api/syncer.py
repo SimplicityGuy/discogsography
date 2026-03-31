@@ -193,6 +193,7 @@ async def sync_collection(
             cypher = """
             MERGE (u:User {id: $user_id})
             ON CREATE SET u.discogs_username = $discogs_username
+            ON MATCH SET u.discogs_username = $discogs_username
             WITH u
             UNWIND $releases AS rel
             MATCH (r:Release {id: toString(rel.release_id)})
@@ -365,6 +366,7 @@ async def sync_wantlist(
             cypher = """
             MERGE (u:User {id: $user_id})
             ON CREATE SET u.discogs_username = $discogs_username
+            ON MATCH SET u.discogs_username = $discogs_username
             WITH u
             UNWIND $wants AS w
             MATCH (r:Release {id: toString(w.release_id)})
