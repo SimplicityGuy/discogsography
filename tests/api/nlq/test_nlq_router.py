@@ -179,6 +179,7 @@ class TestNLQQuery:
         original_config = nlq_router._nlq_config
         original_engine = nlq_router._engine
         original_redis = nlq_router._redis
+        original_jwt_secret = nlq_router._jwt_secret
         try:
             nlq_router._nlq_config = MagicMock(is_available=True, max_query_length=500)
             mock_engine = MagicMock()
@@ -190,12 +191,14 @@ class TestNLQQuery:
             mock_engine.run = AsyncMock(return_value=mock_result)
             nlq_router._engine = mock_engine
             nlq_router._redis = None  # No caching for auth requests
+            nlq_router._jwt_secret = "test-jwt-secret-for-unit-tests"
 
             response = test_client.post("/api/nlq/query", json={"query": "how many records do I have?"}, headers=auth_headers)
         finally:
             nlq_router._nlq_config = original_config
             nlq_router._engine = original_engine
             nlq_router._redis = original_redis
+            nlq_router._jwt_secret = original_jwt_secret
 
         assert response.status_code == 200
         # Engine should have been called with a context that has user_id set

@@ -462,8 +462,10 @@ async def twofa_verify(request: Request, body: TwoFactorVerifyModel) -> JSONResp
     if not user or not user.get("totp_secret"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="2FA not configured")
 
-    # Check lockout
+    # Check lockout — ensure timezone-aware comparison
     locked_until = user.get("totp_locked_until")
+    if locked_until and locked_until.tzinfo is None:
+        locked_until = locked_until.replace(tzinfo=UTC)
     if locked_until and locked_until > datetime.now(UTC):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Account temporarily locked due to failed 2FA attempts")
 

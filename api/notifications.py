@@ -26,9 +26,9 @@ class NotificationChannel(Protocol):
 class LogNotificationChannel:
     """Notification channel that logs messages (development/MVP use)."""
 
-    async def send_password_reset(self, email: str, reset_url: str) -> None:
-        """Log a password reset link."""
-        logger.info("🔑 Password reset link generated", email=email, reset_url=reset_url)
+    async def send_password_reset(self, email: str, reset_url: str) -> None:  # noqa: ARG002  # reset_url unused in log channel
+        """Log a password reset link (URL intentionally not logged for security)."""
+        logger.info("🔑 Password reset link generated", email=email)
 
 
 class BrevoNotificationChannel:
@@ -54,7 +54,7 @@ class BrevoNotificationChannel:
             "</body></html>"
         )
 
-        logger.debug("🔑 Sending password reset email", email=email, reset_url=reset_url)
+        logger.debug("🔑 Sending password reset email", email=email)
         try:
             await asyncio.to_thread(
                 self._client.transactional_emails.send_transac_email,

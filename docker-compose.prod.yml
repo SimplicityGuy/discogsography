@@ -115,9 +115,14 @@ services:
 
   neo4j:
     restart: always
+    entrypoint: ["/scripts/neo4j-entrypoint.sh"]
+    command: ["neo4j"]
+    volumes:
+      - ./scripts/neo4j-entrypoint.sh:/scripts/neo4j-entrypoint.sh:ro
+    secrets:
+      - neo4j_password
     environment:
       JAVA_TOOL_OPTIONS: '--enable-native-access=ALL-UNNAMED'
-      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
       NEO4J_dbms_memory_transaction_total_max: 8G
       # --- Memory: heap 8G + page cache 16G = ~24G (fits 25GB store in cache) ---
       NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP_SIZE:-8g}

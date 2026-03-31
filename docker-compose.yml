@@ -655,7 +655,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-      - /.cache
     volumes:
       - dashboard_logs:/logs
 

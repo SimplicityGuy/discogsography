@@ -119,7 +119,7 @@ mcp-server = [
     "structlog>=24.0.0",
 ]
 all = [
-    "discogsography[api,brainzgraphinator,dashboard,explore,graphinator,mcp-server,schema-init,tableinator,dev,utilities]",
+    "discogsography[api,brainzgraphinator,brainztableinator,dashboard,explore,graphinator,insights,mcp-server,schema-init,tableinator,dev,utilities]",
 ]
 
 [tool.ruff.format]

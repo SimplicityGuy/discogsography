@@ -569,7 +569,7 @@ requires-dist = [
     { name = "brevo-python", marker = "extra == 'api'", specifier = ">=1.0.0" },
     { name = "cryptography", marker = "extra == 'api'", specifier = ">=43.0.0" },
     { name = "dict-hash", specifier = ">=1.1.0" },
-    { name = "discogsography", extras = ["api", "brainzgraphinator", "dashboard", "explore", "graphinator", "mcp-server", "schema-init", "tableinator", "dev", "utilities"], marker = "extra == 'all'" },
+    { name = "discogsography", extras = ["api", "brainzgraphinator", "brainztableinator", "dashboard", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator", "dev", "utilities"], marker = "extra == 'all'" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115.6" },
     { name = "fastapi", marker = "extra == 'dashboard'", specifier = ">=0.115.6" },
     { name = "fastapi", marker = "extra == 'explore'", specifier = ">=0.115.6" },

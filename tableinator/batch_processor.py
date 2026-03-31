@@ -239,6 +239,12 @@ class PostgreSQLBatchProcessor:
                 await self._process_batch(data_type, messages)
                 success = True
 
+            except asyncio.CancelledError:
+                # Re-enqueue messages on cancellation (e.g., during graceful shutdown)
+                for msg in reversed(messages):
+                    queue.appendleft(msg)
+                raise
+
             except (InterfaceError, OperationalError) as e:
                 logger.error(
                     "❌ PostgreSQL connection error during batch",
@@ -408,7 +414,6 @@ class PostgreSQLBatchProcessor:
                     )
 
                 if not records_to_upsert:
-                    await conn.commit()
                     return
 
                 # Step 3: Bulk upsert using executemany

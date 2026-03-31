@@ -72,8 +72,9 @@ LABEL org.opencontainers.image.title="Discogsography Schema Init" \
       com.discogsography.dependencies="neo4j,psycopg" \
       com.discogsography.python.version="${PYTHON_VERSION}"
 
-# Create user and directories with configurable UID/GID
-RUN groupadd -r -g ${GID} discogsography && \
+# Patch base image CVEs and create user/directories
+RUN apt-get update && apt-get upgrade -y && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    groupadd -r -g ${GID} discogsography && \
     useradd -r -l -u ${UID} -g discogsography -m -s /bin/bash discogsography && \
     mkdir -p /tmp /app /logs && \
     chown -R discogsography:discogsography /tmp /app /logs

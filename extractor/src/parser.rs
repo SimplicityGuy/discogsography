@@ -197,7 +197,7 @@ impl XmlParser {
                         }
                     }
 
-                    depth -= 1;
+                    depth = depth.saturating_sub(1);
                 }
 
                 Ok(Event::End(e)) => {

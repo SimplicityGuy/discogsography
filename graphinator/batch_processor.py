@@ -382,8 +382,14 @@ class Neo4jBatchProcessor:
         # Filter artists that need processing
         for msg in messages:
             artist_id = msg.data.get("id")
+            if not artist_id:
+                logger.warning(
+                    "⚠️ Skipping message with missing 'id' field",
+                    data_keys=list(msg.data.keys()),
+                )
+                continue
             artist_hash = msg.data.get("sha256")
-            if artist_id and existing_hashes.get(artist_id) != artist_hash:
+            if existing_hashes.get(artist_id) != artist_hash:
                 artists_to_process.append(msg.data)
 
         if not artists_to_process:
@@ -498,8 +504,14 @@ class Neo4jBatchProcessor:
 
         for msg in messages:
             label_id = msg.data.get("id")
+            if not label_id:
+                logger.warning(
+                    "⚠️ Skipping message with missing 'id' field",
+                    data_keys=list(msg.data.keys()),
+                )
+                continue
             label_hash = msg.data.get("sha256")
-            if label_id and existing_hashes.get(label_id) != label_hash:
+            if existing_hashes.get(label_id) != label_hash:
                 labels_to_process.append(msg.data)
 
         if not labels_to_process:
@@ -587,8 +599,14 @@ class Neo4jBatchProcessor:
 
         for msg in messages:
             master_id = msg.data.get("id")
+            if not master_id:
+                logger.warning(
+                    "⚠️ Skipping message with missing 'id' field",
+                    data_keys=list(msg.data.keys()),
+                )
+                continue
             master_hash = msg.data.get("sha256")
-            if master_id and existing_hashes.get(master_id) != master_hash:
+            if existing_hashes.get(master_id) != master_hash:
                 masters_to_process.append(msg.data)
 
         if not masters_to_process:
@@ -726,8 +744,14 @@ class Neo4jBatchProcessor:
 
         for msg in messages:
             release_id = msg.data.get("id")
+            if not release_id:
+                logger.warning(
+                    "⚠️ Skipping message with missing 'id' field",
+                    data_keys=list(msg.data.keys()),
+                )
+                continue
             release_hash = msg.data.get("sha256")
-            if release_id and existing_hashes.get(release_id) != release_hash:
+            if existing_hashes.get(release_id) != release_hash:
                 # Enrich with extracted format names for graph storage
                 msg.data["format_names"] = extract_format_names(msg.data.get("formats"))
                 releases_to_process.append(msg.data)
@@ -960,6 +984,12 @@ class Neo4jBatchProcessor:
             wait = self._backoff_until[data_type] - time.time()
             if wait > 0:
                 await asyncio.sleep(wait)
+                # Don't count backoff waits as retries — only count actual flush failures
+                await self._flush_queue(data_type)
+                curr_len = len(self.queues.get(data_type, []))
+                if curr_len < prev_len:
+                    retries = 0
+                continue
             await self._flush_queue(data_type)
             curr_len = len(self.queues.get(data_type, []))
             if curr_len >= prev_len:

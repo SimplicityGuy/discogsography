@@ -509,6 +509,7 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
             pre_enriched = enrichment_stats["entities_enriched"]
             pre_skipped = enrichment_stats["entities_skipped_no_discogs_match"]
             pre_rels = enrichment_stats["relationships_created"]
+            pre_rels_skipped = enrichment_stats["relationships_skipped_missing_side"]
 
             async with graph.session(database="neo4j") as session:
 
@@ -518,6 +519,9 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
                     enrichment_stats["entities_enriched"] = pre_enriched
                     enrichment_stats["entities_skipped_no_discogs_match"] = pre_skipped
                     enrichment_stats["relationships_created"] = pre_rels
+                    enrichment_stats["relationships_skipped_missing_side"] = (
+                        pre_rels_skipped
+                    )
                     return bool(await enrich_fn(tx, body))
 
                 await session.execute_write(tx_fn)
@@ -783,6 +787,7 @@ async def _recover_consumers() -> None:
             pass
         active_connection = None
         active_channel = None
+        queues = {}
 
 
 async def main() -> None:

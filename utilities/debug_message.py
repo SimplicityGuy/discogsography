@@ -58,7 +58,7 @@ def analyze_message(message: dict[str, Any] | None, message_type: str) -> None:
 
     # Basic info
     print(f"Message ID: {message.get('id', 'MISSING')}")
-    print(f"SHA256: {message.get('sha256', 'MISSING')[:16]}...")
+    print(f"SHA256: {str(message.get('sha256', 'MISSING'))[:16]}...")
 
     # Check for required fields based on type
     if message_type == "masters":
@@ -126,7 +126,8 @@ def analyze_message(message: dict[str, Any] | None, message_type: str) -> None:
 
     # Show full message structure
     print("\n📄 Full Message Structure:")
-    print(json.dumps(message, indent=2)[:1000] + "..." if len(json.dumps(message)) > 1000 else json.dumps(message, indent=2))
+    formatted = json.dumps(message, indent=2)
+    print(formatted[:1000] + "..." if len(formatted) > 1000 else formatted)
 
 
 def main() -> None:

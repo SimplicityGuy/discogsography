@@ -1,9 +1,9 @@
 """MCP server exposing the Discogsography knowledge graph to AI assistants.
 
-Provides 11 tools for searching, exploring, and analyzing music data:
+Provides 12 tools for searching, exploring, and analyzing music data:
   search, get_artist_details, get_label_details, get_release_details,
   get_genre_details, get_style_details, find_path, get_trends,
-  get_graph_stats, get_collaborators, get_genre_tree
+  get_graph_stats, get_collaborators, get_genre_tree, nlq_query
 
 All data is fetched via the Discogsography API — no direct database access.
 

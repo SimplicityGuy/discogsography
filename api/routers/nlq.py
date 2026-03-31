@@ -23,14 +23,16 @@ router = APIRouter()
 _nlq_config: NLQConfig = NLQConfig()
 _engine: NLQEngine | None = None
 _redis: Any = None
+_jwt_secret: str | None = None
 
 
-def configure(nlq_config: NLQConfig, engine: NLQEngine | None, redis: Any = None) -> None:
-    """Wire NLQ config, engine, and Redis into the router."""
-    global _nlq_config, _engine, _redis
+def configure(nlq_config: NLQConfig, engine: NLQEngine | None, redis: Any = None, jwt_secret: str | None = None) -> None:
+    """Wire NLQ config, engine, Redis, and JWT secret into the router."""
+    global _nlq_config, _engine, _redis, _jwt_secret
     _nlq_config = nlq_config
     _engine = engine
     _redis = redis
+    _jwt_secret = jwt_secret
 
 
 class NLQQueryRequest(BaseModel):
@@ -47,13 +49,11 @@ def _extract_user_id(request: Request) -> str | None:
         return None
     token = auth_header[7:]
     try:
-        # Get JWT secret from app config
-        import api.api as api_module  # noqa: PLC0415
         from api.auth import decode_token  # noqa: PLC0415
 
-        if api_module._config is None:
+        if _jwt_secret is None:
             return None
-        payload = decode_token(token, api_module._config.jwt_secret_key)
+        payload = decode_token(token, _jwt_secret)
         if payload.get("type") == "admin":
             return None
         return payload.get("sub")
