@@ -1053,8 +1053,8 @@ class TestBatchTransactionLogic:
         assert len(executed_queries) >= 4  # Artist node + members + groups + aliases
 
     @pytest.mark.asyncio
-    async def test_artists_batch_all_up_to_date_acks_messages(self) -> None:
-        """When all artists already have matching hashes, messages must be acked (not left unacknowledged)."""
+    async def test_artists_batch_all_up_to_date_returns_early(self) -> None:
+        """When all artists already have matching hashes, returns early without writing (acking is done by _flush_queue)."""
         mock_driver, mock_session = create_async_session_mock()
 
         mock_result = create_async_result_mock([{"id": "1", "hash": "hash1"}])
@@ -1069,32 +1069,16 @@ class TestBatchTransactionLogic:
         await processor._process_artists_batch(messages)
 
         mock_session.execute_write.assert_not_called()
-        ack_cb.assert_awaited_once()
+        # Acking is handled by _flush_queue, not by _process_artists_batch
+        ack_cb.assert_not_awaited()
         nack_cb.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_artists_batch_up_to_date_ack_failure_logged(self) -> None:
-        """When ack fails on a skipped artist message, the error is logged but does not propagate."""
-        mock_driver, mock_session = create_async_session_mock()
-
-        mock_result = create_async_result_mock([{"id": "1", "hash": "hash1"}])
-        mock_session.run = AsyncMock(return_value=mock_result)
-
-        processor = Neo4jBatchProcessor(mock_driver)
-
-        ack_cb = AsyncMock(side_effect=Exception("ack failed"))
-        messages = [PendingMessage("artists", {"id": "1", "name": "Artist 1", "sha256": "hash1"}, ack_cb, AsyncMock())]
-
-        # Should not raise
-        await processor._process_artists_batch(messages)
-        ack_cb.assert_awaited_once()
-
-    @pytest.mark.asyncio
     async def test_labels_batch_all_up_to_date_early_return(self) -> None:
-        """Test early return when all labels already have matching hashes — messages must be acked."""
+        """Test early return when all labels already have matching hashes — acking is done by _flush_queue."""
         mock_driver, mock_session = create_async_session_mock()
 
-        # Return hash that matches the message hash - line 378 fires
+        # Return hash that matches the message hash
         mock_result = create_async_result_mock([{"id": "1", "hash": "hash1"}])
         mock_session.run = AsyncMock(return_value=mock_result)
 
@@ -1106,9 +1090,10 @@ class TestBatchTransactionLogic:
 
         await processor._process_labels_batch(messages)
 
-        # execute_write should NOT be called (returned early at line 388)
+        # execute_write should NOT be called (returned early)
         mock_session.execute_write.assert_not_called()
-        ack_cb.assert_awaited_once()
+        # Acking is handled by _flush_queue, not by _process_labels_batch
+        ack_cb.assert_not_awaited()
         nack_cb.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1156,7 +1141,7 @@ class TestBatchTransactionLogic:
 
     @pytest.mark.asyncio
     async def test_masters_batch_all_up_to_date_early_return(self) -> None:
-        """Test early return when all masters already have matching hashes — messages must be acked."""
+        """Test early return when all masters already have matching hashes — acking is done by _flush_queue."""
         mock_driver, mock_session = create_async_session_mock()
 
         mock_result = create_async_result_mock([{"id": "1", "hash": "hash1"}])
@@ -1170,9 +1155,10 @@ class TestBatchTransactionLogic:
 
         await processor._process_masters_batch(messages)
 
-        # execute_write should NOT be called (returned early at line 477)
+        # execute_write should NOT be called (returned early)
         mock_session.execute_write.assert_not_called()
-        ack_cb.assert_awaited_once()
+        # Acking is handled by _flush_queue, not by _process_masters_batch
+        ack_cb.assert_not_awaited()
         nack_cb.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1222,7 +1208,7 @@ class TestBatchTransactionLogic:
 
     @pytest.mark.asyncio
     async def test_releases_batch_all_up_to_date_early_return(self) -> None:
-        """Test early return when all releases already have matching hashes — messages must be acked."""
+        """Test early return when all releases already have matching hashes — acking is done by _flush_queue."""
         mock_driver, mock_session = create_async_session_mock()
 
         mock_result = create_async_result_mock([{"id": "1", "hash": "hash1"}])
@@ -1238,7 +1224,8 @@ class TestBatchTransactionLogic:
 
         # execute_write should NOT be called (returned early)
         mock_session.execute_write.assert_not_called()
-        ack_cb.assert_awaited_once()
+        # Acking is handled by _flush_queue, not by _process_releases_batch
+        ack_cb.assert_not_awaited()
         nack_cb.assert_not_called()
 
     @pytest.mark.asyncio

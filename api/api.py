@@ -529,9 +529,9 @@ async def verify_discogs(
             detail="Discogs app credentials not configured",
         )
 
-    # Retrieve request token secret from Redis
+    # Atomically consume request token secret from Redis to prevent replay
     redis_key = f"{REDIS_STATE_PREFIX}{request.state}"
-    raw_state_data = await _redis.get(redis_key)
+    raw_state_data = await _redis.getdel(redis_key)
 
     if not raw_state_data:
         raise HTTPException(
@@ -618,8 +618,7 @@ async def verify_discogs(
                 detail="Failed to persist OAuth token",
             )
 
-    # Clean up state from Redis only after DB write succeeds
-    await _redis.delete(redis_key)
+    # State was already atomically consumed via getdel above
 
     logger.info("✅ Discogs account connected", user_id=user_id, discogs_username=discogs_username)
     return JSONResponse(

@@ -412,7 +412,6 @@ class DashboardApp:
                 async with self.neo4j_driver.session() as session:
                     result = await session.run("CALL dbms.components() YIELD name, versions")
                     await result.single()
-                    await result.consume()
 
                     # Get database size — fall back to basic count if APOC is not installed
                     try:

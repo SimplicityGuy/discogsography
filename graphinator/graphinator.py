@@ -1529,7 +1529,7 @@ async def main() -> None:
                     logger.error("❌ Error flushing batch processor", error=str(e))
 
             # Cancel any pending consumer cancellation tasks
-            for task in consumer_cancel_tasks.values():
+            for task in list(consumer_cancel_tasks.values()):
                 task.cancel()
 
             # Close RabbitMQ connection if still active

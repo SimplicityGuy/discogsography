@@ -85,7 +85,7 @@ CONTAINER="$1"
 OLD_KEY="$(resolve_value "${OLD_KEY}")"
 
 # Generate new master key locally (32 random bytes, base64url-encoded)
-NEW_MASTER_KEY=$(python3 -c "
+NEW_MASTER_KEY=$(uv run python -c "
 import base64, os
 key = os.urandom(32)
 print(base64.urlsafe_b64encode(key).decode('ascii'), end='')
@@ -127,7 +127,7 @@ f_new = Fernet(new_key.encode('ascii'))
 # Validate keys work
 test_data = b'migration-test'
 assert f_new.decrypt(f_new.encrypt(test_data)) == test_data
-print('Key derivation validated')
+import sys; print('Key derivation validated', file=sys.stderr)
 
 pg_user = get_secret('POSTGRES_USERNAME')
 pg_pass = get_secret('POSTGRES_PASSWORD')
@@ -148,7 +148,7 @@ for row_id, access_token, access_secret in rows:
         cur.execute('UPDATE oauth_tokens SET access_token = %s, access_secret = %s WHERE id = %s', (new_token, new_secret, row_id))
         count += 1
     except Exception as e:
-        print(f'Warning: Could not migrate token {row_id}: {e}')
+        print(f'Warning: Could not migrate token {row_id}: {e}', file=sys.stderr)
 conn.commit()
 conn.close()
 print(count)

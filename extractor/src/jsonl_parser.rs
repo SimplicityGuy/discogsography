@@ -328,7 +328,14 @@ pub fn enrich_relations(
     entity_type: &str,
 ) -> Vec<Value> {
     // entity_type is plural ("artists"), target_type in relations is singular ("artist")
-    let singular = entity_type.strip_suffix('s').unwrap_or(entity_type);
+    let singular = match entity_type {
+        "artists" => "artist",
+        "labels" => "label",
+        "releases" => "release",
+        "release-groups" => "release-group",
+        other => other.strip_suffix('s').unwrap_or(other),
+    };
+    let field_name = format!("target_discogs_{}_id", singular.replace('-', "_"));
     relations
         .into_iter()
         .map(|mut rel| {
@@ -341,7 +348,7 @@ pub fn enrich_relations(
             let target_discogs_id: Value =
                 target_mbid.as_deref().and_then(|mbid| discogs_map.get(mbid)).copied().map(Value::from).unwrap_or(Value::Null);
             if let Some(obj) = rel.as_object_mut() {
-                obj.insert("target_discogs_artist_id".to_string(), target_discogs_id);
+                obj.insert(field_name.clone(), target_discogs_id);
             }
             rel
         })

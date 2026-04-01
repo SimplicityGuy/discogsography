@@ -441,8 +441,8 @@ async def twofa_verify(request: Request, body: TwoFactorVerifyModel) -> JSONResp
     if not jti:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid challenge token")
 
-    # Check challenge exists in Redis
-    challenge_data = await _redis.get(f"2fa_challenge:{jti}")
+    # Atomically consume challenge from Redis to prevent replay
+    challenge_data = await _redis.getdel(f"2fa_challenge:{jti}")
     if not challenge_data:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Challenge expired or already used")
 
@@ -487,21 +487,16 @@ async def twofa_verify(request: Request, body: TwoFactorVerifyModel) -> JSONResp
         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
             await execute_sql(cur, lock_sql, tuple(params))
 
-        # Delete challenge on lockout to prevent further retries
-        if failed >= 5:
-            await _redis.delete(f"2fa_challenge:{jti}")
-
         logger.warning("⚠️ Failed 2FA attempt", user_id=user_id, attempts=failed)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
 
-    # Success — reset attempts and delete challenge
+    # Success — reset attempts (challenge already consumed above)
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,
             "UPDATE users SET totp_failed_attempts = 0, totp_locked_until = NULL, updated_at = NOW() WHERE id = %s::uuid",
             (user_id,),
         )
-    await _redis.delete(f"2fa_challenge:{jti}")
 
     # Issue access token
     access_token, expires_in = _create_access_token_fn(user_id, email)
@@ -535,7 +530,8 @@ async def twofa_recovery(request: Request, body: TwoFactorRecoveryModel) -> JSON
     if not jti:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid challenge token")
 
-    challenge_data = await _redis.get(f"2fa_challenge:{jti}")
+    # Atomically consume challenge from Redis to prevent replay
+    challenge_data = await _redis.getdel(f"2fa_challenge:{jti}")
     if not challenge_data:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Challenge expired or already used")
 
@@ -562,7 +558,7 @@ async def twofa_recovery(request: Request, body: TwoFactorRecoveryModel) -> JSON
     if submitted_hash not in stored_hashes:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid recovery code")
 
-    # Remove used code
+    # Remove used code (challenge already consumed above)
     stored_hashes.remove(submitted_hash)
 
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
@@ -571,7 +567,6 @@ async def twofa_recovery(request: Request, body: TwoFactorRecoveryModel) -> JSON
             "UPDATE users SET totp_recovery_codes = %s, updated_at = NOW() WHERE id = %s::uuid",
             (json.dumps(stored_hashes), user_id),
         )
-    await _redis.delete(f"2fa_challenge:{jti}")
 
     # Issue access token
     access_token, expires_in = _create_access_token_fn(user_id, email)

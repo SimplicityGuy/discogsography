@@ -178,7 +178,8 @@ async def create_neo4j_schema(driver: Any) -> int:
     async with driver.session(database="neo4j") as session:
         for name, cypher in SCHEMA_STATEMENTS:
             try:
-                await session.run(cypher)
+                result = await session.run(cypher)
+                await result.consume()
                 logger.info(f"✅ Schema: {name}")
                 success_count += 1
             except Exception as e:

@@ -73,6 +73,9 @@ async def _scheduler_loop(
     global _last_computation
     interval_seconds = interval_hours * 3600
 
+    # Wait for dependent services (API) to be ready before first computation
+    await asyncio.sleep(30)
+
     while True:
         cycle_start = asyncio.get_running_loop().time()
         try:

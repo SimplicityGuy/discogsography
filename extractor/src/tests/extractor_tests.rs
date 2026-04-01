@@ -920,7 +920,7 @@ rules:
 
 #[tokio::test(start_paused = true)]
 async fn test_wait_for_trigger_returns_when_triggered() {
-    let trigger = Arc::new(std::sync::Mutex::new(None::<bool>));
+    let trigger = Arc::new(tokio::sync::Mutex::new(None::<bool>));
     let trigger_clone = trigger.clone();
 
     let handle = tokio::spawn(async move { wait_for_trigger(&trigger_clone).await });
@@ -932,7 +932,7 @@ async fn test_wait_for_trigger_returns_when_triggered() {
 
     // Set the trigger with force_reprocess = true
     {
-        let mut t = trigger.lock().unwrap();
+        let mut t = trigger.lock().await;
         *t = Some(true);
     }
 
@@ -947,7 +947,7 @@ async fn test_wait_for_trigger_returns_when_triggered() {
 
 #[tokio::test(start_paused = true)]
 async fn test_wait_for_trigger_clears_flag() {
-    let trigger = Arc::new(std::sync::Mutex::new(Some(false)));
+    let trigger = Arc::new(tokio::sync::Mutex::new(Some(false)));
 
     let result = wait_for_trigger(&trigger).await;
 
@@ -955,17 +955,17 @@ async fn test_wait_for_trigger_clears_flag() {
     assert!(!result, "should return false (force_reprocess)");
 
     // Mutex should be None after taking
-    assert_eq!(*trigger.lock().unwrap(), None);
+    assert_eq!(*trigger.lock().await, None);
 }
 
 #[tokio::test(start_paused = true)]
 async fn test_wait_for_trigger_only_fires_once() {
-    let trigger = Arc::new(std::sync::Mutex::new(Some(false)));
+    let trigger = Arc::new(tokio::sync::Mutex::new(Some(false)));
 
     // First call should return immediately (trigger is already set)
     let result = wait_for_trigger(&trigger).await;
     assert!(!result, "first call should return false");
-    assert_eq!(*trigger.lock().unwrap(), None);
+    assert_eq!(*trigger.lock().await, None);
 
     // Second call should block — spawn it and verify it doesn't complete
     let trigger_clone = trigger.clone();
@@ -977,7 +977,7 @@ async fn test_wait_for_trigger_only_fires_once() {
 
     // Re-trigger with force_reprocess = true
     {
-        let mut t = trigger.lock().unwrap();
+        let mut t = trigger.lock().await;
         *t = Some(true);
     }
     tokio::time::advance(Duration::from_millis(600)).await;

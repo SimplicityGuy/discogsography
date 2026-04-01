@@ -616,6 +616,7 @@ class TestTwoFactorVerifyFull:
         challenge_token = _make_challenge_token()
         # Redis returns None — challenge expired or not found
         mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.getdel = AsyncMock(return_value=None)
 
         response = test_client.post(
             "/api/auth/2fa/verify",

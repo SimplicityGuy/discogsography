@@ -9,7 +9,7 @@ use chrono::Utc;
 use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
@@ -130,7 +130,7 @@ pub async fn trigger_handler(State((state, trigger)): State<AppState>, body: Opt
     let force_reprocess = body.map(|b| b.force_reprocess).unwrap_or(false);
 
     {
-        let mut t = trigger.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut t = trigger.lock().await;
         *t = Some(force_reprocess);
     }
     info!("🔄 Extraction triggered via API (force_reprocess={})", force_reprocess);

@@ -69,4 +69,3 @@ class BrevoNotificationChannel:
             logger.info("📧 Password reset email sent", email=email)
         except Exception:
             logger.exception("❌ Failed to send password reset email", email=email)
-            raise

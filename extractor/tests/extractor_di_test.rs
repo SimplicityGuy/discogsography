@@ -773,7 +773,7 @@ async fn test_run_musicbrainz_loop_shutdown_after_initial_processing() {
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+    let trigger: Arc<tokio::sync::Mutex<Option<bool>>> = Arc::new(tokio::sync::Mutex::new(None));
 
     // Signal shutdown after a short delay so the loop exits
     let shutdown_clone = shutdown.clone();
@@ -809,7 +809,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_true() {
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+    let trigger: Arc<tokio::sync::Mutex<Option<bool>>> = Arc::new(tokio::sync::Mutex::new(None));
 
     // Advance time past the check interval, then signal shutdown
     let shutdown_clone = shutdown.clone();
@@ -860,7 +860,7 @@ async fn test_run_musicbrainz_loop_periodic_check_err() {
     }
     let factory: Arc<dyn MQF> = Arc::new(AlwaysFailMqFactory);
 
-    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+    let trigger: Arc<tokio::sync::Mutex<Option<bool>>> = Arc::new(tokio::sync::Mutex::new(None));
 
     let shutdown_clone = shutdown.clone();
     let config_clone = config.clone();
@@ -921,7 +921,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_false() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+    let trigger: Arc<tokio::sync::Mutex<Option<bool>>> = Arc::new(tokio::sync::Mutex::new(None));
 
     let shutdown_clone = shutdown.clone();
     let config_clone = config.clone();
@@ -982,7 +982,7 @@ async fn test_run_musicbrainz_loop_trigger_ok_false() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+    let trigger: Arc<tokio::sync::Mutex<Option<bool>>> = Arc::new(tokio::sync::Mutex::new(None));
 
     let trigger_clone = trigger.clone();
     let shutdown_clone = shutdown.clone();
@@ -993,7 +993,7 @@ async fn test_run_musicbrainz_loop_trigger_ok_false() {
         let _ = tokio::fs::remove_file(&marker_path_clone).await;
         // Set trigger to fire
         {
-            let mut t = trigger_clone.lock().unwrap();
+            let mut t = trigger_clone.lock().await;
             *t = Some(false);
         }
         // Wait for processing
@@ -1036,7 +1036,7 @@ async fn test_run_musicbrainz_loop_trigger_err() {
     }
     let factory = Arc::new(FailingMqFactory2);
 
-    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+    let trigger: Arc<tokio::sync::Mutex<Option<bool>>> = Arc::new(tokio::sync::Mutex::new(None));
 
     let trigger_clone = trigger.clone();
     let shutdown_clone = shutdown.clone();
@@ -1046,7 +1046,7 @@ async fn test_run_musicbrainz_loop_trigger_err() {
         // Remove state marker so the triggered call proceeds past Skip to MQ creation (and fails)
         let _ = tokio::fs::remove_file(&marker_path_clone).await;
         {
-            let mut t = trigger_clone.lock().unwrap();
+            let mut t = trigger_clone.lock().await;
             *t = Some(false);
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
@@ -1074,7 +1074,7 @@ async fn test_run_musicbrainz_loop_initial_failure_returns_error() {
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+    let trigger: Arc<tokio::sync::Mutex<Option<bool>>> = Arc::new(tokio::sync::Mutex::new(None));
 
     let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
 
@@ -1102,7 +1102,7 @@ async fn test_run_musicbrainz_loop_trigger_then_shutdown() {
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+    let trigger: Arc<tokio::sync::Mutex<Option<bool>>> = Arc::new(tokio::sync::Mutex::new(None));
 
     // After a short delay, set the trigger, then signal shutdown
     let trigger_clone = trigger.clone();
@@ -1110,7 +1110,7 @@ async fn test_run_musicbrainz_loop_trigger_then_shutdown() {
     tokio::spawn(async move {
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
         {
-            let mut t = trigger_clone.lock().unwrap();
+            let mut t = trigger_clone.lock().await;
             *t = Some(false);
         }
         // Give time for the trigger to be processed, then shut down
