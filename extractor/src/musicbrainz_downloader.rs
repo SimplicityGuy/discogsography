@@ -3,6 +3,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, error, info, warn};
@@ -368,7 +369,10 @@ impl MbDownloader {
 /// Returns them sorted descending (most recent first).
 #[allow(dead_code)]
 pub fn parse_version_directories(html: &str) -> Vec<String> {
-    let pattern = regex::Regex::new(r#"href="(\d{8}-\d{6})/?"#).unwrap();
+    static VERSION_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"href="(\d{8}-\d{6})/?"#).expect("hardcoded regex is valid")
+    });
+    let pattern = &*VERSION_PATTERN;
     let mut versions: Vec<String> = pattern.captures_iter(html).filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string())).collect();
     versions.sort_by(|a, b| b.cmp(a));
     versions.dedup();

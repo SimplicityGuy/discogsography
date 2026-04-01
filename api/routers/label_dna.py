@@ -142,16 +142,7 @@ async def label_dna(
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
-    # Check Redis cache first
-    cache_key = f"label-dna:{label_id}"
-    if _redis:
-        try:
-            cached = await _redis.get(cache_key)
-            if cached:
-                return JSONResponse(content=json.loads(cached))
-        except Exception:
-            logger.debug("⚠️ Label DNA cache get failed", key=cache_key)
-
+    # _build_dna already checks and populates the Redis cache — no redundant lookup here
     dna, reason = await _build_dna(label_id)
     if dna is None:
         if reason == "not_found":

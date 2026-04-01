@@ -304,7 +304,8 @@ async def reset_confirm(request: Request, body: ResetConfirmModel) -> JSONRespon
     if _pool is None or _redis is None or _config is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
 
-    raw = await _redis.get(f"reset:{body.token}")
+    # Atomically consume the token to prevent concurrent reuse (TOCTOU)
+    raw = await _redis.getdel(f"reset:{body.token}")
     if not raw:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token")
 
@@ -322,8 +323,6 @@ async def reset_confirm(request: Request, body: ResetConfirmModel) -> JSONRespon
 
     # Invalidate all existing sessions
     await _redis.setex(f"password_changed:{user_id}", _config.jwt_expire_minutes * 60, str(now_ts))
-    # Delete the used reset token (single-use)
-    await _redis.delete(f"reset:{body.token}")
 
     logger.info("✅ Password reset completed", user_id=user_id)
     return JSONResponse(content={"message": "Password has been reset"})

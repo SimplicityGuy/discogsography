@@ -240,7 +240,10 @@ function createD3Mock() {
 
 function setupGlobalMocks() {
     globalThis.Plotly = { newPlot: vi.fn(), purge: vi.fn(), addTraces: vi.fn(), deleteTraces: vi.fn() };
-    globalThis.Alpine = { store: vi.fn().mockReturnValue({ authOpen: false, discogsOpen: false }) };
+    globalThis.Alpine = {
+        store: vi.fn().mockReturnValue({ authOpen: false, discogsOpen: false }),
+        $data: (el) => el.__x ? el.__x.$data : {},
+    };
     globalThis.d3 = createD3Mock();
 
     window.apiClient = {
@@ -1028,7 +1031,7 @@ describe('ExploreApp helper methods', () => {
         });
 
         it('should handle navLoginBtn click to open auth modal', () => {
-            globalThis.Alpine = { store: vi.fn().mockReturnValue({ authOpen: false }) };
+            globalThis.Alpine = { store: vi.fn().mockReturnValue({ authOpen: false }), $data: (el) => el.__x ? el.__x.$data : {} };
             const app = new ExploreApp();
 
             document.getElementById('navLoginBtn').click();
@@ -1648,7 +1651,7 @@ describe('ExploreApp helper methods', () => {
             window.apiClient.login.mockResolvedValue({ access_token: 'jwt-123' });
             window.apiClient.getMe.mockResolvedValue({ email: 'test@test.com' });
             window.apiClient.getDiscogsStatus.mockResolvedValue({ connected: false });
-            globalThis.Alpine = { store: vi.fn().mockReturnValue({ authOpen: false }) };
+            globalThis.Alpine = { store: vi.fn().mockReturnValue({ authOpen: false }), $data: (el) => el.__x ? el.__x.$data : {} };
 
             const app = new ExploreApp();
             await app._handleLogin();

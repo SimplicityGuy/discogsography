@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from os import getenv
 import sys
 from typing import Any
+from urllib.parse import quote as _url_quote
 
 import httpx
 from mcp.server.fastmcp import Context, FastMCP
@@ -41,7 +42,7 @@ class AppContext:
     """Typed lifespan context holding the HTTP client and API base URL."""
 
     client: httpx.AsyncClient
-    base_url: str
+    base_url: str  # nosemgrep: path-traversal — base_url comes from env var, not user input
 
 
 @asynccontextmanager
@@ -221,7 +222,7 @@ async def get_genre_details(
         genre_name: Exact genre name (e.g. "Jazz", "Electronic", "Rock").
     """
     app = _ctx(ctx)
-    return await _api_get(app, f"/api/node/{genre_name}", {"type": "genre"})
+    return await _api_get(app, f"/api/node/{_url_quote(genre_name, safe='')}", {"type": "genre"})
 
 
 @mcp.tool()
@@ -237,7 +238,7 @@ async def get_style_details(
         style_name: Exact style name (e.g. "Acid Jazz", "Ambient", "Punk").
     """
     app = _ctx(ctx)
-    return await _api_get(app, f"/api/node/{style_name}", {"type": "style"})
+    return await _api_get(app, f"/api/node/{_url_quote(style_name, safe='')}", {"type": "style"})
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +276,7 @@ async def find_path(
         return {"error": f"Invalid to_type: {to_type}. Must be one of: {', '.join(sorted(_VALID_ENTITY_TYPES))}"}
 
     app = _ctx(ctx)
-    return await _api_get(
+    return await _api_get(  # nosemgrep: ssrf — types validated against _VALID_ENTITY_TYPES allowlist; names passed as query params
         app,
         "/api/path",
         {

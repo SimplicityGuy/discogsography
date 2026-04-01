@@ -199,7 +199,7 @@ class TableinatorConfig:
     def from_env(cls) -> "TableinatorConfig":
         """Create configuration from environment variables."""
         amqp_connection = _build_amqp_url()
-        postgres_username = getenv("POSTGRES_USERNAME")
+        postgres_username = get_secret("POSTGRES_USERNAME")
         postgres_password = get_secret("POSTGRES_PASSWORD")
         postgres_database = getenv("POSTGRES_DATABASE")
 
@@ -239,7 +239,7 @@ class BrainztableinatorConfig:
     def from_env(cls) -> "BrainztableinatorConfig":
         """Create configuration from environment variables."""
         amqp_connection = _build_amqp_url()
-        postgres_username = getenv("POSTGRES_USERNAME")
+        postgres_username = get_secret("POSTGRES_USERNAME")
         postgres_password = get_secret("POSTGRES_PASSWORD")
         postgres_database = getenv("POSTGRES_DATABASE")
 
@@ -532,7 +532,7 @@ class ApiConfig:
     @classmethod
     def from_env(cls) -> "ApiConfig":
         """Create configuration from environment variables."""
-        postgres_username = getenv("POSTGRES_USERNAME")
+        postgres_username = get_secret("POSTGRES_USERNAME")
         postgres_password = get_secret("POSTGRES_PASSWORD")
         postgres_database = getenv("POSTGRES_DATABASE")
         jwt_secret_key = get_secret("JWT_SECRET_KEY")
@@ -644,38 +644,19 @@ DiscoveryConfig = DashboardConfig
 
 @dataclass(frozen=True)
 class ExploreConfig:
-    """Configuration for the explore service."""
+    """Configuration for the explore service.
 
-    neo4j_host: str
-    neo4j_username: str
-    neo4j_password: str
-    jwt_secret_key: str | None = None  # Optional: required only for personalized user endpoints
+    Explore serves static files only — no Neo4j connection required.
+    """
+
+    api_base_url: str = "http://api:8004"
 
     @classmethod
     def from_env(cls) -> "ExploreConfig":
         """Create configuration from environment variables."""
-        neo4j_username = getenv("NEO4J_USERNAME")
-        neo4j_password = get_secret("NEO4J_PASSWORD")
-
-        missing_vars = []
-        if not getenv("NEO4J_HOST"):
-            missing_vars.append("NEO4J_HOST")
-        if not neo4j_username:
-            missing_vars.append("NEO4J_USERNAME")
-        if not neo4j_password:
-            missing_vars.append("NEO4J_PASSWORD")
-
-        if missing_vars:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
-
-        # Optional: enables personalized /api/user/* endpoints
-        jwt_secret_key = get_secret("JWT_SECRET_KEY") or None
-
+        api_base_url = getenv("API_BASE_URL", "http://api:8004")
         return cls(
-            neo4j_host=_build_neo4j_uri(),
-            neo4j_username=cast("str", neo4j_username),
-            neo4j_password=cast("str", neo4j_password),
-            jwt_secret_key=jwt_secret_key,
+            api_base_url=api_base_url,
         )
 
 
@@ -695,7 +676,7 @@ class InsightsConfig:
     @classmethod
     def from_env(cls) -> "InsightsConfig":
         """Create configuration from environment variables."""
-        postgres_username = getenv("POSTGRES_USERNAME")
+        postgres_username = get_secret("POSTGRES_USERNAME")
         postgres_password = get_secret("POSTGRES_PASSWORD")
         postgres_database = getenv("POSTGRES_DATABASE")
 

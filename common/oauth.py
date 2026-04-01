@@ -45,5 +45,5 @@ def _hmac_sha1_signature(
         ]
     )
     signing_key = f"{_oauth_escape(consumer_secret)}&{_oauth_escape(token_secret)}"
-    digest = hmac.HMAC(signing_key.encode("ascii"), base_string.encode("ascii"), hashlib.sha1).digest()
+    digest = hmac.HMAC(signing_key.encode("utf-8"), base_string.encode("utf-8"), hashlib.sha1).digest()
     return b64encode(digest).decode("ascii")

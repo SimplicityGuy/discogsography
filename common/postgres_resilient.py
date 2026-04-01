@@ -73,6 +73,8 @@ class ResilientPostgreSQLPool:
                 conn = self._create_connection()
                 if conn:
                     self.connections.put_nowait(conn)
+                    with self._lock:
+                        self.active_connections += 1
             except Full:
                 break
             except Exception as e:
@@ -348,6 +350,7 @@ class AsyncPostgreSQLPool:
                 conn = await self._create_connection()
                 if conn:
                     await self.connections.put(conn)
+                    self.active_connections += 1
             except asyncio.QueueFull:
                 break
             except Exception as e:

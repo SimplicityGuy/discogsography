@@ -78,8 +78,9 @@ class GraphVisualization {
             .attr('d', 'M 0,-5 L 10,0 L 0,5')
             .attr('fill', '#2d3051');
 
-        // Handle resize
-        window.addEventListener('resize', () => this._onResize());
+        // Handle resize — store reference for cleanup
+        this._resizeHandler = () => this._onResize();
+        window.addEventListener('resize', this._resizeHandler);
     }
 
     _initControls() {
@@ -351,7 +352,7 @@ class GraphVisualization {
             if (catNode) {
                 const newOffset = offset + children.length;
                 this._categoryMeta.set(d.categoryId, { ...meta, offset: newOffset });
-                catNode.name = `${catNode.displayName || catNode.name.replace(/ \([\d\s/]+\)$/, '')} (${newOffset} / ${total})`;
+                catNode.name = `${catNode.displayName || catNode.name.replace(/ \(\d+(?:\s*\/\s*\d+)?\)$/, '')} (${newOffset} / ${total})`;
             }
 
             if (has_more) {
@@ -590,6 +591,9 @@ class GraphVisualization {
         if (this.simulation) {
             this.simulation.stop();
             this.simulation = null;
+        }
+        if (this._resizeHandler) {
+            window.removeEventListener('resize', this._resizeHandler);
         }
         this.placeholder.classList.remove('hidden');
     }

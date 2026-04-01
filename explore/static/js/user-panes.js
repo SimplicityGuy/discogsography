@@ -44,7 +44,7 @@ class UserPanes {
 
     _renderCollectionList(container, data) {
         if (!container) return;
-        container.innerHTML = '';
+        container.replaceChildren();
 
         if (!data.releases || data.releases.length === 0) {
             this._renderCollectionEmpty(container, 'Your collection is empty. Sync your Discogs collection first.');
@@ -108,7 +108,7 @@ class UserPanes {
 
     _renderWantlistList(container, data) {
         if (!container) return;
-        container.innerHTML = '';
+        container.replaceChildren();
 
         if (!data.releases || data.releases.length === 0) {
             this._renderWantlistEmpty(container, 'Your wantlist is empty. Sync your Discogs wantlist first.');
@@ -166,7 +166,7 @@ class UserPanes {
 
     _renderRecommendations(container, data) {
         if (!container) return;
-        container.innerHTML = '';
+        container.replaceChildren();
 
         if (!data || !data.recommendations || data.recommendations.length === 0) {
             const empty = document.createElement('div');
@@ -254,7 +254,7 @@ class UserPanes {
             { label: 'Avg Rating', value: avgRating != null ? avgRating.toFixed(1) : '—', rating: avgRating },
         ];
 
-        el.innerHTML = '';
+        el.replaceChildren();
         el.className = 'stats-row';
         fields.forEach(f => {
             const card = document.createElement('div');

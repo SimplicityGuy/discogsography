@@ -581,16 +581,13 @@ async def verify_discogs(
             detail="Invalid verifier code or OAuth flow failed",
         ) from exc
 
-    # Clean up state from Redis on success
-    await _redis.delete(redis_key)
-
     user_id = current_user.get("sub")
     discogs_username = identity.get("username", "")
     discogs_user_id = str(identity.get("id", ""))
 
     _oauth_key = get_oauth_encryption_key(_config.encryption_master_key)
 
-    # Upsert oauth_tokens record
+    # Upsert oauth_tokens record — BEFORE deleting Redis state so user can retry on DB failure
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,
@@ -620,6 +617,9 @@ async def verify_discogs(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to persist OAuth token",
             )
+
+    # Clean up state from Redis only after DB write succeeds
+    await _redis.delete(redis_key)
 
     logger.info("✅ Discogs account connected", user_id=user_id, discogs_username=discogs_username)
     return JSONResponse(

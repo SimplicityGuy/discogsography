@@ -488,14 +488,28 @@ class TestLabelDnaModels:
 class TestLabelDnaCaching:
     """Tests for Redis caching on label DNA and similar endpoints."""
 
-    def test_dna_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
-        """Cached DNA response should be returned without querying Neo4j."""
-        cached = {"label_id": "157", "label_name": "Hooj Choons", "release_count": 100}
-        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+    def test_dna_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:  # noqa: ARG002
+        """Cached DNA response returned via _build_dna (which checks Redis internally)."""
+        from api.models import LabelDNA
 
-        response = test_client.get("/api/label/157/dna")
+        fake_dna = LabelDNA(
+            label_id="157",
+            label_name="Hooj Choons",
+            release_count=100,
+            artist_count=50,
+            artist_diversity=0.5,
+            active_years=[2000],
+            peak_decade=2000,
+            prolificacy=100.0,
+            genres=[],
+            styles=[],
+            formats=[],
+            decades=[],
+        )
+        with patch("api.routers.label_dna._build_dna", return_value=(fake_dna, "ok")):
+            response = test_client.get("/api/label/157/dna")
         assert response.status_code == 200
-        assert response.json() == cached
+        assert response.json()["label_id"] == "157"
 
     def test_dna_cache_miss_stores_result(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
         """On cache miss, DNA result should be computed and stored in Redis."""

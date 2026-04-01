@@ -401,11 +401,16 @@ class Neo4jBatchProcessor:
             artists_to_process = [
                 a
                 for a in all_artists
-                if existing_hashes.get(a["id"]) != a.get("sha256")
+                if existing_hashes.get(str(a["id"])) != a.get("sha256")
             ]
 
             if not artists_to_process:
                 logger.debug("🔄 All artists in batch already up to date")
+                for msg in messages:
+                    try:
+                        await msg.ack_callback()
+                    except Exception as e:
+                        logger.warning("⚠️ Failed to ack skipped message", error=str(e))
                 return
 
             async def batch_write(tx: Any) -> None:
@@ -530,11 +535,16 @@ class Neo4jBatchProcessor:
             labels_to_process = [
                 label
                 for label in all_labels
-                if existing_hashes.get(label["id"]) != label.get("sha256")
+                if existing_hashes.get(str(label["id"])) != label.get("sha256")
             ]
 
             if not labels_to_process:
                 logger.debug("🔄 All labels in batch already up to date")
+                for msg in messages:
+                    try:
+                        await msg.ack_callback()
+                    except Exception as e:
+                        logger.warning("⚠️ Failed to ack skipped message", error=str(e))
                 return
 
             async def batch_write(tx: Any) -> None:
@@ -633,11 +643,16 @@ class Neo4jBatchProcessor:
             masters_to_process = [
                 m
                 for m in all_masters
-                if existing_hashes.get(m["id"]) != m.get("sha256")
+                if existing_hashes.get(str(m["id"])) != m.get("sha256")
             ]
 
             if not masters_to_process:
                 logger.debug("🔄 All masters in batch already up to date")
+                for msg in messages:
+                    try:
+                        await msg.ack_callback()
+                    except Exception as e:
+                        logger.warning("⚠️ Failed to ack skipped message", error=str(e))
                 return
 
             async def batch_write(tx: Any) -> None:
@@ -795,6 +810,11 @@ class Neo4jBatchProcessor:
 
             if not releases_to_process:
                 logger.debug("🔄 All releases in batch already up to date")
+                for msg in messages:
+                    try:
+                        await msg.ack_callback()
+                    except Exception as e:
+                        logger.warning("⚠️ Failed to ack skipped message", error=str(e))
                 return
 
             async def batch_write(tx: Any) -> None:

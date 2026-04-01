@@ -270,33 +270,38 @@ pub async fn process_discogs_data(
         error!("❌ Processing phase finished with errors — not marking complete");
     }
 
-    // Log completion and send extraction_complete to all consumers
+    // Log completion and send extraction_complete only if all tasks succeeded
     {
         let s = state.read().await;
         info!("🎉 All processing complete! Finished files: {:?}", s.completed_files);
         info!("📊 Final statistics: {} total records extracted", s.extraction_progress.total());
 
-        // Build per-type record counts from extraction progress
-        let mut record_counts = HashMap::new();
-        record_counts.insert("artists".to_string(), s.extraction_progress.artists);
-        record_counts.insert("labels".to_string(), s.extraction_progress.labels);
-        record_counts.insert("masters".to_string(), s.extraction_progress.masters);
-        record_counts.insert("releases".to_string(), s.extraction_progress.releases);
+        if success {
+            // Build per-type record counts from extraction progress
+            let mut record_counts = HashMap::new();
+            record_counts.insert("artists".to_string(), s.extraction_progress.artists);
+            record_counts.insert("labels".to_string(), s.extraction_progress.labels);
+            record_counts.insert("masters".to_string(), s.extraction_progress.masters);
+            record_counts.insert("releases".to_string(), s.extraction_progress.releases);
 
-        // Send extraction_complete to all consumer queues
-        drop(s); // Release read lock before async MQ operations
-        match mq_factory.create(&config.amqp_connection, &config.amqp_exchange_prefix).await {
-            Ok(mq) => {
-                if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::discogs()).await {
-                    error!("❌ Failed to send extraction_complete message: {}", e);
+            // Send extraction_complete to all consumer queues
+            drop(s); // Release read lock before async MQ operations
+            match mq_factory.create(&config.amqp_connection, &config.amqp_exchange_prefix).await {
+                Ok(mq) => {
+                    if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::discogs()).await {
+                        error!("❌ Failed to send extraction_complete message: {}", e);
+                        success = false;
+                    }
+                    let _ = mq.close().await;
+                }
+                Err(e) => {
+                    error!("❌ Failed to connect to AMQP for extraction_complete: {}", e);
                     success = false;
                 }
-                let _ = mq.close().await;
             }
-            Err(e) => {
-                error!("❌ Failed to connect to AMQP for extraction_complete: {}", e);
-                success = false;
-            }
+        } else {
+            drop(s);
+            error!("❌ Skipping extraction_complete broadcast — processing had failures");
         }
     }
 
