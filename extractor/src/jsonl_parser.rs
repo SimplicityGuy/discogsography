@@ -102,7 +102,7 @@ pub fn extract_external_links(url_rels: &[Value]) -> Vec<Value> {
 fn hash_line(line: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(line.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 /// Find and return the Discogs numeric ID from a slice of url-rel objects.

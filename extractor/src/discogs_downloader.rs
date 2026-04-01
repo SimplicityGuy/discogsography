@@ -444,7 +444,7 @@ impl Downloader {
             info!("✅ Downloaded {} ({:.2} MB)", filename, downloaded as f64 / 1_048_576.0);
 
             // Calculate checksum
-            let checksum = format!("{:x}", hasher.finalize());
+            let checksum = hex::encode(hasher.finalize());
 
             // Update metadata with actual downloaded size
             self.metadata.insert(
@@ -508,7 +508,7 @@ async fn calculate_file_checksum(path: &Path) -> Result<String> {
         hasher.update(&buffer[..n]);
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hex::encode(hasher.finalize()))
 }
 
 fn extract_month_from_filename(filename: &str) -> String {
@@ -1022,7 +1022,7 @@ mod _remove_old_tests {
             // Compute actual SHA256 checksum
             let mut hasher = Sha256::new();
             hasher.update(content.as_bytes());
-            let checksum = format!("{:x}", hasher.finalize());
+            let checksum = hex::encode(hasher.finalize());
 
             // Pre-populate metadata with correct checksum
             downloader.metadata.insert(
@@ -1122,7 +1122,7 @@ mod _remove_old_tests {
 
             let mut hasher = Sha256::new();
             hasher.update(content.as_bytes());
-            let checksum = format!("{:x}", hasher.finalize());
+            let checksum = hex::encode(hasher.finalize());
 
             expected_sizes.insert(filename.clone(), content.len() as u64);
 

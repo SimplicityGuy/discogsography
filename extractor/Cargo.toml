@@ -16,7 +16,7 @@ test-support = ["mockall"]
 
 [dependencies]
 # Core async runtime
-tokio = { version = "1.49", features = ["full"] }
+tokio = { version = "1.50", features = ["full"] }
 
 # XML parsing (following disco-quick's approach)
 quick-xml = { version = "0.39", features = ["serialize"] }
@@ -27,7 +27,7 @@ xz2 = "0.1"
 tar = "0.4"
 
 # Message queue (AMQP) - latest
-lapin = "4.0"
+lapin = "4.4"
 futures = "0.3"
 
 # Serialization
@@ -36,7 +36,7 @@ serde_json = "1.0"
 serde_yaml_ng = "0.10"
 
 # Hashing
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 
 # Logging
@@ -64,7 +64,7 @@ indicatif = "0.18"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Command-line interface
-clap = { version = "4.5", features = ["derive", "env"] }
+clap = { version = "4.6", features = ["derive", "env"] }
 
 # Health monitoring
 axum = "0.8"
@@ -85,12 +85,12 @@ mockall = { version = "0.14", optional = true }
 
 [dev-dependencies]
 extractor = { path = ".", features = ["test-support"] }
-tempfile = "3.25"
-tokio = { version = "1.49", features = ["test-util"] }
+tempfile = "3.27"
+tokio = { version = "1.50", features = ["test-util"] }
 mockito = "1.7"
-proptest = "1.10"
+proptest = "1.11"
 criterion = "0.8"
-serial_test = "3.3.1"
+serial_test = "3.4.0"
 
 [[bench]]
 name = "parser_bench"

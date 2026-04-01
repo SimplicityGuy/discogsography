@@ -463,7 +463,7 @@ async fn test_download_discogs_data_skips_already_downloaded() {
         // Compute actual SHA256 checksum
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
-        let checksum = format!("{:x}", hasher.finalize());
+        let checksum = hex::encode(hasher.finalize());
 
         // Pre-populate metadata with correct checksum
         downloader.metadata.insert(
@@ -563,7 +563,7 @@ async fn test_download_discogs_data_with_state_marker_skips() {
 
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
-        let checksum = format!("{:x}", hasher.finalize());
+        let checksum = hex::encode(hasher.finalize());
 
         expected_sizes.insert(filename.clone(), content.len() as u64);
 

@@ -1,3 +1,4 @@
+use hex;
 use super::*;
 use std::io::{Read, Write};
 use tempfile::TempDir;
@@ -63,7 +64,7 @@ async fn test_download_latest_new_version() {
         encoder.write_all(&tar_data).unwrap();
         let compressed = encoder.finish().unwrap();
 
-        let hash = format!("{:x}", sha2::Sha256::digest(&compressed));
+        let hash = hex::encode(sha2::Sha256::digest(&compressed));
         sha256_lines.push_str(&format!("{} *{}.tar.xz\n", hash, entity));
         tar_bodies.insert(entity.to_string(), compressed);
     }
@@ -459,7 +460,7 @@ async fn test_download_latest_retry_on_failure() {
         let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
         encoder.write_all(&tar_data).unwrap();
         let compressed = encoder.finish().unwrap();
-        let hash = format!("{:x}", sha2::Sha256::digest(&compressed));
+        let hash = hex::encode(sha2::Sha256::digest(&compressed));
         sha256_lines.push_str(&format!("{} *{}.tar.xz\n", hash, entity));
         tar_bodies.insert(entity.to_string(), compressed);
     }
@@ -743,7 +744,7 @@ async fn test_download_latest_retry_cleans_up_dest_file() {
         let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
         encoder.write_all(&tar_data).unwrap();
         let compressed = encoder.finish().unwrap();
-        let hash = format!("{:x}", sha2::Sha256::digest(&compressed));
+        let hash = hex::encode(sha2::Sha256::digest(&compressed));
         sha256_lines.push_str(&format!("{} *{}.tar.xz\n", hash, entity));
         tar_bodies.insert(entity.to_string(), compressed);
     }
