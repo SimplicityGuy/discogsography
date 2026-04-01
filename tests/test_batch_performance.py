@@ -199,11 +199,17 @@ class TestTableinatorBatchPerformance:
 
         # Mock cursor methods
         mock_cursor.execute = AsyncMock()
+        mock_cursor.executemany = AsyncMock()
         mock_cursor.fetchall = AsyncMock(return_value=[])
         mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
         mock_cursor.__aexit__ = AsyncMock(return_value=None)
 
-        # Mock connection methods
+        # Mock connection methods — set_autocommit and transaction must be async-compatible
+        mock_conn.set_autocommit = AsyncMock()
+        mock_transaction = AsyncMock()
+        mock_transaction.__aenter__ = AsyncMock(return_value=mock_transaction)
+        mock_transaction.__aexit__ = AsyncMock(return_value=None)
+        mock_conn.transaction = MagicMock(return_value=mock_transaction)
         mock_conn.cursor = MagicMock(return_value=mock_cursor)
         mock_conn.commit = AsyncMock()
         mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
@@ -434,13 +440,20 @@ class TestPerformanceRegression:
 
         cursor = AsyncMock()
         cursor.fetchall.return_value = []
+        cursor.executemany = AsyncMock()
 
         cursor_ctx = MagicMock()
         cursor_ctx.__aenter__ = AsyncMock(return_value=cursor)
         cursor_ctx.__aexit__ = AsyncMock(return_value=None)
 
-        conn = MagicMock()
-        conn.cursor.return_value = cursor_ctx
+        mock_transaction = AsyncMock()
+        mock_transaction.__aenter__ = AsyncMock(return_value=mock_transaction)
+        mock_transaction.__aexit__ = AsyncMock(return_value=None)
+
+        conn = AsyncMock()
+        conn.set_autocommit = AsyncMock()
+        conn.transaction = MagicMock(return_value=mock_transaction)
+        conn.cursor = MagicMock(return_value=cursor_ctx)
 
         conn_ctx = MagicMock()
         conn_ctx.__aenter__ = AsyncMock(return_value=conn)

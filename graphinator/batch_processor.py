@@ -1047,11 +1047,28 @@ class Neo4jBatchProcessor:
             wait = self._backoff_until[data_type] - time.time()
             if wait > 0:
                 await asyncio.sleep(wait)
-                # Don't count backoff waits as retries — only count actual flush failures
                 await self._flush_queue(data_type)
                 curr_len = len(self.queues.get(data_type, []))
                 if curr_len < prev_len:
                     retries = 0
+                else:
+                    retries += 1
+                    if retries >= self.config.max_flush_retries:
+                        remaining = len(self.queues.get(data_type, []))
+                        logger.error(
+                            "❌ Flush retry limit reached — nacking remaining messages",
+                            data_type=data_type,
+                            remaining=remaining,
+                            max_retries=self.config.max_flush_retries,
+                        )
+                        queue = self.queues[data_type]
+                        while queue:
+                            msg = queue.popleft()
+                            try:
+                                await msg.nack_callback()
+                            except Exception as e:
+                                logger.warning("⚠️ Failed to nack message", error=str(e))
+                        break
                 continue
             await self._flush_queue(data_type)
             curr_len = len(self.queues.get(data_type, []))
