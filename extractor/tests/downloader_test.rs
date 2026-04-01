@@ -5,6 +5,8 @@ use extractor::discogs_downloader::Downloader;
 use extractor::types::{LocalFileInfo, S3FileInfo};
 use std::collections::HashMap;
 use tempfile::TempDir;
+use hex;
+
 use tokio::fs;
 
 #[tokio::test]
@@ -90,7 +92,7 @@ async fn test_should_not_download_up_to_date_file() {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(content);
-        format!("{:x}", hasher.finalize())
+        hex::encode(hasher.finalize())
     };
 
     // Add metadata with correct checksum and size

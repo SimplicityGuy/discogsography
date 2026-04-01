@@ -347,7 +347,7 @@ impl MbDownloader {
             }
 
             // Verify SHA256
-            let actual_hash = format!("{:x}", hasher.finalize());
+            let actual_hash = hex::encode(hasher.finalize());
             if actual_hash != expected_sha256 {
                 let msg = format!("SHA256 mismatch for {}: expected {}, got {}", entity, expected_sha256, actual_hash);
                 warn!("⚠️ {}", msg);

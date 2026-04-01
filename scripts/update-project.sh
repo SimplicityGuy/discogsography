@@ -583,30 +583,32 @@ update_rust_crates() {
       print_info "  Requires cargo-edit (cargo upgrade). Installing if not present..."
 
       # Ensure cargo-upgrade is available (part of cargo-edit crate)
-      local cargo_upgrade_bin=""
+      # Note: cargo-upgrade must be invoked as "cargo upgrade" (subcommand),
+      # NOT as "cargo-upgrade" (direct binary) — the binary does not accept
+      # flags like --incompatible when called directly.
+      local has_cargo_upgrade=false
       if command -v cargo-upgrade &>/dev/null; then
-        cargo_upgrade_bin="cargo-upgrade"
+        has_cargo_upgrade=true
       elif cargo bin cargo-upgrade &>/dev/null 2>&1; then
-        # Available via cargo-run-bin
-        cargo_upgrade_bin="cargo bin cargo-upgrade"
+        has_cargo_upgrade=true
       else
         # Install cargo-edit globally (cached by cargo after first run)
         print_info "  Installing cargo-edit..."
         if cargo install cargo-edit --quiet 2>/dev/null; then
-          cargo_upgrade_bin="cargo-upgrade"
+          has_cargo_upgrade=true
         else
           print_warning "  Could not install cargo-edit - skipping Cargo.toml version updates"
           print_info "  Falling back to cargo update (lock file only)"
         fi
       fi
 
-      if [[ -n "$cargo_upgrade_bin" ]]; then
+      if [[ "$has_cargo_upgrade" == true ]]; then
         # Try --incompatible (cargo-edit ≥0.12) then fall back to --breaking (≤0.11)
-        if $cargo_upgrade_bin --incompatible allow 2>/dev/null; then
+        if cargo upgrade --incompatible allow 2>&1; then
           print_success "Cargo.toml updated with major version bumps (--incompatible allow)"
           FILE_CHANGES+=("extractor/Cargo.toml: Updated dependency version requirements (major)")
           CHANGES_MADE=true
-        elif $cargo_upgrade_bin --breaking 2>/dev/null; then
+        elif cargo upgrade --breaking 2>&1; then
           print_success "Cargo.toml updated with major version bumps (--breaking)"
           FILE_CHANGES+=("extractor/Cargo.toml: Updated dependency version requirements (major)")
           CHANGES_MADE=true
