@@ -14,7 +14,7 @@ def get_docker_stats() -> list[dict[str, Any]]:
     """Get Docker container statistics."""
     try:
         result = subprocess.run(  # nosec B603 B607
-            ["docker-compose", "ps", "--format", "json"],  # noqa: S607
+            ["docker", "compose", "ps", "--format", "json"],  # noqa: S607
             capture_output=True,
             text=True,
             check=True,
