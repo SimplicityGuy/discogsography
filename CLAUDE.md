@@ -215,8 +215,23 @@ All variables support `_FILE` variants for Docker Compose runtime secrets in pro
 - **Never call `await conn.commit()`** on autocommit connections — it's a no-op
 
 ### asyncio primitives
-- **Never create `asyncio.Lock`, `asyncio.Queue`, or `asyncio.Event` in `__init__`** — they bind to the current event loop at creation time
-- Initialize as `None` in `__init__`, create lazily in the first async method or in `initialize()`
+- **Never create `asyncio.Lock`, `asyncio.Queue`, `asyncio.Event`, or `asyncio.Semaphore` in `__init__` or at module level** — they bind to the current event loop at creation time
+- This applies to **all** scopes: `__init__`, class bodies, module-level globals, and dataclass `field(default_factory=...)`
+- Initialize as `None` in `__init__`/module scope, create lazily in the first async method or in `initialize()`
+- Pattern: `self._lock: asyncio.Lock | None = None` in `__init__`, then `if self._lock is None: self._lock = asyncio.Lock()` in the first async method
+
+### Batch processor ack/nack contract
+- **`_flush_queue` is the single authority for ack/nack** — individual `_process_*_batch` methods must NEVER call ack or nack directly
+- If a message is invalid (e.g., missing `id`), mark it in a set (e.g., `nack_indices`) and let `_flush_queue` handle it
+- This prevents double-ack-after-nack when `_flush_queue` acks all messages after a "successful" batch that internally nacked some
+
+### Lock scope discipline
+- If a lock protects shared state, **ALL reads AND writes** of that state must acquire the lock — not just `save()`/`flush()`
+- A lock that only protects serialization while mutations are unprotected is security theater
+
+### Timestamp comparison convention
+- When checking if a token/session was invalidated by an event (password change, revocation), use `<=` (inclusive) — a token issued at the exact same second as the event MUST be invalidated
+- Pattern: `if issued_at <= int(changed_at):` — never use `<`
 
 ### Field name consistency
 - MusicBrainz messages from the extractor use `mb_type` (not `type`) for entity type, `service` (not `type`) for external link service names

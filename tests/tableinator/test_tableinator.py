@@ -256,15 +256,16 @@ class TestMain:
                 return task
 
             with patch("asyncio.create_task", side_effect=mock_create_task):
-                # Make the main loop exit after setup
-                async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
-                    # Set shutdown_requested to exit the loop
+                # Make the main loop exit after setup by setting shutdown_requested during sleep
+                original_sleep = asyncio.sleep
+
+                async def mock_sleep(delay: float) -> None:  # noqa: ARG001
                     import tableinator.tableinator
 
                     tableinator.tableinator.shutdown_requested = True
-                    raise TimeoutError()
+                    await original_sleep(0)
 
-                with patch("asyncio.wait_for", mock_wait_for):
+                with patch("asyncio.sleep", mock_sleep):
                     await main()
 
             # Clean up any created tasks
@@ -1883,14 +1884,16 @@ class TestMainBatchProcessor:
                 return task
 
             with patch("asyncio.create_task", side_effect=mock_create_task):
-                # Make the main loop exit after setup
-                async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+                # Make the main loop exit after setup by setting shutdown_requested during sleep
+                original_sleep = asyncio.sleep
+
+                async def mock_sleep(delay: float) -> None:  # noqa: ARG001
                     import tableinator.tableinator
 
                     tableinator.tableinator.shutdown_requested = True
-                    raise TimeoutError()
+                    await original_sleep(0)
 
-                with patch("asyncio.wait_for", mock_wait_for):
+                with patch("asyncio.sleep", mock_sleep):
                     await main()
 
             # Clean up tasks

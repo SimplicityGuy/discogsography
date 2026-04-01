@@ -101,6 +101,8 @@ COPY --from=builder --chown=discogsography:discogsography /app/brainzgraphinator
 RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/python -m brainzgraphinator.brainzgraphinator "$@"\n' > /app/start.sh && \
     chmod +x /app/start.sh
 
+EXPOSE 8011
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8011/health || exit 1

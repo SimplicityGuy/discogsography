@@ -157,6 +157,8 @@ class AsyncResilientNeo4jDriver(AsyncResilientConnection[Any]):
 
     async def close(self) -> None:
         """Close the async Neo4j driver."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
         async with self._lock:
             if self._connection:
                 try:

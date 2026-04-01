@@ -43,7 +43,7 @@ async def get_optional_user(
         pw_changed = await _redis.get(f"password_changed:{user_id}")
         if pw_changed:
             issued_at = payload.get("iat", 0)
-            if issued_at < int(pw_changed):
+            if issued_at <= int(pw_changed):
                 return None
     return payload
 
@@ -76,7 +76,7 @@ async def require_user(
         pw_changed = await _redis.get(f"password_changed:{user_id}")
         if pw_changed:
             issued_at = payload.get("iat", 0)
-            if issued_at < int(pw_changed):
+            if issued_at <= int(pw_changed):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalidated by password change", headers={"WWW-Authenticate": "Bearer"}
                 )

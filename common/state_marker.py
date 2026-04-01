@@ -112,8 +112,8 @@ class ProcessingDecision(StrEnum):
 class StateMarker:
     """Main state marker tracking all extraction phases.
 
-    Uses a threading lock to ensure save() captures a consistent snapshot
-    even when fields are being updated concurrently from another thread.
+    Uses a threading lock to ensure ALL state reads and writes are atomic.
+    All mutation methods acquire the lock before modifying fields.
     """
 
     metadata_version: str = "1.0"
@@ -205,43 +205,47 @@ class StateMarker:
 
     def start_download(self, files_total: int) -> None:
         """Mark download phase as started."""
-        self.download_phase.status = PhaseStatus.IN_PROGRESS
-        self.download_phase.started_at = datetime.now(UTC)
-        self.download_phase.files_total = files_total
-        self.download_phase.files_downloaded = 0
-        self.download_phase.bytes_downloaded = 0
+        with self._lock:
+            self.download_phase.status = PhaseStatus.IN_PROGRESS
+            self.download_phase.started_at = datetime.now(UTC)
+            self.download_phase.files_total = files_total
+            self.download_phase.files_downloaded = 0
+            self.download_phase.bytes_downloaded = 0
 
     def start_file_download(self, filename: str) -> None:
         """Mark a file download as started."""
-        self.download_phase.downloads_by_file[filename] = FileDownloadStatus(
-            status=PhaseStatus.IN_PROGRESS,
-            started_at=datetime.now(UTC),
-        )
+        with self._lock:
+            self.download_phase.downloads_by_file[filename] = FileDownloadStatus(
+                status=PhaseStatus.IN_PROGRESS,
+                started_at=datetime.now(UTC),
+            )
 
     def file_downloaded(self, filename: str, bytes_count: int) -> None:
         """Mark a file as downloaded."""
-        if filename in self.download_phase.downloads_by_file:
-            status = self.download_phase.downloads_by_file[filename]
-            status.status = PhaseStatus.COMPLETED
-            status.bytes_downloaded = bytes_count
-            status.completed_at = datetime.now(UTC)
-        else:
-            # If not tracked, create entry
-            self.download_phase.downloads_by_file[filename] = FileDownloadStatus(
-                status=PhaseStatus.COMPLETED,
-                bytes_downloaded=bytes_count,
-                started_at=datetime.now(UTC),
-                completed_at=datetime.now(UTC),
-            )
+        with self._lock:
+            if filename in self.download_phase.downloads_by_file:
+                file_status = self.download_phase.downloads_by_file[filename]
+                file_status.status = PhaseStatus.COMPLETED
+                file_status.bytes_downloaded = bytes_count
+                file_status.completed_at = datetime.now(UTC)
+            else:
+                # If not tracked, create entry
+                self.download_phase.downloads_by_file[filename] = FileDownloadStatus(
+                    status=PhaseStatus.COMPLETED,
+                    bytes_downloaded=bytes_count,
+                    started_at=datetime.now(UTC),
+                    completed_at=datetime.now(UTC),
+                )
 
-        self.download_phase.files_downloaded += 1
-        # Recalculate total bytes from all files
-        self.download_phase.bytes_downloaded = sum(status.bytes_downloaded for status in self.download_phase.downloads_by_file.values())
+            self.download_phase.files_downloaded += 1
+            # Recalculate total bytes from all files
+            self.download_phase.bytes_downloaded = sum(s.bytes_downloaded for s in self.download_phase.downloads_by_file.values())
 
     def complete_download(self) -> None:
         """Mark download phase as completed."""
-        self.download_phase.status = PhaseStatus.COMPLETED
-        self.download_phase.completed_at = datetime.now(UTC)
+        with self._lock:
+            self.download_phase.status = PhaseStatus.COMPLETED
+            self.download_phase.completed_at = datetime.now(UTC)
         logger.info(
             "✅ Download phase completed",
             files=self.download_phase.files_downloaded,
@@ -250,88 +254,94 @@ class StateMarker:
 
     def fail_download(self, error: str) -> None:
         """Mark download phase as failed."""
-        self.download_phase.status = PhaseStatus.FAILED
-        self.download_phase.errors.append(error)
-        self.summary.overall_status = PhaseStatus.FAILED
+        with self._lock:
+            self.download_phase.status = PhaseStatus.FAILED
+            self.download_phase.errors.append(error)
+            self.summary.overall_status = PhaseStatus.FAILED
 
     def start_processing(self, files_total: int) -> None:
         """Mark processing phase as started."""
-        self.processing_phase.status = PhaseStatus.IN_PROGRESS
-        self.processing_phase.started_at = datetime.now(UTC)
-        self.processing_phase.files_total = files_total
-        self.processing_phase.files_processed = 0
-        self.processing_phase.records_extracted = 0
-        # Update summary status when processing starts
-        self.summary.overall_status = PhaseStatus.IN_PROGRESS
+        with self._lock:
+            self.processing_phase.status = PhaseStatus.IN_PROGRESS
+            self.processing_phase.started_at = datetime.now(UTC)
+            self.processing_phase.files_total = files_total
+            self.processing_phase.files_processed = 0
+            self.processing_phase.records_extracted = 0
+            # Update summary status when processing starts
+            self.summary.overall_status = PhaseStatus.IN_PROGRESS
 
     def start_file_processing(self, filename: str) -> None:
         """Mark a file processing as started."""
-        self.processing_phase.current_file = filename
-        self.processing_phase.progress_by_file[filename] = FileProcessingStatus(
-            status=PhaseStatus.IN_PROGRESS,
-            started_at=datetime.now(UTC),
-        )
+        with self._lock:
+            self.processing_phase.current_file = filename
+            self.processing_phase.progress_by_file[filename] = FileProcessingStatus(
+                status=PhaseStatus.IN_PROGRESS,
+                started_at=datetime.now(UTC),
+            )
 
-        # Update summary files_by_type to track in-progress files
-        data_type = _extract_data_type(filename)
-        if data_type:
-            self.summary.files_by_type[data_type] = PhaseStatus.IN_PROGRESS
+            # Update summary files_by_type to track in-progress files
+            data_type = _extract_data_type(filename)
+            if data_type:
+                self.summary.files_by_type[data_type] = PhaseStatus.IN_PROGRESS
 
     def update_file_progress(self, filename: str, records: int, messages: int, batches: int = 0) -> None:
         """Update file processing progress."""
-        if filename in self.processing_phase.progress_by_file:
-            status = self.processing_phase.progress_by_file[filename]
-            status.records_extracted = records
-            status.messages_published = messages
-            status.batches_sent = batches
+        with self._lock:
+            if filename in self.processing_phase.progress_by_file:
+                file_status = self.processing_phase.progress_by_file[filename]
+                file_status.records_extracted = records
+                file_status.messages_published = messages
+                file_status.batches_sent = batches
 
-        # Update processing phase totals by summing all file progress
-        self.processing_phase.records_extracted = sum(status.records_extracted for status in self.processing_phase.progress_by_file.values())
+            # Update processing phase totals by summing all file progress
+            self.processing_phase.records_extracted = sum(s.records_extracted for s in self.processing_phase.progress_by_file.values())
 
-        # Update publishing phase totals by summing from all files
-        self.publishing_phase.messages_published = sum(status.messages_published for status in self.processing_phase.progress_by_file.values())
-        self.publishing_phase.batches_sent = sum(status.batches_sent for status in self.processing_phase.progress_by_file.values())
+            # Update publishing phase totals by summing from all files
+            self.publishing_phase.messages_published = sum(s.messages_published for s in self.processing_phase.progress_by_file.values())
+            self.publishing_phase.batches_sent = sum(s.batches_sent for s in self.processing_phase.progress_by_file.values())
 
-        # Update publishing phase status if any messages have been published
-        if self.publishing_phase.messages_published > 0:
-            self.publishing_phase.status = PhaseStatus.IN_PROGRESS
-            self.publishing_phase.last_amqp_heartbeat = datetime.now(UTC)
+            # Update publishing phase status if any messages have been published
+            if self.publishing_phase.messages_published > 0:
+                self.publishing_phase.status = PhaseStatus.IN_PROGRESS
+                self.publishing_phase.last_amqp_heartbeat = datetime.now(UTC)
 
-        # files_processed is only incremented when files complete, not during progress updates
-        # This is handled by complete_file_processing()
+            # files_processed is only incremented when files complete, not during progress updates
+            # This is handled by complete_file_processing()
 
     def complete_file_processing(self, filename: str, records: int) -> None:
         """Mark a file processing as completed."""
-        if filename in self.processing_phase.progress_by_file:
-            status = self.processing_phase.progress_by_file[filename]
-            status.status = PhaseStatus.COMPLETED
-            status.completed_at = datetime.now(UTC)
-            status.records_extracted = records
-            # Preserve the actual messages_published count tracked during processing;
-            # only use records as a fallback if no messages were tracked
-            if status.messages_published == 0:
-                status.messages_published = records
+        with self._lock:
+            if filename in self.processing_phase.progress_by_file:
+                file_status = self.processing_phase.progress_by_file[filename]
+                file_status.status = PhaseStatus.COMPLETED
+                file_status.completed_at = datetime.now(UTC)
+                file_status.records_extracted = records
+                # Preserve the actual messages_published count tracked during processing;
+                # only use records as a fallback if no messages were tracked
+                if file_status.messages_published == 0:
+                    file_status.messages_published = records
 
-        self.processing_phase.files_processed += 1
+            self.processing_phase.files_processed += 1
 
-        # Update total records by summing from all files (same as update_file_progress)
-        # This ensures we don't double-count since we're already tracking in progress_by_file
-        self.processing_phase.records_extracted = sum(status.records_extracted for status in self.processing_phase.progress_by_file.values())
+            # Update total records by summing from all files (same as update_file_progress)
+            # This ensures we don't double-count since we're already tracking in progress_by_file
+            self.processing_phase.records_extracted = sum(s.records_extracted for s in self.processing_phase.progress_by_file.values())
 
-        # Update publishing phase totals by summing from all files
-        self.publishing_phase.messages_published = sum(status.messages_published for status in self.processing_phase.progress_by_file.values())
-        self.publishing_phase.batches_sent = sum(status.batches_sent for status in self.processing_phase.progress_by_file.values())
+            # Update publishing phase totals by summing from all files
+            self.publishing_phase.messages_published = sum(s.messages_published for s in self.processing_phase.progress_by_file.values())
+            self.publishing_phase.batches_sent = sum(s.batches_sent for s in self.processing_phase.progress_by_file.values())
 
-        # Update summary
-        data_type = _extract_data_type(filename)
-        if data_type:
-            self.summary.files_by_type[data_type] = PhaseStatus.COMPLETED
+            # Update summary
+            data_type = _extract_data_type(filename)
+            if data_type:
+                self.summary.files_by_type[data_type] = PhaseStatus.COMPLETED
 
     def complete_processing(self) -> None:
         """Mark processing phase as completed."""
-        self.processing_phase.status = PhaseStatus.COMPLETED
-        self.processing_phase.completed_at = datetime.now(UTC)
-        self.processing_phase.current_file = None
+        with self._lock:
+            self.processing_phase.status = PhaseStatus.COMPLETED
+            self.processing_phase.completed_at = datetime.now(UTC)
+            self.processing_phase.current_file = None
         logger.info(
             "✅ Processing phase completed",
             files=self.processing_phase.files_processed,
@@ -340,9 +350,10 @@ class StateMarker:
 
     def fail_processing(self, error: str) -> None:
         """Mark processing phase as failed."""
-        self.processing_phase.status = PhaseStatus.FAILED
-        self.processing_phase.errors.append(error)
-        self.summary.overall_status = PhaseStatus.FAILED
+        with self._lock:
+            self.processing_phase.status = PhaseStatus.FAILED
+            self.processing_phase.errors.append(error)
+            self.summary.overall_status = PhaseStatus.FAILED
 
     def update_publishing(self) -> None:
         """Update publishing phase status and heartbeat.
@@ -351,23 +362,26 @@ class StateMarker:
         via update_file_progress() which sums from progress_by_file.
         This method only updates phase status and AMQP heartbeat timing.
         """
-        self.publishing_phase.status = PhaseStatus.IN_PROGRESS
-        self.publishing_phase.last_amqp_heartbeat = datetime.now(UTC)
+        with self._lock:
+            self.publishing_phase.status = PhaseStatus.IN_PROGRESS
+            self.publishing_phase.last_amqp_heartbeat = datetime.now(UTC)
 
     def fail_publishing(self, error: str) -> None:
         """Mark publishing as failed."""
-        self.publishing_phase.status = PhaseStatus.FAILED
-        self.publishing_phase.errors.append(error)
+        with self._lock:
+            self.publishing_phase.status = PhaseStatus.FAILED
+            self.publishing_phase.errors.append(error)
 
     def complete_extraction(self) -> None:
         """Mark entire extraction as completed."""
-        self.publishing_phase.status = PhaseStatus.COMPLETED
-        self.summary.overall_status = PhaseStatus.COMPLETED
+        with self._lock:
+            self.publishing_phase.status = PhaseStatus.COMPLETED
+            self.summary.overall_status = PhaseStatus.COMPLETED
 
-        # Calculate total duration
-        if self.download_phase.started_at and self.processing_phase.completed_at:
-            duration = self.processing_phase.completed_at - self.download_phase.started_at
-            self.summary.total_duration_seconds = duration.total_seconds()
+            # Calculate total duration
+            if self.download_phase.started_at and self.processing_phase.completed_at:
+                duration = self.processing_phase.completed_at - self.download_phase.started_at
+                self.summary.total_duration_seconds = duration.total_seconds()
 
         logger.info("✅ Extraction completed for version", version=self.current_version)
 

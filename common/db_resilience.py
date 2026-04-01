@@ -302,10 +302,12 @@ class AsyncResilientConnection[T]:
         self.max_retries = max_retries
         self.name = name
         self._connection: T | None = None
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock | None = None
 
     async def get_connection(self) -> T:
         """Get a healthy connection, creating or reconnecting if needed."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
         async with self._lock:
             if self._connection and await self._test_connection(self._connection):
                 return self._connection
@@ -363,6 +365,8 @@ class AsyncResilientConnection[T]:
 
     async def close(self) -> None:
         """Close the connection."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
         async with self._lock:
             if self._connection:
                 try:
