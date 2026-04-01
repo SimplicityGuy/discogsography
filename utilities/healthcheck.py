@@ -9,7 +9,7 @@ def check_process(process_name: str) -> bool:
     """Check if a process is running."""
     for proc in psutil.process_iter(["pid", "name", "cmdline"]):
         try:
-            cmdline = proc.info.get("cmdline", [])
+            cmdline = proc.info.get("cmdline") or []
             if cmdline and any(process_name in arg for arg in cmdline):
                 return True
         except (psutil.NoSuchProcess, psutil.AccessDenied):

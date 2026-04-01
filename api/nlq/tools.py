@@ -293,7 +293,7 @@ class NLQToolRunner:
 
         if tool_name == "search":
             for item in result.get("results", []):
-                entities.append({"id": item["id"], "name": item["name"], "type": item["type"]})
+                entities.append({"id": item.get("id", ""), "name": item.get("name", ""), "type": item.get("type", "")})
 
         elif tool_name == "autocomplete":
             entity_type = "unknown"

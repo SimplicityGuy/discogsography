@@ -43,8 +43,8 @@ async def get_multi_hop_collaborators(
         WITH a
         MATCH path = (a)<-[:BY]-(:Release)-[:BY]->(hop1:Artist)
         WHERE hop1 <> a
-        RETURN hop1 AS collaborator, 1 AS hops,
-               count(DISTINCT [(a)<-[:BY]-(r:Release)-[:BY]->(hop1) | r][0]) AS shared
+        WITH a, hop1, count(DISTINCT nodes(path)[1]) AS shared
+        RETURN hop1 AS collaborator, 1 AS hops, shared
         UNION
         WITH a
         MATCH (a)<-[:BY]-(:Release)-[:BY]->(mid:Artist)<-[:BY]-(:Release)-[:BY]->(hop2:Artist)

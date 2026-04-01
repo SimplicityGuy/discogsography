@@ -533,29 +533,29 @@ extractor-clean:
 # Start all Docker services in background
 [group('docker')]
 up:
-    docker-compose up -d
+    docker compose up -d
 
 # Stop all Docker services
 [group('docker')]
 down:
-    docker-compose down
+    docker compose down
 
 # Show logs from all services (follow mode)
 [group('docker')]
 logs:
-    docker-compose logs -f
+    docker compose logs -f
 
 # Rebuild all Docker images and restart services
 [group('docker')]
 rebuild:
-    docker-compose down
-    docker-compose build
-    docker-compose up -d
+    docker compose down
+    docker compose build
+    docker compose up -d
 
 # Build specific service Docker images
 [group('docker')]
 build:
-    docker-compose build \
+    docker compose build \
         api \
         brainzgraphinator \
         brainztableinator \
@@ -571,7 +571,7 @@ build:
 # Build production Docker images
 [group('docker')]
 build-prod:
-    docker-compose \
+    docker compose \
         -f docker-compose.yml \
         -f docker-compose.prod.yml \
         build
@@ -579,7 +579,7 @@ build-prod:
 # Deploy services in production mode
 [group('docker')]
 deploy-prod:
-    docker-compose \
+    docker compose \
         -f docker-compose.yml \
         -f docker-compose.prod.yml \
         up -d

@@ -1,6 +1,7 @@
 """Notification channel abstraction for user-facing messages."""
 
 import asyncio
+import html
 from typing import Protocol, runtime_checkable
 
 from brevo import Brevo
@@ -41,11 +42,12 @@ class BrevoNotificationChannel:
 
     async def send_password_reset(self, email: str, reset_url: str) -> None:
         """Send a password reset email via Brevo."""
+        safe_url = html.escape(reset_url, quote=True)
         html_content = (
             "<html><body>"
             "<h2>Reset Your Password</h2>"
             "<p>You requested a password reset for your Discogsography account.</p>"
-            f'<p><a href="{reset_url}" style="display:inline-block;padding:12px 24px;'
+            f'<p><a href="{safe_url}" style="display:inline-block;padding:12px 24px;'
             "background-color:#3b82f6;color:#ffffff;text-decoration:none;"
             'border-radius:6px;font-weight:bold">Reset Password</a></p>'
             "<p>This link expires in 15 minutes. If you didn't request this, "

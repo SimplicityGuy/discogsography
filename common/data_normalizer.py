@@ -34,7 +34,8 @@ def normalize_id(obj: Any) -> str | None:
         return obj
     if isinstance(obj, dict):
         # Try 'id' first (extractor format), then '@id' (xmltodict format)
-        return obj.get("id") or obj.get("@id")
+        item_id = obj.get("id")
+        return item_id if item_id is not None else obj.get("@id")
     return None
 
 
@@ -130,8 +131,10 @@ def normalize_item_with_id(item: Any) -> dict[str, Any] | None:
         result: dict[str, Any] = {}
 
         # Extract ID (prefer 'id' over '@id')
-        item_id = item.get("id") or item.get("@id")
-        if item_id:
+        item_id = item.get("id")
+        if item_id is None:
+            item_id = item.get("@id")
+        if item_id is not None:
             result["id"] = item_id
 
         # Extract text content as 'name' if present
@@ -149,7 +152,7 @@ def normalize_item_with_id(item: Any) -> dict[str, Any] | None:
             else:
                 result[key] = value
 
-        return result if result.get("id") else None
+        return result if result.get("id") is not None else None
 
     return None
 

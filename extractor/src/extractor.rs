@@ -199,7 +199,7 @@ pub async fn process_discogs_data(
     debug!("📋 Pending files list: {:?}", pending_files);
 
     // Process files concurrently
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(3)); // Limit concurrent files
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(config.max_workers)); // Limit concurrent files
     let mut tasks = Vec::new();
     let state_marker_arc = Arc::new(tokio::sync::Mutex::new(state_marker));
 
@@ -258,17 +258,19 @@ pub async fn process_discogs_data(
     reporter.abort();
 
     // Only mark processing as complete if all tasks succeeded
-    let mut state_marker = state_marker_arc.lock().await;
-    if success {
-        state_marker.complete_processing();
-        state_marker.complete_extraction();
-        state_marker.save(&marker_path).await?;
-        info!("✅ Processing phase completed: version {}", state_marker.current_version);
-    } else {
-        // Save current progress without marking complete — allows restart to resume
-        state_marker.save(&marker_path).await?;
-        error!("❌ Processing phase finished with errors — not marking complete");
-    }
+    {
+        let mut state_marker = state_marker_arc.lock().await;
+        if success {
+            state_marker.complete_processing();
+            // Don't mark extraction complete yet — wait until extraction_complete is sent
+            state_marker.save(&marker_path).await?;
+            info!("✅ Processing phase completed: version {}", state_marker.current_version);
+        } else {
+            // Save current progress without marking complete — allows restart to resume
+            state_marker.save(&marker_path).await?;
+            error!("❌ Processing phase finished with errors — not marking complete");
+        }
+    } // Drop state_marker lock before re-acquiring below
 
     // Log completion and send extraction_complete only if all tasks succeeded
     {
@@ -303,6 +305,13 @@ pub async fn process_discogs_data(
             drop(s);
             error!("❌ Skipping extraction_complete broadcast — processing had failures");
         }
+    }
+
+    // Mark extraction complete in state marker only after extraction_complete was sent
+    if success {
+        let mut sm = state_marker_arc.lock().await;
+        sm.complete_extraction();
+        sm.save(&marker_path).await?;
     }
 
     // Update extraction status based on result
@@ -1094,11 +1103,15 @@ pub async fn process_musicbrainz_data(
         info!("✅ Completed MusicBrainz {} extraction: {} records", data_type, total_count);
     }
 
-    // Send extraction_complete to MusicBrainz exchanges only (no masters)
-    let mb_types = DataType::musicbrainz();
-    if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &mb_types).await {
-        error!("❌ Failed to send extraction_complete: {}", e);
-        success = false;
+    // Send extraction_complete to MusicBrainz exchanges only (no masters) — only if all succeeded
+    if success {
+        let mb_types = DataType::musicbrainz();
+        if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &mb_types).await {
+            error!("❌ Failed to send extraction_complete: {}", e);
+            success = false;
+        }
+    } else {
+        error!("❌ Skipping extraction_complete broadcast — processing had failures");
     }
     let _ = mq.close().await;
 

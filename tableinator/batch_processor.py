@@ -375,6 +375,7 @@ class PostgreSQLBatchProcessor:
         """
         # Get async connection from pool — wrap in explicit transaction for atomicity
         async with self.connection_pool.connection() as conn:
+            await conn.set_autocommit(False)
             async with conn.transaction():
                 async with conn.cursor() as cursor:
                     # Step 1: Fetch all existing hashes in one query

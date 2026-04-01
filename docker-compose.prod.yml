@@ -28,9 +28,10 @@ secrets:
 services:
   rabbitmq:
     restart: always
-    environment:
-      RABBITMQ_DEFAULT_PASS_FILE: /run/secrets/rabbitmq_password
-      RABBITMQ_DEFAULT_USER_FILE: /run/secrets/rabbitmq_username
+    entrypoint: ["/scripts/rabbitmq-entrypoint.sh"]
+    command: ["rabbitmq-server"]
+    volumes:
+      - ./scripts/rabbitmq-entrypoint.sh:/scripts/rabbitmq-entrypoint.sh:ro
     secrets:
       - rabbitmq_password
       - rabbitmq_username
@@ -107,8 +108,10 @@ services:
       - "autovacuum_vacuum_cost_delay=2ms"
     environment:
       POSTGRES_DB: discogsography
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USER:  # unset base value so _FILE takes effect
       POSTGRES_USER_FILE: /run/secrets/postgres_username
+      POSTGRES_PASSWORD:  # unset base value so _FILE takes effect
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     secrets:
       - postgres_username
       - postgres_password

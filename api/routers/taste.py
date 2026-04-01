@@ -167,10 +167,16 @@ async def taste_card(
     )
 
     cells, _total = heatmap_result
+    # Aggregate genre counts across all cells (decades) to find the true top genres
+    genre_counts: dict[str, int] = {}
+    for c in cells:
+        g = c["genre"]
+        genre_counts[g] = genre_counts.get(g, 0) + c.get("count", 1)
+    top_genres = sorted(genre_counts, key=genre_counts.get, reverse=True)[:5]  # type: ignore[arg-type]
     svg = render_taste_card(
         peak_decade=_peak_decade(cells),
         obscurity_score=obscurity_result["score"],
-        top_genres=[c["genre"] for c in cells[:5]],
+        top_genres=top_genres,
         top_labels=[lb["label"] for lb in labels_result],
         drift=[TasteDriftYear(**d) for d in drift_result],
     )

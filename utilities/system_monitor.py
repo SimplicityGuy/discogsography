@@ -14,12 +14,13 @@ def get_docker_stats() -> list[dict[str, Any]]:
     """Get Docker container statistics."""
     try:
         result = subprocess.run(  # nosec B603 B607
-            ["docker-compose", "ps", "--format", "json"],  # noqa: S607
+            ["docker", "compose", "ps", "--format", "json"],  # noqa: S607
             capture_output=True,
             text=True,
             check=True,
         )
-        containers = [json.loads(line) for line in result.stdout.strip().split("\n") if line]
+        output = result.stdout.strip()
+        containers = json.loads(output) if output.startswith("[") else [json.loads(line) for line in output.split("\n") if line]
         return containers
     except subprocess.CalledProcessError:
         return []

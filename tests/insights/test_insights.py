@@ -414,6 +414,59 @@ class TestLifespan:
             mock_pool.close.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_lifespan_postgres_host_without_port(self) -> None:
+        """When POSTGRES_HOST has no port suffix, default to port 5432."""
+        from fastapi import FastAPI
+
+        import insights.insights as _module
+
+        mock_pool = AsyncMock()
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        mock_http_client = AsyncMock()
+        mock_http_client.aclose = AsyncMock()
+
+        mock_health_srv = MagicMock()
+        mock_health_srv.start_background = MagicMock()
+        mock_health_srv.stop = MagicMock()
+
+        mock_cache = MagicMock()
+
+        mock_config = MagicMock()
+        mock_config.postgres_host = "postgres"  # No port
+        mock_config.postgres_database = "test"
+        mock_config.postgres_username = "user"
+        mock_config.postgres_password = "pass"
+        mock_config.api_base_url = "http://localhost:8004"
+        mock_config.redis_host = "redis://localhost"
+        mock_config.schedule_hours = 24
+        mock_config.milestone_years = [25, 50]
+
+        async def fake_scheduler(*_args: object, **_kwargs: object) -> None:
+            await asyncio.sleep(100)
+
+        fake_app = FastAPI()
+
+        with (
+            patch.object(_module, "setup_logging"),
+            patch.object(_module.InsightsConfig, "from_env", return_value=mock_config),
+            patch.object(_module, "HealthServer", return_value=mock_health_srv),
+            patch.object(_module, "AsyncPostgreSQLPool", return_value=mock_pool) as mock_pool_cls,
+            patch("httpx.AsyncClient", return_value=mock_http_client),
+            patch("redis.asyncio.from_url", new_callable=AsyncMock, return_value=MagicMock()),
+            patch.object(_module, "InsightsCache", return_value=mock_cache),
+            patch.object(_module, "_scheduler_loop", side_effect=fake_scheduler),
+        ):
+            async with _module.lifespan(fake_app):
+                # Verify pool was created with host="postgres" and port=5432
+                call_kwargs = mock_pool_cls.call_args[1]
+                assert call_kwargs["connection_params"]["host"] == "postgres"
+                assert call_kwargs["connection_params"]["port"] == 5432
+
+            mock_pool.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_lifespan_redis_unavailable_fallback(self) -> None:
         """When Redis is unavailable, caching should be disabled gracefully."""
         from fastapi import FastAPI

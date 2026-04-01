@@ -146,6 +146,8 @@ class ResilientPostgreSQLPool:
                         conn = self._create_connection()
                         if conn:
                             self.connections.put_nowait(conn)
+                            with self._lock:
+                                self.active_connections += 1
                     except Exception as e:
                         logger.warning(f"⚠️ Failed to replenish connection: {e}")
                         break
