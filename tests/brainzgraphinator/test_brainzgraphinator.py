@@ -358,6 +358,40 @@ class TestRelationshipEdges:
             mock_tx.run.assert_not_called()
             assert bgmod.enrichment_stats["relationships_skipped_missing_side"] == 1
 
+    @pytest.mark.asyncio
+    async def test_create_edge_existing_relationship_updated(self, mock_tx: AsyncMock) -> None:
+        """Existing relationship matched by MERGE counts as updated, not created."""
+        # Mock: relationships_created=0, contains_updates=True (SET fired on existing rel)
+        mock_summary = MagicMock()
+        mock_summary.counters.relationships_created = 0
+        mock_summary.counters.contains_updates = True
+        mock_result = AsyncMock()
+        mock_result.consume = AsyncMock(return_value=mock_summary)
+        mock_tx.run = AsyncMock(return_value=mock_result)
+
+        relations = [{"type": "member of band", "target_discogs_artist_id": 67890}]
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await create_relationship_edges(mock_tx, 12345, relations)
+            assert bgmod.enrichment_stats.get("relationships_updated", 0) == 1
+            assert bgmod.enrichment_stats["relationships_created"] == 0
+
+    @pytest.mark.asyncio
+    async def test_create_edge_both_nodes_missing(self, mock_tx: AsyncMock) -> None:
+        """When neither node exists, relationship is skipped (no updates, no creation)."""
+        # Mock: relationships_created=0, contains_updates=False (no rows produced)
+        mock_summary = MagicMock()
+        mock_summary.counters.relationships_created = 0
+        mock_summary.counters.contains_updates = False
+        mock_result = AsyncMock()
+        mock_result.consume = AsyncMock(return_value=mock_summary)
+        mock_tx.run = AsyncMock(return_value=mock_result)
+
+        relations = [{"type": "member of band", "target_discogs_artist_id": 67890}]
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await create_relationship_edges(mock_tx, 12345, relations)
+            assert bgmod.enrichment_stats["relationships_skipped_missing_side"] == 1
+            assert bgmod.enrichment_stats["relationships_created"] == 0
+
 
 # ── Message handling tests ────────────────────────────────────────────────
 
@@ -1540,6 +1574,8 @@ class TestMainSuccessfulStartupAndShutdown:
 
             mock_neo4j_class.assert_called_once()
             mock_rabbitmq_class.assert_called_once()
+            # Verify Neo4j driver is closed on shutdown
+            mock_neo4j_instance.close.assert_awaited_once()
         finally:
             bgmod.shutdown_requested = original_shutdown
             for task in created_tasks:
