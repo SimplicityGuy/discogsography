@@ -124,7 +124,7 @@ class AsyncResilientRabbitMQ:
 
         self._connection: aio_pika.abc.AbstractRobustConnection | None = None
         self._channel: aio_pika.abc.AbstractChannel | None = None
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock | None = None
 
         # Circuit breaker for RabbitMQ failures
         # Use higher threshold and longer recovery for startup scenarios
@@ -145,6 +145,8 @@ class AsyncResilientRabbitMQ:
 
     async def connect(self) -> aio_pika.abc.AbstractRobustConnection:
         """Get or create a robust connection."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
         # Fast path: check without lock
         if self._connection and not self._connection.is_closed:
             return self._connection
@@ -223,6 +225,8 @@ class AsyncResilientRabbitMQ:
 
     async def channel(self) -> aio_pika.abc.AbstractChannel:
         """Get or create a robust channel."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
         connection = await self.connect()
 
         async with self._lock:
@@ -236,8 +240,11 @@ class AsyncResilientRabbitMQ:
     async def _on_reconnect(self, *_args: Any, **_kwargs: Any) -> None:
         """Handle reconnection event."""
         logger.info("🔄 RabbitMQ connection re-established")
-        # Reset channel so it will be recreated
-        self._channel = None
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        async with self._lock:
+            # Reset channel so it will be recreated
+            self._channel = None
 
     def add_reconnect_callback(self, callback: Callable) -> None:
         """Add a callback to be called on reconnection."""
@@ -250,6 +257,8 @@ class AsyncResilientRabbitMQ:
 
     async def close(self) -> None:
         """Close the RabbitMQ connection and channel."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
         async with self._lock:
             if self._channel and not self._channel.is_closed:
                 try:

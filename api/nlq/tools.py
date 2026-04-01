@@ -281,10 +281,11 @@ class NLQToolRunner:
         }
         return handlers.get(tool_name)
 
-    def extract_entities(self, tool_name: str, result: dict[str, Any]) -> list[dict[str, str]]:
+    def extract_entities(self, tool_name: str, result: dict[str, Any], entity_type: str = "") -> list[dict[str, str]]:
         """Extract ``{id, name, type}`` entity dicts from a tool result.
 
         Returns an empty list for error results or unrecognized structures.
+        ``entity_type`` is used by ``explore_entity`` to tag the flat result.
         """
         if "error" in result:
             return []
@@ -306,9 +307,10 @@ class NLQToolRunner:
                 entities.append(entity)
 
         elif tool_name == "explore_entity":
-            center = result.get("center")
-            if center and isinstance(center, dict):
-                entities.append({"id": center.get("id", ""), "name": center.get("name", ""), "type": center.get("type", "")})
+            # explore handlers return a flat dict with id/name (no "center" wrapper)
+            etype = entity_type or result.get("_entity_type", "")
+            if result.get("id") and result.get("name"):
+                entities.append({"id": result.get("id", ""), "name": result.get("name", ""), "type": etype})
 
         elif tool_name == "find_path":
             for node in result.get("nodes", []):
@@ -363,7 +365,9 @@ class NLQToolRunner:
         explore_result = await handler(self._driver, name)
         if explore_result is None:
             return {"error": f"{entity_type} '{name}' not found"}
-        return dict(explore_result)
+        result = dict(explore_result)
+        result["_entity_type"] = entity_type
+        return result
 
     async def _handle_find_path(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import neo4j_queries  # noqa: PLC0415

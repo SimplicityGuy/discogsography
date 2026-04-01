@@ -484,7 +484,13 @@ class TestDiscogsOAuthEndpoints:
             {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
         mock_cur.fetchone.return_value = {"id": 1}
-        mock_redis.get.return_value = "reqsecret"
+
+        def _redis_get(key: str) -> str | None:
+            if key.startswith("oauth_state:"):
+                return "reqsecret"
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=_redis_get)
         mock_redis.getdel.return_value = "reqsecret"
 
         with (
@@ -621,7 +627,13 @@ class TestDiscogsOAuthEndpoints:
             {"key": "discogs_consumer_key", "value": "ckey"},
             {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
-        mock_redis.get.return_value = "reqsecret"
+
+        def _redis_get_exchange(key: str) -> str | None:
+            if key.startswith("oauth_state:"):
+                return "reqsecret"
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=_redis_get_exchange)
         mock_redis.getdel.return_value = "reqsecret"
 
         with patch(
@@ -979,7 +991,13 @@ class TestVerifyDiscogsOAuthErrorCleansRedis:
             {"key": "discogs_consumer_key", "value": "ckey"},
             {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
-        mock_redis.get.return_value = "reqsecret"
+
+        def _redis_get_cleanup(key: str) -> str | None:
+            if key.startswith("oauth_state:"):
+                return "reqsecret"
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=_redis_get_cleanup)
 
         with patch(
             "api.api.exchange_oauth_verifier",
@@ -1010,7 +1028,13 @@ class TestVerifyDiscogsUpsertFetchoneNone:
             {"key": "discogs_consumer_key", "value": "ckey"},
             {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
-        mock_redis.get.return_value = "reqsecret"
+
+        def _redis_get_upsert(key: str) -> str | None:
+            if key.startswith("oauth_state:"):
+                return "reqsecret"
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=_redis_get_upsert)
         mock_cur.fetchone.return_value = None  # INSERT RETURNING fails
 
         with (
@@ -1085,7 +1109,13 @@ class TestVerifyDiscogsOAuthStateBinding:
         ]
         # State data with a different user_id than TEST_USER_ID
         state_data = _json.dumps({"secret": "reqsecret", "user_id": "different-user-id"})
-        mock_redis.get.return_value = state_data
+
+        def _redis_get_state(key: str) -> str | None:
+            if key.startswith("oauth_state:"):
+                return state_data
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=_redis_get_state)
         mock_redis.getdel.return_value = state_data
 
         response = test_client.post(
@@ -1109,8 +1139,14 @@ class TestVerifyDiscogsOAuthStateBinding:
             {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
         mock_cur.fetchone.return_value = {"id": 1}
+
         # Raw string — not JSON, triggers backwards compat path
-        mock_redis.get.return_value = "plain-secret-string"
+        def _redis_get_compat(key: str) -> str | None:
+            if key.startswith("oauth_state:"):
+                return "plain-secret-string"
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=_redis_get_compat)
         mock_redis.getdel.return_value = "plain-secret-string"
 
         with (

@@ -69,8 +69,8 @@ async def _get_current_user(
         if user_id and _redis:
             pw_changed = await _redis.get(f"password_changed:{user_id}")
             if pw_changed:
-                iat = payload.get("iat")
-                if iat and int(iat) < int(pw_changed):
+                issued_at = payload.get("iat", 0)
+                if issued_at <= int(pw_changed):
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="Token has been revoked",

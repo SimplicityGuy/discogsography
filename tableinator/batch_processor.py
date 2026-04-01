@@ -101,7 +101,7 @@ class PostgreSQLBatchProcessor:
 
         # Concurrency limiter — prevents all 4 data types from flushing
         # simultaneously and exhausting the PostgreSQL connection pool
-        self._flush_semaphore = asyncio.Semaphore(self.config.max_concurrent_flushes)
+        self._flush_semaphore: asyncio.Semaphore | None = None
 
         # Adaptive batch sizing — reduces under PostgreSQL pressure, recovers on success
         # Per-data-type so pressure on one type doesn't affect others
@@ -234,6 +234,10 @@ class PostgreSQLBatchProcessor:
         success = False
 
         # Limit concurrent PostgreSQL operations to prevent pool exhaustion
+        if self._flush_semaphore is None:
+            self._flush_semaphore = asyncio.Semaphore(
+                self.config.max_concurrent_flushes
+            )
         async with self._flush_semaphore:
             try:
                 await self._process_batch(data_type, messages)
