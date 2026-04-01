@@ -291,6 +291,38 @@ class TestNLQSSE:
         assert response.status_code == 200
 
 
+class TestSSEStreamErrorHandling:
+    """Test SSE streaming error handling."""
+
+    def test_sse_stream_engine_exception_emits_error_event(self, test_client: TestClient) -> None:
+        """When the NLQ engine raises an exception, an error SSE event should be emitted."""
+        original_config = nlq_router._nlq_config
+        original_engine = nlq_router._engine
+        original_redis = nlq_router._redis
+        try:
+            nlq_router._nlq_config = MagicMock(is_available=True, max_query_length=500)
+            mock_engine = MagicMock()
+            mock_engine.run = AsyncMock(side_effect=RuntimeError("Neo4j connection lost"))
+            nlq_router._engine = mock_engine
+            nlq_router._redis = AsyncMock()
+            nlq_router._redis.get = AsyncMock(return_value=None)
+
+            response = test_client.post(
+                "/api/nlq/query",
+                json={"query": "test query"},
+                headers={"Accept": "text/event-stream"},
+            )
+        finally:
+            nlq_router._nlq_config = original_config
+            nlq_router._engine = original_engine
+            nlq_router._redis = original_redis
+
+        assert response.status_code == 200
+        body = response.text
+        assert "event: error" in body
+        assert "Neo4j connection lost" in body
+
+
 class TestExtractUserIdEdgeCases:
     """Test _extract_user_id edge cases."""
 
