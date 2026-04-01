@@ -180,24 +180,30 @@ class StateMarker:
 
     def should_process(self) -> ProcessingDecision:
         """Check if we should re-process, continue, or skip."""
+        with self._lock:
+            dl_status = self.download_phase.status
+            proc_status = self.processing_phase.status
+            overall = self.summary.overall_status
+            version = self.current_version
+
         # If download failed, need to re-download
-        if self.download_phase.status == PhaseStatus.FAILED:
+        if dl_status == PhaseStatus.FAILED:
             logger.warning("⚠️ Download phase failed, will re-download")
             return ProcessingDecision.REPROCESS
 
         # If processing failed, can resume
-        if self.processing_phase.status == PhaseStatus.FAILED:
+        if proc_status == PhaseStatus.FAILED:
             logger.warning("⚠️ Processing phase failed, will resume")
             return ProcessingDecision.CONTINUE
 
         # If processing in progress, resume
-        if self.processing_phase.status == PhaseStatus.IN_PROGRESS:
+        if proc_status == PhaseStatus.IN_PROGRESS:
             logger.info("🔄 Processing in progress, will resume")
             return ProcessingDecision.CONTINUE
 
         # If everything completed successfully, skip
-        if self.summary.overall_status == PhaseStatus.COMPLETED:
-            logger.info("✅ Version already fully processed", version=self.current_version)
+        if overall == PhaseStatus.COMPLETED:
+            logger.info("✅ Version already fully processed", version=version)
             return ProcessingDecision.SKIP
 
         # Otherwise, continue processing
@@ -246,10 +252,12 @@ class StateMarker:
         with self._lock:
             self.download_phase.status = PhaseStatus.COMPLETED
             self.download_phase.completed_at = datetime.now(UTC)
+            files = self.download_phase.files_downloaded
+            byte_count = self.download_phase.bytes_downloaded
         logger.info(
             "✅ Download phase completed",
-            files=self.download_phase.files_downloaded,
-            bytes=self.download_phase.bytes_downloaded,
+            files=files,
+            bytes=byte_count,
         )
 
     def fail_download(self, error: str) -> None:
@@ -387,11 +395,9 @@ class StateMarker:
 
     def pending_files(self, all_files: list[str]) -> list[str]:
         """Get list of files that still need processing."""
-        return [
-            f
-            for f in all_files
-            if f not in self.processing_phase.progress_by_file or self.processing_phase.progress_by_file[f].status != PhaseStatus.COMPLETED
-        ]
+        with self._lock:
+            completed = {f for f, s in self.processing_phase.progress_by_file.items() if s.status == PhaseStatus.COMPLETED}
+        return [f for f in all_files if f not in completed]
 
     def _to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""

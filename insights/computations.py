@@ -8,10 +8,14 @@ Each compute_and_store_* function:
 """
 
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 import structlog
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine
 
 
 logger = structlog.get_logger(__name__)
@@ -354,21 +358,21 @@ async def run_all_computations(
     results: dict[str, int] = {}
     errors: dict[str, str] = {}
 
-    computations: list[tuple[str, Any]] = [
-        ("artist_centrality", compute_and_store_artist_centrality(client, pool)),
-        ("genre_trends", compute_and_store_genre_trends(client, pool)),
-        ("label_longevity", compute_and_store_label_longevity(client, pool)),
+    computations: list[tuple[str, Callable[[], Coroutine[Any, Any, int]]]] = [
+        ("artist_centrality", lambda: compute_and_store_artist_centrality(client, pool)),
+        ("genre_trends", lambda: compute_and_store_genre_trends(client, pool)),
+        ("label_longevity", lambda: compute_and_store_label_longevity(client, pool)),
         (
             "anniversaries",
-            compute_and_store_anniversaries(client, pool, milestone_years=milestone_years),
+            lambda: compute_and_store_anniversaries(client, pool, milestone_years=milestone_years),
         ),
-        ("data_completeness", compute_and_store_data_completeness(client, pool)),
-        ("release_rarity", compute_and_store_rarity(client, pool)),
+        ("data_completeness", lambda: compute_and_store_data_completeness(client, pool)),
+        ("release_rarity", lambda: compute_and_store_rarity(client, pool)),
     ]
 
-    for name, coro in computations:
+    for name, factory in computations:
         try:
-            results[name] = await coro
+            results[name] = await factory()
         except Exception as e:
             logger.error("❌ Computation failed — continuing with remaining computations", computation=name, error=str(e))
             errors[name] = str(e)

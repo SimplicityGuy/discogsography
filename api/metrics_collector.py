@@ -119,7 +119,8 @@ class MetricsBuffer:
 # ---------------------------------------------------------------------------
 
 SERVICE_ENDPOINTS: dict[str, tuple[str, int]] = {
-    "extractor": ("extractor", 8000),
+    "extractor-discogs": ("extractor-discogs", 8000),
+    "extractor-musicbrainz": ("extractor-musicbrainz", 8011),
     "graphinator": ("graphinator", 8001),
     "tableinator": ("tableinator", 8002),
     "dashboard": ("dashboard", 8003),
