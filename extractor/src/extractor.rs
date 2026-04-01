@@ -154,10 +154,15 @@ pub async fn process_discogs_data(
     }
 
     // Start processing phase
-    if state_marker.processing_phase.status != PhaseStatus::Completed {
+    if state_marker.processing_phase.status == PhaseStatus::Pending {
         state_marker.start_processing(data_files.len());
         state_marker.save(&marker_path).await?;
         info!("🚀 Starting processing phase: {} total files", data_files.len());
+    } else if state_marker.processing_phase.status == PhaseStatus::InProgress {
+        // Resume: update total count but do not reset progress counters
+        state_marker.processing_phase.files_total = data_files.len();
+        state_marker.save(&marker_path).await?;
+        info!("🔄 Resuming processing phase: {} total files, {} already completed", data_files.len(), state_marker.processing_phase.files_processed);
     }
 
     // Get list of files that still need processing
@@ -933,12 +938,17 @@ pub async fn process_musicbrainz_data(
 
     // Start processing phase — wrap in Arc<Mutex> for shared access across loop iterations
     let file_count = dump_files.len();
-    if state_marker.processing_phase.status != PhaseStatus::Completed {
+    if state_marker.processing_phase.status == PhaseStatus::Pending {
         state_marker.start_processing(file_count);
         state_marker.save(&marker_path).await?;
+        info!("🚀 Starting MusicBrainz processing phase: {} dump file(s)", file_count);
+    } else if state_marker.processing_phase.status == PhaseStatus::InProgress {
+        // Resume: update total count but do not reset progress counters
+        state_marker.processing_phase.files_total = file_count;
+        state_marker.save(&marker_path).await?;
+        info!("🔄 Resuming MusicBrainz processing phase: {} dump file(s), {} already completed", file_count, state_marker.processing_phase.files_processed);
     }
     let state_marker = Arc::new(tokio::sync::Mutex::new(state_marker));
-    info!("🚀 Starting MusicBrainz processing phase: {} dump file(s)", file_count);
 
     // First pass: build MBID→Discogs ID map for artist relationship target resolution
     let artist_discogs_map = if let Some(artist_path) = dump_files.get(&DataType::Artists) {

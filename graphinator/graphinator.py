@@ -449,6 +449,9 @@ async def _recover_consumers() -> None:
             await temp_connection.close()
         except Exception:  # nosec: B110
             pass
+        active_connection = None  # noqa: F841
+        active_channel = None  # noqa: F841
+        queues = {}  # noqa: F841
 
 
 async def check_file_completion(

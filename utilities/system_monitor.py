@@ -56,7 +56,7 @@ def get_service_logs(service: str, lines: int = 20) -> str:
             timeout=60,
         )
         return result.stdout
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return ""
 
 
@@ -95,16 +95,16 @@ def check_neo4j_status() -> str:
 def check_postgres_status() -> str:
     """Check PostgreSQL database status."""
     try:
-        result = subprocess.run(  # nosec B603 B607
+        result = subprocess.run(  # noqa: S603  # nosec B603 B607
             [  # noqa: S607
                 "docker",
                 "exec",
                 "discogsography-postgres",
                 "psql",
                 "-U",
-                "discogsography",
+                os.environ.get("POSTGRES_USERNAME", "discogsography"),
                 "-d",
-                "discogsography",
+                os.environ.get("POSTGRES_DATABASE", "discogsography"),
                 "-t",
                 "-c",
                 "SELECT relname, pg_size_pretty(pg_relation_size(schemaname||'.'||relname)) as size, n_live_tup as rows FROM pg_stat_user_tables ORDER BY n_live_tup DESC LIMIT 10;",
@@ -177,7 +177,7 @@ def monitor_system() -> None:
     # Check for recent errors in services
     print("\n⚠️  Recent Errors (last 50 lines):")
     print("-" * 40)
-    services = ["extractor", "graphinator", "tableinator", "brainzgraphinator", "brainztableinator"]
+    services = ["extractor-discogs", "extractor-musicbrainz", "graphinator", "tableinator", "brainzgraphinator", "brainztableinator"]
     error_found = False
     for service in services:
         logs = get_service_logs(service, 50)
