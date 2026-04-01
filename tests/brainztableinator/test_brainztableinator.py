@@ -524,6 +524,22 @@ class TestOnDataMessage:
             mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_message_empty_id_acks_and_skips(self):
+        """A message with empty string 'id' should be acked and skipped to avoid UUID cast errors."""
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "", "name": "Empty ID Artist"}'
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", MagicMock()),
+        ):
+            await on_data_message(mock_message, "artists")
+
+            mock_message.ack.assert_called_once()
+            mock_message.nack.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_no_processor_for_data_type_nacks(self):
         """Unknown data type with no processor should nack without requeue."""
         mock_message = AsyncMock()

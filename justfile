@@ -513,7 +513,7 @@ extractor-fmt-check:
 # Run cargo-audit (Rust advisory database scan)
 [group('rust')]
 extractor-audit:
-    cd extractor && cargo audit
+    cargo audit --file Cargo.lock
 
 # Run cargo-deny (Rust license and policy check)
 [group('rust')]
