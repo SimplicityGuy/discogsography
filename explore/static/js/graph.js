@@ -667,7 +667,11 @@ class GraphVisualization {
             categories.push({ catId, ...meta });
         }
 
-        if (categories.length === 0) return;
+        if (categories.length === 0) {
+            this._render();
+            if (this.onExpandsComplete) this.onExpandsComplete();
+            return;
+        }
 
         // Clear child nodes and load-more nodes, keep center and category nodes
         this.nodes = this.nodes.filter(n => n.isCenter || n.isCategory);
@@ -684,6 +688,12 @@ class GraphVisualization {
         this.expandedCategories.clear();
         this._categoryMeta.clear();
         this._pendingExpands = categories.length;
+
+        if (this._pendingExpands === 0) {
+            this._render();
+            if (this.onExpandsComplete) this.onExpandsComplete();
+            return;
+        }
 
         for (const cat of categories) {
             this._expandCategoryFiltered(cat.catId, cat.parentName, cat.parentType, cat.category);
@@ -751,7 +761,11 @@ class GraphVisualization {
             categories.push({ catId, ...meta });
         }
 
-        if (categories.length === 0) return;
+        if (categories.length === 0) {
+            this._render();
+            if (this.onExpandsComplete) this.onExpandsComplete();
+            return;
+        }
 
         // Clear child nodes, keep center and category nodes
         this.nodes = this.nodes.filter(n => n.isCenter || n.isCategory);
@@ -768,6 +782,13 @@ class GraphVisualization {
 
         // Fetch and diff each category
         this._pendingExpands = categories.length;
+
+        if (this._pendingExpands === 0) {
+            this._render();
+            if (this.onExpandsComplete) this.onExpandsComplete();
+            return;
+        }
+
         for (const cat of categories) {
             this._fetchComparisonData(cat.catId, cat.parentName, cat.parentType, cat.category);
         }

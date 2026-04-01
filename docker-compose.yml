@@ -344,7 +344,7 @@ services:
       LOG_LEVEL: info
       MUSICBRAINZ_ROOT: /musicbrainz-data
       MUSICBRAINZ_DUMP_URL: "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/"
-      AMQP_EXCHANGE_PREFIX: musicbrainz
+      MUSICBRAINZ_EXCHANGE_PREFIX: discogsography-musicbrainz
       PERIODIC_CHECK_DAYS: "7"
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PASSWORD: discogsography

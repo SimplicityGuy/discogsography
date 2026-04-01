@@ -48,7 +48,7 @@ def get_service_logs(service: str, lines: int = 20) -> str:
     """Get recent logs from a service."""
     try:
         result = subprocess.run(  # noqa: S603  # nosec B603 B607
-            ["docker-compose", "logs", service, f"--tail={lines}"],  # noqa: S607
+            ["docker", "compose", "logs", service, f"--tail={lines}"],  # noqa: S607
             capture_output=True,
             text=True,
             check=True,

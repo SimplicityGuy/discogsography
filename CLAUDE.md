@@ -44,8 +44,9 @@ backups/              Database backups
 ## Architecture Notes
 
 - **Extractor** supports two modes: `--source discogs` (XML → 4 fanout exchanges) and `--source musicbrainz` (JSONL → 4 fanout exchanges). It has zero knowledge of consumers.
-- **Discogs exchanges**: `discogsography-{artists,labels,masters,releases}` (4 fanout exchanges)
-- **MusicBrainz exchanges**: `musicbrainz-{artists,labels,release-groups,releases}` (4 fanout exchanges)
+- **Exchange naming**: `{project}-{source}-{type}` pattern — env vars `DISCOGS_EXCHANGE_PREFIX` and `MUSICBRAINZ_EXCHANGE_PREFIX`
+- **Discogs exchanges**: `discogsography-discogs-{artists,labels,masters,releases}` (4 fanout exchanges)
+- **MusicBrainz exchanges**: `discogsography-musicbrainz-{artists,labels,release-groups,releases}` (4 fanout exchanges)
 - **Each consumer** (graphinator, tableinator, brainzgraphinator, brainztableinator) independently declares its own queues, DLQs, and DLXs.
 - **Brainzgraphinator** enriches existing Neo4j nodes with MusicBrainz metadata (properties, relationships, cross-references). Skips entities without Discogs matches.
 - **Brainztableinator** stores all MusicBrainz data in `musicbrainz` PostgreSQL schema — including entities without Discogs matches — with relationships and external links.
@@ -203,3 +204,31 @@ All variables support `_FILE` variants for Docker Compose runtime secrets in pro
 - Never log sensitive data (passwords, tokens, PII)
 - Run containers as non-root users
 - Maintain >80% code coverage
+
+## Common Bug Prevention
+
+### PostgreSQL autocommit contract
+- `AsyncPostgreSQLPool` sets `autocommit=True` on all connections and resets it on return to pool
+- **Before `conn.transaction()`**: always call `await conn.set_autocommit(False)` first
+- **After transaction exits**: autocommit is restored by the pool automatically — do not rely on manual restoration
+- **Single-statement writes** (upserts, inserts): use autocommit directly, no `conn.transaction()` needed
+- **Never call `await conn.commit()`** on autocommit connections — it's a no-op
+
+### asyncio primitives
+- **Never create `asyncio.Lock`, `asyncio.Queue`, or `asyncio.Event` in `__init__`** — they bind to the current event loop at creation time
+- Initialize as `None` in `__init__`, create lazily in the first async method or in `initialize()`
+
+### Field name consistency
+- MusicBrainz messages from the extractor use `mb_type` (not `type`) for entity type, `service` (not `type`) for external link service names
+- When reading message fields, always match the exact field name the extractor outputs — check `extractor/src/jsonl_parser.rs` for the source of truth
+- When adding new fields, use consistent naming: extractor defines the schema, consumers must match
+
+### Message acknowledgment
+- **Never ack a message before processing completes** — ack only after successful DB write
+- **Always nack (not silently skip)** messages with missing required fields — silent skips cause data loss
+- **After nack in an exception handler, always `return`** — do not fall through to subsequent processing code
+
+### Exchange and queue naming
+- Exchange pattern: `{project}-{source}-{type}` (e.g., `discogsography-discogs-artists`)
+- Queue pattern: `{exchange-prefix}-{consumer}-{type}` (e.g., `discogsography-discogs-graphinator-artists`)
+- Use `DISCOGS_EXCHANGE_PREFIX` and `MUSICBRAINZ_EXCHANGE_PREFIX` env vars — never hardcode exchange names

@@ -137,4 +137,4 @@ class TestDashboardPipelineDetection:
         assert "discogs" in data
         assert "musicbrainz" in data
         assert len(data["musicbrainz"]) >= 1
-        assert data["musicbrainz"][0]["name"] == "musicbrainz-brainzgraphinator-artists"
+        assert data["musicbrainz"][0]["name"] == "discogsography-musicbrainz-brainzgraphinator-artists"

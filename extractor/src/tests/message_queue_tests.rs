@@ -10,10 +10,10 @@ fn test_exchange_names_default_prefix() {
         max_retries: 1,
         exchange_prefix: DEFAULT_EXCHANGE_PREFIX.to_string(),
     };
-    assert_eq!(mq.exchange_name(DataType::Artists), "discogsography-artists");
-    assert_eq!(mq.exchange_name(DataType::Labels), "discogsography-labels");
-    assert_eq!(mq.exchange_name(DataType::Masters), "discogsography-masters");
-    assert_eq!(mq.exchange_name(DataType::Releases), "discogsography-releases");
+    assert_eq!(mq.exchange_name(DataType::Artists), "discogsography-discogs-artists");
+    assert_eq!(mq.exchange_name(DataType::Labels), "discogsography-discogs-labels");
+    assert_eq!(mq.exchange_name(DataType::Masters), "discogsography-discogs-masters");
+    assert_eq!(mq.exchange_name(DataType::Releases), "discogsography-discogs-releases");
 }
 
 #[test]
@@ -24,11 +24,11 @@ fn test_exchange_names_custom_prefix() {
         reconnect_mutex: tokio::sync::Mutex::new(()),
         url: String::new(),
         max_retries: 1,
-        exchange_prefix: "musicbrainz".to_string(),
+        exchange_prefix: "discogsography-musicbrainz".to_string(),
     };
-    assert_eq!(mq.exchange_name(DataType::Artists), "musicbrainz-artists");
-    assert_eq!(mq.exchange_name(DataType::Labels), "musicbrainz-labels");
-    assert_eq!(mq.exchange_name(DataType::Releases), "musicbrainz-releases");
+    assert_eq!(mq.exchange_name(DataType::Artists), "discogsography-musicbrainz-artists");
+    assert_eq!(mq.exchange_name(DataType::Labels), "discogsography-musicbrainz-labels");
+    assert_eq!(mq.exchange_name(DataType::Releases), "discogsography-musicbrainz-releases");
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn test_message_serialization_file_complete() {
 
 #[test]
 fn test_constants() {
-    assert_eq!(DEFAULT_EXCHANGE_PREFIX, "discogsography");
+    assert_eq!(DEFAULT_EXCHANGE_PREFIX, "discogsography-discogs");
     assert_eq!(AMQP_EXCHANGE_TYPE, ExchangeKind::Fanout);
 }
 

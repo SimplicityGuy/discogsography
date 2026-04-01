@@ -242,18 +242,21 @@ class TestStateMarker:
         assert path == tmp_path / ".extraction_status_20260101.json"
 
     def test_publishing_updates(self):
-        """Test publishing updates."""
+        """Test publishing updates set status and heartbeat.
+
+        Note: messages_published and batches_sent are tracked authoritatively
+        via update_file_progress() which sums from progress_by_file.
+        update_publishing() only updates phase status and AMQP heartbeat.
+        """
         marker = StateMarker(current_version="20260101")
 
-        marker.update_publishing(100, 1)
+        marker.update_publishing()
         assert marker.publishing_phase.status == PhaseStatus.IN_PROGRESS
-        assert marker.publishing_phase.messages_published == 100
-        assert marker.publishing_phase.batches_sent == 1
         assert marker.publishing_phase.last_amqp_heartbeat is not None
 
-        marker.update_publishing(200, 2)
-        assert marker.publishing_phase.messages_published == 300
-        assert marker.publishing_phase.batches_sent == 3
+        # Messages and batches are tracked via update_file_progress, not update_publishing
+        assert marker.publishing_phase.messages_published == 0
+        assert marker.publishing_phase.batches_sent == 0
 
     def test_complete_extraction(self):
         """Test complete extraction."""
@@ -338,8 +341,8 @@ class TestStateMarker:
         loaded = StateMarker.load(path)
         assert loaded is None
 
-    def test_complete_file_processing_syncs_messages_with_records(self):
-        """Test that complete_file_processing syncs messages_published with records_extracted."""
+    def test_complete_file_processing_preserves_tracked_messages(self):
+        """Test that complete_file_processing preserves messages_published tracked during processing."""
         marker = StateMarker(current_version="20260101")
 
         # Start file processing
@@ -357,10 +360,11 @@ class TestStateMarker:
         final_records = 1250
         marker.complete_file_processing("discogs_20260101_artists.xml.gz", final_records)
 
-        # Verify both records and messages are set to the final count
+        # records_extracted is updated to final count
         status = marker.processing_phase.progress_by_file["discogs_20260101_artists.xml.gz"]
         assert status.records_extracted == final_records
-        assert status.messages_published == final_records, "messages_published should match records_extracted on completion"
+        # messages_published preserves the actual tracked count (not overwritten with records)
+        assert status.messages_published == 950, "messages_published should preserve actual tracked count"
 
     def test_file_downloaded_tracks_bytes(self):
         """Test that file_downloaded correctly tracks actual bytes downloaded."""

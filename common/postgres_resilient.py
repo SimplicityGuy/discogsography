@@ -321,9 +321,11 @@ class AsyncPostgreSQLPool:
         self.health_check_interval = health_check_interval
 
         # Connection pool using asyncio.Queue
-        self.connections: asyncio.Queue[psycopg.AsyncConnection[Any]] = asyncio.Queue(maxsize=max_connections)
+        # Async primitives are created lazily in initialize() to bind to the correct event loop.
+        # After initialize(), these are guaranteed non-None.
+        self.connections: asyncio.Queue[psycopg.AsyncConnection[Any]] = None  # type: ignore[assignment]
         self.active_connections = 0
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock = None  # type: ignore[assignment]
         self._closed = False
 
         # Circuit breaker for database failures
@@ -347,6 +349,11 @@ class AsyncPostgreSQLPool:
         """Initialize the connection pool with minimum connections."""
         if self._initialized:
             return
+
+        # Create async primitives in the running event loop (not at __init__ time).
+        # These are assigned as None in __init__ to avoid binding to the wrong loop.
+        self.connections = asyncio.Queue(maxsize=self.max_connections)
+        self._lock = asyncio.Lock()
 
         logger.info(f"🐘 Initializing async PostgreSQL connection pool (min: {self.min_connections}, max: {self.max_connections})")
 
@@ -492,17 +499,13 @@ class AsyncPostgreSQLPool:
                     logger.warning("⚠️ Got unhealthy connection from pool, creating new one")
                     with contextlib.suppress(Exception):
                         await conn.close()
-                    # Decrement counter for the closed unhealthy connection
-                    async with self._lock:
-                        self.active_connections = max(0, self.active_connections - 1)
+                    # Replace unhealthy connection — no net change to active_connections
+                    # Keep counter stable to prevent TOCTOU races
                     try:
                         conn = await self._create_connection()
-                        # Increment counter for the new connection
-                        async with self._lock:
-                            self.active_connections += 1
                     except Exception:
-                        # Counter already decremented for closed connection,
-                        # so no need to decrement again
+                        async with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
                         raise
 
                 if conn:
@@ -535,6 +538,10 @@ class AsyncPostgreSQLPool:
             # Return connection to pool if it's still good
             if conn and not conn.closed and not self._closed:
                 try:
+                    # Restore autocommit=True before returning to pool
+                    # Callers using conn.transaction() must set autocommit=False,
+                    # and we reset it here to prevent poisoning the pool
+                    await conn.set_autocommit(True)
                     self.connections.put_nowait(conn)
                 except asyncio.QueueFull:
                     # Pool is full, close connection
@@ -561,7 +568,7 @@ class AsyncPostgreSQLPool:
                 await self._health_check_task
 
         # Close all connections
-        while not self.connections.empty():
+        while self.connections is not None and not self.connections.empty():
             with contextlib.suppress(Exception):
                 conn = self.connections.get_nowait()
                 await conn.close()

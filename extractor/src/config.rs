@@ -18,7 +18,8 @@ pub struct ExtractorConfig {
     pub data_quality_rules: Option<PathBuf>,
     pub source: Source,
     pub musicbrainz_root: PathBuf,
-    pub amqp_exchange_prefix: String,
+    pub discogs_exchange_prefix: String,
+    pub musicbrainz_exchange_prefix: String,
     pub musicbrainz_dump_url: String,
 }
 
@@ -37,7 +38,8 @@ impl Default for ExtractorConfig {
             data_quality_rules: None,
             source: Source::Discogs,
             musicbrainz_root: PathBuf::from("/musicbrainz-data"),
-            amqp_exchange_prefix: "discogsography".to_string(),
+            discogs_exchange_prefix: "discogsography-discogs".to_string(),
+            musicbrainz_exchange_prefix: "discogsography-musicbrainz".to_string(),
             musicbrainz_dump_url: "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string(),
         }
     }
@@ -88,7 +90,8 @@ impl ExtractorConfig {
 
         let musicbrainz_root = PathBuf::from(std::env::var("MUSICBRAINZ_ROOT").unwrap_or_else(|_| "/musicbrainz-data".to_string()));
 
-        let amqp_exchange_prefix = std::env::var("AMQP_EXCHANGE_PREFIX").unwrap_or_else(|_| "discogsography".to_string());
+        let discogs_exchange_prefix = std::env::var("DISCOGS_EXCHANGE_PREFIX").unwrap_or_else(|_| "discogsography-discogs".to_string());
+        let musicbrainz_exchange_prefix = std::env::var("MUSICBRAINZ_EXCHANGE_PREFIX").unwrap_or_else(|_| "discogsography-musicbrainz".to_string());
 
         let musicbrainz_dump_url =
             std::env::var("MUSICBRAINZ_DUMP_URL").unwrap_or_else(|_| "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string());
@@ -113,7 +116,8 @@ impl ExtractorConfig {
             data_quality_rules,
             source,
             musicbrainz_root,
-            amqp_exchange_prefix,
+            discogs_exchange_prefix,
+            musicbrainz_exchange_prefix,
             musicbrainz_dump_url,
         })
     }

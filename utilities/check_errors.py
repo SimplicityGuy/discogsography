@@ -10,7 +10,7 @@ def check_service_errors(service: str, time_window: int = 60) -> list[str]:
     try:
         # Get logs for the specified time window
         result = subprocess.run(  # noqa: S603  # nosec B603 B607
-            ["docker-compose", "logs", service, f"--since={time_window}m"],  # noqa: S607
+            ["docker", "compose", "logs", service, f"--since={time_window}m"],  # noqa: S607
             capture_output=True,
             text=True,
             check=True,

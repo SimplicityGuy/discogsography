@@ -119,6 +119,10 @@ all = [
     "discogsography[api,brainzgraphinator,brainztableinator,dashboard,explore,graphinator,insights,mcp-server,schema-init,tableinator,dev,utilities]",
 ]
 
+[tool.ruff]
+line-length = 150
+target-version = "py313"
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
@@ -126,18 +130,6 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 docstring-code-format = false
 docstring-code-line-length = "dynamic"
-
-[tool.ruff.lint.isort]
-lines-after-imports = 2
-combine-as-imports = true
-split-on-trailing-comma = true
-known-first-party = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard", "explore", "graphinator", "mcp_server", "neo4j_schema", "postgres_schema", "schema_init", "tableinator"]
-section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
-force-sort-within-sections = true
-
-[tool.ruff]
-line-length = 150
-target-version = "py313"
 
 [tool.ruff.lint]
 select = [
@@ -166,6 +158,14 @@ ignore = [
     "E501",  # line too long, handled by ruff format
     "S101",  # use of assert detected (allow assert statements)
 ]
+
+[tool.ruff.lint.isort]
+lines-after-imports = 2
+combine-as-imports = true
+split-on-trailing-comma = true
+known-first-party = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard", "explore", "graphinator", "mcp_server", "neo4j_schema", "postgres_schema", "schema_init", "tableinator"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+force-sort-within-sections = true
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]

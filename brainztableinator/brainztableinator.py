@@ -467,12 +467,12 @@ async def _insert_external_link(
             "INSERT INTO musicbrainz.external_links "
             "(mbid, entity_type, url, service_name) "
             "VALUES (%s, %s, %s, %s) "
-            "ON CONFLICT DO NOTHING",
+            "ON CONFLICT (mbid, entity_type, service_name) DO UPDATE SET url = EXCLUDED.url",
             (
                 mbid,
                 entity_type,
                 link.get("url", ""),
-                link.get("type", ""),
+                link.get("service", ""),
             ),
         )
 
@@ -708,6 +708,14 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
             return
 
         data_id: str = data["id"]
+
+        # Guard against empty mbid/id — would crash PostgreSQL UUID cast
+        if not data_id:
+            logger.warning(
+                "⚠️ Skipping record with missing mbid/id", data_type=data_type
+            )
+            await message.ack()
+            return
 
         # Track last message time for progress reporting
         if data_type in message_counts:

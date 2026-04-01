@@ -39,7 +39,7 @@ check_health() {
 get_queue_depth() {
   local queue=$1
   local depth
-  depth=$(docker exec discogsography-rabbitmq-1 rabbitmqctl list_queues name messages | grep "$queue" | awk '{print $2}' 2>/dev/null || echo "0")
+  depth=$(docker exec discogsography-rabbitmq rabbitmqctl list_queues name messages | grep "$queue" | awk '{print $2}' 2>/dev/null || echo "0")
   echo "$depth"
 }
 

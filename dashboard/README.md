@@ -81,8 +81,8 @@ Services and queues are now grouped by pipeline. The `/api/metrics` endpoint ret
         { "name": "tableinator", "status": "healthy", "..." : "..." }
       ],
       "queues": [
-        { "name": "discogsography-graphinator-artists", "messages": 0, "messages_ready": 0, "messages_unacknowledged": 0, "consumers": 1, "message_rate": 0.0, "ack_rate": 0.0 },
-        { "name": "discogsography-tableinator-artists", "messages": 0, "..." : "..." }
+        { "name": "discogsography-discogs-graphinator-artists", "messages": 0, "messages_ready": 0, "messages_unacknowledged": 0, "consumers": 1, "message_rate": 0.0, "ack_rate": 0.0 },
+        { "name": "discogsography-discogs-tableinator-artists", "messages": 0, "..." : "..." }
       ]
     },
     "musicbrainz": {
@@ -92,7 +92,7 @@ Services and queues are now grouped by pipeline. The `/api/metrics` endpoint ret
         { "name": "brainztableinator", "status": "healthy", "..." : "..." }
       ],
       "queues": [
-        { "name": "musicbrainz-brainzgraphinator-artists", "messages": 0, "..." : "..." }
+        { "name": "discogsography-musicbrainz-brainzgraphinator-artists", "messages": 0, "..." : "..." }
       ]
     }
   },
@@ -112,8 +112,8 @@ The MusicBrainz pipeline section is **hidden automatically** when the MusicBrain
 
 ### Queue Prefixes
 
-- **Discogs queues**: use the `discogsography` exchange prefix (4 entity types: artists, labels, masters, releases)
-- **MusicBrainz queues**: use the `musicbrainz-` exchange prefix (3 entity types: artists, labels, releases — no masters)
+- **Discogs queues**: use the `discogsography-discogs` exchange prefix (4 entity types: artists, labels, masters, releases)
+- **MusicBrainz queues**: use the `discogsography-musicbrainz` exchange prefix (3 entity types: artists, labels, releases — no masters)
 
 ## WebSocket Updates
 
@@ -126,11 +126,11 @@ The dashboard broadcasts updates every 2 seconds with the following data:
     "pipelines": {
       "discogs": {
         "services": [{ "name": "extractor-discogs", "status": "healthy", "..." : "..." }, "..."],
-        "queues": [{ "name": "discogsography-graphinator-artists", "messages": 0, "..." : "..." }, "..."]
+        "queues": [{ "name": "discogsography-discogs-graphinator-artists", "messages": 0, "..." : "..." }, "..."]
       },
       "musicbrainz": {
         "services": [{ "name": "brainzgraphinator", "status": "healthy", "..." : "..." }, "..."],
-        "queues": [{ "name": "musicbrainz-brainzgraphinator-artists", "messages": 0, "..." : "..." }, "..."]
+        "queues": [{ "name": "discogsography-musicbrainz-brainzgraphinator-artists", "messages": 0, "..." : "..." }, "..."]
       }
     },
     "databases": [

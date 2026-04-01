@@ -11,7 +11,7 @@ from typing import Any
 import structlog
 from aio_pika.abc import AbstractIncomingMessage
 from common import (
-    AMQP_EXCHANGE_PREFIX,
+    DISCOGS_EXCHANGE_PREFIX,
     AMQP_EXCHANGE_TYPE,
     AMQP_QUEUE_PREFIX_TABLEINATOR,
     DATA_TYPES,
@@ -381,7 +381,7 @@ async def _recover_consumers() -> None:
             # Declare per-data-type fanout exchanges and consumer-owned queues
             queues = {}
             for data_type in DATA_TYPES:
-                exchange_name = f"{AMQP_EXCHANGE_PREFIX}-{data_type}"
+                exchange_name = f"{DISCOGS_EXCHANGE_PREFIX}-{data_type}"
                 queue_name = f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{data_type}"
                 dlx_name = f"{queue_name}.dlx"
                 dlq_name = f"{queue_name}.dlq"
@@ -488,6 +488,7 @@ async def purge_stale_rows(data_type: str, started_at: str) -> None:
 
     try:
         async with connection_pool.connection() as conn:
+            await conn.set_autocommit(False)
             async with conn.transaction():
                 async with conn.cursor() as cursor:
                     await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
@@ -1001,7 +1002,7 @@ async def main() -> None:
         # Declare per-data-type fanout exchanges and consumer-owned queues
         queues = {}
         for data_type in DATA_TYPES:
-            exchange_name = f"{AMQP_EXCHANGE_PREFIX}-{data_type}"
+            exchange_name = f"{DISCOGS_EXCHANGE_PREFIX}-{data_type}"
             queue_name = f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{data_type}"
             dlx_name = f"{queue_name}.dlx"
             dlq_name = f"{queue_name}.dlq"

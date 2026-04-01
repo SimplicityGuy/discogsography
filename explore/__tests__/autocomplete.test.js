@@ -47,7 +47,7 @@ describe('Autocomplete', () => {
             expect(instance.results).toEqual([]);
             expect(instance.onSelect).toBeNull();
             expect(instance.debounceMs).toBe(300);
-            expect(instance.minChars).toBe(2);
+            expect(instance.minChars).toBe(3);
         });
 
         it('should reference the DOM elements', () => {
@@ -243,7 +243,7 @@ describe('Autocomplete', () => {
         it('should close dropdown when query is too short', () => {
             const dropdown = document.getElementById('autocompleteDropdown');
             dropdown.classList.add('show');
-            instance.input.value = 'a'; // less than minChars (2)
+            instance.input.value = 'ab'; // less than minChars (3)
 
             instance._onInput();
 

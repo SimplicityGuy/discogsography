@@ -383,8 +383,10 @@
             window.exploreApp._switchPane('explore');
             window.exploreApp._loadExplore(name, type);
         } else if (window.exploreApp) {
-            // For release/master — switch to explore pane
-            window.exploreApp._switchPane('explore');
+            // For release/master — not directly explorable
+            if (window.app?.showToast) {
+                window.app.showToast(`${type} details are not explorable directly — try searching for the artist or label instead`, 'info');
+            }
         }
     }
 

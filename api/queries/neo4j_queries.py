@@ -50,7 +50,7 @@ _LABEL_MAP: dict[str, str] = {
 
 # Known relationship types in the graph — restricting shortestPath to these
 # prevents traversal of internal Neo4j edges (fulltext indexes, etc.).
-_PATH_REL_TYPES = "BY|ON|IS|ALIAS_OF|MEMBER_OF|MASTER_OF|DERIVED_FROM"
+_PATH_REL_TYPES = "BY|ON|IS|ALIAS_OF|MEMBER_OF|DERIVED_FROM"
 
 
 async def find_shortest_path(

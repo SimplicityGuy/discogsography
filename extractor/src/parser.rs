@@ -278,7 +278,7 @@ impl XmlParser {
                                 "gt" => context.text_content.push('>'),
                                 "apos" => context.text_content.push('\''),
                                 "quot" => context.text_content.push('"'),
-                                _ => {}
+                                _ => context.text_content.push_str(&format!("&{};", name)),
                             }
                         }
                     }

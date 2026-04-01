@@ -307,7 +307,10 @@ class StateMarker:
             status.status = PhaseStatus.COMPLETED
             status.completed_at = datetime.now(UTC)
             status.records_extracted = records
-            status.messages_published = records  # Ensure messages match records on completion
+            # Preserve the actual messages_published count tracked during processing;
+            # only use records as a fallback if no messages were tracked
+            if status.messages_published == 0:
+                status.messages_published = records
 
         self.processing_phase.files_processed += 1
 
@@ -341,11 +344,14 @@ class StateMarker:
         self.processing_phase.errors.append(error)
         self.summary.overall_status = PhaseStatus.FAILED
 
-    def update_publishing(self, messages: int, batches: int) -> None:
-        """Update publishing metrics."""
+    def update_publishing(self) -> None:
+        """Update publishing phase status and heartbeat.
+
+        Note: messages_published and batches_sent are tracked authoritatively
+        via update_file_progress() which sums from progress_by_file.
+        This method only updates phase status and AMQP heartbeat timing.
+        """
         self.publishing_phase.status = PhaseStatus.IN_PROGRESS
-        self.publishing_phase.messages_published += messages
-        self.publishing_phase.batches_sent += batches
         self.publishing_phase.last_amqp_heartbeat = datetime.now(UTC)
 
     def fail_publishing(self, error: str) -> None:

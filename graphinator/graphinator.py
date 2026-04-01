@@ -11,7 +11,7 @@ from typing import Any
 import structlog
 from aio_pika.abc import AbstractIncomingMessage
 from common import (
-    AMQP_EXCHANGE_PREFIX,
+    DISCOGS_EXCHANGE_PREFIX,
     AMQP_EXCHANGE_TYPE,
     AMQP_QUEUE_PREFIX_GRAPHINATOR,
     DATA_TYPES,
@@ -367,7 +367,7 @@ async def _recover_consumers() -> None:
             # Declare per-data-type fanout exchanges and consumer-owned queues
             queues = {}
             for data_type in DATA_TYPES:
-                exchange_name = f"{AMQP_EXCHANGE_PREFIX}-{data_type}"
+                exchange_name = f"{DISCOGS_EXCHANGE_PREFIX}-{data_type}"
                 queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
                 dlx_name = f"{queue_name}.dlx"
                 dlq_name = f"{queue_name}.dlq"
@@ -1421,7 +1421,7 @@ async def main() -> None:
         # Declare per-data-type fanout exchanges and consumer-owned queues
         queues = {}
         for data_type in DATA_TYPES:
-            exchange_name = f"{AMQP_EXCHANGE_PREFIX}-{data_type}"
+            exchange_name = f"{DISCOGS_EXCHANGE_PREFIX}-{data_type}"
             queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
             dlx_name = f"{queue_name}.dlx"
             dlq_name = f"{queue_name}.dlq"

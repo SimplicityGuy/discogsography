@@ -214,7 +214,7 @@ def dashboard_mock_httpx_client() -> MagicMock:
             response.status_code = 200
             response.json = lambda: [
                 {
-                    "name": "discogsography-graphinator-artists",
+                    "name": "discogsography-discogs-graphinator-artists",
                     "messages": 5,
                     "messages_ready": 3,
                     "messages_unacknowledged": 2,

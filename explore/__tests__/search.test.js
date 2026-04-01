@@ -436,8 +436,8 @@ describe('search pane', () => {
             const card = document.querySelector('.search-result-card');
             card.click();
 
-            // Release type: only switchPane, no _loadExplore
-            expect(mockExploreApp._switchPane).toHaveBeenCalledWith('explore');
+            // Release type: shows toast instead of switching pane
+            expect(mockExploreApp._switchPane).not.toHaveBeenCalled();
             expect(mockExploreApp._loadExplore).not.toHaveBeenCalled();
         });
     });

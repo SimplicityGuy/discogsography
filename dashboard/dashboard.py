@@ -114,7 +114,7 @@ PIPELINE_CONFIGS: dict[str, dict] = {
             ("graphinator", "http://graphinator:8001/health"),
             ("tableinator", "http://tableinator:8002/health"),
         ],
-        "queue_prefix": "discogsography",
+        "queue_prefix": "discogsography-discogs",
         "entity_types": ["masters", "releases", "artists", "labels"],
     },
     "musicbrainz": {
@@ -123,7 +123,7 @@ PIPELINE_CONFIGS: dict[str, dict] = {
             ("brainzgraphinator", "http://brainzgraphinator:8011/health"),
             ("brainztableinator", "http://brainztableinator:8010/health"),
         ],
-        "queue_prefix": "musicbrainz",
+        "queue_prefix": "discogsography-musicbrainz",
         "entity_types": ["artists", "labels", "release-groups", "releases"],
     },
 }
@@ -479,6 +479,12 @@ dashboard: DashboardApp | None = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifecycle."""
+    log_file = Path("/logs/dashboard.log")
+    try:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        setup_logging("dashboard", log_file=log_file)
+    except OSError:
+        setup_logging("dashboard")
     logger.info("🚀 Starting Dashboard service...")
 
     global dashboard

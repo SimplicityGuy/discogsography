@@ -340,11 +340,11 @@ class TestInsertExternalLink:
 
     @pytest.mark.asyncio
     async def test_insert_external_link(self):
-        """Verify INSERT INTO musicbrainz.external_links is called."""
+        """Verify INSERT INTO musicbrainz.external_links is called with upsert."""
         mock_conn, mock_cursor = _make_mock_conn()
         link = {
             "url": "https://example.com",
-            "type": "official homepage",
+            "service": "official homepage",
         }
 
         await _insert_external_link(mock_conn, "mbid-1", "artist", link)
@@ -352,7 +352,7 @@ class TestInsertExternalLink:
         mock_cursor.execute.assert_called_once()
         sql = mock_cursor.execute.call_args[0][0]
         assert "INSERT INTO musicbrainz.external_links" in sql
-        assert "ON CONFLICT DO NOTHING" in sql
+        assert "ON CONFLICT (mbid, entity_type, service_name) DO UPDATE SET url = EXCLUDED.url" in sql
 
     @pytest.mark.asyncio
     async def test_insert_external_link_no_service_skips(self):
@@ -360,7 +360,7 @@ class TestInsertExternalLink:
         mock_conn, mock_cursor = _make_mock_conn()
         link = {
             "url": "",
-            "type": "",
+            "service": "",
         }
 
         await _insert_external_link(mock_conn, "mbid-1", "artist", link)
@@ -522,6 +522,22 @@ class TestOnDataMessage:
 
             mock_message.nack.assert_called_once_with(requeue=False)
             mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_message_empty_id_acks_and_skips(self):
+        """A message with empty string 'id' should be acked and skipped to avoid UUID cast errors."""
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "", "name": "Empty ID Artist"}'
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", MagicMock()),
+        ):
+            await on_data_message(mock_message, "artists")
+
+            mock_message.ack.assert_called_once()
+            mock_message.nack.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_processor_for_data_type_nacks(self):

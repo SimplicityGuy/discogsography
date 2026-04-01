@@ -361,7 +361,7 @@ extractor --source musicbrainz
 |----------|---------|-------------|
 | `EXTRACTOR_SOURCE` | `discogs` | Data source: `discogs` or `musicbrainz` |
 | `MUSICBRAINZ_ROOT` | `/musicbrainz-data` | Directory containing MB JSONL dump files |
-| `AMQP_EXCHANGE_PREFIX` | `discogsography` | Exchange name prefix (`musicbrainz` for MB mode) |
+| `DISCOGS_EXCHANGE_PREFIX` | `discogsography-discogs` | Exchange name prefix for Discogs mode |
 
 ### MusicBrainz Dump Files
 
@@ -373,9 +373,9 @@ Place xz-compressed JSONL dump files in the `MUSICBRAINZ_ROOT` directory:
 ### Fanout Exchanges
 
 In MusicBrainz mode, the extractor publishes to:
-- `musicbrainz-artists`
-- `musicbrainz-labels`
-- `musicbrainz-releases`
+- `discogsography-musicbrainz-artists`
+- `discogsography-musicbrainz-labels`
+- `discogsography-musicbrainz-releases`
 
 ### Two-Pass Processing
 
@@ -420,8 +420,8 @@ Set the `LOG_LEVEL` environment variable to control logging verbosity:
 
 Extractor integrates with the Discogsography platform:
 
-- **Discogs mode**: Publishes to 4 RabbitMQ fanout exchanges (artists, labels, masters, releases) consumed by Graphinator (Neo4j) and Tableinator (PostgreSQL)
-- **MusicBrainz mode**: Publishes to 3 RabbitMQ fanout exchanges (artists, labels, releases) with MBID→Discogs ID cross-referencing
+- **Discogs mode**: Publishes to 4 RabbitMQ fanout exchanges (`discogsography-discogs-{artists,labels,masters,releases}`) consumed by Graphinator (Neo4j) and Tableinator (PostgreSQL)
+- **MusicBrainz mode**: Publishes to 3 RabbitMQ fanout exchanges (`discogsography-musicbrainz-{artists,labels,releases}`) with MBID→Discogs ID cross-referencing
 - Provides HTTP health, metrics, and readiness endpoints
 
 ## License

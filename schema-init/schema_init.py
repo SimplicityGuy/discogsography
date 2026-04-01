@@ -69,8 +69,7 @@ def _ensure_postgres_database(params: dict[str, Any]) -> None:
     """Create the target database if it does not already exist (synchronous)."""
     admin_params = {**params, "dbname": "postgres"}
     logger.info("🔧 Ensuring PostgreSQL database exists...", database=POSTGRES_DATABASE)
-    with psycopg.connect(**admin_params) as conn:
-        conn.autocommit = True
+    with psycopg.connect(**admin_params, autocommit=True) as conn:
         with conn.cursor() as cursor:
             cursor.execute(
                 "SELECT 1 FROM pg_database WHERE datname = %s",

@@ -255,7 +255,7 @@ _USER_TABLES: list[tuple[str, str]] = [
             record_counts JSONB,
             error_message TEXT,
             extractor_version VARCHAR(50),
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
         )
         """,
     ),
@@ -551,7 +551,7 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
     (
         "musicbrainz.relationships table",
         """CREATE TABLE IF NOT EXISTS musicbrainz.relationships (
-            id SERIAL PRIMARY KEY,
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             source_mbid UUID NOT NULL,
             target_mbid UUID NOT NULL,
             source_entity_type TEXT NOT NULL,
@@ -568,7 +568,7 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
     (
         "musicbrainz.external_links table",
         """CREATE TABLE IF NOT EXISTS musicbrainz.external_links (
-            id SERIAL PRIMARY KEY,
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             mbid UUID NOT NULL,
             entity_type TEXT NOT NULL,
             service_name TEXT NOT NULL,

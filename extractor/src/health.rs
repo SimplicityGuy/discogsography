@@ -121,16 +121,15 @@ async fn ready_handler(State((state, _)): State<AppState>) -> StatusCode {
 }
 
 pub async fn trigger_handler(State((state, trigger)): State<AppState>, body: Option<Json<TriggerRequest>>) -> (StatusCode, Json<serde_json::Value>) {
-    let state = state.read().await;
-    if state.extraction_status == ExtractionStatus::Running {
-        return (StatusCode::CONFLICT, Json(json!({"status": "already_running"})));
-    }
-    drop(state);
-
     let force_reprocess = body.map(|b| b.force_reprocess).unwrap_or(false);
 
     {
         let mut t = trigger.lock().await;
+        let state = state.read().await;
+        if state.extraction_status == ExtractionStatus::Running {
+            return (StatusCode::CONFLICT, Json(json!({"status": "already_running"})));
+        }
+        drop(state);
         *t = Some(force_reprocess);
     }
     info!("🔄 Extraction triggered via API (force_reprocess={})", force_reprocess);
