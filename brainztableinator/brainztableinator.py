@@ -703,7 +703,7 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
 
         # Normal message processing - require 'id' field
         if "id" not in data:
-            logger.error("❌ Message missing 'id' field: data", data=data)
+            logger.error("❌ Message missing 'id' field", data=data)
             await message.nack(requeue=False)
             return
 

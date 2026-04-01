@@ -101,6 +101,8 @@ COPY --from=builder --chown=discogsography:discogsography /app/tableinator /app/
 RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/python -m tableinator.tableinator "$@"\n' > /app/start.sh && \
     chmod +x /app/start.sh
 
+EXPOSE 8002
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8002/health || exit 1

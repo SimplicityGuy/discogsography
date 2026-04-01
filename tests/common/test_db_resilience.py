@@ -478,7 +478,7 @@ class TestAsyncResilientConnection:
         connection_test = AsyncMock(return_value=True)
 
         manager = AsyncResilientConnection(connection_factory, connection_test)
-        assert manager._lock is not None  # Lock is eagerly initialized
+        assert manager._lock is None  # Lock is lazily initialized in first async method
 
         # Close without ever connecting — should not raise
         await manager.close()

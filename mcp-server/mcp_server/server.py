@@ -284,7 +284,7 @@ async def find_path(
             "from_type": from_type_lower,
             "to_name": to_name,
             "to_type": to_type_lower,
-            "max_depth": min(max(int(max_depth), 1), 10),
+            "max_depth": min(max(int(max_depth) if str(max_depth).lstrip("-").isdigit() else 3, 1), 10),
         },
     )
 

@@ -96,8 +96,9 @@ class Neo4jBatchProcessor:
         self._shutdown = False
 
         # Concurrency limiter — prevents all 4 data types from flushing
-        # simultaneously and exhausting the Neo4j connection pool
-        self._flush_semaphore = asyncio.Semaphore(self.config.max_concurrent_flushes)
+        # simultaneously and exhausting the Neo4j connection pool.
+        # Lazy-initialized in first async method to avoid binding to wrong event loop.
+        self._flush_semaphore: asyncio.Semaphore | None = None
 
         # Adaptive batch sizing — reduces under Neo4j pressure, recovers on success
         # Per-data-type so pressure on one type doesn't affect others
@@ -225,17 +226,25 @@ class Neo4jBatchProcessor:
         success = False
 
         # Limit concurrent Neo4j operations to prevent pool exhaustion
+        if self._flush_semaphore is None:
+            self._flush_semaphore = asyncio.Semaphore(
+                self.config.max_concurrent_flushes
+            )
         async with self._flush_semaphore:
             try:
-                # Process batch based on data type
+                # Process batch based on data type.
+                # _process_*_batch returns a set of indices that should be
+                # nacked (e.g. messages with missing required fields).
+                # _flush_queue is the single authority for ack/nack.
+                nack_indices: set[int] = set()
                 if data_type == "artists":
-                    await self._process_artists_batch(messages)
+                    nack_indices = await self._process_artists_batch(messages)
                 elif data_type == "labels":
-                    await self._process_labels_batch(messages)
+                    nack_indices = await self._process_labels_batch(messages)
                 elif data_type == "masters":
-                    await self._process_masters_batch(messages)
+                    nack_indices = await self._process_masters_batch(messages)
                 elif data_type == "releases":
-                    await self._process_releases_batch(messages)
+                    nack_indices = await self._process_releases_batch(messages)
 
                 success = True
 
@@ -323,14 +332,17 @@ class Neo4jBatchProcessor:
         batch_duration = time.time() - batch_start
 
         if success:
-            # Acknowledge all messages
-            for msg in messages:
+            # Ack processed messages, nack invalid ones (e.g. missing 'id')
+            for i, msg in enumerate(messages):
                 try:
-                    await msg.ack_callback()
+                    if i in nack_indices:
+                        await msg.nack_callback()
+                    else:
+                        await msg.ack_callback()
                 except Exception as e:
-                    logger.warning("⚠️ Failed to ack message", error=str(e))
+                    logger.warning("⚠️ Failed to ack/nack message", error=str(e))
 
-            self.processed_counts[data_type] += len(messages)
+            self.processed_counts[data_type] += len(messages) - len(nack_indices)
             self.batch_counts[data_type] += 1
             self.last_flush[data_type] = time.time()
 
@@ -363,24 +375,27 @@ class Neo4jBatchProcessor:
                 total_processed=self.processed_counts[data_type],
             )
 
-    async def _process_artists_batch(self, messages: list[PendingMessage]) -> None:
+    async def _process_artists_batch(self, messages: list[PendingMessage]) -> set[int]:
         """Process a batch of artist records.
 
         Uses a single session for hash check + write to ensure atomicity.
+        Returns indices of messages that should be nacked (e.g. missing 'id').
         """
+        nack_indices: set[int] = set()
         all_artists = []
-        for msg in messages:
+        for i, msg in enumerate(messages):
             artist_id = msg.data.get("id")
             if not artist_id:
                 logger.warning(
-                    "⚠️ Skipping message with missing 'id' field",
+                    "⚠️ Message missing required 'id' field, will nack",
                     data_keys=list(msg.data.keys()),
                 )
+                nack_indices.add(i)
                 continue
             all_artists.append(msg.data)
 
         if not all_artists:
-            return
+            return nack_indices
 
         # Single session for both hash check and write to avoid TOCTOU race
         async with self.driver.session(database="neo4j") as session:
@@ -406,8 +421,7 @@ class Neo4jBatchProcessor:
 
             if not artists_to_process:
                 logger.debug("🔄 All artists in batch already up to date")
-                # Don't ack here — let _flush_queue handle acking uniformly
-                return
+                return nack_indices
 
             async def batch_write(tx: Any) -> None:
                 # Create/update all artist nodes
@@ -493,25 +507,29 @@ class Neo4jBatchProcessor:
                     )
 
             await session.execute_write(batch_write)
+        return nack_indices
 
-    async def _process_labels_batch(self, messages: list[PendingMessage]) -> None:
+    async def _process_labels_batch(self, messages: list[PendingMessage]) -> set[int]:
         """Process a batch of label records.
 
         Uses a single session for hash check + write to ensure atomicity.
+        Returns indices of messages that should be nacked (e.g. missing 'id').
         """
+        nack_indices: set[int] = set()
         all_labels = []
-        for msg in messages:
+        for i, msg in enumerate(messages):
             label_id = msg.data.get("id")
             if not label_id:
                 logger.warning(
-                    "⚠️ Skipping message with missing 'id' field",
+                    "⚠️ Message missing required 'id' field, will nack",
                     data_keys=list(msg.data.keys()),
                 )
+                nack_indices.add(i)
                 continue
             all_labels.append(msg.data)
 
         if not all_labels:
-            return
+            return nack_indices
 
         # Single session for both hash check and write to avoid TOCTOU race
         async with self.driver.session(database="neo4j") as session:
@@ -536,8 +554,7 @@ class Neo4jBatchProcessor:
 
             if not labels_to_process:
                 logger.debug("🔄 All labels in batch already up to date")
-                # Don't ack here — let _flush_queue handle acking uniformly
-                return
+                return nack_indices
 
             async def batch_write(tx: Any) -> None:
                 # Create/update all label nodes
@@ -597,25 +614,29 @@ class Neo4jBatchProcessor:
                     )
 
             await session.execute_write(batch_write)
+        return nack_indices
 
-    async def _process_masters_batch(self, messages: list[PendingMessage]) -> None:
+    async def _process_masters_batch(self, messages: list[PendingMessage]) -> set[int]:
         """Process a batch of master records.
 
         Uses a single session for hash check + write to ensure atomicity.
+        Returns indices of messages that should be nacked (e.g. missing 'id').
         """
+        nack_indices: set[int] = set()
         all_masters = []
-        for msg in messages:
+        for i, msg in enumerate(messages):
             master_id = msg.data.get("id")
             if not master_id:
                 logger.warning(
-                    "⚠️ Skipping message with missing 'id' field",
+                    "⚠️ Message missing required 'id' field, will nack",
                     data_keys=list(msg.data.keys()),
                 )
+                nack_indices.add(i)
                 continue
             all_masters.append(msg.data)
 
         if not all_masters:
-            return
+            return nack_indices
 
         # Single session for both hash check and write to avoid TOCTOU race
         async with self.driver.session(database="neo4j") as session:
@@ -640,8 +661,7 @@ class Neo4jBatchProcessor:
 
             if not masters_to_process:
                 logger.debug("🔄 All masters in batch already up to date")
-                # Don't ack here — let _flush_queue handle acking uniformly
-                return
+                return nack_indices
 
             async def batch_write(tx: Any) -> None:
                 # Create/update all master nodes
@@ -751,26 +771,29 @@ class Neo4jBatchProcessor:
                     )
 
             await session.execute_write(batch_write)
+        return nack_indices
 
-    async def _process_releases_batch(self, messages: list[PendingMessage]) -> None:
+    async def _process_releases_batch(self, messages: list[PendingMessage]) -> set[int]:
         """Process a batch of release records.
 
         Uses a single session for hash check + write to ensure atomicity.
+        Returns indices of messages that should be nacked (e.g. missing 'id').
         """
+        nack_indices: set[int] = set()
         all_releases = []
-        for msg in messages:
+        for i, msg in enumerate(messages):
             release_id = msg.data.get("id")
             if not release_id:
                 logger.warning(
-                    "⚠️ Nacking message with missing 'id' field",
+                    "⚠️ Message missing required 'id' field, will nack",
                     data_keys=list(msg.data.keys()),
                 )
-                await msg.nack_callback()
+                nack_indices.add(i)
                 continue
             all_releases.append(msg)
 
         if not all_releases:
-            return
+            return nack_indices
 
         # Single session for both hash check and write to avoid TOCTOU race
         async with self.driver.session(database="neo4j") as session:
@@ -799,8 +822,7 @@ class Neo4jBatchProcessor:
 
             if not releases_to_process:
                 logger.debug("🔄 All releases in batch already up to date")
-                # Don't ack here — let _flush_queue handle acking uniformly
-                return
+                return nack_indices
 
             async def batch_write(tx: Any) -> None:
                 # Create/update all release nodes
@@ -1002,6 +1024,7 @@ class Neo4jBatchProcessor:
                     )
 
             await session.execute_write(batch_write)
+        return nack_indices
 
     async def flush_all(self) -> None:
         """Flush all pending queues, draining each completely."""

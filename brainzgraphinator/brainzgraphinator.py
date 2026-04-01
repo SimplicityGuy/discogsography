@@ -88,7 +88,8 @@ connection_check_task: asyncio.Task[None] | None = None
 shutdown_requested = False
 
 # Lock for safely merging enrichment stats from concurrent handlers
-_stats_lock = asyncio.Lock()
+# Lazy-initialized in first async method to avoid binding to wrong event loop
+_stats_lock: asyncio.Lock | None = None
 
 # Enrichment stats
 enrichment_stats = {
@@ -560,6 +561,9 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
 
             # Merge local counters into global stats under lock to prevent
             # concurrent handlers from corrupting the shared dict
+            global _stats_lock
+            if _stats_lock is None:
+                _stats_lock = asyncio.Lock()
             async with _stats_lock:
                 for key in local_stats:
                     enrichment_stats[key] += local_stats[key]
