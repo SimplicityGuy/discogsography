@@ -99,10 +99,12 @@ async def query_monthly_anniversaries(
     current_month: int,
     milestone_years: list[int] | None = None,
 ) -> list[dict[str, Any]]:
-    """Query releases with notable anniversaries this month.
+    """Query Master releases with milestone anniversaries in the current year.
 
-    Finds Master releases whose release year creates a milestone
-    anniversary (25, 30, 40, 50, 75, 100 years) in the current year.
+    Returns all Masters whose release year is a milestone number of years
+    ago (e.g. 25, 30, 40, 50, 75, 100 years).  The ``current_month``
+    parameter is logged for observability but **not** used as a filter
+    because Master nodes only store a release year, not a month.
     """
     if milestone_years is None:
         milestone_years = [25, 30, 40, 50, 75, 100]

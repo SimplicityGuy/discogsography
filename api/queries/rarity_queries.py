@@ -136,7 +136,7 @@ def compute_graph_isolation_score(degree: int) -> float:
 def compute_rarity_tier(score: float) -> str:
     """Map composite score to rarity tier label."""
     for threshold, tier in RARITY_TIERS:
-        if score > threshold:
+        if score >= threshold:
             return tier
     return "common"
 

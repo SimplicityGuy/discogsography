@@ -711,10 +711,8 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
 
         # Guard against empty mbid/id — would crash PostgreSQL UUID cast
         if not data_id:
-            logger.warning(
-                "⚠️ Skipping record with missing mbid/id", data_type=data_type
-            )
-            await message.ack()
+            logger.warning("⚠️ Nacking record with empty mbid/id", data_type=data_type)
+            await message.nack(requeue=False)
             return
 
         # Track last message time for progress reporting

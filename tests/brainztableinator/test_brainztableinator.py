@@ -524,8 +524,8 @@ class TestOnDataMessage:
             mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_message_empty_id_acks_and_skips(self):
-        """A message with empty string 'id' should be acked and skipped to avoid UUID cast errors."""
+    async def test_message_empty_id_nacks_to_dlq(self):
+        """A message with empty string 'id' should be nacked (not acked) to route to DLQ."""
         mock_message = AsyncMock()
         mock_message.body = b'{"id": "", "name": "Empty ID Artist"}'
 
@@ -536,8 +536,8 @@ class TestOnDataMessage:
         ):
             await on_data_message(mock_message, "artists")
 
-            mock_message.ack.assert_called_once()
-            mock_message.nack.assert_not_called()
+            mock_message.nack.assert_called_once_with(requeue=False)
+            mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_processor_for_data_type_nacks(self):

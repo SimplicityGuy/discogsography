@@ -247,3 +247,21 @@ All variables support `_FILE` variants for Docker Compose runtime secrets in pro
 - Exchange pattern: `{project}-{source}-{type}` (e.g., `discogsography-discogs-artists`)
 - Queue pattern: `{exchange-prefix}-{consumer}-{type}` (e.g., `discogsography-discogs-graphinator-artists`)
 - Use `DISCOGS_EXCHANGE_PREFIX` and `MUSICBRAINZ_EXCHANGE_PREFIX` env vars — never hardcode exchange names
+
+### Rarity tier boundaries
+- Use `>=` (inclusive) for threshold comparisons: `if score >= threshold:` — a score exactly at the boundary belongs to the higher tier
+- Same principle applies to any tiered classification with ordered thresholds
+
+### Docker service names
+- Extractor runs as two services: `extractor-discogs` and `extractor-musicbrainz` — there is no monolithic `extractor` service
+- When referencing services in utility scripts, always use the actual `docker-compose.yml` service names
+
+### Subprocess timeout discipline
+- **Every `subprocess.run()` call must include `timeout=`** — omitting it risks indefinite hangs
+- **Always catch `subprocess.TimeoutExpired`** alongside `subprocess.CalledProcessError`
+
+### Fix-one-fix-all discipline
+- When fixing a bug pattern, `grep -rn` for ALL instances of the same pattern across the entire codebase before marking the fix complete
+- Common patterns that repeat across files: timestamp comparisons, asyncio primitive creation, ack/nack guards, subprocess calls
+- Token validation code exists in `api/dependencies.py`, `api/api.py`, `api/routers/sync.py`, and `api/routers/snapshot.py` — changes to one must be applied to all
+- Batch processors exist in `graphinator/batch_processor.py` and `tableinator/batch_processor.py` — changes to one should be mirrored in the other

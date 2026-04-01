@@ -297,14 +297,14 @@ class TestSyncRedisCooldown:
     """Tests for per-user Redis cooldown in trigger_sync."""
 
     def test_in_cooldown_returns_429(self, test_client: TestClient, mock_redis: AsyncMock, auth_headers: dict[str, str]) -> None:
-        mock_redis.get.return_value = "1"  # cooldown active
+        mock_redis.get = AsyncMock(side_effect=lambda key: "1" if key.startswith("sync:cooldown:") else None)
         response = test_client.post("/api/sync", headers=auth_headers)
         assert response.status_code == 429
         data = response.json()
         assert data["status"] == "cooldown"
 
     def test_cooldown_key_uses_user_id(self, test_client: TestClient, mock_redis: AsyncMock, auth_headers: dict[str, str]) -> None:
-        mock_redis.get.return_value = "1"
+        mock_redis.get = AsyncMock(side_effect=lambda key: "1" if key.startswith("sync_cooldown:") or key.startswith("sync:cooldown:") else None)
         test_client.post("/api/sync", headers=auth_headers)
         # get is called for password_changed check and cooldown check
         cooldown_calls = [c for c in mock_redis.get.call_args_list if "sync:cooldown:" in str(c)]

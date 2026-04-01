@@ -149,11 +149,20 @@ class TestRarityTier:
     def test_ultra_rare(self) -> None:
         assert compute_rarity_tier(90.0) == "ultra-rare"
 
-    def test_boundary_20(self) -> None:
-        assert compute_rarity_tier(20.0) == "common"
+    def test_boundary_20_inclusive(self) -> None:
+        assert compute_rarity_tier(20.0) == "uncommon"
 
-    def test_boundary_21(self) -> None:
-        assert compute_rarity_tier(21.0) == "uncommon"
+    def test_boundary_19(self) -> None:
+        assert compute_rarity_tier(19.9) == "common"
+
+    def test_boundary_80_inclusive(self) -> None:
+        assert compute_rarity_tier(80.0) == "ultra-rare"
+
+    def test_boundary_60_inclusive(self) -> None:
+        assert compute_rarity_tier(60.0) == "rare"
+
+    def test_boundary_40_inclusive(self) -> None:
+        assert compute_rarity_tier(40.0) == "scarce"
 
     def test_zero_score(self) -> None:
         assert compute_rarity_tier(0.0) == "common"

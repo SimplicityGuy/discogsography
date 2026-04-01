@@ -18,11 +18,12 @@ def get_docker_stats() -> list[dict[str, Any]]:
             capture_output=True,
             text=True,
             check=True,
+            timeout=60,
         )
         output = result.stdout.strip()
         containers = json.loads(output) if output.startswith("[") else [json.loads(line) for line in output.split("\n") if line]
         return containers
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return []
 
 
@@ -86,8 +87,9 @@ def check_neo4j_status() -> str:
             env=env,
         )
         return result.stdout
-    except subprocess.CalledProcessError as e:
-        return f"Error: {e.stderr}"
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        stderr = getattr(e, "stderr", None)
+        return f"Error: {stderr}" if isinstance(stderr, str) and stderr else f"Error: {e}"
 
 
 def check_postgres_status() -> str:
@@ -110,10 +112,12 @@ def check_postgres_status() -> str:
             capture_output=True,
             text=True,
             check=True,
+            timeout=60,
         )
         return result.stdout
-    except subprocess.CalledProcessError as e:
-        return f"Error: {e.stderr}"
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        stderr = getattr(e, "stderr", None)
+        return f"Error: {stderr}" if isinstance(stderr, str) and stderr else f"Error: {e}"
 
 
 def monitor_system() -> None:

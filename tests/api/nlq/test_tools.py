@@ -105,14 +105,16 @@ async def test_execute_autocomplete(runner: NLQToolRunner) -> None:
 
 @pytest.mark.asyncio
 async def test_execute_explore_entity(runner: NLQToolRunner) -> None:
-    """Explore entity tool should delegate to EXPLORE_DISPATCH and return the dict."""
-    fake_result: dict[str, Any] = {"center": {"id": "a1", "name": "Radiohead", "type": "artist"}, "connections": []}
+    """Explore entity tool should delegate to EXPLORE_DISPATCH and return the flat dict."""
+    fake_result: dict[str, Any] = {"id": "a1", "name": "Radiohead", "release_count": 42}
     with patch(
         "api.queries.neo4j_queries.EXPLORE_DISPATCH",
         {"artist": AsyncMock(return_value=fake_result)},
     ):
         result = await runner.execute("explore_entity", {"type": "artist", "name": "Radiohead"})
-    assert result.get("center", {}).get("name") == "Radiohead"
+    assert result.get("name") == "Radiohead"
+    assert result.get("id") == "a1"
+    assert result.get("_entity_type") == "artist"
 
 
 @pytest.mark.asyncio
@@ -344,11 +346,8 @@ def test_extract_entities_from_autocomplete(runner: NLQToolRunner) -> None:
 
 
 def test_extract_entities_from_explore(runner: NLQToolRunner) -> None:
-    """Extract entities from explore_entity results (center node)."""
-    result: dict[str, Any] = {
-        "center": {"id": "a1", "name": "Radiohead", "type": "artist"},
-        "connections": [],
-    }
+    """Extract entities from explore_entity results (flat dict from explore handlers)."""
+    result: dict[str, Any] = {"id": "a1", "name": "Radiohead", "release_count": 42, "_entity_type": "artist"}
     entities = runner.extract_entities("explore_entity", result)
     assert len(entities) == 1
     assert entities[0] == {"id": "a1", "name": "Radiohead", "type": "artist"}
