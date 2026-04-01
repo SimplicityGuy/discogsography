@@ -1,7 +1,7 @@
 use super::*;
 use crate::extractor::{ExtractionStatus, ExtractorState};
 use crate::types::DataType;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 #[tokio::test]
 async fn test_ready_handler_not_ready() {
@@ -250,7 +250,7 @@ async fn test_trigger_handler_success() {
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(json.0["status"], "started");
     assert_eq!(json.0["force_reprocess"], false);
-    assert_eq!(*trigger.lock().unwrap(), Some(false));
+    assert_eq!(*trigger.lock().await, Some(false));
 }
 
 #[tokio::test]
@@ -264,7 +264,7 @@ async fn test_trigger_handler_already_running() {
     let (status, json) = trigger_handler(State((state, trigger.clone())), None).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(json.0["status"], "already_running");
-    assert_eq!(*trigger.lock().unwrap(), None);
+    assert_eq!(*trigger.lock().await, None);
 }
 
 #[tokio::test]
@@ -276,7 +276,7 @@ async fn test_trigger_handler_force_reprocess() {
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(json.0["status"], "started");
     assert_eq!(json.0["force_reprocess"], true);
-    assert_eq!(*trigger.lock().unwrap(), Some(true));
+    assert_eq!(*trigger.lock().await, Some(true));
 }
 
 #[tokio::test]

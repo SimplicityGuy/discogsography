@@ -445,8 +445,17 @@ async def create_relationship_edges(
             source_id=source_discogs_id,
             target_id=target_discogs_id,
         )
-        await result.consume()
-        s["relationships_created"] += 1
+        summary = await result.consume()
+        if summary.counters.relationships_created > 0:
+            s["relationships_created"] += 1
+        else:
+            # MATCH found both nodes (MERGE updated existing) or
+            # one/both nodes missing (no rows produced) — check via
+            # counters.contains_updates which is True when SET fires
+            if summary.counters.contains_updates:
+                s["relationships_created"] += 1
+            else:
+                s["relationships_skipped_missing_side"] += 1
 
 
 async def enrich_release_group(

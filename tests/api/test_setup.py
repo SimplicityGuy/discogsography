@@ -1,6 +1,6 @@
 """Tests for the discogs-setup CLI tool (api/setup.py)."""
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -204,14 +204,11 @@ class TestSetConfig:
         # Two execute calls: one for each credential
         assert mock_cur.execute.call_count == 2
         calls = mock_cur.execute.call_args_list
-        assert calls[0] == call(
-            mock_cur.execute.call_args_list[0][0][0],
-            ("discogs_consumer_key", "mykey"),
-        )
-        assert calls[1] == call(
-            mock_cur.execute.call_args_list[1][0][0],
-            ("discogs_consumer_secret", "mysecret"),
-        )
+        # Verify the SQL contains INSERT/upsert logic and correct parameters
+        assert "INSERT" in calls[0][0][0] or "insert" in calls[0][0][0]
+        assert calls[0][0][1] == ("discogs_consumer_key", "mykey")
+        assert "INSERT" in calls[1][0][0] or "insert" in calls[1][0][0]
+        assert calls[1][0][1] == ("discogs_consumer_secret", "mysecret")
 
         captured = capsys.readouterr()
         assert "✅" in captured.out

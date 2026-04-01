@@ -306,11 +306,14 @@ async def process_message_with_retry(
             else:
                 logger.error(f"❌ Message processing failed after {max_retries} attempts: {e}")
 
-                # Decide whether to requeue or reject
-                if requeue_on_error:
-                    await message.nack(requeue=True)
-                else:
-                    await message.nack(requeue=False)
+                # Nack the message (caller should not nack again)
+                try:
+                    if requeue_on_error:
+                        await message.nack(requeue=True)
+                    else:
+                        await message.nack(requeue=False)
+                except Exception as nack_err:
+                    logger.warning(f"⚠️ Failed to nack message after retries exhausted: {nack_err}")
 
                 raise
 

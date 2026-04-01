@@ -61,7 +61,7 @@ class TestBrevoNotificationChannel:
         assert call_kwargs.kwargs["to"][0].email == "user@example.com"
 
     @pytest.mark.asyncio
-    async def test_send_password_reset_raises_on_api_error(self) -> None:
+    async def test_send_password_reset_swallows_api_error(self) -> None:
         from api.notifications import BrevoNotificationChannel
 
         mock_client = MagicMock()
@@ -74,5 +74,6 @@ class TestBrevoNotificationChannel:
                 sender_name="Test",
             )
 
-        with pytest.raises(RuntimeError, match="API error"):
-            await channel.send_password_reset("user@example.com", "https://example.com/reset")
+        # Should not raise — errors are logged but swallowed to avoid
+        # breaking the password reset UX when email delivery fails
+        await channel.send_password_reset("user@example.com", "https://example.com/reset")

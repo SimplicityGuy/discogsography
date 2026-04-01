@@ -80,6 +80,7 @@ class TrendsChart {
         };
 
         Plotly.newPlot(this.container, [trace], layout, config);
+        this.hasComparison = false;
     }
 
     /**

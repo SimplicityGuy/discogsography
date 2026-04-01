@@ -123,6 +123,8 @@ class ResilientPostgreSQLPool:
                         logger.warning("⚠️ Removing unhealthy connection from pool")
                         with contextlib.suppress(Exception):
                             conn.close()
+                        with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
                 except Empty:
                     break
 
@@ -132,6 +134,8 @@ class ResilientPostgreSQLPool:
                     self.connections.put_nowait(conn)
                 except Full:
                     conn.close()
+                    with self._lock:
+                        self.active_connections = max(0, self.active_connections - 1)
 
             # Ensure minimum connections
             current_size = self.connections.qsize()

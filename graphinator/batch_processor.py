@@ -406,11 +406,7 @@ class Neo4jBatchProcessor:
 
             if not artists_to_process:
                 logger.debug("🔄 All artists in batch already up to date")
-                for msg in messages:
-                    try:
-                        await msg.ack_callback()
-                    except Exception as e:
-                        logger.warning("⚠️ Failed to ack skipped message", error=str(e))
+                # Don't ack here — let _flush_queue handle acking uniformly
                 return
 
             async def batch_write(tx: Any) -> None:
@@ -540,11 +536,7 @@ class Neo4jBatchProcessor:
 
             if not labels_to_process:
                 logger.debug("🔄 All labels in batch already up to date")
-                for msg in messages:
-                    try:
-                        await msg.ack_callback()
-                    except Exception as e:
-                        logger.warning("⚠️ Failed to ack skipped message", error=str(e))
+                # Don't ack here — let _flush_queue handle acking uniformly
                 return
 
             async def batch_write(tx: Any) -> None:
@@ -648,11 +640,7 @@ class Neo4jBatchProcessor:
 
             if not masters_to_process:
                 logger.debug("🔄 All masters in batch already up to date")
-                for msg in messages:
-                    try:
-                        await msg.ack_callback()
-                    except Exception as e:
-                        logger.warning("⚠️ Failed to ack skipped message", error=str(e))
+                # Don't ack here — let _flush_queue handle acking uniformly
                 return
 
             async def batch_write(tx: Any) -> None:
@@ -810,11 +798,7 @@ class Neo4jBatchProcessor:
 
             if not releases_to_process:
                 logger.debug("🔄 All releases in batch already up to date")
-                for msg in messages:
-                    try:
-                        await msg.ack_callback()
-                    except Exception as e:
-                        logger.warning("⚠️ Failed to ack skipped message", error=str(e))
+                # Don't ack here — let _flush_queue handle acking uniformly
                 return
 
             async def batch_write(tx: Any) -> None:

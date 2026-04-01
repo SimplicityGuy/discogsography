@@ -674,7 +674,6 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
 
         # Check if this is a file completion message
         if data.get("type") == "file_complete":
-            completed_files.add(data_type)
             total_processed = data.get("total_processed", 0)
             logger.info(
                 f"✅ File processing complete for {data_type}! "
@@ -684,6 +683,10 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
             # Schedule consumer cancellation if enabled
             if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
                 await schedule_consumer_cancellation(data_type, queues[data_type])
+
+            # Mark as completed AFTER scheduling cancellation so the stuck-state
+            # checker still fires for any in-flight messages during the delay.
+            completed_files.add(data_type)
 
             await message.ack()
             return
@@ -736,6 +739,7 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
             return
 
         async with connection_pool.connection() as conn:
+            await conn.set_autocommit(False)
             async with conn.transaction():
                 await processor(conn, data)
 
@@ -1127,7 +1131,7 @@ async def main() -> None:
                 logger.info("✅ Queue checker task stopped")
 
             # Cancel any pending consumer cancellation tasks
-            for task in consumer_cancel_tasks.values():
+            for task in list(consumer_cancel_tasks.values()):
                 task.cancel()
 
             # Close RabbitMQ connection if still active

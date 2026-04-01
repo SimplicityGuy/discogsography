@@ -679,10 +679,10 @@ fn extract_version_from_filename(filename: &str) -> Option<String> {
 }
 
 /// Wait for the trigger to be set, then take the value and return the force_reprocess flag
-async fn wait_for_trigger(trigger: &Arc<std::sync::Mutex<Option<bool>>>) -> bool {
+async fn wait_for_trigger(trigger: &Arc<tokio::sync::Mutex<Option<bool>>>) -> bool {
     loop {
         {
-            let mut t = trigger.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut t = trigger.lock().await;
             if let Some(force_reprocess) = t.take() {
                 return force_reprocess;
             }
@@ -698,7 +698,7 @@ pub async fn run_extraction_loop(
     shutdown: Arc<tokio::sync::Notify>,
     force_reprocess: bool,
     mq_factory: Arc<dyn MessageQueueFactory>,
-    trigger: Arc<std::sync::Mutex<Option<bool>>>,
+    trigger: Arc<tokio::sync::Mutex<Option<bool>>>,
     compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<()> {
     info!("📥 Starting initial data processing...");
@@ -785,7 +785,7 @@ pub async fn run_musicbrainz_loop(
     shutdown: Arc<tokio::sync::Notify>,
     force_reprocess: bool,
     mq_factory: Arc<dyn MessageQueueFactory>,
-    trigger: Arc<std::sync::Mutex<Option<bool>>>,
+    trigger: Arc<tokio::sync::Mutex<Option<bool>>>,
     compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<()> {
     info!("🎵 Starting MusicBrainz extraction...");

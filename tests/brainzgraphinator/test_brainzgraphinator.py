@@ -378,6 +378,12 @@ class TestMessageHandling:
             mock_tx = AsyncMock()
             mock_result = AsyncMock()
             mock_result.single.return_value = {"matched_id": 12345}
+            mock_counters = MagicMock()
+            mock_counters.relationships_created = 1
+            mock_counters.contains_updates = True
+            mock_summary = MagicMock()
+            mock_summary.counters = mock_counters
+            mock_result.consume.return_value = mock_summary
             mock_tx.run.return_value = mock_result
             return await func(mock_tx)
 
@@ -614,6 +620,12 @@ class TestEdgeCases:
             mock_tx = AsyncMock()
             mock_result = AsyncMock()
             mock_result.single.return_value = {"matched_id": 54321}
+            mock_counters = MagicMock()
+            mock_counters.relationships_created = 1
+            mock_counters.contains_updates = True
+            mock_summary = MagicMock()
+            mock_summary.counters = mock_counters
+            mock_result.consume.return_value = mock_summary
             mock_tx.run.return_value = mock_result
             return await func(mock_tx)
 
@@ -637,6 +649,12 @@ class TestEdgeCases:
             mock_tx = AsyncMock()
             mock_result = AsyncMock()
             mock_result.single.return_value = {"matched_id": 99999}
+            mock_counters = MagicMock()
+            mock_counters.relationships_created = 1
+            mock_counters.contains_updates = True
+            mock_summary = MagicMock()
+            mock_summary.counters = mock_counters
+            mock_result.consume.return_value = mock_summary
             mock_tx.run.return_value = mock_result
             return await func(mock_tx)
 
@@ -1275,6 +1293,12 @@ class TestMessageHandlerEdgeCases:
             mock_tx = AsyncMock()
             mock_result = AsyncMock()
             mock_result.single.return_value = {"matched_id": 12345}
+            mock_counters = MagicMock()
+            mock_counters.relationships_created = 1
+            mock_counters.contains_updates = True
+            mock_summary = MagicMock()
+            mock_summary.counters = mock_counters
+            mock_result.consume.return_value = mock_summary
             mock_tx.run.return_value = mock_result
             return await func(mock_tx)
 

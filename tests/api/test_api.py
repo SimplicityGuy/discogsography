@@ -485,6 +485,7 @@ class TestDiscogsOAuthEndpoints:
         ]
         mock_cur.fetchone.return_value = {"id": 1}
         mock_redis.get.return_value = "reqsecret"
+        mock_redis.getdel.return_value = "reqsecret"
 
         with (
             patch(
@@ -519,6 +520,7 @@ class TestDiscogsOAuthEndpoints:
             {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
         mock_redis.get.return_value = None  # state expired
+        mock_redis.getdel.return_value = None  # state expired (atomic consume)
 
         response = test_client.post(
             "/api/oauth/verify/discogs",
@@ -620,6 +622,7 @@ class TestDiscogsOAuthEndpoints:
             {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
         mock_redis.get.return_value = "reqsecret"
+        mock_redis.getdel.return_value = "reqsecret"
 
         with patch(
             "api.api.exchange_oauth_verifier",
@@ -1081,7 +1084,9 @@ class TestVerifyDiscogsOAuthStateBinding:
             {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
         # State data with a different user_id than TEST_USER_ID
-        mock_redis.get.return_value = _json.dumps({"secret": "reqsecret", "user_id": "different-user-id"})
+        state_data = _json.dumps({"secret": "reqsecret", "user_id": "different-user-id"})
+        mock_redis.get.return_value = state_data
+        mock_redis.getdel.return_value = state_data
 
         response = test_client.post(
             "/api/oauth/verify/discogs",
@@ -1106,6 +1111,7 @@ class TestVerifyDiscogsOAuthStateBinding:
         mock_cur.fetchone.return_value = {"id": 1}
         # Raw string — not JSON, triggers backwards compat path
         mock_redis.get.return_value = "plain-secret-string"
+        mock_redis.getdel.return_value = "plain-secret-string"
 
         with (
             patch(

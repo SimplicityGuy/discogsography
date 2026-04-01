@@ -34,6 +34,13 @@ def mock_tx():
     # Default: MATCH returns an async result with a single record
     mock_result = AsyncMock()
     mock_result.single.return_value = {"matched_id": 12345}
+    # Mock consume() to return a summary with counters (for relationship queries)
+    mock_counters = MagicMock()
+    mock_counters.relationships_created = 1
+    mock_counters.contains_updates = True
+    mock_summary = MagicMock()
+    mock_summary.counters = mock_counters
+    mock_result.consume.return_value = mock_summary
     tx.run.return_value = mock_result
     return tx
 
