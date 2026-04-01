@@ -220,17 +220,17 @@ graph LR
 
 **Discogs exchanges** (4):
 
-- `discogsography-artists`: Artist and band data
-- `discogsography-labels`: Record label information
-- `discogsography-releases`: Release records
-- `discogsography-masters`: Master recording data
+- `discogsography-discogs-artists`: Artist and band data
+- `discogsography-discogs-labels`: Record label information
+- `discogsography-discogs-releases`: Release records
+- `discogsography-discogs-masters`: Master recording data
 
 **MusicBrainz exchanges** (4):
 
-- `musicbrainz-artists`: MusicBrainz artist data with Discogs cross-references
-- `musicbrainz-labels`: MusicBrainz label data with Discogs cross-references
-- `musicbrainz-release-groups`: MusicBrainz release-group data with Discogs master cross-references
-- `musicbrainz-releases`: MusicBrainz release data with Discogs cross-references
+- `discogsography-musicbrainz-artists`: MusicBrainz artist data with Discogs cross-references
+- `discogsography-musicbrainz-labels`: MusicBrainz label data with Discogs cross-references
+- `discogsography-musicbrainz-release-groups`: MusicBrainz release-group data with Discogs master cross-references
+- `discogsography-musicbrainz-releases`: MusicBrainz release data with Discogs cross-references
 
 Each consumer independently declares and binds its own queues to these exchanges.
 
@@ -375,7 +375,7 @@ See [MusicBrainz Sync Guide](musicbrainz-sync.md) for operational instructions.
 - `PERIODIC_CHECK_DAYS`: Update check interval
 - `RABBITMQ_HOST`: RabbitMQ hostname
 - `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`: RabbitMQ auth credentials
-- `AMQP_EXCHANGE_PREFIX`: Exchange name prefix (default: `discogsography` for Discogs, `musicbrainz` for MB)
+- `DISCOGS_EXCHANGE_PREFIX`: Exchange name prefix (default: `discogsography-discogs` for Discogs, `discogsography-musicbrainz` for MB)
 
 See [Extractor README](../extractor/README.md) for details.
 
@@ -640,10 +640,10 @@ graph LR
 
     subgraph RabbitMQ
         subgraph Fanout Exchanges
-            AX[discogsography-artists]
-            LX[discogsography-labels]
-            RX[discogsography-releases]
-            MX[discogsography-masters]
+            AX[discogsography-discogs-artists]
+            LX[discogsography-discogs-labels]
+            RX[discogsography-discogs-releases]
+            MX[discogsography-discogs-masters]
         end
 
         subgraph Graphinator Queues
@@ -691,9 +691,9 @@ graph LR
 
     subgraph RabbitMQ
         subgraph MB Fanout Exchanges
-            MAQ[musicbrainz-artists]
-            MLQ[musicbrainz-labels]
-            MRQ[musicbrainz-releases]
+            MAQ[discogsography-musicbrainz-artists]
+            MLQ[discogsography-musicbrainz-labels]
+            MRQ[discogsography-musicbrainz-releases]
         end
 
         subgraph Brainzgraphinator Queues

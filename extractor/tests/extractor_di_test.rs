@@ -34,7 +34,8 @@ fn test_config(root: &std::path::Path) -> ExtractorConfig {
         data_quality_rules: None,
         source: Source::Discogs,
         musicbrainz_root: std::path::PathBuf::from("/musicbrainz-data"),
-        amqp_exchange_prefix: "discogsography".to_string(),
+        discogs_exchange_prefix: "discogsography-discogs".to_string(),
+        musicbrainz_exchange_prefix: "discogsography-musicbrainz".to_string(),
         musicbrainz_dump_url: "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string(),
     }
 }
@@ -432,7 +433,8 @@ fn mb_test_config(mb_root: &std::path::Path, dump_url: &str) -> ExtractorConfig 
         data_quality_rules: None,
         source: Source::MusicBrainz,
         musicbrainz_root: mb_root.to_path_buf(),
-        amqp_exchange_prefix: "discogsography-mb".to_string(),
+        discogs_exchange_prefix: "discogsography-discogs".to_string(),
+        musicbrainz_exchange_prefix: "discogsography-musicbrainz".to_string(),
         musicbrainz_dump_url: dump_url.to_string(),
     }
 }

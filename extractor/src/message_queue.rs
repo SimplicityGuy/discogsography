@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use crate::types::{DataMessage, DataType, ExtractionCompleteMessage, FileCompleteMessage, Message};
 
 #[allow(dead_code)]
-const DEFAULT_EXCHANGE_PREFIX: &str = "discogsography";
+const DEFAULT_EXCHANGE_PREFIX: &str = "discogsography-discogs";
 const AMQP_EXCHANGE_TYPE: ExchangeKind = ExchangeKind::Fanout;
 
 #[cfg_attr(feature = "test-support", mockall::automock)]
@@ -42,7 +42,7 @@ pub struct MessageQueue {
 }
 
 impl MessageQueue {
-    /// Build the fanout exchange name for a given data type (e.g. "discogsography-artists")
+    /// Build the fanout exchange name for a given data type (e.g. "discogsography-discogs-artists")
     fn exchange_name(&self, data_type: DataType) -> String {
         format!("{}-{}", self.exchange_prefix, data_type)
     }

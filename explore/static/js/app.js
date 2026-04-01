@@ -807,7 +807,8 @@ class ExploreApp {
                 document.getElementById('registerEmail').value = '';
                 document.getElementById('registerPassword').value = '';
                 // Switch to login tab
-                document.getElementById('login-tab')?.click();
+                const modal = document.getElementById('authModal');
+                _alpineData(modal).tab = 'login';
             } else {
                 if (errorEl) errorEl.textContent = 'Registration failed. Please try again.';
             }

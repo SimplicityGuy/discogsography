@@ -178,7 +178,7 @@ pub async fn process_discogs_data(
             for (file_name, file_state) in &state_marker.processing_phase.progress_by_file {
                 record_counts.insert(file_name.clone(), file_state.records_extracted);
             }
-            match mq_factory.create(&config.amqp_connection, &config.amqp_exchange_prefix).await {
+            match mq_factory.create(&config.amqp_connection, &config.discogs_exchange_prefix).await {
                 Ok(mq) => {
                     if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::discogs()).await {
                         error!("❌ Failed to send extraction_complete message: {}", e);
@@ -217,7 +217,7 @@ pub async fn process_discogs_data(
         let task: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             let _permit = semaphore.acquire().await?;
             let mq = mq_factory
-                .create(&config.amqp_connection, &config.amqp_exchange_prefix)
+                .create(&config.amqp_connection, &config.discogs_exchange_prefix)
                 .await
                 .context("Failed to connect to message queue")?;
 
@@ -288,7 +288,7 @@ pub async fn process_discogs_data(
 
             // Send extraction_complete to all consumer queues
             drop(s); // Release read lock before async MQ operations
-            match mq_factory.create(&config.amqp_connection, &config.amqp_exchange_prefix).await {
+            match mq_factory.create(&config.amqp_connection, &config.discogs_exchange_prefix).await {
                 Ok(mq) => {
                     if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::discogs()).await {
                         error!("❌ Failed to send extraction_complete message: {}", e);
@@ -922,7 +922,7 @@ pub async fn process_musicbrainz_data(
 
     // Create message queue connection with MusicBrainz exchange prefix
     let mq = mq_factory
-        .create(&config.amqp_connection, &config.amqp_exchange_prefix)
+        .create(&config.amqp_connection, &config.musicbrainz_exchange_prefix)
         .await
         .context("Failed to connect to message queue for MusicBrainz")?;
 

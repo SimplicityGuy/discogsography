@@ -141,7 +141,7 @@ def main() -> None:
         print(f"Invalid queue type: {queue_type}")
         sys.exit(1)
 
-    queue_name = f"discogsography-graphinator-{queue_type}"
+    queue_name = f"discogsography-discogs-graphinator-{queue_type}"
 
     print(f"🔍 Debugging Queue: {queue_name}")
 

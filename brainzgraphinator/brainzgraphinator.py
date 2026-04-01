@@ -95,6 +95,7 @@ enrichment_stats = {
     "entities_enriched": 0,
     "entities_skipped_no_discogs_match": 0,
     "relationships_created": 0,
+    "relationships_updated": 0,
     "relationships_skipped_missing_side": 0,
 }
 
@@ -389,12 +390,14 @@ async def enrich_release(
         "SET r.mbid = $mbid, "
         "    r.mb_barcode = $mb_barcode, "
         "    r.mb_status = $mb_status, "
+        "    r.mb_release_group_mbid = $release_group_mbid, "
         "    r.mb_updated_at = $mb_updated_at "
         "RETURN r.id AS matched_id",
         discogs_id=discogs_id,
         mbid=record.get("mbid", record.get("id")),
         mb_barcode=record.get("barcode"),
         mb_status=record.get("status"),
+        release_group_mbid=record.get("release_group_mbid"),
         mb_updated_at=datetime.now(UTC).isoformat(),
     )
     matched = await result.single()
@@ -541,6 +544,7 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
                 "entities_enriched": 0,
                 "entities_skipped_no_discogs_match": 0,
                 "relationships_created": 0,
+                "relationships_updated": 0,
                 "relationships_skipped_missing_side": 0,
             }
 

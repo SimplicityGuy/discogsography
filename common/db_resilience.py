@@ -45,7 +45,7 @@ class CircuitBreaker:
         self.last_failure_time: datetime | None = None
         self.state = CircuitState.CLOSED
         self._lock = Lock()
-        self._async_lock = asyncio.Lock()
+        self._async_lock: asyncio.Lock | None = None
 
     def call(self, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """Execute function with circuit breaker protection."""
@@ -89,7 +89,9 @@ class CircuitBreaker:
             raise
 
     def _get_async_lock(self) -> asyncio.Lock:
-        """Return the async lock."""
+        """Return the async lock, creating it lazily in the running event loop."""
+        if self._async_lock is None:
+            self._async_lock = asyncio.Lock()
         return self._async_lock
 
     async def call_async(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:

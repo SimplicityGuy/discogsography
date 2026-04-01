@@ -147,9 +147,9 @@ MUSICBRAINZ_DATA_TYPES = ["artists", "labels", "releases"]
 
 Subscribes to three fanout exchanges:
 
-- `musicbrainz-artists`
-- `musicbrainz-labels`
-- `musicbrainz-releases`
+- `discogsography-musicbrainz-artists`
+- `discogsography-musicbrainz-labels`
+- `discogsography-musicbrainz-releases`
 
 Each data type has its own consumer queue with dead letter exchange (DLX) and dead letter queue (DLQ).
 

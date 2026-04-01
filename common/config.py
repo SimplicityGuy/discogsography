@@ -266,18 +266,18 @@ class BrainztableinatorConfig:
 
 
 # AMQP Configuration shared across all services
-AMQP_EXCHANGE_PREFIX = getenv("AMQP_EXCHANGE_PREFIX", "discogsography")
+DISCOGS_EXCHANGE_PREFIX = getenv("DISCOGS_EXCHANGE_PREFIX", "discogsography-discogs")
 AMQP_EXCHANGE_TYPE = "fanout"  # Fanout exchanges for decoupled pub/sub
-AMQP_QUEUE_PREFIX_GRAPHINATOR = "discogsography-graphinator"
-AMQP_QUEUE_PREFIX_TABLEINATOR = "discogsography-tableinator"
+AMQP_QUEUE_PREFIX_GRAPHINATOR = "discogsography-discogs-graphinator"
+AMQP_QUEUE_PREFIX_TABLEINATOR = "discogsography-discogs-tableinator"
 
 # Data types that will be processed
 DATA_TYPES = ["artists", "labels", "masters", "releases"]
 
 # MusicBrainz AMQP configuration
-MUSICBRAINZ_EXCHANGE_PREFIX = "musicbrainz"
-AMQP_QUEUE_PREFIX_BRAINZGRAPHINATOR = "musicbrainz-brainzgraphinator"
-AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR = "musicbrainz-brainztableinator"
+MUSICBRAINZ_EXCHANGE_PREFIX = getenv("MUSICBRAINZ_EXCHANGE_PREFIX", "discogsography-musicbrainz")
+AMQP_QUEUE_PREFIX_BRAINZGRAPHINATOR = "discogsography-musicbrainz-brainzgraphinator"
+AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR = "discogsography-musicbrainz-brainztableinator"
 MUSICBRAINZ_DATA_TYPES = ["artists", "labels", "release-groups", "releases"]
 
 

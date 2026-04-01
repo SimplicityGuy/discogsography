@@ -9,7 +9,7 @@ class Autocomplete {
         this.searchBtn = document.getElementById('searchBtn');
         this.debounceTimer = null;
         this.debounceMs = 300;
-        this.minChars = 2;
+        this.minChars = 3;
         this.activeIndex = -1;
         this.results = [];
         this.onSelect = null;

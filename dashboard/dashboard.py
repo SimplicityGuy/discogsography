@@ -479,6 +479,12 @@ dashboard: DashboardApp | None = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifecycle."""
+    log_file = Path("/logs/dashboard.log")
+    try:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        setup_logging("dashboard", log_file=log_file)
+    except OSError:
+        setup_logging("dashboard")
     logger.info("🚀 Starting Dashboard service...")
 
     global dashboard

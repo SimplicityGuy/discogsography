@@ -1589,6 +1589,10 @@ class TestAsyncPostgreSQLPoolUncoveredLines:
 
         pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=2, max_connections=5)
 
+        # Create queue and lock manually (normally done in initialize())
+        pool.connections = asyncio.Queue(maxsize=5)
+        pool._lock = asyncio.Lock()
+
         # Replace the queue put coroutine so it raises QueueFull on await
         async def put_raises_queue_full(_conn: AsyncMock) -> None:
             raise asyncio.QueueFull
@@ -1689,7 +1693,9 @@ class TestAsyncPostgreSQLPoolUncoveredLines:
             health_check_interval=0,
         )
 
-        # Mark as initialized without adding real connections so queue stays empty
+        # Create queue and lock (normally done in initialize()) then mark as initialized
+        pool.connections = asyncio.Queue(maxsize=5)
+        pool._lock = asyncio.Lock()
         pool._initialized = True
         pool.active_connections = 0
         pool._health_check_task = asyncio.create_task(pool._health_check_loop())
@@ -1815,8 +1821,9 @@ class TestAsyncPostgreSQLPoolUncoveredLines:
             health_check_interval=0,
         )
 
-        # Mark as initialized without adding connections so queue stays empty,
-        # triggering the replenishment path
+        # Create queue and lock (normally done in initialize()) then mark as initialized
+        pool.connections = asyncio.Queue(maxsize=5)
+        pool._lock = asyncio.Lock()
         pool._initialized = True
         pool.active_connections = 0
 

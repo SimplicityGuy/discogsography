@@ -762,9 +762,10 @@ class Neo4jBatchProcessor:
             release_id = msg.data.get("id")
             if not release_id:
                 logger.warning(
-                    "⚠️ Skipping message with missing 'id' field",
+                    "⚠️ Nacking message with missing 'id' field",
                     data_keys=list(msg.data.keys()),
                 )
+                await msg.nack_callback()
                 continue
             all_releases.append(msg)
 
@@ -784,7 +785,7 @@ class Neo4jBatchProcessor:
                 )
                 async for record in result:
                     if record["hash"]:
-                        existing_hashes[record["id"]] = record["hash"]
+                        existing_hashes[str(record["id"])] = record["hash"]
 
             releases_to_process = []
             for msg in all_releases:

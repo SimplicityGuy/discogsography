@@ -1708,6 +1708,7 @@ class TestPurgeStaleRows:
 
         mock_conn = MagicMock()
         mock_conn.cursor = MagicMock(return_value=mock_cursor_cm)
+        mock_conn.set_autocommit = AsyncMock()
 
         mock_conn_cm = MagicMock()
         mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
@@ -1723,6 +1724,9 @@ class TestPurgeStaleRows:
         from tableinator.tableinator import purge_stale_rows
 
         await purge_stale_rows("artists", "2026-01-01T00:00:00Z")
+
+        # Verify autocommit was disabled before transaction
+        mock_conn.set_autocommit.assert_called_once_with(False)
 
         mock_cursor.execute.assert_called_once()
         call_args = mock_cursor.execute.call_args
@@ -1776,6 +1780,7 @@ class TestPurgeStaleRows:
 
         mock_conn = MagicMock()
         mock_conn.cursor = MagicMock(return_value=mock_cursor_cm)
+        mock_conn.set_autocommit = AsyncMock()
 
         mock_conn_cm = MagicMock()
         mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)

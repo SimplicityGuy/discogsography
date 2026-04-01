@@ -101,7 +101,7 @@ class MockDashboardApp:
                         ],
                         "queues": [
                             {
-                                "name": "discogsography-graphinator-artists",
+                                "name": "discogsography-discogs-graphinator-artists",
                                 "messages": 10,
                                 "messages_ready": 5,
                                 "messages_unacknowledged": 2,
@@ -110,7 +110,7 @@ class MockDashboardApp:
                                 "ack_rate": 0.3,
                             },
                             {
-                                "name": "discogsography-tableinator-artists",
+                                "name": "discogsography-discogs-tableinator-artists",
                                 "messages": 8,
                                 "messages_ready": 3,
                                 "messages_unacknowledged": 1,
@@ -157,7 +157,7 @@ class MockDashboardApp:
                         ],
                         "queues": [
                             {
-                                "name": "musicbrainz-brainzgraphinator-artists",
+                                "name": "discogsography-musicbrainz-brainzgraphinator-artists",
                                 "messages": 5,
                                 "messages_ready": 2,
                                 "messages_unacknowledged": 1,

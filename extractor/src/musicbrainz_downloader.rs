@@ -62,7 +62,7 @@ pub fn discover_mb_dump_files(root: &Path) -> Result<HashMap<DataType, PathBuf>>
             for entry in &entries {
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy();
-                if name_str.contains(keyword) && (name_str.ends_with(".jsonl.xz") || name_str.ends_with(".jsonl")) {
+                if name_str.contains(keyword) && !(data_type == &DataType::Releases && name_str.contains("release-group")) && (name_str.ends_with(".jsonl.xz") || name_str.ends_with(".jsonl")) {
                     let path = entry.path();
                     info!("📋 Found MusicBrainz {} dump (fuzzy match): {:?}", data_type, path);
                     found.insert(*data_type, path);
@@ -522,6 +522,8 @@ pub fn extract_entity_from_tarball(tar_path: &Path, entity: &str, out_path: &Pat
                 }
             }
 
+            out_file.flush().context("Failed to flush extracted file")?;
+            out_file.sync_data().context("Failed to sync extracted file")?;
             info!("📋 Extracted {} from {} ({} bytes)", entity, tar_path.display(), total_written);
             return Ok(());
         }

@@ -130,11 +130,12 @@ class TestEnsurePostgresDatabase:
         mock_conn = self._make_mock_conn(fetchone_result=(1,))
         params = {"host": "localhost", "port": 5432, "dbname": "db", "user": "u", "password": "p"}
 
-        with patch("schema_init.psycopg.connect", return_value=mock_conn), patch("schema_init.POSTGRES_DATABASE", "db"):
+        with patch("schema_init.psycopg.connect", return_value=mock_conn) as mock_connect, patch("schema_init.POSTGRES_DATABASE", "db"):
             _ensure_postgres_database(params)
 
-        # autocommit must be enabled for CREATE DATABASE
-        assert mock_conn.autocommit is True
+        # autocommit must be passed to connect() for CREATE DATABASE
+        call_kwargs = mock_connect.call_args[1]
+        assert call_kwargs.get("autocommit") is True
 
 
 class TestInitPostgres:
