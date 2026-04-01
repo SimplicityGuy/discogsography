@@ -93,18 +93,28 @@ impl ExtractorConfig {
         let musicbrainz_dump_url =
             std::env::var("MUSICBRAINZ_DUMP_URL").unwrap_or_else(|_| "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string());
 
+        let health_port = std::env::var("HEALTH_PORT").unwrap_or_else(|_| "8000".to_string()).parse::<u16>().unwrap_or(8000);
+        let queue_size = std::env::var("QUEUE_SIZE").unwrap_or_else(|_| "5000".to_string()).parse::<usize>().unwrap_or(5000);
+        let progress_log_interval =
+            std::env::var("PROGRESS_LOG_INTERVAL").unwrap_or_else(|_| "1000".to_string()).parse::<usize>().unwrap_or(1000);
+        let state_save_interval =
+            std::env::var("STATE_SAVE_INTERVAL").unwrap_or_else(|_| "5000".to_string()).parse::<usize>().unwrap_or(5000);
+
         Ok(Self {
             amqp_connection,
             discogs_root,
             periodic_check_days,
+            health_port,
             max_workers,
             batch_size,
+            queue_size,
+            progress_log_interval,
+            state_save_interval,
             data_quality_rules,
             source,
             musicbrainz_root,
             amqp_exchange_prefix,
             musicbrainz_dump_url,
-            ..Default::default()
         })
     }
 }

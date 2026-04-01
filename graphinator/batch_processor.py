@@ -396,7 +396,7 @@ class Neo4jBatchProcessor:
                 )
                 async for record in result:
                     if record["hash"]:
-                        existing_hashes[record["id"]] = record["hash"]
+                        existing_hashes[str(record["id"])] = record["hash"]
 
             artists_to_process = [
                 a
@@ -526,7 +526,7 @@ class Neo4jBatchProcessor:
                 )
                 async for record in result:
                     if record["hash"]:
-                        existing_hashes[record["id"]] = record["hash"]
+                        existing_hashes[str(record["id"])] = record["hash"]
 
             labels_to_process = [
                 label
@@ -630,7 +630,7 @@ class Neo4jBatchProcessor:
                 )
                 async for record in result:
                     if record["hash"]:
-                        existing_hashes[record["id"]] = record["hash"]
+                        existing_hashes[str(record["id"])] = record["hash"]
 
             masters_to_process = [
                 m

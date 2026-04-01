@@ -546,7 +546,6 @@ async def compute_genre_style_stats() -> None:
         CALL {
             WITH g
             MATCH (g)<-[:IS]-(r:Release)-[:IS]->(s:Style)
-            WHERE s <> g
             RETURN count(DISTINCT s) AS sc
         }
         CALL {
@@ -582,7 +581,6 @@ async def compute_genre_style_stats() -> None:
         CALL {
             WITH s
             MATCH (s)<-[:IS]-(r:Release)-[:IS]->(g:Genre)
-            WHERE g <> s
             RETURN count(DISTINCT g) AS gc
         }
         CALL {

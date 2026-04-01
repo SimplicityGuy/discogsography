@@ -19,7 +19,8 @@ def get_docker_stats() -> list[dict[str, Any]]:
             text=True,
             check=True,
         )
-        containers = [json.loads(line) for line in result.stdout.strip().split("\n") if line]
+        output = result.stdout.strip()
+        containers = json.loads(output) if output.startswith("[") else [json.loads(line) for line in output.split("\n") if line]
         return containers
     except subprocess.CalledProcessError:
         return []

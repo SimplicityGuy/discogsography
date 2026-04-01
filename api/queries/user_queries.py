@@ -218,15 +218,20 @@ async def get_user_collection_timeline(
     timeline_cypher = """
     MATCH (u:User {id: $user_id})-[:COLLECTED]->(r:Release)
     WHERE r.year IS NOT NULL AND r.year > 0
+    WITH r, (r.year / $multiplier) * $multiplier AS bucket
     OPTIONAL MATCH (r)-[:IS]->(g:Genre)
     OPTIONAL MATCH (r)-[:IS]->(s:Style)
     OPTIONAL MATCH (r)-[:ON]->(l:Label)
-    WITH r, (r.year / $multiplier) * $multiplier AS bucket,
-         collect(DISTINCT g.name) AS genres,
-         collect(DISTINCT s.name) AS styles,
-         collect(DISTINCT l.name) AS labels
-    RETURN bucket AS year, count(r) AS count,
-           genres, styles, labels
+    WITH bucket, r, collect(DISTINCT g.name) AS rg,
+         collect(DISTINCT s.name) AS rs, collect(DISTINCT l.name) AS rl
+    WITH bucket, count(DISTINCT r) AS count,
+         collect(DISTINCT rg) AS genre_lists,
+         collect(DISTINCT rs) AS style_lists,
+         collect(DISTINCT rl) AS label_lists
+    RETURN bucket AS year, count,
+           reduce(acc = [], lst IN genre_lists | acc + lst) AS genres,
+           reduce(acc = [], lst IN style_lists | acc + lst) AS styles,
+           reduce(acc = [], lst IN label_lists | acc + lst) AS labels
     ORDER BY bucket
     """
     rows = await run_query(driver, timeline_cypher, user_id=user_id, multiplier=multiplier)

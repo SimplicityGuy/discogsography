@@ -159,7 +159,8 @@ async def fetch_all_rarity_signals(driver: Any) -> list[dict[str, Any]]:
     MATCH (r:Release)
     OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)<-[:DERIVED_FROM]-(sibling:Release)
     WHERE sibling <> r
-    WITH r, count(DISTINCT sibling) + 1 AS pressing_count
+    WITH r, m, count(DISTINCT sibling) + 1 AS pressing_count_with_master
+    WITH r, CASE WHEN m IS NULL THEN 0 ELSE pressing_count_with_master END AS pressing_count
     OPTIONAL MATCH (r)-[:BY]->(a:Artist)
     WITH r, pressing_count, collect(DISTINCT a.name)[0] AS artist_name
     RETURN r.id AS release_id, pressing_count,

@@ -1485,6 +1485,7 @@ class TestMainSuccessfulStartupAndShutdown:
 
         # Setup Neo4j
         mock_neo4j_instance = MagicMock()
+        mock_neo4j_instance.close = AsyncMock()
         mock_neo4j_class.return_value = mock_neo4j_instance
 
         mock_session = AsyncMock()

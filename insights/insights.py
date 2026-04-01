@@ -112,7 +112,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     logger.info("🏥 Health server started", port=INSIGHTS_HEALTH_PORT)
 
     # Initialize PostgreSQL
-    host, port_str = _config.postgres_host.rsplit(":", 1)
+    if ":" in _config.postgres_host:
+        host, port_str = _config.postgres_host.rsplit(":", 1)
+    else:
+        host = _config.postgres_host
+        port_str = "5432"
     _pool = AsyncPostgreSQLPool(
         connection_params={
             "host": host,

@@ -448,14 +448,12 @@ async def create_relationship_edges(
         summary = await result.consume()
         if summary.counters.relationships_created > 0:
             s["relationships_created"] += 1
+        elif summary.counters.contains_updates:
+            # MERGE matched an existing relationship and SET updated it
+            s["relationships_updated"] = s.get("relationships_updated", 0) + 1
         else:
-            # MATCH found both nodes (MERGE updated existing) or
-            # one/both nodes missing (no rows produced) — check via
-            # counters.contains_updates which is True when SET fires
-            if summary.counters.contains_updates:
-                s["relationships_created"] += 1
-            else:
-                s["relationships_skipped_missing_side"] += 1
+            # One or both nodes missing — no rows produced
+            s["relationships_skipped_missing_side"] += 1
 
 
 async def enrich_release_group(
@@ -1025,6 +1023,9 @@ async def main() -> None:
             if connection_check_task:
                 with contextlib.suppress(asyncio.CancelledError):
                     await connection_check_task
+
+            if graph is not None:
+                await graph.close()
 
             logger.info(
                 "✅ Brainzgraphinator shutdown complete",

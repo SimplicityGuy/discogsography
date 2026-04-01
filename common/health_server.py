@@ -64,7 +64,7 @@ class HealthServer(HTTPServer):
         """Start server in background thread."""
 
         def run_server() -> None:
-            logger.info(f"🏥 Health server listening on port {self.server_port}")
+            logger.info(f"🏥 Health server listening on port {self.server_address[1]}")
             self.serve_forever()
 
         self.thread = Thread(target=run_server, daemon=True)

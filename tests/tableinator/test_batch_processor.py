@@ -297,6 +297,7 @@ class TestPostgreSQLBatchProcessor:
     async def test_flush_queue_success(self) -> None:
         """Test successful queue flush."""
         mock_connection = MagicMock()
+        mock_connection.set_autocommit = AsyncMock()
         mock_cursor = AsyncMock()
         mock_cursor.fetchall = AsyncMock(return_value=[("1", "abc")])  # ID 1 unchanged
 
@@ -435,6 +436,7 @@ class TestPostgreSQLBatchProcessor:
     async def test_flush_queue_general_exception(self) -> None:
         """Test handling general exceptions during flush."""
         mock_connection = MagicMock()
+        mock_connection.set_autocommit = AsyncMock()
         mock_cursor = AsyncMock()
         mock_cursor.execute = AsyncMock(side_effect=Exception("Unexpected error"))
 
@@ -479,6 +481,7 @@ class TestPostgreSQLBatchProcessor:
     async def test_flush_queue_ack_callback_error(self) -> None:
         """Test handling errors in ack callback."""
         mock_connection = MagicMock()
+        mock_connection.set_autocommit = AsyncMock()
         mock_cursor = AsyncMock()
         mock_cursor.fetchall = AsyncMock(return_value=[])
 
@@ -614,6 +617,7 @@ class TestPostgreSQLBatchProcessor:
     async def test_process_batch_with_mixed_records(self) -> None:
         """Test batch processing with mix of changed and unchanged records."""
         mock_connection = MagicMock()
+        mock_connection.set_autocommit = AsyncMock()
         mock_cursor = AsyncMock()
         mock_cursor.fetchall = AsyncMock(return_value=[("1", "abc"), ("2", "def_old")])
 
@@ -791,6 +795,7 @@ class TestPostgreSQLBatchProcessor:
     async def test_batch_respects_max_size(self) -> None:
         """Test that flush only processes up to batch_size messages."""
         mock_connection = MagicMock()
+        mock_connection.set_autocommit = AsyncMock()
         mock_cursor = AsyncMock()
         mock_cursor.fetchall = AsyncMock(return_value=[])
 
@@ -868,6 +873,7 @@ class TestBackoffPeriodSkip:
     async def test_flush_queue_proceeds_after_backoff_expires(self) -> None:
         """When backoff_until is in the past, _flush_queue should process normally."""
         mock_connection = MagicMock()
+        mock_connection.set_autocommit = AsyncMock()
         mock_cursor = AsyncMock()
         mock_cursor.fetchall = AsyncMock(return_value=[])
 
@@ -1073,6 +1079,7 @@ class TestGeneralExceptionBackoff:
     async def test_general_exception_increments_failures(self) -> None:
         """Non-transient errors should increment _consecutive_failures."""
         mock_connection = MagicMock()
+        mock_connection.set_autocommit = AsyncMock()
         mock_cursor = AsyncMock()
         mock_cursor.execute = AsyncMock(side_effect=Exception("Unexpected"))
 
@@ -1110,6 +1117,7 @@ class TestGeneralExceptionBackoff:
     async def test_general_exception_sets_backoff(self) -> None:
         """Non-transient errors should set _backoff_until to a future time."""
         mock_connection = MagicMock()
+        mock_connection.set_autocommit = AsyncMock()
         mock_cursor = AsyncMock()
         mock_cursor.execute = AsyncMock(side_effect=Exception("Unexpected"))
 
@@ -1148,6 +1156,7 @@ class TestGeneralExceptionBackoff:
     async def test_general_exception_nacks_messages(self) -> None:
         """Non-transient errors should re-enqueue messages for local retry."""
         mock_connection = MagicMock()
+        mock_connection.set_autocommit = AsyncMock()
         mock_cursor = AsyncMock()
         mock_cursor.execute = AsyncMock(side_effect=Exception("Unexpected"))
 
@@ -1192,6 +1201,7 @@ class TestSuccessRecovery:
     async def test_consecutive_failures_resets_on_success(self) -> None:
         """After a successful flush, _consecutive_failures should reset to 0."""
         mock_connection = MagicMock()
+        mock_connection.set_autocommit = AsyncMock()
         mock_cursor = AsyncMock()
         mock_cursor.fetchall = AsyncMock(return_value=[])
 
@@ -1234,6 +1244,7 @@ class TestSuccessRecovery:
     async def test_effective_batch_size_increases_on_success(self) -> None:
         """After success, _effective_batch_size should gradually increase toward configured size."""
         mock_connection = MagicMock()
+        mock_connection.set_autocommit = AsyncMock()
         mock_cursor = AsyncMock()
         mock_cursor.fetchall = AsyncMock(return_value=[])
 
@@ -1280,6 +1291,7 @@ class TestSuccessRecovery:
     async def test_effective_batch_size_caps_at_configured(self) -> None:
         """_effective_batch_size should not exceed the configured batch_size."""
         mock_connection = MagicMock()
+        mock_connection.set_autocommit = AsyncMock()
         mock_cursor = AsyncMock()
         mock_cursor.fetchall = AsyncMock(return_value=[])
 

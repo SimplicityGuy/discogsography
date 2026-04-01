@@ -32,6 +32,7 @@ async def get_person_credits(
            collect(DISTINCT a.name)[..3] AS artists,
            collect(DISTINCT l.name)[..1] AS labels
     ORDER BY r.year DESC, r.title
+    LIMIT 500
     """
     return await run_query(driver, cypher, name=name)
 
@@ -103,6 +104,7 @@ async def get_shared_credits(
            c2.role AS person2_role,
            collect(DISTINCT a.name)[..3] AS artists
     ORDER BY r.year DESC
+    LIMIT 500
     """
     return await run_query(driver, cypher, person1=person1, person2=person2)
 

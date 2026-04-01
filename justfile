@@ -665,6 +665,6 @@ clean:
 [group('clean')]
 deep-clean: clean
     @echo '🐳 Cleaning Docker...'
-    @docker compose down -v --remove-orphans 2>/dev/null || true
+    @docker-compose down -v --remove-orphans 2>/dev/null || true
     @docker system prune -f 2>/dev/null || true
     @echo '✅ Deep clean done!'

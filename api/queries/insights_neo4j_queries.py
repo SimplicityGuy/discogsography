@@ -112,8 +112,7 @@ async def query_monthly_anniversaries(
     cypher = """
     UNWIND $target_years AS target_year
     MATCH (m:Master {year: target_year})
-    OPTIONAL MATCH (r:Release)-[:DERIVED_FROM]->(m)
-    OPTIONAL MATCH (r)-[:BY]->(a:Artist)
+    OPTIONAL MATCH (m)-[:BY]->(a:Artist)
     WITH m, collect(DISTINCT a.name)[0] AS artist_name
     RETURN m.id AS master_id, m.title AS title, artist_name,
            m.year AS release_year
