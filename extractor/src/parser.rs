@@ -268,8 +268,16 @@ impl XmlParser {
                 Ok(Event::GeneralRef(e)) => {
                     if in_target_element && let Some(context) = element_stack.last_mut() {
                         if e.is_char_ref() {
-                            if let Ok(Some(ch)) = e.resolve_char_ref() {
-                                context.text_content.push(ch);
+                            match e.resolve_char_ref() {
+                                Ok(Some(ch)) => context.text_content.push(ch),
+                                Ok(None) => {
+                                    warn!("⚠️ Unresolvable character reference in XML, dropping");
+                                    context.text_content.push('\u{FFFD}');
+                                }
+                                Err(err) => {
+                                    warn!("⚠️ Malformed character reference in XML: {}", err);
+                                    context.text_content.push('\u{FFFD}');
+                                }
                             }
                         } else if let Ok(name) = e.decode() {
                             match name.as_ref() {

@@ -11,6 +11,7 @@ class CreditsPanel {
         this._activeFilter = null;
         this._debounceTimer = null;
         this._leaderboardLoaded = false;
+        this._simulation = null;
         this._init();
     }
 
@@ -287,6 +288,7 @@ class CreditsPanel {
         };
 
         if (typeof Plotly !== 'undefined') {
+            Plotly.purge(chartEl);
             Plotly.newPlot(chartEl, traces, layout, { responsive: true, displayModeBar: false });
         }
     }
@@ -394,6 +396,12 @@ class CreditsPanel {
         }
 
         section.classList.remove('hidden');
+
+        // Stop previous simulation before clearing the DOM
+        if (this._simulation) {
+            this._simulation.stop();
+            this._simulation = null;
+        }
         graphEl.textContent = '';
 
         const width = graphEl.clientWidth || 400;
@@ -417,10 +425,12 @@ class CreditsPanel {
             .attr('width', width).attr('height', height)
             .attr('viewBox', [0, 0, width, height]);
 
-        const simulation = d3.forceSimulation(nodes)
+        this._simulation = d3.forceSimulation(nodes)
             .force('link', d3.forceLink(links).id(d => d.id).distance(80))
             .force('charge', d3.forceManyBody().strength(-200))
             .force('center', d3.forceCenter(width / 2, height / 2));
+
+        const simulation = this._simulation;
 
         const link = svg.append('g')
             .selectAll('line')

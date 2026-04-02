@@ -473,6 +473,32 @@ class TestMessageHandling:
         mock_message.nack.assert_called_once_with(requeue=True)
 
     @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)
+    async def test_on_data_message_missing_id_nacks(self) -> None:
+        """Message missing 'id' field is nacked without requeue."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = dumps({"mbid": "abc", "discogs_artist_id": 1})
+
+        with patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()):
+            await on_artist_message(mock_message)
+
+        mock_message.nack.assert_called_once_with(requeue=False)
+        mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)
+    async def test_on_data_message_empty_id_nacks(self) -> None:
+        """Message with empty 'id' field is nacked without requeue."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = dumps({"id": "", "mbid": "", "discogs_artist_id": 1})
+
+        with patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()):
+            await on_artist_message(mock_message)
+
+        mock_message.nack.assert_called_once_with(requeue=False)
+        mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
     @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", True)
     async def test_on_data_message_shutdown_nacks(self) -> None:
         """Message received during shutdown is nacked with requeue."""
@@ -1272,7 +1298,7 @@ class TestMessageHandlerEdgeCases:
     async def test_graph_none_raises_runtime_error(self) -> None:
         """Message when graph is None raises RuntimeError, nacks with requeue."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
-        mock_message.body = dumps({"mbid": "abc", "discogs_artist_id": 12345})
+        mock_message.body = dumps({"id": "abc", "mbid": "abc", "discogs_artist_id": 12345})
 
         with patch("brainzgraphinator.brainzgraphinator.graph", None):
             await on_artist_message(mock_message)

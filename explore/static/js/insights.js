@@ -181,6 +181,7 @@ class InsightsPanel {
             height: 250,
         };
 
+        Plotly.purge(el);
         Plotly.newPlot(el, [trace], layout, { responsive: true, displayModeBar: false });
     }
 

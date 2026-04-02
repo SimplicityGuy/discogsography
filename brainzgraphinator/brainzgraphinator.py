@@ -534,6 +534,21 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
             if await check_file_completion(body, data_type, message):
                 return
 
+            # Validate required 'id' field — nack with requeue=False to avoid
+            # infinite requeue loop for malformed messages (matches brainztableinator).
+            if "id" not in body:
+                logger.error("❌ Message missing 'id' field", data_type=data_type)
+                await message.nack(requeue=False)
+                return
+
+            data_id: str = body["id"]
+            if not data_id:
+                logger.warning(
+                    "⚠️ Nacking record with empty mbid/id", data_type=data_type
+                )
+                await message.nack(requeue=False)
+                return
+
             if graph is None:
                 raise RuntimeError("Neo4j driver not initialized")
 

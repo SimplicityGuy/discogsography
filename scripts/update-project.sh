@@ -349,7 +349,7 @@ update_uv_version() {
       fi
     fi
   done < <(
-    find . -maxdepth 3 -name "Dockerfile" -type f
+    find . -maxdepth 3 -name "Dockerfile" -type f -not -path './.worktrees/*'
     echo "docs/dockerfile-standards.md"
   )
 
@@ -375,7 +375,7 @@ update_uv_version() {
           CHANGES_MADE=true
         fi
       done < <(
-        find . -maxdepth 3 -name "Dockerfile" -type f
+        find . -maxdepth 3 -name "Dockerfile" -type f -not -path './.worktrees/*'
         echo "docs/dockerfile-standards.md"
       )
     else
