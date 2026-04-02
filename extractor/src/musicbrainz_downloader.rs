@@ -436,22 +436,30 @@ pub fn compress_jsonl_to_xz(jsonl_path: &Path) -> Result<PathBuf> {
     let mut last_progress_log = compress_start;
     let filename = jsonl_path.file_name().unwrap_or_default().to_owned();
 
-    loop {
-        let n = reader.read(&mut buf).context("Failed to read during compression")?;
-        if n == 0 {
-            break;
-        }
-        encoder.write_all(&buf[..n]).context("Failed to write compressed data")?;
-        total_read += n as u64;
+    let compress_result = (|| -> Result<()> {
+        loop {
+            let n = reader.read(&mut buf).context("Failed to read during compression")?;
+            if n == 0 {
+                break;
+            }
+            encoder.write_all(&buf[..n]).context("Failed to write compressed data")?;
+            total_read += n as u64;
 
-        let now = std::time::Instant::now();
-        if now.duration_since(last_progress_log).as_secs() >= 10 {
-            log_compression_progress(&filename, total_read, input_size, compress_start.elapsed().as_secs_f64());
-            last_progress_log = now;
+            let now = std::time::Instant::now();
+            if now.duration_since(last_progress_log).as_secs() >= 10 {
+                log_compression_progress(&filename, total_read, input_size, compress_start.elapsed().as_secs_f64());
+                last_progress_log = now;
+            }
         }
+        encoder.finish().context("Failed to finalize XZ compression")?;
+        Ok(())
+    })();
+
+    // Clean up partial .xz file on any failure to prevent poisoning restarts
+    if let Err(e) = compress_result {
+        let _ = std::fs::remove_file(&xz_path);
+        return Err(e);
     }
-
-    encoder.finish().context("Failed to finalize XZ compression")?;
 
     let compressed_size = std::fs::metadata(&xz_path).map(|m| m.len()).unwrap_or(0);
     let ratio = if total_read > 0 { (compressed_size as f64 / total_read as f64) * 100.0 } else { 0.0 };

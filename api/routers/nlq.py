@@ -178,8 +178,8 @@ def _stream_response(query: str, user_id: str | None, context: dict[str, Any] | 
         try:
             result = await engine_task
         except Exception as exc:
-            logger.error("❌ NLQ engine error", error=str(exc))
-            yield {"event": "error", "data": json.dumps({"error": str(exc)})}
+            logger.error("❌ NLQ engine error", error=str(exc), exc_info=True)
+            yield {"event": "error", "data": json.dumps({"error": "An internal error occurred"})}
             return
 
         # Emit final result

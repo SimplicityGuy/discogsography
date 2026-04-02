@@ -219,9 +219,20 @@ impl StateMarker {
         Ok(())
     }
 
-    /// Get the file path for this version's state marker
+    /// Get the file path for a Discogs version's state marker.
+    ///
+    /// For MusicBrainz markers, use [`musicbrainz_file_path`] instead — MusicBrainz
+    /// markers live in a versioned subdirectory with a different filename prefix.
     pub fn file_path(discogs_root: &Path, version: &str) -> PathBuf {
         discogs_root.join(format!(".extraction_status_{}.json", version))
+    }
+
+    /// Get the file path for a MusicBrainz version's state marker.
+    ///
+    /// MusicBrainz markers are stored inside `musicbrainz_root/<version>/`
+    /// (the versioned subdirectory), not at the root level.
+    pub fn musicbrainz_file_path(musicbrainz_root: &Path, version: &str) -> PathBuf {
+        musicbrainz_root.join(version).join(format!(".mb_extraction_status_{}.json", version))
     }
 
     /// Check if we should re-process, continue, or skip

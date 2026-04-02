@@ -220,9 +220,12 @@ pub fn parse_mb_release_line(line: &str) -> Result<DataMessage> {
     let data = serde_json::json!({
         "discogs_release_id": discogs_release_id,
         "name": v["title"],
+        "disambiguation": v["disambiguation"],
         "barcode": v["barcode"],
         "status": v["status"],
         "release_group_mbid": release_group_mbid,
+        "aliases": v["aliases"],
+        "tags": v["tags"],
         "relations": entity_rels,
         "external_links": external_links
     });
@@ -314,8 +317,11 @@ pub fn build_mbid_discogs_map_from_file(path: &Path, entity_type: &str) -> Resul
 /// Non-matching relations are passed through unchanged since the map only
 /// contains IDs for one entity type.
 ///
-/// The inserted field name is always `"target_discogs_artist_id"` for
-/// backward compatibility with downstream consumers (brainzgraphinator).
+/// The inserted field name is derived from the entity type — e.g.,
+/// `"target_discogs_artist_id"` for artists, `"target_discogs_label_id"` for
+/// labels. Currently only called for artists; if extended to other entity
+/// types, ensure downstream consumers (brainzgraphinator) handle the
+/// corresponding field name.
 ///
 /// `entity_type` uses plural form from `DataType::as_str()` (e.g., "artists").
 /// Relation `target_type` uses singular MusicBrainz form (e.g., "artist").

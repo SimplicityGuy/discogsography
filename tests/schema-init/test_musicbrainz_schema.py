@@ -42,4 +42,4 @@ def test_relationships_has_unique_constraint():
 def test_external_links_has_unique_constraint():
     for name, sql in _MUSICBRAINZ_TABLES:
         if name == "musicbrainz.external_links table":
-            assert "UNIQUE (mbid, entity_type, service_name)" in sql
+            assert "UNIQUE (mbid, entity_type, service_name, url)" in sql

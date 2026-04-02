@@ -36,7 +36,15 @@ from api.queries.admin_queries import (
     get_user_stats,
 )
 from api.queries.metrics_queries import get_health_history, get_queue_history
-from common.config import DATA_TYPES, MUSICBRAINZ_DATA_TYPES, ApiConfig
+from common.config import (
+    AMQP_QUEUE_PREFIX_BRAINZGRAPHINATOR,
+    AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR,
+    AMQP_QUEUE_PREFIX_GRAPHINATOR,
+    AMQP_QUEUE_PREFIX_TABLEINATOR,
+    DATA_TYPES,
+    MUSICBRAINZ_DATA_TYPES,
+    ApiConfig,
+)
 
 
 logger = structlog.get_logger(__name__)
@@ -53,13 +61,14 @@ _neo4j_driver: Any = None
 _tracking_tasks: dict[str, asyncio.Task[Any]] = {}
 
 # Valid DLQ names (one per data type per consumer)
+# Must match actual RabbitMQ queue names: {queue_prefix}-{data_type}.dlq
 _VALID_DLQ_NAMES: set[str] = set()
 for _dt in DATA_TYPES:
-    _VALID_DLQ_NAMES.add(f"graphinator-{_dt}-dlq")
-    _VALID_DLQ_NAMES.add(f"tableinator-{_dt}-dlq")
+    _VALID_DLQ_NAMES.add(f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{_dt}.dlq")
+    _VALID_DLQ_NAMES.add(f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{_dt}.dlq")
 for _dt in MUSICBRAINZ_DATA_TYPES:
-    _VALID_DLQ_NAMES.add(f"brainzgraphinator-{_dt}-dlq")
-    _VALID_DLQ_NAMES.add(f"brainztableinator-{_dt}-dlq")
+    _VALID_DLQ_NAMES.add(f"{AMQP_QUEUE_PREFIX_BRAINZGRAPHINATOR}-{_dt}.dlq")
+    _VALID_DLQ_NAMES.add(f"{AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR}-{_dt}.dlq")
 
 
 def configure(pool: Any, redis: Any, config: ApiConfig, neo4j_driver: Any = None) -> None:

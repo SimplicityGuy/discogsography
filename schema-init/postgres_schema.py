@@ -574,7 +574,7 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
             service_name TEXT NOT NULL,
             url TEXT NOT NULL,
             created_at TIMESTAMPTZ DEFAULT NOW(),
-            UNIQUE (mbid, entity_type, service_name)
+            UNIQUE (mbid, entity_type, service_name, url)
         )""",
     ),
 ]

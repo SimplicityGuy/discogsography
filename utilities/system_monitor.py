@@ -160,7 +160,7 @@ def monitor_system() -> None:
     print("\n🔷 Neo4j Database Status:")
     print("-" * 40)
     neo4j_status = check_neo4j_status()
-    if "Error" not in neo4j_status:
+    if not neo4j_status.startswith("Error:"):
         print(neo4j_status)
     else:
         print("  Unable to connect to Neo4j")
@@ -169,7 +169,7 @@ def monitor_system() -> None:
     print("\n🐘 PostgreSQL Database Status:")
     print("-" * 40)
     postgres_status = check_postgres_status()
-    if "Error" not in postgres_status:
+    if not postgres_status.startswith("Error:"):
         print(postgres_status)
     else:
         print("  Unable to connect to PostgreSQL")

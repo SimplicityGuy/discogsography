@@ -443,7 +443,9 @@ async def _insert_relationship(
             "INSERT INTO musicbrainz.relationships "
             "(source_mbid, source_entity_type, target_mbid, target_entity_type, relationship_type, attributes, begin_date, end_date, ended) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
-            "ON CONFLICT DO NOTHING",
+            "ON CONFLICT (source_mbid, target_mbid, source_entity_type, target_entity_type, relationship_type) "
+            "DO UPDATE SET attributes = EXCLUDED.attributes, begin_date = EXCLUDED.begin_date, "
+            "end_date = EXCLUDED.end_date, ended = EXCLUDED.ended",
             (
                 source_mbid,
                 source_type,
