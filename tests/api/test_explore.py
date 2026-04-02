@@ -945,6 +945,48 @@ class TestGenreTreeEndpoint:
             response = test_client.get("/api/genre-tree")
         assert response.status_code == 500
 
+    def test_genre_tree_lock_recheck_returns_cache(self, test_client: TestClient) -> None:
+        """After acquiring the lock, if cache was refreshed by another coroutine, return cached result."""
+        import asyncio
+        import time
+
+        import api.routers.explore as explore_module
+
+        cached_data = {"genres": [{"name": "Rock", "release_count": 500, "styles": []}]}
+
+        # Set cache to expired so the outer check passes
+        explore_module._genre_tree_cache = {"genres": []}
+        explore_module._genre_tree_cache_time = time.monotonic() - 600
+
+        # Create a lock wrapper that refreshes cache on acquire, simulating
+        # another coroutine refreshing it while we waited for the lock
+        class _CacheRefreshingLock:
+            def __init__(self) -> None:
+                self._lock = asyncio.Lock()
+
+            async def __aenter__(self) -> None:
+                await self._lock.__aenter__()
+                # Simulate: cache was refreshed by another holder before we got the lock
+                explore_module._genre_tree_cache = cached_data
+                explore_module._genre_tree_cache_time = time.monotonic()
+
+            async def __aexit__(self, *args: Any) -> None:
+                await self._lock.__aexit__(*args)
+
+        explore_module._genre_tree_lock = _CacheRefreshingLock()
+        mock_query = AsyncMock(return_value=[])
+
+        try:
+            with patch("api.routers.explore.genre_tree_queries.get_genre_tree", mock_query):
+                response = test_client.get("/api/genre-tree")
+            assert response.status_code == 200
+            assert response.json() == cached_data
+            # The Neo4j query should NOT have been called — cache was already fresh
+            mock_query.assert_not_called()
+        finally:
+            explore_module._genre_tree_cache = None
+            explore_module._genre_tree_lock = None
+
 
 class TestGraphStatsEndpoint:
     """Tests for GET /api/graph/stats."""
