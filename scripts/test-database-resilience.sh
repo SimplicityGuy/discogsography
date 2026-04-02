@@ -74,9 +74,6 @@ monitor_logs() {
 # Initial health check
 echo -e "\n${BLUE}🏥 Initial Health Check${NC}"
 echo "========================"
-check_health "Extractor" 8000
-check_health "Graphinator" 8001
-check_health "Tableinator" 8002
 check_health "Dashboard" 8003
 check_health "API" 8004
 
@@ -153,16 +150,9 @@ sleep 30
 # Check recovery
 echo -e "\n${BLUE}🔍 Checking RabbitMQ Recovery${NC}"
 sleep 10
-check_health "Extractor" 8000
-check_health "Graphinator" 8001
-check_health "Tableinator" 8002
-
 # Final health check
 echo -e "\n${BLUE}🏥 Final Health Check${NC}"
 echo "====================="
-check_health "Extractor" 8000
-check_health "Graphinator" 8001
-check_health "Tableinator" 8002
 check_health "Dashboard" 8003
 check_health "API" 8004
 
@@ -190,4 +180,4 @@ echo ""
 echo "For more detailed analysis, check individual service logs:"
 echo "  docker compose logs graphinator | grep -i circuit"
 echo "  docker compose logs tableinator | grep -i retry"
-echo "  docker compose logs extractor | grep -i connection"
+echo "  docker compose logs extractor-discogs extractor-musicbrainz | grep -i connection"

@@ -1072,6 +1072,14 @@ def make_message_handler(
                 return
 
             record = normalize_record(data_type, record)
+
+            # Validate required 'id' field — nack with requeue=False to avoid
+            # infinite requeue loop for malformed messages (matches tableinator)
+            if "id" not in record:
+                logger.error("❌ Message missing 'id' field", data_type=data_type)
+                await message.nack(requeue=False)
+                return
+
             record_id = record.get("id", "unknown")
             record_name = record.get(name_field, default_name)
 
@@ -1091,7 +1099,10 @@ def make_message_handler(
 
                 updated = await session.execute_write(tx_fn)
 
-            # Increment counters only after successful write
+            # Ack first, then increment counters — avoids double-ack-then-nack
+            # if ack raises (exception handler would attempt nack on already-acked msg)
+            await message.ack()
+
             message_counts[data_type] += 1
             last_message_time[data_type] = time.time()
             if message_counts[data_type] % progress_interval == 0:
@@ -1110,8 +1121,6 @@ def make_message_handler(
                     f"🔄 Skipped {data_type[:-1]} (no changes needed)",
                     record_id=record_id,
                 )
-
-            await message.ack()
         except (ServiceUnavailable, SessionExpired) as e:
             logger.warning(
                 f"⚠️ Neo4j unavailable, will retry {data_type[:-1]} message",

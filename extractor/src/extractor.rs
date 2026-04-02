@@ -179,9 +179,13 @@ pub async fn process_discogs_data(
             state_marker.save(&marker_path).await?;
 
             // Send extraction_complete with actual record counts from state marker
+            // Use data type names (e.g., "artists") as keys — consistent with the normal
+            // completion path (lines 288-292) so consumers can look up counts reliably.
             let mut record_counts = HashMap::new();
             for (file_name, file_state) in &state_marker.processing_phase.progress_by_file {
-                record_counts.insert(file_name.clone(), file_state.records_extracted);
+                if let Some(dt) = extract_data_type(file_name) {
+                    record_counts.insert(dt.to_string(), file_state.records_extracted);
+                }
             }
             match mq_factory.create(&config.amqp_connection, &config.discogs_exchange_prefix).await {
                 Ok(mq) => {

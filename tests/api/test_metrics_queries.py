@@ -155,7 +155,7 @@ class TestGetQueueHistory:
                 "deliver_rate": 4.0,
             },
             {
-                "queue_name": "graphinator-artists-dlq",
+                "queue_name": "graphinator-artists.dlq",
                 "ts": "2026-03-25T10:00:00",
                 "ready": 3,
                 "unacked": 0,
@@ -170,9 +170,9 @@ class TestGetQueueHistory:
             result = await get_queue_history(pool, "1h")
 
         assert "graphinator-artists" in result["queues"]
-        assert "graphinator-artists-dlq" not in result["queues"]
-        assert "graphinator-artists-dlq" in result["dlq_summary"]
-        assert result["dlq_summary"]["graphinator-artists-dlq"]["current"]["ready"] == 3
+        assert "graphinator-artists.dlq" not in result["queues"]
+        assert "graphinator-artists.dlq" in result["dlq_summary"]
+        assert result["dlq_summary"]["graphinator-artists.dlq"]["current"]["ready"] == 3
 
     @pytest.mark.asyncio
     async def test_empty_data(self):
