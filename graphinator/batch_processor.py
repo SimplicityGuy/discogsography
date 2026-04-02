@@ -165,6 +165,13 @@ class Neo4jBatchProcessor:
             await nack_callback()
             return False
 
+        # Validate required 'id' field before queueing
+        data_id = data.get("id")
+        if not data_id:
+            logger.error("❌ Message missing 'id' field", data_type=data_type)
+            await nack_callback()
+            return False
+
         # Normalize the data
         try:
             normalized_data = normalize_record(data_type, data)

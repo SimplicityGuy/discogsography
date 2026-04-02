@@ -401,6 +401,19 @@ class TestDashboardConfig:
 
         assert config.cache_webhook_secret == "mysecret123"
 
+    def test_cache_webhook_secret_from_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """Test CACHE_WEBHOOK_SECRET supports _FILE variant for Docker secrets."""
+        from common import DashboardConfig
+
+        secret_file = tmp_path / "webhook_secret"
+        secret_file.write_text("file-secret-value")
+        monkeypatch.setenv("CACHE_WEBHOOK_SECRET_FILE", str(secret_file))
+        monkeypatch.delenv("CACHE_WEBHOOK_SECRET", raising=False)
+
+        config = DashboardConfig.from_env()
+
+        assert config.cache_webhook_secret == "file-secret-value"
+
     def test_redis_host_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test custom REDIS_HOST is read from environment (line 317)."""
         from common import DashboardConfig

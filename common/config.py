@@ -469,7 +469,7 @@ class DashboardConfig:
         cache_warming_enabled = getenv("CACHE_WARMING_ENABLED", "true").lower() in ("true", "1", "yes")
 
         # Cache invalidation webhook configuration
-        cache_webhook_secret = getenv("CACHE_WEBHOOK_SECRET")
+        cache_webhook_secret = get_secret("CACHE_WEBHOOK_SECRET")
 
         return cls(
             amqp_connection=graphinator_config.amqp_connection,
