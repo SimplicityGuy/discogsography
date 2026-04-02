@@ -228,7 +228,7 @@ async def genre_trends(genre: str = Query(...)) -> JSONResponse:
     if not _pool:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
-    cache_key = f"insights:genre-trends:{genre}"
+    cache_key = f"insights:genre-trends:{genre.replace(':', '_')}"
     if _cache:
         cached = await _cache.get(cache_key)
         if cached is not None:

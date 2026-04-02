@@ -438,6 +438,10 @@ async def _insert_relationship(
     """Insert a relationship record into musicbrainz.relationships."""
     if not rel.get("target_mbid"):
         return  # Skip relations without a target MBID (would fail UUID cast)
+    if not rel.get("target_type"):
+        return  # Skip relations without a target entity type
+    if not rel.get("type"):
+        return  # Skip relations without a relationship type
     async with conn.cursor() as cursor:
         await cursor.execute(
             "INSERT INTO musicbrainz.relationships "
@@ -464,6 +468,8 @@ async def _insert_external_link(
     conn: Any, mbid: str, entity_type: str, link: dict[str, Any]
 ) -> None:
     """Insert an external link record into musicbrainz.external_links."""
+    if not link.get("url") or not link.get("service"):
+        return  # Skip links with missing URL or service name
     async with conn.cursor() as cursor:
         await cursor.execute(
             "INSERT INTO musicbrainz.external_links "

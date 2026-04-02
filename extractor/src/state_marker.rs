@@ -447,7 +447,9 @@ fn extract_data_type(filename: &str) -> Option<String> {
     // Normalize singular to plural to match DataType::as_str()
     if !filename.contains('_') && filename.contains(".jsonl") {
         return filename.split('.').next().filter(|s| !s.is_empty()).map(|s| {
-            match s {
+            // Strip optional "mbdump-" prefix before matching singular to plural
+            let base = s.strip_prefix("mbdump-").unwrap_or(s);
+            match base {
                 "artist" => "artists".to_string(),
                 "label" => "labels".to_string(),
                 "release" => "releases".to_string(),

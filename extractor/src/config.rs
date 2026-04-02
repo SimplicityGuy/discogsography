@@ -80,7 +80,8 @@ impl ExtractorConfig {
         let max_workers = std::env::var("MAX_WORKERS")
             .unwrap_or_else(|_| num_cpus::get().to_string())
             .parse::<usize>()
-            .unwrap_or_else(|_| num_cpus::get());
+            .unwrap_or_else(|_| num_cpus::get())
+            .max(1);
 
         let batch_size = std::env::var("BATCH_SIZE").unwrap_or_else(|_| "100".to_string()).parse::<usize>().unwrap_or(100);
 
@@ -97,11 +98,11 @@ impl ExtractorConfig {
             std::env::var("MUSICBRAINZ_DUMP_URL").unwrap_or_else(|_| "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string());
 
         let health_port = std::env::var("HEALTH_PORT").unwrap_or_else(|_| "8000".to_string()).parse::<u16>().unwrap_or(8000);
-        let queue_size = std::env::var("QUEUE_SIZE").unwrap_or_else(|_| "5000".to_string()).parse::<usize>().unwrap_or(5000);
+        let queue_size = std::env::var("QUEUE_SIZE").unwrap_or_else(|_| "5000".to_string()).parse::<usize>().unwrap_or(5000).max(1);
         let progress_log_interval =
-            std::env::var("PROGRESS_LOG_INTERVAL").unwrap_or_else(|_| "1000".to_string()).parse::<usize>().unwrap_or(1000);
+            std::env::var("PROGRESS_LOG_INTERVAL").unwrap_or_else(|_| "1000".to_string()).parse::<usize>().unwrap_or(1000).max(1);
         let state_save_interval =
-            std::env::var("STATE_SAVE_INTERVAL").unwrap_or_else(|_| "5000".to_string()).parse::<usize>().unwrap_or(5000);
+            std::env::var("STATE_SAVE_INTERVAL").unwrap_or_else(|_| "5000".to_string()).parse::<usize>().unwrap_or(5000).max(1);
 
         Ok(Self {
             amqp_connection,

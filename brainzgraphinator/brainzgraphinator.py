@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import os
 import signal
+import threading
 import time
 from asyncio import run
 from datetime import UTC, datetime
@@ -91,6 +92,9 @@ shutdown_requested = False
 # Lazy-initialized in first async method to avoid binding to wrong event loop
 _stats_lock: asyncio.Lock | None = None
 
+# Thread-safe lock for reading enrichment_stats from the health server thread
+_stats_thread_lock = threading.Lock()
+
 # Enrichment stats
 enrichment_stats = {
     "entities_enriched": 0,
@@ -156,9 +160,15 @@ def get_health_data() -> dict[str, Any]:
         "last_message_time": last_message_time.copy(),
         "active_consumers": list(consumer_tags.keys()),
         "completed_files": list(completed_files),
-        "enrichment_stats": enrichment_stats.copy(),
+        "enrichment_stats": _get_enrichment_stats_snapshot(),
         "timestamp": datetime.now(UTC).isoformat(),
     }
+
+
+def _get_enrichment_stats_snapshot() -> dict[str, int]:
+    """Thread-safe snapshot of enrichment stats for health server access."""
+    with _stats_thread_lock:
+        return enrichment_stats.copy()
 
 
 def signal_handler(signum: int, _frame: Any) -> None:
@@ -557,8 +567,9 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
             if _stats_lock is None:
                 _stats_lock = asyncio.Lock()
             async with _stats_lock:
-                for key in local_stats:
-                    enrichment_stats[key] += local_stats[key]
+                with _stats_thread_lock:
+                    for key in local_stats:
+                        enrichment_stats[key] += local_stats[key]
 
             await message.ack()
 
@@ -648,7 +659,7 @@ async def progress_reporter() -> None:
                 logger.info(
                     "⏳ Still idle, waiting for MusicBrainz messages",
                     active_consumers=list(consumer_tags.keys()),
-                    enrichment_stats=enrichment_stats,
+                    enrichment_stats=_get_enrichment_stats_snapshot(),
                 )
             continue
 
@@ -656,7 +667,7 @@ async def progress_reporter() -> None:
             logger.info(
                 "📊 MusicBrainz enrichment progress",
                 message_counts=message_counts.copy(),
-                enrichment_stats=enrichment_stats.copy(),
+                enrichment_stats=_get_enrichment_stats_snapshot(),
                 active_consumers=list(consumer_tags.keys()),
                 completed_files=list(completed_files),
             )
@@ -1035,6 +1046,8 @@ async def main() -> None:
 
             if graph is not None:
                 await graph.close()
+
+            health_server.stop()
 
             logger.info(
                 "✅ Brainzgraphinator shutdown complete",

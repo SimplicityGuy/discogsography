@@ -1172,6 +1172,7 @@ class TestWebSocketEndpoint:
         # Mock dashboard instance
         mock_dashboard_instance = Mock()
         mock_dashboard_instance.websocket_connections = set()
+        mock_dashboard_instance._ws_lock = None  # Will be lazily initialized as asyncio.Lock
         mock_dashboard_instance.latest_metrics = SystemMetrics(
             pipelines={},
             databases=[],
@@ -1204,6 +1205,7 @@ class TestWebSocketEndpoint:
         # Mock dashboard instance
         mock_dashboard_instance = Mock()
         mock_dashboard_instance.websocket_connections = set()
+        mock_dashboard_instance._ws_lock = None  # Will be lazily initialized as asyncio.Lock
         mock_dashboard_instance.latest_metrics = None  # No initial metrics
 
         with (
@@ -1327,6 +1329,7 @@ class TestWebSocketGeneralException:
 
         mock_dashboard_instance = Mock()
         mock_dashboard_instance.websocket_connections = set()
+        mock_dashboard_instance._ws_lock = None  # Will be lazily initialized as asyncio.Lock
         mock_dashboard_instance.latest_metrics = None  # Skip initial send
 
         with (

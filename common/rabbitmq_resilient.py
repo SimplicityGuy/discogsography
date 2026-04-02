@@ -147,9 +147,6 @@ class AsyncResilientRabbitMQ:
         """Get or create a robust connection."""
         if self._lock is None:
             self._lock = asyncio.Lock()
-        # Fast path: check without lock
-        if self._connection and not self._connection.is_closed:
-            return self._connection
 
         retry_count = 0
         last_error = None
