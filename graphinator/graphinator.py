@@ -1074,8 +1074,10 @@ def make_message_handler(
             record = normalize_record(data_type, record)
 
             # Validate required 'id' field — nack with requeue=False to avoid
-            # infinite requeue loop for malformed messages (matches tableinator)
-            if "id" not in record:
+            # infinite requeue loop for malformed messages (matches tableinator).
+            # Check both missing key and None value since normalize_record
+            # sets id=None when the raw message lacks an id field.
+            if not record.get("id"):
                 logger.error("❌ Message missing 'id' field", data_type=data_type)
                 await message.nack(requeue=False)
                 return
