@@ -147,7 +147,7 @@ class Neo4jBatchProcessor:
         data: dict[str, Any],
         ack_callback: Callable[[], Any],
         nack_callback: Callable[[], Any],
-    ) -> None:
+    ) -> bool:
         """Add a message to the batch queue.
 
         Args:
@@ -155,12 +155,15 @@ class Neo4jBatchProcessor:
             data: The parsed message data
             ack_callback: Callback to acknowledge the message
             nack_callback: Callback to negative-acknowledge the message
+
+        Returns:
+            True if the message was accepted into the queue, False if nacked.
         """
         queue = self.queues.get(data_type)
         if queue is None:
             logger.error("❌ Unknown data type", data_type=data_type)
             await nack_callback()
-            return
+            return False
 
         # Normalize the data
         try:
@@ -172,7 +175,7 @@ class Neo4jBatchProcessor:
                 error=str(e),
             )
             await nack_callback()
-            return
+            return False
 
         # Add to queue
         queue.append(
@@ -189,6 +192,8 @@ class Neo4jBatchProcessor:
             await self._flush_queue(data_type)
         elif time.time() - self.last_flush[data_type] >= self.config.flush_interval:
             await self._flush_queue(data_type)
+
+        return True
 
     async def _flush_queue(self, data_type: str) -> None:
         """Flush a queue by processing all pending messages.
@@ -815,10 +820,13 @@ class Neo4jBatchProcessor:
                 rid = str(msg.data["id"])
                 release_hash = msg.data.get("sha256")
                 if existing_hashes.get(rid) != release_hash:
-                    msg.data["format_names"] = extract_format_names(
+                    # Build a copy to avoid mutating the PendingMessage in case
+                    # of re-enqueue on Neo4j failure
+                    release_data = dict(msg.data)
+                    release_data["format_names"] = extract_format_names(
                         msg.data.get("formats")
                     )
-                    releases_to_process.append(msg.data)
+                    releases_to_process.append(release_data)
 
             if not releases_to_process:
                 logger.debug("🔄 All releases in batch already up to date")

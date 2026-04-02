@@ -562,6 +562,14 @@ class AsyncPostgreSQLPool:
                     # Callers using conn.transaction() must set autocommit=False,
                     # and we reset it here to prevent poisoning the pool
                     await conn.set_autocommit(True)
+                except Exception:
+                    # set_autocommit failed — connection is dead, discard it
+                    with contextlib.suppress(Exception):
+                        await conn.close()
+                    async with self._lock:
+                        self.active_connections = max(0, self.active_connections - 1)
+                    return
+                try:
                     self.connections.put_nowait(conn)
                 except asyncio.QueueFull:
                     # Pool is full, close connection

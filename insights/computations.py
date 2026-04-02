@@ -223,21 +223,27 @@ async def compute_and_store_anniversaries(
                     (year, month),
                 )
                 for row in results:
-                    anniversary = year - row["release_year"]
-                    if anniversary in milestone_years:
-                        await cursor.execute(
-                            """
-                                INSERT INTO insights.monthly_anniversaries
-                                    (master_id, title, artist_name, release_year, anniversary,
-                                     computed_month, computed_year)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                ON CONFLICT (master_id, computed_year, computed_month) DO UPDATE
-                                SET title = EXCLUDED.title, artist_name = EXCLUDED.artist_name,
-                                    anniversary = EXCLUDED.anniversary, computed_at = NOW()
-                                """,
-                            (row["master_id"], row["title"], row.get("artist_name"), row["release_year"], anniversary, month, year),
+                    anniversary = year - int(row["release_year"])
+                    if anniversary not in milestone_years:
+                        logger.warning(
+                            "⚠️ Skipping anniversary row — computed anniversary not in milestones",
+                            master_id=row.get("master_id"),
+                            anniversary=anniversary,
                         )
-                        rows_written += 1
+                        continue
+                    await cursor.execute(
+                        """
+                            INSERT INTO insights.monthly_anniversaries
+                                (master_id, title, artist_name, release_year, anniversary,
+                                 computed_month, computed_year)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (master_id, computed_year, computed_month) DO UPDATE
+                            SET title = EXCLUDED.title, artist_name = EXCLUDED.artist_name,
+                                anniversary = EXCLUDED.anniversary, computed_at = NOW()
+                            """,
+                        (row["master_id"], row["title"], row.get("artist_name"), int(row["release_year"]), anniversary, month, year),
+                    )
+                    rows_written += 1
         logger.info("💾 Monthly anniversaries stored", count=rows_written, year=year, month=month)
         await _log_computation(pool, "anniversaries", "completed", started_at, rows_written)
         return rows_written

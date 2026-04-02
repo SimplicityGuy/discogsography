@@ -414,6 +414,15 @@ async def _track_extraction(extraction_id: str) -> None:
         logger.error("❌ Extraction tracking timed out", extraction_id=extraction_id)
     except asyncio.CancelledError:
         logger.info("🛑 Extraction tracking cancelled", extraction_id=extraction_id)
+        # Attempt to mark the extraction as cancelled so the record doesn't stay stuck in 'running'
+        try:
+            async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    "UPDATE extraction_history SET status = 'failed', completed_at = NOW(), error_message = %s WHERE id = %s AND status = 'running'",
+                    ("Tracking task cancelled", extraction_id),
+                )
+        except Exception:
+            logger.warning("⚠️ Could not mark cancelled extraction as failed", extraction_id=extraction_id)
     finally:
         _tracking_tasks.pop(extraction_id, None)
 

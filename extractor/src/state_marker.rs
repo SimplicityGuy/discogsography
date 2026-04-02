@@ -434,15 +434,27 @@ pub enum ProcessingDecision {
 /// Extract data type from filename.
 ///
 /// Handles both Discogs filenames (e.g., "discogs_20260101_artists.xml.gz" -> "artists")
-/// and MusicBrainz filenames (e.g., "artist.jsonl.xz" -> "artist").
+/// and MusicBrainz filenames (e.g., "artist.jsonl.xz" -> "artists").
+///
+/// MusicBrainz filenames use singular forms (artist, label, release, release-group)
+/// which are normalized to plural to match `DataType::as_str()`.
 fn extract_data_type(filename: &str) -> Option<String> {
     // Try Discogs format first: third underscore-delimited segment
     if let Some(data_type) = filename.split('_').nth(2).and_then(|s| s.split('.').next()) {
         return Some(data_type.to_string());
     }
     // MusicBrainz format: no underscores, contains ".jsonl"
+    // Normalize singular to plural to match DataType::as_str()
     if !filename.contains('_') && filename.contains(".jsonl") {
-        return filename.split('.').next().filter(|s| !s.is_empty()).map(|s| s.to_string());
+        return filename.split('.').next().filter(|s| !s.is_empty()).map(|s| {
+            match s {
+                "artist" => "artists".to_string(),
+                "label" => "labels".to_string(),
+                "release" => "releases".to_string(),
+                "release-group" => "release-groups".to_string(),
+                other => other.to_string(),
+            }
+        });
     }
     None
 }

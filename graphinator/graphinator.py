@@ -1061,14 +1061,15 @@ def make_message_handler(
                 return
 
             if BATCH_MODE and batch_processor is not None:
-                await batch_processor.add_message(
+                accepted = await batch_processor.add_message(
                     data_type,
                     record,
                     message.ack,
                     lambda: message.nack(requeue=True),
                 )
-                message_counts[data_type] += 1
-                last_message_time[data_type] = time.time()
+                if accepted:
+                    message_counts[data_type] += 1
+                    last_message_time[data_type] = time.time()
                 return
 
             record = normalize_record(data_type, record)

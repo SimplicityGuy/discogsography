@@ -125,15 +125,20 @@ async def trigger_sync(
                 (user_id,),
             )
             existing = await cur.fetchone()
+        # Release the Redis lock since we won't be starting a new sync —
+        # the in-memory task is still running regardless of DB state
+        if _redis:
+            with contextlib.suppress(Exception):
+                await _redis.delete(f"sync:lock:{user_id}")
         if existing:
-            # Release the Redis lock since we won't be starting a new sync
-            if _redis:
-                with contextlib.suppress(Exception):
-                    await _redis.delete(f"sync:lock:{user_id}")
             return JSONResponse(
                 content={"sync_id": str(existing["id"]), "status": "already_running"},
                 status_code=status.HTTP_202_ACCEPTED,
             )
+        return JSONResponse(
+            content={"status": "already_running"},
+            status_code=status.HTTP_202_ACCEPTED,
+        )
     try:
         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
             await execute_sql(
