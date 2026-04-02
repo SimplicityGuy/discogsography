@@ -137,15 +137,20 @@ echo "Simulating RabbitMQ maintenance window..."
 echo -e "${RED}⚠️  This is more disruptive as it affects message flow${NC}"
 
 # Start monitoring all services
+MONITOR_PIDS=()
 for service in extractor-discogs extractor-musicbrainz graphinator tableinator; do
   monitor_logs "$service" 50 &
+  MONITOR_PIDS+=($!)
 done
 
 # Simulate outage
 simulate_outage "rabbitmq" 20
 
-# Wait for monitors to finish
+# Wait for monitors to finish, then clean up
 sleep 30
+for pid in "${MONITOR_PIDS[@]}"; do
+  kill "$pid" 2>/dev/null || true
+done
 
 # Check recovery
 echo -e "\n${BLUE}🔍 Checking RabbitMQ Recovery${NC}"

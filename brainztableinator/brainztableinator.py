@@ -723,10 +723,6 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
             await message.nack(requeue=False)
             return
 
-        # Track last message time for progress reporting
-        if data_type in message_counts:
-            last_message_time[data_type] = time.time()
-
         # Extract record details for logging
         record_name = data.get("name", "Unknown")
         logger.debug(
@@ -765,9 +761,10 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
 
         await message.ack()
 
-        # Increment counter only after successful ack
+        # Increment counter and update last message time only after successful ack
         if data_type in message_counts:
             message_counts[data_type] += 1
+            last_message_time[data_type] = time.time()
             if message_counts[data_type] % progress_interval == 0:
                 logger.info(
                     "📊 Processed records in PostgreSQL",

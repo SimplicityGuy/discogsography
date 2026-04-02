@@ -227,6 +227,12 @@ class PostgreSQLBatchProcessor:
         if now < self._backoff_until[data_type]:
             return
 
+        # Mark flush start to prevent concurrent add_message() calls from
+        # triggering redundant flushes while this one is in progress.
+        # On failure this is overwritten by the backoff mechanism which sets
+        # _backoff_until, preventing any flush during the delay window.
+        self.last_flush[data_type] = now
+
         # Use effective (adaptive) batch size
         messages: list[PendingMessage] = []
         while queue and len(messages) < self._effective_batch_size[data_type]:

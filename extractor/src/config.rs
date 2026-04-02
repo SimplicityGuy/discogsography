@@ -83,7 +83,7 @@ impl ExtractorConfig {
             .unwrap_or_else(|_| num_cpus::get())
             .max(1);
 
-        let batch_size = std::env::var("BATCH_SIZE").unwrap_or_else(|_| "100".to_string()).parse::<usize>().unwrap_or(100);
+        let batch_size = std::env::var("BATCH_SIZE").unwrap_or_else(|_| "100".to_string()).parse::<usize>().unwrap_or(100).max(1);
 
         let data_quality_rules = std::env::var("DATA_QUALITY_RULES").ok().map(PathBuf::from);
 

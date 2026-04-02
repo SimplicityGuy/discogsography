@@ -739,6 +739,24 @@ describe('ExploreApp helper methods', () => {
 
             expect(window.insightsPanel.stopPolling).toHaveBeenCalled();
         });
+
+        it('should pause timeline playback when leaving explore pane', () => {
+            const app = new ExploreApp();
+            app.timeline.pause = vi.fn();
+            app._prevPane = 'explore';
+            app._switchPane('search');
+
+            expect(app.timeline.pause).toHaveBeenCalled();
+        });
+
+        it('should not pause timeline when staying on explore pane', () => {
+            const app = new ExploreApp();
+            app.timeline.pause = vi.fn();
+            app._prevPane = 'search';
+            app._switchPane('explore');
+
+            expect(app.timeline.pause).not.toHaveBeenCalled();
+        });
     });
 
     describe('ExploreApp._setSearchType', () => {

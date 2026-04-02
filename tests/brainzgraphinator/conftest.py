@@ -49,6 +49,7 @@ def mock_tx():
 def sample_artist_record():
     """Sample MusicBrainz artist record for testing."""
     return {
+        "id": "b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d",
         "mbid": "b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d",
         "discogs_artist_id": 12345,
         "type": "Person",
@@ -76,6 +77,7 @@ def sample_artist_record():
 def sample_label_record():
     """Sample MusicBrainz label record for testing."""
     return {
+        "id": "c595c289-47ce-4fba-b999-b87503e8cb71",
         "mbid": "c595c289-47ce-4fba-b999-b87503e8cb71",
         "discogs_label_id": 54321,
         "type": "Original Production",
@@ -90,6 +92,7 @@ def sample_label_record():
 def sample_release_record():
     """Sample MusicBrainz release record for testing."""
     return {
+        "id": "a5d5abbc-fb46-427c-9e5f-8da2f0bdbb18",
         "mbid": "a5d5abbc-fb46-427c-9e5f-8da2f0bdbb18",
         "discogs_release_id": 99999,
         "barcode": "724384952051",
@@ -101,6 +104,7 @@ def sample_release_record():
 def sample_release_group_record():
     """Sample MusicBrainz release-group record for testing."""
     return {
+        "id": "1dc4c347-a1db-32aa-b14f-bc9cc507b843",
         "mbid": "1dc4c347-a1db-32aa-b14f-bc9cc507b843",
         "discogs_master_id": 23853,
         "type": "Album",

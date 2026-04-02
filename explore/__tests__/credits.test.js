@@ -175,6 +175,7 @@ function createD3Mock() {
             if (_event === 'tick' && typeof fn === 'function') _callbacks.tick = fn;
             return simulation;
         }),
+        stop: vi.fn(),
     };
 
     const mock = {
@@ -945,6 +946,14 @@ describe('CreditsPanel', () => {
 
             expect(() => window.creditsPanel._renderTimeline(MOCK_TIMELINE.timeline)).not.toThrow();
         });
+
+        it('should purge Plotly chart before re-render', () => {
+            window.creditsPanel._renderTimeline(MOCK_TIMELINE.timeline);
+            window.creditsPanel._renderTimeline(MOCK_TIMELINE.timeline);
+
+            const chartEl = document.getElementById('creditsTimelineChart');
+            expect(globalThis.Plotly.purge).toHaveBeenCalledWith(chartEl);
+        });
     });
 
     // ── 12. _renderReleaseList ─────────────────────────────────────── //
@@ -1183,6 +1192,16 @@ describe('CreditsPanel', () => {
             expect(nodes.length).toBe(3);
             expect(nodes[0].id).toBe('Bob Ludwig');
             expect(nodes[0].group).toBe('center');
+        });
+
+        it('should stop previous simulation before creating a new one', () => {
+            // First render — creates a simulation
+            window.creditsPanel._renderConnections(MOCK_CONNECTIONS.connections, 'Bob Ludwig');
+            const sim = globalThis.d3.forceSimulation.mock.results[0].value;
+
+            // Second render — should stop the previous simulation
+            window.creditsPanel._renderConnections(MOCK_CONNECTIONS.connections, 'Bob Ludwig');
+            expect(sim.stop).toHaveBeenCalled();
         });
 
         it('should set up force link, charge, and center', () => {

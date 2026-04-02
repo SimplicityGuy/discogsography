@@ -860,6 +860,12 @@ class ExploreApp {
         if (this._prevPane === 'insights' && pane !== 'insights' && window.insightsPanel) {
             window.insightsPanel.stopPolling();
         }
+
+        // Pause timeline playback when leaving the explore pane
+        if (this._prevPane === 'explore' && pane !== 'explore' && this.timeline) {
+            this.timeline.pause();
+        }
+
         this._prevPane = pane;
 
         // Lazy-load panes on first visit

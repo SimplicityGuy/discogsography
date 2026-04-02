@@ -1068,6 +1068,9 @@ def make_message_handler(
                     lambda: message.nack(requeue=True),
                 )
                 if accepted:
+                    # Note: message_counts tracks received (not processed) messages in
+                    # batch mode. Actual processed count is in batch_processor.processed_counts.
+                    # Messages nacked later by _process_*_batch (e.g. missing 'id') are included.
                     message_counts[data_type] += 1
                     last_message_time[data_type] = time.time()
                 return

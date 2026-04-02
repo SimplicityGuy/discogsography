@@ -778,42 +778,39 @@ def main() -> None:
     print(f"Iterations per endpoint: {iterations}")
     print()
 
-    client = httpx.Client(timeout=timeout)
+    with httpx.Client(timeout=timeout) as client:
+        # Resolve IDs for endpoints that need them
+        print("Resolving artist IDs...")
+        artist_ids = resolve_ids(client, base_url, config.get("artists", []), "artist")
+        for name, aid in artist_ids.items():
+            print(f"  {name} -> {aid}")
 
-    # Resolve IDs for endpoints that need them
-    print("Resolving artist IDs...")
-    artist_ids = resolve_ids(client, base_url, config.get("artists", []), "artist")
-    for name, aid in artist_ids.items():
-        print(f"  {name} -> {aid}")
-
-    print("Resolving label IDs...")
-    label_ids = resolve_ids(client, base_url, config.get("labels", []), "label")
-    for name, lid in label_ids.items():
-        print(f"  {name} -> {lid}")
-    print()
-
-    # Collect database indexes
-    print("Collecting database indexes...")
-    neo4j_indexes = list_neo4j_indexes(config)
-    postgres_indexes = list_postgres_indexes(config)
-    print(f"  Neo4j: {len(neo4j_indexes) - 2} indexes")
-    print(f"  PostgreSQL: {len(postgres_indexes) - 2} indexes")
-    print()
-
-    # Build test plan
-    test_plan = build_test_plan(config, artist_ids, label_ids)
-    print(f"Test plan: {len(test_plan)} endpoints")
-    print()
-
-    # Execute tests
-    results: list[dict[str, Any]] = []
-    for i, test in enumerate(test_plan, 1):
-        print(f"[{i}/{len(test_plan)}] {test['name']}")
-        result = run_endpoint(client, test["name"], test["url"], test["params"], iterations)
-        results.append(result)
+        print("Resolving label IDs...")
+        label_ids = resolve_ids(client, base_url, config.get("labels", []), "label")
+        for name, lid in label_ids.items():
+            print(f"  {name} -> {lid}")
         print()
 
-    client.close()
+        # Collect database indexes
+        print("Collecting database indexes...")
+        neo4j_indexes = list_neo4j_indexes(config)
+        postgres_indexes = list_postgres_indexes(config)
+        print(f"  Neo4j: {len(neo4j_indexes) - 2} indexes")
+        print(f"  PostgreSQL: {len(postgres_indexes) - 2} indexes")
+        print()
+
+        # Build test plan
+        test_plan = build_test_plan(config, artist_ids, label_ids)
+        print(f"Test plan: {len(test_plan)} endpoints")
+        print()
+
+        # Execute tests
+        results: list[dict[str, Any]] = []
+        for i, test in enumerate(test_plan, 1):
+            print(f"[{i}/{len(test_plan)}] {test['name']}")
+            result = run_endpoint(client, test["name"], test["url"], test["params"], iterations)
+            results.append(result)
+            print()
 
     # Write results
     write_report(

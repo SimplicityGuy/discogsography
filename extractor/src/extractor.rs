@@ -1104,8 +1104,15 @@ pub async fn process_musicbrainz_data(
                 // Register compressed filename in state marker so resume finds it as completed
                 if let Some(compressed_name) = compressed_path.file_name().and_then(|n| n.to_str()) {
                     let mut sm = state_marker.lock().await;
+                    // Register compressed filename as completed for resume, but do NOT
+                    // call complete_file_processing which would inflate files_processed.
+                    // Only record the mapping so resume skips this file.
                     sm.start_file_processing(compressed_name);
-                    sm.complete_file_processing(compressed_name, total_count);
+                    if let Some(status) = sm.processing_phase.progress_by_file.get_mut(compressed_name) {
+                        status.status = PhaseStatus::Completed;
+                        status.completed_at = Some(chrono::Utc::now());
+                        status.records_extracted = total_count;
+                    }
                     sm.save(&marker_path).await?;
                 }
             } else {
