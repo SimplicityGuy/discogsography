@@ -313,11 +313,18 @@ fn reconstruct_xml(element_name: &str, value: &Value) -> Vec<u8> {
     use quick_xml::Writer;
     use std::io::Cursor;
     let mut writer = Writer::new(Cursor::new(Vec::new()));
-    write_element(&mut writer, element_name, value);
+    if let Err(e) = write_element(&mut writer, element_name, value) {
+        tracing::warn!("Failed to reconstruct XML for violation report: {e}");
+        return Vec::new();
+    }
     writer.into_inner().into_inner()
 }
 
-fn write_element<W: std::io::Write>(writer: &mut quick_xml::Writer<W>, name: &str, value: &Value) {
+fn write_element<W: std::io::Write>(
+    writer: &mut quick_xml::Writer<W>,
+    name: &str,
+    value: &Value,
+) -> std::io::Result<()> {
     use quick_xml::events::{BytesEnd, BytesStart, BytesText};
 
     match value {
@@ -330,10 +337,10 @@ fn write_element<W: std::io::Write>(writer: &mut quick_xml::Writer<W>, name: &st
                     start.push_attribute((attr_name, s.as_str()));
                 }
             }
-            writer.write_event(Event::Start(start)).unwrap();
+            writer.write_event(Event::Start(start))?;
 
             if let Some(Value::String(text)) = map.get("#text") {
-                writer.write_event(Event::Text(BytesText::new(text))).unwrap();
+                writer.write_event(Event::Text(BytesText::new(text)))?;
             }
 
             let has_at_id = map.contains_key("@id");
@@ -347,30 +354,31 @@ fn write_element<W: std::io::Write>(writer: &mut quick_xml::Writer<W>, name: &st
                 match val {
                     Value::Array(arr) => {
                         for item in arr {
-                            write_element(writer, key, item);
+                            write_element(writer, key, item)?;
                         }
                     }
-                    _ => write_element(writer, key, val),
+                    _ => write_element(writer, key, val)?,
                 }
             }
-            writer.write_event(Event::End(BytesEnd::new(name))).unwrap();
+            writer.write_event(Event::End(BytesEnd::new(name)))?;
         }
         Value::String(s) => {
-            writer.write_event(Event::Start(BytesStart::new(name))).unwrap();
-            writer.write_event(Event::Text(BytesText::new(s))).unwrap();
-            writer.write_event(Event::End(BytesEnd::new(name))).unwrap();
+            writer.write_event(Event::Start(BytesStart::new(name)))?;
+            writer.write_event(Event::Text(BytesText::new(s)))?;
+            writer.write_event(Event::End(BytesEnd::new(name)))?;
         }
         Value::Number(n) => {
             let s = n.to_string();
-            writer.write_event(Event::Start(BytesStart::new(name))).unwrap();
-            writer.write_event(Event::Text(BytesText::new(&s))).unwrap();
-            writer.write_event(Event::End(BytesEnd::new(name))).unwrap();
+            writer.write_event(Event::Start(BytesStart::new(name)))?;
+            writer.write_event(Event::Text(BytesText::new(&s)))?;
+            writer.write_event(Event::End(BytesEnd::new(name)))?;
         }
         Value::Null => {
-            writer.write_event(Event::Empty(BytesStart::new(name))).unwrap();
+            writer.write_event(Event::Empty(BytesStart::new(name)))?;
         }
         _ => {}
     }
+    Ok(())
 }
 
 fn calculate_record_hash(record: &Value) -> String {

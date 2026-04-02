@@ -60,6 +60,30 @@ class TestTriggerSyncEndpoint:
         finally:
             api_module._running_syncs.pop(TEST_USER_ID, None)
 
+    def test_trigger_sync_already_running_no_db_record(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Test that sync returns already_running when in-memory task exists but DB record is missing."""
+        import api.api as api_module
+
+        mock_existing_task = MagicMock(spec=asyncio.Task)
+        mock_existing_task.done.return_value = False
+        api_module._running_syncs[TEST_USER_ID] = mock_existing_task
+        # DB returns no running record
+        mock_cur.fetchone.return_value = None
+
+        try:
+            response = test_client.post("/api/sync", headers=auth_headers)
+            assert response.status_code == 202
+            data = response.json()
+            assert data["status"] == "already_running"
+            assert "sync_id" not in data
+        finally:
+            api_module._running_syncs.pop(TEST_USER_ID, None)
+
     def test_trigger_sync_neo4j_not_ready_503(
         self,
         test_client: TestClient,

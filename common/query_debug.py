@@ -152,9 +152,11 @@ async def _try_sql_profile(cursor: Any, query: Any, params: Any) -> None:
     """
     try:
         rendered = _render_sql(query, cursor)
-        # Only run EXPLAIN ANALYZE for SELECT queries to avoid re-executing DML
+        # Only run EXPLAIN ANALYZE for pure SELECT queries to avoid re-executing DML.
+        # WITH queries are excluded because writable CTEs (WITH ... INSERT/UPDATE ...)
+        # would be re-executed by EXPLAIN ANALYZE under autocommit=True.
         normalized = rendered.strip().upper()
-        if normalized.startswith("SELECT") or normalized.startswith("WITH"):
+        if normalized.startswith("SELECT"):
             explain_query = f"EXPLAIN (ANALYZE, BUFFERS, VERBOSE) {rendered}"
         else:
             explain_query = f"EXPLAIN (BUFFERS, VERBOSE) {rendered}"

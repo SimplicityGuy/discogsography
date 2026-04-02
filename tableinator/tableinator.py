@@ -605,16 +605,15 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
 
         # If batch mode is enabled, delegate to batch processor
         if BATCH_MODE and batch_processor is not None:
-            await batch_processor.add_message(
+            accepted = await batch_processor.add_message(
                 data_type=data_type,
                 data=data,
                 ack_callback=message.ack,
                 nack_callback=lambda: message.nack(requeue=True),
             )
 
-            # Update progress tracking AFTER successful enqueue
-            # (add_message may nack immediately for invalid data)
-            if data_type in message_counts:
+            # Only update progress tracking when message was actually accepted
+            if accepted and data_type in message_counts:
                 message_counts[data_type] += 1
                 last_message_time[data_type] = time.time()
             return

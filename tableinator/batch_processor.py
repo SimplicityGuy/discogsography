@@ -150,7 +150,7 @@ class PostgreSQLBatchProcessor:
         data: dict[str, Any],
         ack_callback: Callable[[], Any],
         nack_callback: Callable[[], Any],
-    ) -> None:
+    ) -> bool:
         """Add a message to the batch queue.
 
         Args:
@@ -158,19 +158,22 @@ class PostgreSQLBatchProcessor:
             data: The parsed message data
             ack_callback: Callback to acknowledge the message
             nack_callback: Callback to negative-acknowledge the message
+
+        Returns:
+            True if the message was accepted into the queue, False if nacked.
         """
         queue = self.queues.get(data_type)
         if queue is None:
             logger.error("❌ Unknown data type", data_type=data_type)
             await nack_callback()
-            return
+            return False
 
         # Extract id and hash before normalization
         data_id = data.get("id")
         if not data_id:
             logger.error("❌ Message missing 'id' field", data_type=data_type)
             await nack_callback()
-            return
+            return False
 
         sha256 = data.get("sha256", "")
 
@@ -184,7 +187,7 @@ class PostgreSQLBatchProcessor:
                 error=str(e),
             )
             await nack_callback()
-            return
+            return False
 
         # Add to queue
         queue.append(
@@ -203,6 +206,8 @@ class PostgreSQLBatchProcessor:
             await self._flush_queue(data_type)
         elif time.time() - self.last_flush[data_type] >= self.config.flush_interval:
             await self._flush_queue(data_type)
+
+        return True
 
     async def _flush_queue(self, data_type: str) -> None:
         """Flush a queue by processing all pending messages.
