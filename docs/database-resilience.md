@@ -102,6 +102,20 @@ During database outages:
 - Async implementations for non-blocking operations
 - Graceful degradation when services unavailable
 
+### Brainzgraphinator Service (Neo4j)
+
+- Uses `ResilientNeo4jDriver` with automatic reconnection
+- Enriches existing Neo4j nodes with MusicBrainz metadata
+- Handles `ServiceUnavailable` and `SessionExpired` exceptions
+- Requeues messages on connection failures
+
+### Brainztableinator Service (PostgreSQL)
+
+- Uses `ResilientPostgreSQLPool` with health monitoring
+- Stores MusicBrainz data in `musicbrainz` PostgreSQL schema
+- Connection pool with min/max bounds (2-20)
+- Handles `InterfaceError` and `OperationalError`
+
 ## Configuration
 
 ### Environment Variables
@@ -176,6 +190,8 @@ Each service exposes health data including connection status:
 - API: `http://localhost:8005/health`
 - Explore: `http://localhost:8007/health`
 - Insights: `http://localhost:8009/health`
+- Brainztableinator: `http://localhost:8010/health`
+- Brainzgraphinator: `http://localhost:8011/health`
 
 ### Logging
 

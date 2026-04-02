@@ -486,12 +486,12 @@ class TestDiscogsOAuthEndpoints:
         mock_cur.fetchone.return_value = {"id": 1}
 
         def _redis_get(key: str) -> str | None:
-            if key.startswith("oauth_state:"):
+            if key.startswith("discogs:oauth:state:"):
                 return "reqsecret"
             return None
 
         mock_redis.get = AsyncMock(side_effect=_redis_get)
-        mock_redis.getdel.return_value = "reqsecret"
+        mock_redis.delete = AsyncMock(return_value=1)
 
         with (
             patch(
@@ -526,7 +526,6 @@ class TestDiscogsOAuthEndpoints:
             {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
         mock_redis.get.return_value = None  # state expired
-        mock_redis.getdel.return_value = None  # state expired (atomic consume)
 
         response = test_client.post(
             "/api/oauth/verify/discogs",
@@ -629,12 +628,12 @@ class TestDiscogsOAuthEndpoints:
         ]
 
         def _redis_get_exchange(key: str) -> str | None:
-            if key.startswith("oauth_state:"):
+            if key.startswith("discogs:oauth:state:"):
                 return "reqsecret"
             return None
 
         mock_redis.get = AsyncMock(side_effect=_redis_get_exchange)
-        mock_redis.getdel.return_value = "reqsecret"
+        mock_redis.delete = AsyncMock(return_value=1)
 
         with patch(
             "api.api.exchange_oauth_verifier",
@@ -974,17 +973,17 @@ class TestSecurityHeaders:
         assert "geolocation=()" in response.headers.get("permissions-policy", "")
 
 
-class TestVerifyDiscogsOAuthErrorCleansRedis:
-    """Test that DiscogsOAuthError during verify cleans up Redis state for retry."""
+class TestVerifyDiscogsOAuthErrorPreservesRedisState:
+    """Test that DiscogsOAuthError during verify preserves Redis state for retry."""
 
-    def test_exchange_error_deletes_redis_state(
+    def test_exchange_error_preserves_redis_state(
         self,
         test_client: TestClient,
         mock_cur: AsyncMock,
         mock_redis: AsyncMock,
         auth_headers: dict[str, str],
     ) -> None:
-        """Line 557: redis.delete(redis_key) called on DiscogsOAuthError."""
+        """On exchange failure, state stays in Redis so user can retry the callback."""
         from api.services.discogs import DiscogsOAuthError
 
         mock_cur.fetchall.return_value = [
@@ -993,11 +992,12 @@ class TestVerifyDiscogsOAuthErrorCleansRedis:
         ]
 
         def _redis_get_cleanup(key: str) -> str | None:
-            if key.startswith("oauth_state:"):
+            if key.startswith("discogs:oauth:state:"):
                 return "reqsecret"
             return None
 
         mock_redis.get = AsyncMock(side_effect=_redis_get_cleanup)
+        mock_redis.delete = AsyncMock(return_value=1)
 
         with patch(
             "api.api.exchange_oauth_verifier",
@@ -1009,8 +1009,8 @@ class TestVerifyDiscogsOAuthErrorCleansRedis:
                 json={"state": "reqtok", "oauth_verifier": "bad"},
             )
         assert response.status_code == 400
-        # Verify redis.delete was called to clean up state
-        mock_redis.delete.assert_awaited()
+        # Verify redis.delete was NOT called — state preserved for retry
+        mock_redis.delete.assert_not_awaited()
 
 
 class TestVerifyDiscogsUpsertFetchoneNone:
@@ -1030,7 +1030,7 @@ class TestVerifyDiscogsUpsertFetchoneNone:
         ]
 
         def _redis_get_upsert(key: str) -> str | None:
-            if key.startswith("oauth_state:"):
+            if key.startswith("discogs:oauth:state:"):
                 return "reqsecret"
             return None
 
@@ -1111,12 +1111,12 @@ class TestVerifyDiscogsOAuthStateBinding:
         state_data = _json.dumps({"secret": "reqsecret", "user_id": "different-user-id"})
 
         def _redis_get_state(key: str) -> str | None:
-            if key.startswith("oauth_state:"):
+            if key.startswith("discogs:oauth:state:"):
                 return state_data
             return None
 
         mock_redis.get = AsyncMock(side_effect=_redis_get_state)
-        mock_redis.getdel.return_value = state_data
+        mock_redis.delete = AsyncMock(return_value=1)
 
         response = test_client.post(
             "/api/oauth/verify/discogs",
@@ -1142,12 +1142,12 @@ class TestVerifyDiscogsOAuthStateBinding:
 
         # Raw string — not JSON, triggers backwards compat path
         def _redis_get_compat(key: str) -> str | None:
-            if key.startswith("oauth_state:"):
+            if key.startswith("discogs:oauth:state:"):
                 return "plain-secret-string"
             return None
 
         mock_redis.get = AsyncMock(side_effect=_redis_get_compat)
-        mock_redis.getdel.return_value = "plain-secret-string"
+        mock_redis.delete = AsyncMock(return_value=1)
 
         with (
             patch(

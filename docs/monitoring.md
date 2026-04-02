@@ -45,7 +45,7 @@ Discogs pipeline:
 
 MusicBrainz pipeline (auto-hidden when not deployed):
 
-- Extractor MusicBrainz (http://localhost:8000/health — shared extractor process)
+- Extractor MusicBrainz (http://localhost:8000/health — separate `extractor-musicbrainz` Docker container, each extractor listens on port 8000 inside its own container)
 - Brainztableinator (http://localhost:8010/health)
 - Brainzgraphinator (http://localhost:8011/health)
 
@@ -221,7 +221,7 @@ just logs
 docker-compose logs -f
 
 # Specific service
-docker-compose logs -f extractor
+docker-compose logs -f extractor-discogs extractor-musicbrainz
 docker-compose logs -f graphinator
 docker-compose logs -f tableinator
 docker-compose logs -f dashboard
@@ -468,6 +468,18 @@ curl http://localhost:8005/health
 
 # Explore
 curl http://localhost:8007/health
+# Response: {"status": "healthy"}
+
+# Insights
+curl http://localhost:8009/health
+# Response: {"status": "healthy"}
+
+# Brainztableinator
+curl http://localhost:8010/health
+# Response: {"status": "healthy"}
+
+# Brainzgraphinator
+curl http://localhost:8011/health
 # Response: {"status": "healthy"}
 
 ```

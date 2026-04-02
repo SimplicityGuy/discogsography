@@ -344,9 +344,29 @@ class AsyncPostgreSQLPool:
         # Health check task
         self._health_check_task: asyncio.Task[None] | None = None
         self._initialized = False
+        # Dedicated lock for initialize() to prevent TOCTOU race when multiple
+        # coroutines call connection() on an uninitialized pool concurrently.
+        # This is safe to create in __init__ because it's only used as a gate —
+        # it doesn't protect event-loop-bound state.
+        self._init_lock: asyncio.Lock | None = None
 
     async def initialize(self) -> None:
         """Initialize the connection pool with minimum connections."""
+        if self._initialized:
+            return
+
+        # Lazy-create the init gate lock. The check-and-assign has no await
+        # between them, so asyncio's cooperative scheduling guarantees atomicity.
+        if self._init_lock is None:
+            self._init_lock = asyncio.Lock()
+
+        async with self._init_lock:
+            await self._do_initialize()
+
+    async def _do_initialize(self) -> None:
+        """Perform actual initialization. Must be called under _init_lock."""
+        # Double-check after acquiring lock — another coroutine may have
+        # completed initialization while we waited.
         if self._initialized:
             return
 

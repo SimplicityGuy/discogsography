@@ -256,11 +256,17 @@ Service-specific additions:
 
 ### 8. Port Exposure
 
-Only expose ports for services with HTTP endpoints:
+Only expose ports for services with HTTP endpoints or health checks:
 
 - **api**: `EXPOSE 8004 8005`
 - **dashboard**: `EXPOSE 8003`
 - **explore**: `EXPOSE 8006 8007`
+- **insights**: `EXPOSE 8008 8009`
+- **extractor**: `EXPOSE 8000`
+- **graphinator**: `EXPOSE 8001`
+- **tableinator**: `EXPOSE 8002`
+- **brainztableinator**: `EXPOSE 8010`
+- **brainzgraphinator**: `EXPOSE 8011`
 
 ### 9. Volume Declaration
 
@@ -312,6 +318,31 @@ Additional volumes:
 
 - Install libpq5 for PostgreSQL
 - PostgreSQL connection environment variables
+
+### Insights
+
+- Expose ports 8008 (service) and 8009 (health)
+- Fetches data from API internal endpoints over HTTP
+- Uses Redis for caching
+- `API_BASE_URL` and `REDIS_HOST` environment variables
+
+### Brainzgraphinator
+
+- MusicBrainz data enrichment into Neo4j
+- Neo4j and RabbitMQ connection environment variables
+- Health check on port 8011
+
+### Brainztableinator
+
+- MusicBrainz data into PostgreSQL `musicbrainz` schema
+- Install libpq5 for PostgreSQL
+- PostgreSQL and RabbitMQ connection environment variables
+- Health check on port 8010
+
+### MCP Server
+
+- Exposes knowledge graph to AI assistants via API (no direct DB access)
+- `API_BASE_URL` environment variable
 
 ## ✅ Quality Checklist
 

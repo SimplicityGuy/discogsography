@@ -103,8 +103,9 @@ graph TD
 
     API --- NEO4J & PG & REDIS
     EXPLORE --- API
+    INSIGHTS -.-> API
     INSIGHTS --- PG & REDIS
-    DASH -.- RMQ & NEO4J & PG
+    DASH -.- RMQ & NEO4J & PG & REDIS
 
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     style MB fill:#e1f5fe,stroke:#01579b,stroke-width:2px

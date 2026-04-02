@@ -350,10 +350,12 @@ class StateMarker:
             self.processing_phase.status = PhaseStatus.COMPLETED
             self.processing_phase.completed_at = datetime.now(UTC)
             self.processing_phase.current_file = None
+            files = self.processing_phase.files_processed
+            records = self.processing_phase.records_extracted
         logger.info(
             "✅ Processing phase completed",
-            files=self.processing_phase.files_processed,
-            records=self.processing_phase.records_extracted,
+            files=files,
+            records=records,
         )
 
     def fail_processing(self, error: str) -> None:

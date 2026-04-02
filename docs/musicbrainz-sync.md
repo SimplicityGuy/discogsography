@@ -9,13 +9,16 @@ The MusicBrainz integration imports data from MusicBrainz JSONL database dumps i
 ```mermaid
 graph TD
     MB[MusicBrainz JSONL Dumps] --> EXT[Extractor --source musicbrainz]
-    EXT -->|fanout| EA[musicbrainz-artists]
-    EXT -->|fanout| EL[musicbrainz-labels]
-    EXT -->|fanout| ER[musicbrainz-releases]
+    EXT -->|fanout| EA[discogsography-musicbrainz-artists]
+    EXT -->|fanout| EL[discogsography-musicbrainz-labels]
+    EXT -->|fanout| ERG[discogsography-musicbrainz-release-groups]
+    EXT -->|fanout| ER[discogsography-musicbrainz-releases]
     EA --> BG[brainzgraphinator]
     EA --> BT[brainztableinator]
     EL --> BG
     EL --> BT
+    ERG --> BG
+    ERG --> BT
     ER --> BG
     ER --> BT
     BG -->|enrich existing nodes| NEO[Neo4j]
@@ -33,6 +36,7 @@ MusicBrainz publishes new JSONL dumps **twice weekly** (Wednesdays and Saturdays
 1. Download MusicBrainz JSONL dumps (xz-compressed):
    - `artist.jsonl.xz`
    - `label.jsonl.xz`
+   - `release-group.jsonl.xz`
    - `release.jsonl.xz`
 
 2. Place files in the `musicbrainz_data` Docker volume (or mounted directory)

@@ -168,7 +168,7 @@ docker build --build-arg PYTHON_VERSION=3.14 -f dashboard/Dockerfile . --target 
 
 ```bash
 # Ensure all files are updated
-./scripts/update-python-version.sh 3.14
+./scripts/update-project.sh --python 3.14
 
 # Rebuild everything
 docker-compose down

@@ -156,7 +156,7 @@ RABBITMQ_PASSWORD=mypassword
 | `NEO4J_USERNAME` | Neo4j username | `neo4j`     | Yes      |
 | `NEO4J_PASSWORD` | Neo4j password | (none)      | Yes      |
 
-**Used By**: Graphinator, API, Schema-Init, Dashboard
+**Used By**: Graphinator, API, Schema-Init, Dashboard, Brainzgraphinator
 
 **Connection Details**:
 
@@ -201,7 +201,7 @@ NEO4J_PASSWORD="your-secure-password"
 | `POSTGRES_PASSWORD` | PostgreSQL password | (none)           | Yes      |
 | `POSTGRES_DATABASE` | Database name       | `discogsography` | Yes      |
 
-**Used By**: Tableinator, Dashboard, API, Insights
+**Used By**: Tableinator, Dashboard, API, Insights, Brainztableinator, Schema-Init
 
 **Connection Details**:
 
@@ -767,7 +767,7 @@ LOG_LEVEL=INFO
 
 Health check: http://localhost:8011/health
 
-**Notes**: Brainzgraphinator enriches existing Neo4j nodes with MusicBrainz metadata (properties, relationships, cross-references). It skips entities without Discogs matches. Consumes from the `musicbrainz-{artists,labels,releases}` exchanges.
+**Notes**: Brainzgraphinator enriches existing Neo4j nodes with MusicBrainz metadata (properties, relationships, cross-references). It skips entities without Discogs matches. Consumes from the `musicbrainz-{artists,labels,release-groups,releases}` exchanges.
 
 ### Brainztableinator
 
@@ -801,7 +801,7 @@ LOG_LEVEL=INFO
 
 Health check: http://localhost:8010/health
 
-**Notes**: Brainztableinator stores all MusicBrainz data in the `musicbrainz` PostgreSQL schema — including entities without Discogs matches — with relationships and external links. Consumes from the `musicbrainz-{artists,labels,releases}` exchanges.
+**Notes**: Brainztableinator stores all MusicBrainz data in the `musicbrainz` PostgreSQL schema — including entities without Discogs matches — with relationships and external links. Consumes from the `musicbrainz-{artists,labels,release-groups,releases}` exchanges.
 
 ### MCP Server
 

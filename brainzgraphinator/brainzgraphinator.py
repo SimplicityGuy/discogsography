@@ -524,14 +524,6 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
             if await check_file_completion(body, data_type, message):
                 return
 
-            message_counts[data_type] += 1
-            last_message_time[data_type] = time.time()
-            if message_counts[data_type] % progress_interval == 0:
-                logger.info(
-                    f"📊 Enriched {data_type} in Neo4j",
-                    message_counts=message_counts[data_type],
-                )
-
             if graph is None:
                 raise RuntimeError("Neo4j driver not initialized")
 
@@ -569,6 +561,15 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
                     enrichment_stats[key] += local_stats[key]
 
             await message.ack()
+
+            # Increment counts only after successful processing and ack
+            message_counts[data_type] += 1
+            last_message_time[data_type] = time.time()
+            if message_counts[data_type] % progress_interval == 0:
+                logger.info(
+                    f"📊 Enriched {data_type} in Neo4j",
+                    message_counts=message_counts[data_type],
+                )
         except (ServiceUnavailable, SessionExpired) as e:
             logger.warning(
                 f"⚠️ Neo4j unavailable, will retry {data_type} message",

@@ -533,9 +533,10 @@ async def verify_discogs(
             detail="Discogs app credentials not configured",
         )
 
-    # Atomically consume request token secret from Redis to prevent replay
+    # Read (but do not delete) the request token secret — only delete after exchange succeeds.
+    # This allows the user to retry the OAuth callback if the exchange fails.
     redis_key = f"{REDIS_STATE_PREFIX}{request.state}"
-    raw_state_data = await _redis.getdel(redis_key)
+    raw_state_data = await _redis.get(redis_key)
 
     if not raw_state_data:
         raise HTTPException(
@@ -578,12 +579,14 @@ async def verify_discogs(
         )
     except DiscogsOAuthError as exc:
         logger.error("❌ Discogs OAuth exchange failed", error=str(exc))
-        # Clean up state so user can retry immediately
-        await _redis.delete(redis_key)
+        # State is still in Redis — user can retry the callback without restarting the flow
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid verifier code or OAuth flow failed",
+            detail="Invalid verifier code or OAuth flow failed. You may retry with a valid verifier.",
         ) from exc
+
+    # Exchange succeeded — atomically consume state to prevent replay
+    await _redis.delete(redis_key)
 
     user_id = current_user.get("sub")
     discogs_username = identity.get("username", "")
@@ -591,7 +594,7 @@ async def verify_discogs(
 
     _oauth_key = get_oauth_encryption_key(_config.encryption_master_key)
 
-    # Upsert oauth_tokens record — BEFORE deleting Redis state so user can retry on DB failure
+    # Upsert oauth_tokens record (Redis state was already deleted after successful exchange above)
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,
