@@ -182,6 +182,22 @@ class TestAddMessage:
         nack_callback.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_add_message_missing_id(self) -> None:
+        """Test that messages missing 'id' field are nacked immediately."""
+        mock_driver = MagicMock()
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        ack_callback = AsyncMock()
+        nack_callback = AsyncMock()
+        data = {"name": "Test Artist"}
+
+        result = await processor.add_message("artists", data, ack_callback, nack_callback)
+
+        assert result is False
+        nack_callback.assert_called_once()
+        assert len(processor.queues["artists"]) == 0
+
+    @pytest.mark.asyncio
     async def test_add_message_normalization_error(self) -> None:
         """Test handling normalization errors."""
         mock_driver = MagicMock()
