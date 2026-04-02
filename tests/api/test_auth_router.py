@@ -2,6 +2,7 @@
 
 import base64
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 import json
 from unittest.mock import AsyncMock
 
@@ -511,6 +512,7 @@ class TestTwoFactorVerifyFull:
         challenge_token = _make_challenge_token()
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.delete = AsyncMock()
         mock_cur.fetchone = AsyncMock(
             return_value={
@@ -548,6 +550,7 @@ class TestTwoFactorVerifyFull:
         challenge_token = _make_challenge_token()
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_cur.fetchone = AsyncMock(
             return_value={
                 "totp_secret": encrypted_secret,
@@ -584,6 +587,7 @@ class TestTwoFactorVerifyFull:
         challenge_token = _make_challenge_token()
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         # locked_until is in the future
         locked_until = datetime.now(UTC) + timedelta(minutes=10)
         mock_cur.fetchone = AsyncMock(
@@ -636,6 +640,7 @@ class TestTwoFactorVerifyFull:
         challenge_token = _make_challenge_token()
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_cur.fetchone = AsyncMock(
             return_value={
                 "totp_secret": encrypted_secret,
@@ -697,6 +702,7 @@ class TestTwoFactorRecoveryFull:
         challenge_token = _make_challenge_token()
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.delete = AsyncMock()
         mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps(hashed_codes)})
 
@@ -720,6 +726,7 @@ class TestTwoFactorRecoveryFull:
         challenge_token = _make_challenge_token()
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps(hashed_codes)})
 
         response = test_client.post(
@@ -743,6 +750,7 @@ class TestTwoFactorRecoveryFull:
         challenge_token = _make_challenge_token()
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.delete = AsyncMock()
         mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps(last_hashed)})
 
@@ -766,6 +774,7 @@ class TestTwoFactorRecoveryFull:
         challenge_token = _make_challenge_token()
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": None})
 
         response = test_client.post(
@@ -784,6 +793,7 @@ class TestTwoFactorRecoveryFull:
         challenge_token = _make_challenge_token()
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_cur.fetchone = AsyncMock(return_value=None)
 
         response = test_client.post(
@@ -1002,6 +1012,7 @@ class TestTwoFactorVerifyEdgeCases:
             return None
 
         mock_redis.get = AsyncMock(side_effect=redis_get)
+        mock_redis.getdel = AsyncMock(side_effect=redis_get)
         mock_cur.fetchone = AsyncMock(
             return_value={
                 "totp_secret": None,
@@ -1019,6 +1030,75 @@ class TestTwoFactorVerifyEdgeCases:
             },
         )
         assert response.status_code in (400, 401)
+
+    def test_verify_lockout_preserves_challenge(
+        self,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
+        mock_cur: AsyncMock,
+    ) -> None:
+        """Locked-out user should get 429 without consuming the challenge token."""
+        import json
+
+        token = create_challenge_token(TEST_USER_ID, TEST_USER_EMAIL, TEST_JWT_SECRET)
+
+        async def redis_get(redis_key: str) -> str | None:
+            if "2fa_challenge:" in redis_key:
+                return json.dumps({"user_id": TEST_USER_ID})
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=redis_get)
+        # getdel should NOT be called when account is locked
+        mock_redis.getdel = AsyncMock(return_value=None)
+        mock_cur.fetchone = AsyncMock(
+            return_value={
+                "totp_secret": "encrypted_secret",
+                "totp_failed_attempts": 5,
+                "totp_locked_until": datetime.now(UTC) + timedelta(minutes=10),
+            }
+        )
+
+        response = test_client.post(
+            "/api/auth/2fa/verify",
+            json={"challenge_token": token, "code": "123456"},
+        )
+        assert response.status_code == 429
+        # Challenge was NOT atomically consumed — getdel should not have been called
+        mock_redis.getdel.assert_not_called()
+
+    def test_verify_getdel_race_returns_401(
+        self,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
+        mock_cur: AsyncMock,
+    ) -> None:
+        """If challenge exists on get but is consumed by another request before getdel, return 401."""
+        import json
+
+        token = create_challenge_token(TEST_USER_ID, TEST_USER_EMAIL, TEST_JWT_SECRET)
+
+        async def redis_get(redis_key: str) -> str | None:
+            if "2fa_challenge:" in redis_key:
+                return json.dumps({"user_id": TEST_USER_ID})
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=redis_get)
+        # getdel returns None — another request consumed the challenge between get and getdel
+        mock_redis.getdel = AsyncMock(return_value=None)
+        mock_cur.fetchone = AsyncMock(
+            return_value={
+                "totp_secret": "encrypted_secret",
+                "totp_failed_attempts": 0,
+                "totp_locked_until": None,
+            }
+        )
+
+        response = test_client.post(
+            "/api/auth/2fa/verify",
+            json={"challenge_token": token, "code": "123456"},
+        )
+        assert response.status_code == 401
+        assert "expired" in response.json()["detail"].lower() or "used" in response.json()["detail"].lower()
 
 
 class TestTwoFactorRecoveryEdgeCases:

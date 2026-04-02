@@ -900,7 +900,7 @@ pub async fn process_musicbrainz_data(
     }
 
     // Check state marker — skip if already completed and not force_reprocess
-    let marker_path = versioned_root.join(format!(".mb_extraction_status_{}.json", version));
+    let marker_path = StateMarker::musicbrainz_file_path(&config.musicbrainz_root, &version);
     let mut state_marker = if force_reprocess {
         info!("🔄 Force reprocess requested, creating new state marker");
         StateMarker::new(version.clone())

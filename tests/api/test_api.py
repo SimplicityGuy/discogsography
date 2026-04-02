@@ -525,7 +525,7 @@ class TestDiscogsOAuthEndpoints:
             {"key": "discogs_consumer_key", "value": "ckey"},
             {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
-        mock_redis.get.return_value = None  # state expired
+        mock_redis.getdel.return_value = None  # state expired
 
         response = test_client.post(
             "/api/oauth/verify/discogs",
@@ -1110,13 +1110,12 @@ class TestVerifyDiscogsOAuthStateBinding:
         # State data with a different user_id than TEST_USER_ID
         state_data = _json.dumps({"secret": "reqsecret", "user_id": "different-user-id"})
 
-        def _redis_get_state(key: str) -> str | None:
+        def _redis_getdel_state(key: str) -> str | None:
             if key.startswith("discogs:oauth:state:"):
                 return state_data
             return None
 
-        mock_redis.get = AsyncMock(side_effect=_redis_get_state)
-        mock_redis.delete = AsyncMock(return_value=1)
+        mock_redis.getdel = AsyncMock(side_effect=_redis_getdel_state)
 
         response = test_client.post(
             "/api/oauth/verify/discogs",
@@ -1141,13 +1140,12 @@ class TestVerifyDiscogsOAuthStateBinding:
         mock_cur.fetchone.return_value = {"id": 1}
 
         # Raw string — not JSON, triggers backwards compat path
-        def _redis_get_compat(key: str) -> str | None:
+        def _redis_getdel_compat(key: str) -> str | None:
             if key.startswith("discogs:oauth:state:"):
                 return "plain-secret-string"
             return None
 
-        mock_redis.get = AsyncMock(side_effect=_redis_get_compat)
-        mock_redis.delete = AsyncMock(return_value=1)
+        mock_redis.getdel = AsyncMock(side_effect=_redis_getdel_compat)
 
         with (
             patch(

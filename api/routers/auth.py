@@ -441,8 +441,10 @@ async def twofa_verify(request: Request, body: TwoFactorVerifyModel) -> JSONResp
     if not jti:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid challenge token")
 
-    # Atomically consume challenge from Redis to prevent replay
-    challenge_data = await _redis.getdel(f"2fa_challenge:{jti}")
+    # Verify challenge exists (without consuming) before checking lockout,
+    # so locked-out users don't waste their challenge token.
+    challenge_key = f"2fa_challenge:{jti}"
+    challenge_data = await _redis.get(challenge_key)
     if not challenge_data:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Challenge expired or already used")
 
@@ -461,12 +463,17 @@ async def twofa_verify(request: Request, body: TwoFactorVerifyModel) -> JSONResp
     if not user or not user.get("totp_secret"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="2FA not configured")
 
-    # Check lockout — ensure timezone-aware comparison
+    # Check lockout BEFORE consuming the challenge — locked-out users keep their token
     locked_until = user.get("totp_locked_until")
     if locked_until and locked_until.tzinfo is None:
         locked_until = locked_until.replace(tzinfo=UTC)
     if locked_until and locked_until > datetime.now(UTC):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Account temporarily locked due to failed 2FA attempts")
+
+    # Atomically consume challenge from Redis to prevent replay
+    challenge_data = await _redis.getdel(challenge_key)
+    if not challenge_data:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Challenge expired or already used")
 
     totp_key = get_totp_encryption_key(_config.encryption_master_key)
     if not totp_key:

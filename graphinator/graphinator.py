@@ -1075,14 +1075,6 @@ def make_message_handler(
             record_id = record.get("id", "unknown")
             record_name = record.get(name_field, default_name)
 
-            message_counts[data_type] += 1
-            last_message_time[data_type] = time.time()
-            if message_counts[data_type] % progress_interval == 0:
-                logger.info(
-                    f"📊 Processed {data_type} in Neo4j",
-                    message_counts=message_counts[data_type],
-                )
-
             logger.debug(
                 f"🔄 Processing {data_type[:-1]}",
                 record_id=record_id,
@@ -1098,6 +1090,15 @@ def make_message_handler(
                     return bool(process_fn(tx, record))
 
                 updated = await session.execute_write(tx_fn)
+
+            # Increment counters only after successful write
+            message_counts[data_type] += 1
+            last_message_time[data_type] = time.time()
+            if message_counts[data_type] % progress_interval == 0:
+                logger.info(
+                    f"📊 Processed {data_type} in Neo4j",
+                    message_counts=message_counts[data_type],
+                )
 
             if updated:
                 logger.debug(

@@ -320,7 +320,7 @@ class TestSSEStreamErrorHandling:
         assert response.status_code == 200
         body = response.text
         assert "event: error" in body
-        assert "Neo4j connection lost" in body
+        assert "An internal error occurred" in body
 
 
 class TestExtractUserIdEdgeCases:

@@ -303,7 +303,8 @@ class TestInsertRelationship:
         mock_cursor.execute.assert_called_once()
         sql = mock_cursor.execute.call_args[0][0]
         assert "INSERT INTO musicbrainz.relationships" in sql
-        assert "ON CONFLICT DO NOTHING" in sql
+        assert "ON CONFLICT" in sql
+        assert "DO UPDATE SET" in sql
 
     @pytest.mark.asyncio
     async def test_insert_relationship_no_target_skips(self):

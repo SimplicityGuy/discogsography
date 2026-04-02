@@ -238,7 +238,7 @@ fn check_condition(condition: &CompiledCondition, value: &str) -> bool {
         CompiledCondition::Required => unreachable!(),
         CompiledCondition::Regex { regex } => regex.is_match(value),
         CompiledCondition::Length { min, max } => {
-            let len = value.len();
+            let len = value.chars().count();
             if let Some(min_val) = min
                 && len < *min_val
             {

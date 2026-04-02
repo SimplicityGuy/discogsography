@@ -86,7 +86,7 @@ def main() -> None:
     print(f"Total errors found: {total_errors}")
 
     if total_errors > 0:
-        print("\n💡 Tip: Use 'docker-compose logs <service> --tail=100 | grep -A5 -B5 ERROR' for context")
+        print("\n💡 Tip: Use 'docker compose logs <service> --tail=100 | grep -A5 -B5 ERROR' for context")
 
 
 if __name__ == "__main__":

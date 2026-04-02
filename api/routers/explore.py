@@ -54,6 +54,7 @@ _AUTOCOMPLETE_CACHE_MAX = 512
 _genre_tree_cache: dict | None = None
 _genre_tree_cache_time: float = 0
 _GENRE_TREE_TTL = 300  # 5 minutes
+_genre_tree_lock: asyncio.Lock | None = None  # lazy init to avoid binding to wrong event loop
 
 
 def _get_cache_key(query: str, entity_type: str, limit: int) -> tuple[str, str, int]:
@@ -105,6 +106,7 @@ async def autocomplete(
         return JSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
     cache_key = _get_cache_key(q, entity_type, limit)
     if cache_key in _autocomplete_cache:
+        _autocomplete_cache.move_to_end(cache_key)
         return JSONResponse(content={"results": _autocomplete_cache[cache_key]})
     query_func = AUTOCOMPLETE_DISPATCH[entity_type]
     results = await query_func(_neo4j_driver, q, limit)
@@ -250,7 +252,7 @@ async def genre_tree(
     request: Request,  # noqa: ARG001
 ) -> JSONResponse:
     """Return the full genre/style hierarchy derived from release co-occurrence."""
-    global _genre_tree_cache, _genre_tree_cache_time
+    global _genre_tree_cache, _genre_tree_cache_time, _genre_tree_lock
 
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
@@ -259,20 +261,29 @@ async def genre_tree(
     if _genre_tree_cache is not None and (now - _genre_tree_cache_time) < _GENRE_TREE_TTL:
         return JSONResponse(content=_genre_tree_cache)
 
-    try:
-        genres = await genre_tree_queries.get_genre_tree(_neo4j_driver)
-    except Neo4jClientError as exc:
-        if "TransactionTimedOut" in str(exc):
-            logger.warning("⏱️ Genre tree query timed out")
-            return JSONResponse(
-                content={"error": "Genre tree query timed out — try again later"},
-                status_code=504,
-            )
-        raise
+    # Serialize cache refresh to prevent thundering herd on expiry
+    if _genre_tree_lock is None:
+        _genre_tree_lock = asyncio.Lock()
+    async with _genre_tree_lock:
+        # Re-check after acquiring lock — another coroutine may have refreshed
+        now = time.monotonic()
+        if _genre_tree_cache is not None and (now - _genre_tree_cache_time) < _GENRE_TREE_TTL:
+            return JSONResponse(content=_genre_tree_cache)
 
-    _genre_tree_cache = {"genres": genres}
-    _genre_tree_cache_time = time.monotonic()
-    return JSONResponse(content=_genre_tree_cache)
+        try:
+            genres = await genre_tree_queries.get_genre_tree(_neo4j_driver)
+        except Neo4jClientError as exc:
+            if "TransactionTimedOut" in str(exc):
+                logger.warning("⏱️ Genre tree query timed out")
+                return JSONResponse(
+                    content={"error": "Genre tree query timed out — try again later"},
+                    status_code=504,
+                )
+            raise
+
+        _genre_tree_cache = {"genres": genres}
+        _genre_tree_cache_time = time.monotonic()
+        return JSONResponse(content=_genre_tree_cache)
 
 
 @router.get("/api/node/{node_id}")

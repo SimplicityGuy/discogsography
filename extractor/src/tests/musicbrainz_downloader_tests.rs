@@ -1000,6 +1000,38 @@ fn test_compress_jsonl_to_xz_fails_when_output_path_blocked() {
 }
 
 #[test]
+fn test_compress_jsonl_to_xz_cleans_up_partial_file_on_write_error() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let jsonl_path = dir.path().join("artist.jsonl");
+    std::fs::write(&jsonl_path, b"test data for compression\n").unwrap();
+
+    // Make the directory read-only so File::create for the .xz output fails.
+    // After failure, the partial .xz should not exist.
+    let mut perms = std::fs::metadata(dir.path()).unwrap().permissions();
+    let original_mode = perms.mode();
+    perms.set_mode(0o555); // read + execute only
+    std::fs::set_permissions(dir.path(), perms).unwrap();
+
+    let result = compress_jsonl_to_xz(&jsonl_path);
+
+    // Restore permissions for TempDir cleanup
+    let mut perms = std::fs::metadata(dir.path()).unwrap().permissions();
+    perms.set_mode(original_mode);
+    std::fs::set_permissions(dir.path(), perms).unwrap();
+
+    assert!(result.is_err(), "Compression should fail when directory is read-only");
+
+    // Verify no partial .xz file was left behind
+    let xz_path = jsonl_path.with_extension("jsonl.xz");
+    assert!(!xz_path.exists(), "Partial .xz file should be cleaned up on failure");
+
+    // Original .jsonl should still exist
+    assert!(jsonl_path.exists(), "Original file should remain on compression failure");
+}
+
+#[test]
 fn test_is_version_complete_with_xz_files() {
     let dir = TempDir::new().unwrap();
 

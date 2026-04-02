@@ -352,7 +352,7 @@ services:
       STARTUP_DELAY: "30"
     volumes:
       - musicbrainz_data:/musicbrainz-data
-      - extractor_logs:/logs
+      - extractor_musicbrainz_logs:/logs
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -767,6 +767,7 @@ volumes:
   redis_data:
   discogs_data:
   extractor_logs:
+  extractor_musicbrainz_logs:
   schema_init_logs:
   api_logs:
   graphinator_logs:
