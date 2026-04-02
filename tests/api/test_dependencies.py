@@ -306,6 +306,46 @@ class TestRequireAdmin:
             await require_admin(creds)
         assert exc_info.value.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_password_changed_revokes_admin_token(self) -> None:
+        """Admin token issued before password change -> 401."""
+        mock_redis = AsyncMock()
+
+        async def redis_get(key: str) -> str | None:
+            if key.startswith("password_changed:"):
+                return "2000"
+            return None  # revoked:jti:... returns None
+
+        mock_redis.get = AsyncMock(side_effect=redis_get)
+        configure(TEST_SECRET, redis=mock_redis)
+        from fastapi import HTTPException
+
+        token = _make_token_with_claims({"type": "admin", "jti": "admin:pw1", "iat": 1000, "sub": "admin-1"})
+        creds = _make_credentials(token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(creds)
+        assert exc_info.value.status_code == 401
+        assert "password change" in str(exc_info.value.detail)
+
+    @pytest.mark.asyncio
+    async def test_password_changed_allows_newer_admin_token(self) -> None:
+        """Admin token issued after password change -> allowed (proceeds to DB check)."""
+        mock_redis = AsyncMock()
+
+        async def redis_get(key: str) -> str | None:
+            if key.startswith("password_changed:"):
+                return "2000"
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=redis_get)
+        # No pool configured, so DB check is skipped and token passes
+        configure(TEST_SECRET, redis=mock_redis)
+
+        token = _make_token_with_claims({"type": "admin", "jti": "admin:pw2", "iat": 3000, "sub": "admin-1"})
+        creds = _make_credentials(token)
+        result = await require_admin(creds)
+        assert result["sub"] == "admin-1"
+
 
 def _make_token_with_claims(extra_claims: dict, secret: str = TEST_SECRET) -> str:
     """Create a valid HS256 JWT with custom claims merged into the base payload."""

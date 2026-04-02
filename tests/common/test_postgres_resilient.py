@@ -1714,6 +1714,31 @@ class TestAsyncPostgreSQLPoolUncoveredLines:
 
     @pytest.mark.asyncio
     @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
+    async def test_do_initialize_double_check_skips_when_already_initialized(
+        self, mock_connect: Mock, connection_params: dict, mock_async_connection: AsyncMock
+    ) -> None:
+        """_do_initialize() returns early when _initialized is True (double-check locking)."""
+        mock_connect.return_value = mock_async_connection
+
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=1, max_connections=5)
+
+        # First initialization
+        await pool.initialize()
+        assert pool._initialized is True
+        first_task = pool._health_check_task
+
+        # Directly call _do_initialize — simulates the race where another coroutine
+        # already completed initialization while we held the init lock.
+        await pool._do_initialize()
+
+        # Should be a no-op: health check task unchanged, no extra connections
+        assert pool._health_check_task is first_task
+
+        # Cleanup
+        await pool.close()
+
+    @pytest.mark.asyncio
+    @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
     async def test_connection_auto_initializes_when_not_initialized(
         self, mock_connect: Mock, connection_params: dict, mock_async_connection: AsyncMock
     ) -> None:
