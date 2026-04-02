@@ -131,6 +131,8 @@ fn test_extract_data_type() {
     assert_eq!(extract_data_type("label.jsonl.xz"), Some("labels".to_string()));
     assert_eq!(extract_data_type("release.jsonl.xz"), Some("releases".to_string()));
     assert_eq!(extract_data_type("release-group.jsonl.xz"), Some("release-groups".to_string()));
+    // Unknown MusicBrainz entity type — passes through unchanged
+    assert_eq!(extract_data_type("area.jsonl.xz"), Some("area".to_string()));
     // Non-matching filenames
     assert_eq!(extract_data_type("invalid.xml.gz"), None);
 }

@@ -1165,6 +1165,43 @@ class TestAsyncPostgreSQLPool:
 
     @pytest.mark.asyncio
     @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
+    async def test_set_autocommit_failure_discards_connection(self, mock_connect: Mock, connection_params: dict) -> None:
+        """Test that connection is discarded when set_autocommit(True) fails on pool return."""
+        from psycopg import OperationalError
+
+        conn = AsyncMock()
+        conn.closed = False
+        conn.close = AsyncMock()
+        # set_autocommit succeeds on initial creation but fails on pool return
+        conn.set_autocommit = AsyncMock(side_effect=[None, OperationalError("connection lost")])
+        cursor = AsyncMock()
+        cursor.execute = AsyncMock()
+        cursor.fetchone = AsyncMock(return_value=(1,))
+        cursor.__aenter__ = AsyncMock(return_value=cursor)
+        cursor.__aexit__ = AsyncMock(return_value=None)
+        conn.cursor = Mock(return_value=cursor)
+
+        mock_connect.return_value = conn
+
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5)
+        await pool.initialize()
+
+        async with pool.connection():
+            pass  # On exit, set_autocommit(True) will raise
+
+        await asyncio.sleep(0.1)
+
+        # Connection should have been discarded, not returned to pool
+        assert pool.connections.qsize() == 0
+        # active_connections should have been decremented
+        assert pool.active_connections == 0
+        # Connection should have been closed
+        conn.close.assert_called()
+
+        await pool.close()
+
+    @pytest.mark.asyncio
+    @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
     async def test_connection_pool_exhaustion_wait(self, mock_connect: Mock, connection_params: dict, mock_async_connection: AsyncMock) -> None:
         """Test waiting for connection when pool is exhausted."""
 
