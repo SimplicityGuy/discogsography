@@ -7,7 +7,13 @@ from typing import Any
 
 import pika
 
-from common.config import AMQP_QUEUE_PREFIX_GRAPHINATOR, get_secret
+from common.config import (
+    AMQP_QUEUE_PREFIX_BRAINZGRAPHINATOR,
+    AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR,
+    AMQP_QUEUE_PREFIX_GRAPHINATOR,
+    AMQP_QUEUE_PREFIX_TABLEINATOR,
+    get_secret,
+)
 
 
 def get_message_from_queue(
@@ -23,7 +29,9 @@ def get_message_from_queue(
     try:
         # Connect to RabbitMQ
         credentials = pika.PlainCredentials(username, password)
-        connection = pika.BlockingConnection(pika.ConnectionParameters(host=host, credentials=credentials))
+        connection = pika.BlockingConnection(
+            pika.ConnectionParameters(host=host, credentials=credentials, socket_timeout=10, blocked_connection_timeout=30)
+        )
         channel = connection.channel()
 
         # Get a single message
@@ -130,18 +138,38 @@ def analyze_message(message: dict[str, Any] | None, message_type: str) -> None:
     print(formatted[:1000] + "..." if len(formatted) > 1000 else formatted)
 
 
+_CONSUMER_PREFIXES = {
+    "graphinator": AMQP_QUEUE_PREFIX_GRAPHINATOR,
+    "tableinator": AMQP_QUEUE_PREFIX_TABLEINATOR,
+    "brainzgraphinator": AMQP_QUEUE_PREFIX_BRAINZGRAPHINATOR,
+    "brainztableinator": AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR,
+}
+
+_DISCOGS_TYPES = ["artists", "labels", "masters", "releases"]
+_MUSICBRAINZ_TYPES = ["artists", "labels", "release-groups", "releases"]
+
+
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: debug_message.py <queue_type>")
-        print("Queue types: artists, labels, masters, releases")
+        print("Usage: debug_message.py <queue_type> [consumer]")
+        print(f"Queue types (Discogs): {', '.join(_DISCOGS_TYPES)}")
+        print(f"Queue types (MusicBrainz): {', '.join(_MUSICBRAINZ_TYPES)}")
+        print(f"Consumers: {', '.join(_CONSUMER_PREFIXES)} (default: graphinator)")
         sys.exit(1)
 
     queue_type = sys.argv[1]
-    if queue_type not in ["artists", "labels", "masters", "releases"]:
-        print(f"Invalid queue type: {queue_type}")
+    consumer = sys.argv[2] if len(sys.argv) > 2 else "graphinator"
+
+    all_types = sorted(set(_DISCOGS_TYPES + _MUSICBRAINZ_TYPES))
+    if queue_type not in all_types:
+        print(f"Invalid queue type: {queue_type}. Must be one of: {', '.join(all_types)}")
         sys.exit(1)
 
-    queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{queue_type}"
+    if consumer not in _CONSUMER_PREFIXES:
+        print(f"Invalid consumer: {consumer}. Must be one of: {', '.join(_CONSUMER_PREFIXES)}")
+        sys.exit(1)
+
+    queue_name = f"{_CONSUMER_PREFIXES[consumer]}-{queue_type}"
 
     print(f"🔍 Debugging Queue: {queue_name}")
 

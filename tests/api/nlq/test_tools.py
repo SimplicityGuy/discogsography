@@ -159,6 +159,79 @@ async def test_execute_find_path_no_path(runner: NLQToolRunner) -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_find_path_name_resolution_both(runner: NLQToolRunner) -> None:
+    """Find path resolves both from_id and to_id names via EXPLORE_DISPATCH when types are provided."""
+    fake_path: dict[str, Any] = {
+        "nodes": [{"id": "123", "name": "Radiohead", "type": "artist"}, {"id": "456", "name": "XL", "type": "label"}],
+        "rels": ["ON"],
+    }
+    artist_handler = AsyncMock(return_value={"id": 123, "name": "Radiohead"})
+    label_handler = AsyncMock(return_value={"id": 456, "name": "XL Recordings"})
+    with (
+        patch("api.queries.neo4j_queries.EXPLORE_DISPATCH", {"artist": artist_handler, "label": label_handler}),
+        patch("api.queries.neo4j_queries.find_shortest_path", new_callable=AsyncMock, return_value=fake_path) as mock_fsp,
+    ):
+        result = await runner.execute("find_path", {"from_id": "Radiohead", "from_type": "artist", "to_id": "XL", "to_type": "label"})
+    assert "nodes" in result
+    # Verify resolved IDs were passed to find_shortest_path
+    mock_fsp.assert_awaited_once()
+    call_kwargs = mock_fsp.call_args[1]
+    assert call_kwargs["from_id"] == "123"
+    assert call_kwargs["to_id"] == "456"
+
+
+@pytest.mark.asyncio
+async def test_execute_find_path_name_resolution_from_not_found(runner: NLQToolRunner) -> None:
+    """Find path returns error when from_id name cannot be resolved."""
+    artist_handler = AsyncMock(return_value=None)
+    with patch("api.queries.neo4j_queries.EXPLORE_DISPATCH", {"artist": artist_handler}):
+        result = await runner.execute("find_path", {"from_id": "Unknown Artist", "from_type": "artist", "to_id": "456"})
+    assert "error" in result
+    assert "artist" in result["error"]
+    assert "Unknown Artist" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_execute_find_path_name_resolution_to_not_found(runner: NLQToolRunner) -> None:
+    """Find path returns error when to_id name cannot be resolved."""
+    artist_handler = AsyncMock(return_value={"id": 123, "name": "Radiohead"})
+    label_handler = AsyncMock(return_value=None)
+    with patch("api.queries.neo4j_queries.EXPLORE_DISPATCH", {"artist": artist_handler, "label": label_handler}):
+        result = await runner.execute("find_path", {"from_id": "Radiohead", "from_type": "artist", "to_id": "No Such Label", "to_type": "label"})
+    assert "error" in result
+    assert "label" in result["error"]
+    assert "No Such Label" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_execute_find_path_numeric_id_skips_resolution(runner: NLQToolRunner) -> None:
+    """Find path skips name resolution when IDs are purely numeric, even if types are provided."""
+    fake_path: dict[str, Any] = {"nodes": [{"id": "123", "type": "artist"}], "rels": []}
+    with patch("api.queries.neo4j_queries.find_shortest_path", new_callable=AsyncMock, return_value=fake_path) as mock_fsp:
+        result = await runner.execute("find_path", {"from_id": "12345", "from_type": "artist", "to_id": "67890", "to_type": "label"})
+    assert "nodes" in result
+    # IDs should be passed through unchanged — no EXPLORE_DISPATCH called
+    call_kwargs = mock_fsp.call_args[1]
+    assert call_kwargs["from_id"] == "12345"
+    assert call_kwargs["to_id"] == "67890"
+
+
+@pytest.mark.asyncio
+async def test_execute_find_path_name_resolution_only_from(runner: NLQToolRunner) -> None:
+    """Find path resolves only from_id when only from_type is provided; to_id passes through."""
+    fake_path: dict[str, Any] = {"nodes": [], "rels": []}
+    artist_handler = AsyncMock(return_value={"id": 999, "name": "Radiohead"})
+    with (
+        patch("api.queries.neo4j_queries.EXPLORE_DISPATCH", {"artist": artist_handler}),
+        patch("api.queries.neo4j_queries.find_shortest_path", new_callable=AsyncMock, return_value=fake_path) as mock_fsp,
+    ):
+        await runner.execute("find_path", {"from_id": "Radiohead", "from_type": "artist", "to_id": "l1"})
+    call_kwargs = mock_fsp.call_args[1]
+    assert call_kwargs["from_id"] == "999"
+    assert call_kwargs["to_id"] == "l1"
+
+
+@pytest.mark.asyncio
 async def test_execute_get_collaborators(runner: NLQToolRunner) -> None:
     """Get collaborators tool should return collaborators list."""
     fake_collabs = [{"id": "a2", "name": "Thom Yorke", "shared_releases": 5}]

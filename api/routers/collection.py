@@ -1,5 +1,6 @@
 """Collection gap analysis endpoints — "Complete My Collection" feature."""
 
+import asyncio
 from collections import OrderedDict
 import time
 from typing import Annotated, Any
@@ -35,6 +36,7 @@ _pg_pool: Any = None
 _summary_cache: OrderedDict[tuple[str, str, str], tuple[float, dict[str, Any]]] = OrderedDict()
 _SUMMARY_CACHE_MAX = 256
 _SUMMARY_CACHE_TTL = 300  # 5 minutes
+_summary_cache_lock: asyncio.Lock | None = None  # lazy init to avoid binding to wrong event loop
 
 
 def configure(neo4j: Any, pg_pool: Any, jwt_secret: str | None) -> None:  # noqa: ARG001
@@ -44,6 +46,7 @@ def configure(neo4j: Any, pg_pool: Any, jwt_secret: str | None) -> None:  # noqa
 
 
 def _get_cached_summary(user_id: str, entity_type: str, entity_id: str) -> dict[str, Any] | None:
+    """Get from cache. Caller must hold _summary_cache_lock."""
     key = (user_id, entity_type, entity_id)
     entry = _summary_cache.get(key)
     if entry is None:
@@ -57,6 +60,7 @@ def _get_cached_summary(user_id: str, entity_type: str, entity_id: str) -> dict[
 
 
 def _set_cached_summary(user_id: str, entity_type: str, entity_id: str, data: dict[str, Any]) -> None:
+    """Write to cache. Caller must hold _summary_cache_lock."""
     key = (user_id, entity_type, entity_id)
     _summary_cache[key] = (time.monotonic(), data)
     _summary_cache.move_to_end(key)
@@ -106,10 +110,15 @@ async def label_gaps(
     if metadata is None:
         return JSONResponse(content={"error": "Label not found"}, status_code=404)
 
-    summary = _get_cached_summary(user_id, "label", label_id)
+    global _summary_cache_lock
+    if _summary_cache_lock is None:
+        _summary_cache_lock = asyncio.Lock()
+    async with _summary_cache_lock:
+        summary = _get_cached_summary(user_id, "label", label_id)
     if summary is None:
         summary = await get_label_gap_summary(_neo4j_driver, user_id, label_id)
-        _set_cached_summary(user_id, "label", label_id, summary)
+        async with _summary_cache_lock:
+            _set_cached_summary(user_id, "label", label_id, summary)
 
     results, total = await get_label_gaps(
         _neo4j_driver,
@@ -150,10 +159,15 @@ async def artist_gaps(
     if metadata is None:
         return JSONResponse(content={"error": "Artist not found"}, status_code=404)
 
-    summary = _get_cached_summary(user_id, "artist", artist_id)
+    global _summary_cache_lock
+    if _summary_cache_lock is None:
+        _summary_cache_lock = asyncio.Lock()
+    async with _summary_cache_lock:
+        summary = _get_cached_summary(user_id, "artist", artist_id)
     if summary is None:
         summary = await get_artist_gap_summary(_neo4j_driver, user_id, artist_id)
-        _set_cached_summary(user_id, "artist", artist_id, summary)
+        async with _summary_cache_lock:
+            _set_cached_summary(user_id, "artist", artist_id, summary)
 
     results, total = await get_artist_gaps(
         _neo4j_driver,
@@ -194,10 +208,15 @@ async def master_gaps(
     if metadata is None:
         return JSONResponse(content={"error": "Master not found"}, status_code=404)
 
-    summary = _get_cached_summary(user_id, "master", master_id)
+    global _summary_cache_lock
+    if _summary_cache_lock is None:
+        _summary_cache_lock = asyncio.Lock()
+    async with _summary_cache_lock:
+        summary = _get_cached_summary(user_id, "master", master_id)
     if summary is None:
         summary = await get_master_gap_summary(_neo4j_driver, user_id, master_id)
-        _set_cached_summary(user_id, "master", master_id, summary)
+        async with _summary_cache_lock:
+            _set_cached_summary(user_id, "master", master_id, summary)
 
     results, total = await get_master_gaps(
         _neo4j_driver,

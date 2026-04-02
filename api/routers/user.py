@@ -37,6 +37,7 @@ _neo4j_driver: Any = None
 _timeline_cache: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
 _TIMELINE_CACHE_MAX = 128
 _TIMELINE_CACHE_TTL = 300  # 5 minutes
+_timeline_cache_lock: asyncio.Lock | None = None  # lazy init to avoid binding to wrong event loop
 
 
 def configure(neo4j: Any, jwt_secret: str | None) -> None:  # noqa: ARG001
@@ -45,6 +46,7 @@ def configure(neo4j: Any, jwt_secret: str | None) -> None:  # noqa: ARG001
 
 
 def _get_cached(key: str) -> dict[str, Any] | None:
+    """Get from cache. Caller must hold _timeline_cache_lock."""
     entry = _timeline_cache.get(key)
     if entry is None:
         return None
@@ -57,6 +59,7 @@ def _get_cached(key: str) -> dict[str, Any] | None:
 
 
 def _set_cached(key: str, data: dict[str, Any]) -> None:
+    """Write to cache. Caller must hold _timeline_cache_lock."""
     _timeline_cache[key] = (time.monotonic(), data)
     _timeline_cache.move_to_end(key)
     while len(_timeline_cache) > _TIMELINE_CACHE_MAX:
@@ -171,12 +174,17 @@ async def user_collection_timeline(
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     user_id: str = current_user.get("sub", "")
+    global _timeline_cache_lock
+    if _timeline_cache_lock is None:
+        _timeline_cache_lock = asyncio.Lock()
     cache_key = f"timeline:{user_id}:{bucket}"
-    cached = _get_cached(cache_key)
+    async with _timeline_cache_lock:
+        cached = _get_cached(cache_key)
     if cached is not None:
         return JSONResponse(content=cached)
     result = await get_user_collection_timeline(_neo4j_driver, user_id, bucket)
-    _set_cached(cache_key, result)
+    async with _timeline_cache_lock:
+        _set_cached(cache_key, result)
     return JSONResponse(content=result)
 
 
@@ -188,12 +196,17 @@ async def user_collection_evolution(
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     user_id: str = current_user.get("sub", "")
+    global _timeline_cache_lock
+    if _timeline_cache_lock is None:
+        _timeline_cache_lock = asyncio.Lock()
     cache_key = f"evolution:{user_id}:{metric}"
-    cached = _get_cached(cache_key)
+    async with _timeline_cache_lock:
+        cached = _get_cached(cache_key)
     if cached is not None:
         return JSONResponse(content=cached)
     result = await get_user_collection_evolution(_neo4j_driver, user_id, metric)
-    _set_cached(cache_key, result)
+    async with _timeline_cache_lock:
+        _set_cached(cache_key, result)
     return JSONResponse(content=result)
 
 

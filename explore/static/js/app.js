@@ -85,6 +85,11 @@ class TimelineScrubber {
         this.speedToggle.addEventListener('click', () => {
             this.speed = this.speed === 'year' ? 'decade' : 'year';
             this.speedLabel.textContent = this.speed === 'year' ? '1yr/s' : '10yr/s';
+            // Restart playback with the new interval if currently playing
+            if (this.playing) {
+                this.pause();
+                this.play();
+            }
         });
 
         this.resetBtn.addEventListener('click', () => {

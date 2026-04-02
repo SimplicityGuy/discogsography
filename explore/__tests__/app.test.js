@@ -2321,6 +2321,25 @@ describe('TimelineScrubber event handlers', () => {
             expect(ts.speed).toBe('year');
             expect(ts.speedLabel.textContent).toBe('1yr/s');
         });
+
+        it('should restart playback when speed is toggled during play', () => {
+            vi.useFakeTimers();
+            const ts = new TimelineScrubber();
+            ts.minYear = 1950;
+            ts.maxYear = 2023;
+            ts.currentYear = 1990;
+
+            ts.play();
+            expect(ts.playing).toBe(true);
+            expect(ts.speed).toBe('year');
+
+            ts.speedToggle.click();
+            expect(ts.playing).toBe(true);
+            expect(ts.speed).toBe('decade');
+
+            ts.pause();
+            vi.useRealTimers();
+        });
     });
 
     describe('compare button clicks', () => {

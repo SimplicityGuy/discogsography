@@ -49,6 +49,7 @@ def configure(neo4j: Any, jwt_secret: str | None, redis: Any = None) -> None:  #
 
 _autocomplete_cache: OrderedDict[tuple[str, str, int], list[dict[str, Any]]] = OrderedDict()
 _AUTOCOMPLETE_CACHE_MAX = 512
+_autocomplete_lock: asyncio.Lock | None = None  # lazy init to avoid binding to wrong event loop
 
 # Genre tree cache — refreshed every 5 minutes since the tree changes rarely
 _genre_tree_cache: dict | None = None
@@ -104,17 +105,22 @@ async def autocomplete(
     entity_type = type.lower()
     if entity_type not in AUTOCOMPLETE_DISPATCH:
         return JSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
+    global _autocomplete_lock
+    if _autocomplete_lock is None:
+        _autocomplete_lock = asyncio.Lock()
     cache_key = _get_cache_key(q, entity_type, limit)
-    if cache_key in _autocomplete_cache:
-        _autocomplete_cache.move_to_end(cache_key)
-        return JSONResponse(content={"results": _autocomplete_cache[cache_key]})
+    async with _autocomplete_lock:
+        if cache_key in _autocomplete_cache:
+            _autocomplete_cache.move_to_end(cache_key)
+            return JSONResponse(content={"results": _autocomplete_cache[cache_key]})
     query_func = AUTOCOMPLETE_DISPATCH[entity_type]
     results = await query_func(_neo4j_driver, q, limit)
-    if len(_autocomplete_cache) >= _AUTOCOMPLETE_CACHE_MAX:
-        evict_count = _AUTOCOMPLETE_CACHE_MAX // 4
-        for _ in range(evict_count):
-            _autocomplete_cache.popitem(last=False)
-    _autocomplete_cache[cache_key] = results
+    async with _autocomplete_lock:
+        if len(_autocomplete_cache) >= _AUTOCOMPLETE_CACHE_MAX:
+            evict_count = _AUTOCOMPLETE_CACHE_MAX // 4
+            for _ in range(evict_count):
+                _autocomplete_cache.popitem(last=False)
+        _autocomplete_cache[cache_key] = results
     return JSONResponse(content={"results": results})
 
 

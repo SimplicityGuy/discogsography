@@ -32,6 +32,13 @@ _VALID_ENTITY_TYPES = frozenset({"artist", "genre", "label", "style"})
 _VALID_SEARCH_TYPES = frozenset({"artist", "label", "master", "release"})
 
 
+def _validate_numeric_id(value: str, name: str) -> dict[str, Any] | None:
+    """Validate that an ID is numeric. Returns an error dict if invalid, None if OK."""
+    if not value.isdigit():
+        return {"error": f"Invalid {name}: must be a numeric string (got {value!r})"}
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Lifespan: manage HTTP client
 # ---------------------------------------------------------------------------
@@ -172,6 +179,8 @@ async def get_artist_details(
         artist_id: The Discogs artist ID (numeric string).
     """
     app = _ctx(ctx)
+    if err := _validate_numeric_id(artist_id, "artist_id"):
+        return err
     return await _api_get(app, f"/api/node/{artist_id}", {"type": "artist"})
 
 
@@ -189,6 +198,8 @@ async def get_label_details(
         label_id: The Discogs label ID (numeric string).
     """
     app = _ctx(ctx)
+    if err := _validate_numeric_id(label_id, "label_id"):
+        return err
     return await _api_get(app, f"/api/node/{label_id}", {"type": "label"})
 
 
@@ -206,6 +217,8 @@ async def get_release_details(
         release_id: The Discogs release ID (numeric string).
     """
     app = _ctx(ctx)
+    if err := _validate_numeric_id(release_id, "release_id"):
+        return err
     return await _api_get(app, f"/api/node/{release_id}", {"type": "release"})
 
 
@@ -362,6 +375,8 @@ async def get_collaborators(
         limit: Maximum collaborators to return (1-100, default 20).
     """
     app = _ctx(ctx)
+    if err := _validate_numeric_id(artist_id, "artist_id"):
+        return err
     return await _api_get(
         app,
         f"/api/collaborators/{artist_id}",

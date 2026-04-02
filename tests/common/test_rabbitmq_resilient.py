@@ -496,21 +496,20 @@ class TestAsyncResilientRabbitMQAdditionalCoverage:
     async def test_connect_double_check_under_lock_returns_existing(
         self, mock_connect_robust: AsyncMock, connection_url: str, mock_async_connection: AsyncMock
     ) -> None:
-        """Test that connect() returns existing connection under lock (line 154).
+        """Test that connect() returns existing connection under lock.
 
         When two tasks race to connect, the second one should find the connection
         already established under the lock and return it without calling connect_robust again.
+        The check is performed under the lock (no fast-path) to prevent race conditions.
         """
         mock_connect_robust.return_value = mock_async_connection
 
         conn = AsyncResilientRabbitMQ(connection_url=connection_url)
 
-        # Simulate the scenario: fast-path check sees is_closed=True (so it enters the loop),
-        # but under the lock, is_closed=False (another task connected in the meantime).
+        # Simulate the scenario: under the lock, is_closed=False
+        # (another task connected in the meantime).
         mock_reconnecting = AsyncMock()
-        # PropertyMock on the type so is_closed returns True first, then False
-        is_closed_mock = Mock(side_effect=[True, False])
-        type(mock_reconnecting).is_closed = property(lambda self: is_closed_mock())  # noqa: ARG005
+        type(mock_reconnecting).is_closed = property(lambda self: False)  # noqa: ARG005
 
         conn._connection = mock_reconnecting
 

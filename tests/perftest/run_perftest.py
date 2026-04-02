@@ -31,6 +31,7 @@ def list_neo4j_indexes(config: dict[str, Any]) -> list[str]:
     uri = config.get("neo4j_uri")
     if not uri:
         return ["  (neo4j_uri not configured — skipped)"]
+    driver = None
     try:
         from neo4j import GraphDatabase
 
@@ -47,10 +48,12 @@ def list_neo4j_indexes(config: dict[str, Any]) -> list[str]:
                 labels = ", ".join(record["labelsOrTypes"] or [])
                 props = ", ".join(record["properties"] or [])
                 lines.append(f"  {record['name']:<40} {record['type']:<12} {record['entityType']:<8} {labels:<25} {props:<30} {record['state']:<8}")
-        driver.close()
         return lines if len(lines) > 2 else ["  (no indexes found)"]
     except Exception as exc:
         return [f"  (failed to connect: {exc})"]
+    finally:
+        if driver:
+            driver.close()
 
 
 def list_postgres_indexes(config: dict[str, Any]) -> list[str]:
@@ -58,6 +61,7 @@ def list_postgres_indexes(config: dict[str, Any]) -> list[str]:
     url = config.get("postgres_url")
     if not url:
         return ["  (postgres_url not configured — skipped)"]
+    conn = None
     try:
         import psycopg2
 
@@ -66,19 +70,21 @@ def list_postgres_indexes(config: dict[str, Any]) -> list[str]:
         cur.execute("""
             SELECT schemaname, tablename, indexname, indexdef
             FROM pg_indexes
-            WHERE schemaname = 'public'
-            ORDER BY tablename, indexname
+            WHERE schemaname IN ('public', 'musicbrainz')
+            ORDER BY schemaname, tablename, indexname
         """)
         lines = []
-        lines.append(f"  {'Table':<30} {'Index Name':<40} {'Definition'}")
-        lines.append(f"  {'-' * 120}")
+        lines.append(f"  {'Schema':<15} {'Table':<30} {'Index Name':<40} {'Definition'}")
+        lines.append(f"  {'-' * 135}")
         for row in cur.fetchall():
-            lines.append(f"  {row[1]:<30} {row[2]:<40} {row[3]}")
+            lines.append(f"  {row[0]:<15} {row[1]:<30} {row[2]:<40} {row[3]}")
         cur.close()
-        conn.close()
         return lines if len(lines) > 2 else ["  (no indexes found)"]
     except Exception as exc:
         return [f"  (failed to connect: {exc})"]
+    finally:
+        if conn:
+            conn.close()
 
 
 # ---------------------------------------------------------------------------

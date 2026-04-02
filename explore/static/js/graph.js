@@ -592,9 +592,10 @@ class GraphVisualization {
             this.simulation.stop();
             this.simulation = null;
         }
-        if (this._resizeHandler) {
-            window.removeEventListener('resize', this._resizeHandler);
-        }
+        // Keep the resize handler registered — it is only set up once in the
+        // constructor, and subsequent setExploreData / restoreSnapshot calls
+        // do not re-register it.  Removing it here would leave the graph
+        // unresponsive to window resizes after a clear() + reload cycle.
         this.placeholder.classList.remove('hidden');
     }
 

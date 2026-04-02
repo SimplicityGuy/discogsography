@@ -136,6 +136,7 @@ class DashboardApp:
         """Initialize the dashboard application."""
         self.config = get_config()
         self.websocket_connections: set[WebSocket] = set()
+        self._ws_lock: asyncio.Lock | None = None  # lazy init to avoid binding to wrong event loop
         self.latest_metrics: SystemMetrics | None = None
         self.rabbitmq: AsyncResilientRabbitMQ | None = None
         self.neo4j_driver: AsyncResilientNeo4jDriver | None = None
@@ -460,16 +461,19 @@ class DashboardApp:
             }
         ).decode()
 
-        disconnected = set()
-        for websocket in list(self.websocket_connections):
-            try:
-                await websocket.send_text(message)
-            except Exception:
-                disconnected.add(websocket)
+        if self._ws_lock is None:
+            self._ws_lock = asyncio.Lock()
+        async with self._ws_lock:
+            disconnected = set()
+            for websocket in list(self.websocket_connections):
+                try:
+                    await websocket.send_text(message)
+                except Exception:
+                    disconnected.add(websocket)
 
-        # Remove disconnected websockets
-        self.websocket_connections -= disconnected
-        WEBSOCKET_CONNECTIONS.set(len(self.websocket_connections))
+            # Remove disconnected websockets
+            self.websocket_connections -= disconnected
+            WEBSOCKET_CONNECTIONS.set(len(self.websocket_connections))
 
 
 # Create the dashboard app instance
@@ -589,8 +593,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates."""
     await websocket.accept()
     if dashboard:
-        dashboard.websocket_connections.add(websocket)
-        WEBSOCKET_CONNECTIONS.set(len(dashboard.websocket_connections))
+        if dashboard._ws_lock is None:
+            dashboard._ws_lock = asyncio.Lock()
+        async with dashboard._ws_lock:
+            dashboard.websocket_connections.add(websocket)
+            WEBSOCKET_CONNECTIONS.set(len(dashboard.websocket_connections))
 
     try:
         # Send initial metrics
@@ -609,14 +616,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             await websocket.receive_text()
 
     except WebSocketDisconnect:
-        if dashboard:
-            dashboard.websocket_connections.discard(websocket)
-            WEBSOCKET_CONNECTIONS.set(len(dashboard.websocket_connections))
+        if dashboard and dashboard._ws_lock:
+            async with dashboard._ws_lock:
+                dashboard.websocket_connections.discard(websocket)
+                WEBSOCKET_CONNECTIONS.set(len(dashboard.websocket_connections))
     except Exception as e:
         logger.error(f"❌ WebSocket error: {e}")
-        if dashboard:
-            dashboard.websocket_connections.discard(websocket)
-            WEBSOCKET_CONNECTIONS.set(len(dashboard.websocket_connections))
+        if dashboard and dashboard._ws_lock:
+            async with dashboard._ws_lock:
+                dashboard.websocket_connections.discard(websocket)
+                WEBSOCKET_CONNECTIONS.set(len(dashboard.websocket_connections))
 
 
 # Admin proxy routes (must be before StaticFiles catch-all)
@@ -632,7 +641,11 @@ app.include_router(admin_router)
 async def serve_admin() -> HTMLResponse:
     """Serve admin page directly to avoid StaticFiles routing issues."""
     admin_path = Path(__file__).parent / "static" / "admin.html"
-    return HTMLResponse(admin_path.read_text())
+    try:
+        content = admin_path.read_text()
+    except FileNotFoundError:
+        return HTMLResponse("<h1>Admin page not found</h1>", status_code=404)
+    return HTMLResponse(content)
 
 
 # Mount static files for the UI

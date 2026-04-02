@@ -145,7 +145,7 @@ class TestProcessArtist:
             "external_links": [
                 {
                     "url": "https://example.com/artist",
-                    "type": "official homepage",
+                    "service": "official homepage",
                 }
             ],
         }
@@ -257,7 +257,7 @@ class TestProcessReleaseGroup:
             "external_links": [
                 {
                     "url": "https://example.com/release-group",
-                    "type": "discogs",
+                    "service": "discogs",
                 }
             ],
         }
@@ -335,6 +335,32 @@ class TestInsertRelationship:
         # Missing target_mbid should be skipped
         mock_cursor.execute.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_insert_relationship_no_target_type_skips(self):
+        """Missing target_type is skipped."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        rel = {
+            "target_mbid": "target-mbid-1",
+            "type": "member of band",
+        }
+
+        await _insert_relationship(mock_conn, "source-mbid-1", "artist", rel)
+
+        mock_cursor.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_insert_relationship_no_type_skips(self):
+        """Missing relationship type is skipped."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        rel = {
+            "target_mbid": "target-mbid-1",
+            "target_type": "artist",
+        }
+
+        await _insert_relationship(mock_conn, "source-mbid-1", "artist", rel)
+
+        mock_cursor.execute.assert_not_called()
+
 
 class TestInsertExternalLink:
     """Tests for _insert_external_link."""
@@ -357,7 +383,7 @@ class TestInsertExternalLink:
 
     @pytest.mark.asyncio
     async def test_insert_external_link_no_service_skips(self):
-        """Empty service still inserts (with empty string default)."""
+        """Empty service/url skips the insert entirely."""
         mock_conn, mock_cursor = _make_mock_conn()
         link = {
             "url": "",
@@ -366,10 +392,8 @@ class TestInsertExternalLink:
 
         await _insert_external_link(mock_conn, "mbid-1", "artist", link)
 
-        # The function inserts with empty strings - it does not skip
-        mock_cursor.execute.assert_called_once()
-        params = mock_cursor.execute.call_args[0][1]
-        assert params[2] == ""  # url is empty string
+        # Links with empty url or service are skipped
+        mock_cursor.execute.assert_not_called()
 
 
 # ===========================================================================
@@ -1993,7 +2017,7 @@ class TestProcessLabelRelationshipsAndLinks:
             "name": "Test Label",
             "mb_type": "Original Production",
             "relations": [
-                {"target_mbid": "target-1", "type": "member", "direction": "forward"},
+                {"target_mbid": "target-1", "target_type": "label", "type": "member", "direction": "forward"},
             ],
         }
 
@@ -2013,7 +2037,7 @@ class TestProcessLabelRelationshipsAndLinks:
             "name": "Test Label",
             "mb_type": "Original Production",
             "external_links": [
-                {"url": "https://example.com", "type": "official"},
+                {"url": "https://example.com", "service": "official"},
             ],
         }
 
@@ -2032,7 +2056,7 @@ class TestProcessLabelRelationshipsAndLinks:
             "name": "Test Album",
             "status": "Official",
             "relations": [
-                {"target_mbid": "target-1", "type": "part of", "direction": "forward"},
+                {"target_mbid": "target-1", "target_type": "release_group", "type": "part of", "direction": "forward"},
             ],
         }
 
@@ -2051,7 +2075,7 @@ class TestProcessLabelRelationshipsAndLinks:
             "name": "Test Album",
             "status": "Official",
             "external_links": [
-                {"url": "https://example.com/release", "type": "streaming"},
+                {"url": "https://example.com/release", "service": "streaming"},
             ],
         }
 

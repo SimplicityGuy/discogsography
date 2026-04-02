@@ -130,6 +130,18 @@ class TestGetArtistDetails:
 
         assert "error" in result
 
+    @pytest.mark.asyncio
+    async def test_rejects_non_numeric_id(self, mock_context, app_ctx):
+        from mcp_server.server import get_artist_details
+
+        app_ctx.client.get = AsyncMock()
+
+        result = await get_artist_details(artist_id="../../admin", ctx=mock_context)
+
+        assert "error" in result
+        assert "must be a numeric string" in result["error"]
+        app_ctx.client.get.assert_not_called()
+
 
 class TestGetLabelDetails:
     @pytest.mark.asyncio
@@ -152,6 +164,18 @@ class TestGetLabelDetails:
         result = await get_label_details(label_id="999", ctx=mock_context)
 
         assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_rejects_non_numeric_id(self, mock_context, app_ctx):
+        from mcp_server.server import get_label_details
+
+        app_ctx.client.get = AsyncMock()
+
+        result = await get_label_details(label_id="abc", ctx=mock_context)
+
+        assert "error" in result
+        assert "must be a numeric string" in result["error"]
+        app_ctx.client.get.assert_not_called()
 
 
 class TestGetReleaseDetails:
@@ -184,6 +208,18 @@ class TestGetReleaseDetails:
         result = await get_release_details(release_id="999", ctx=mock_context)
 
         assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_rejects_non_numeric_id(self, mock_context, app_ctx):
+        from mcp_server.server import get_release_details
+
+        app_ctx.client.get = AsyncMock()
+
+        result = await get_release_details(release_id="abc", ctx=mock_context)
+
+        assert "error" in result
+        assert "must be a numeric string" in result["error"]
+        app_ctx.client.get.assert_not_called()
 
 
 class TestGetGenreDetails:
@@ -413,6 +449,18 @@ class TestGetCollaborators:
 
         call_params = app_ctx.client.get.call_args.kwargs["params"]
         assert call_params["limit"] == 100
+
+    @pytest.mark.asyncio
+    async def test_rejects_non_numeric_id(self, mock_context, app_ctx):
+        from mcp_server.server import get_collaborators
+
+        app_ctx.client.get = AsyncMock()
+
+        result = await get_collaborators(artist_id="../../admin", ctx=mock_context)
+
+        assert "error" in result
+        assert "must be a numeric string" in result["error"]
+        app_ctx.client.get.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
