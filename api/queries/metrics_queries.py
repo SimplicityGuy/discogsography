@@ -112,7 +112,7 @@ async def get_queue_history(pool: Any, range_value: str) -> dict[str, Any]:
             "deliver_rate": _round_or_int(row["deliver_rate"], is_raw=is_raw),
         }
 
-        target = dlq_summary if name.endswith("-dlq") else queues
+        target = dlq_summary if name.endswith(".dlq") else queues
         if name not in target:
             target[name] = {"history": [], "current": {}}
         target[name]["history"].append(point)

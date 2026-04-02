@@ -98,6 +98,19 @@ class TestOnArtistMessage:
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_nack_message_missing_id_field(self) -> None:
+        """Test that messages without 'id' are nacked with requeue=False."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"name": "No ID Artist"}).encode()
+
+        with patch("graphinator.graphinator.graph", MagicMock()):
+            await on_artist_message(mock_message)
+
+        mock_message.nack.assert_called_once_with(requeue=False)
+        mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
     async def test_handle_processing_error(self, sample_artist_data: dict[str, Any]) -> None:
         """Test error handling during processing."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)

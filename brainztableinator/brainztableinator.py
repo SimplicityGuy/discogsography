@@ -469,7 +469,7 @@ async def _insert_external_link(
             "INSERT INTO musicbrainz.external_links "
             "(mbid, entity_type, url, service_name) "
             "VALUES (%s, %s, %s, %s) "
-            "ON CONFLICT (mbid, entity_type, service_name) DO UPDATE SET url = EXCLUDED.url",
+            "ON CONFLICT (mbid, entity_type, service_name, url) DO UPDATE SET url = EXCLUDED.url",
             (
                 mbid,
                 entity_type,

@@ -7,7 +7,7 @@ from typing import Any
 
 import pika
 
-from common.config import get_secret
+from common.config import AMQP_QUEUE_PREFIX_GRAPHINATOR, get_secret
 
 
 def get_message_from_queue(
@@ -141,7 +141,7 @@ def main() -> None:
         print(f"Invalid queue type: {queue_type}")
         sys.exit(1)
 
-    queue_name = f"discogsography-discogs-graphinator-{queue_type}"
+    queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{queue_type}"
 
     print(f"🔍 Debugging Queue: {queue_name}")
 

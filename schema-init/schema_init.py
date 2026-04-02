@@ -40,7 +40,7 @@ NEO4J_USERNAME = os.environ.get("NEO4J_USERNAME", "neo4j")
 NEO4J_PASSWORD = get_secret("NEO4J_PASSWORD", "discogsography")
 
 POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "localhost")
-POSTGRES_USERNAME = os.environ.get("POSTGRES_USERNAME", "discogsography")
+POSTGRES_USERNAME = get_secret("POSTGRES_USERNAME", "discogsography")
 POSTGRES_PASSWORD = get_secret("POSTGRES_PASSWORD", "discogsography")
 POSTGRES_DATABASE = os.environ.get("POSTGRES_DATABASE", "discogsography")
 

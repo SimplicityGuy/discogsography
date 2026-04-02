@@ -353,7 +353,7 @@ class TestInsertExternalLink:
         mock_cursor.execute.assert_called_once()
         sql = mock_cursor.execute.call_args[0][0]
         assert "INSERT INTO musicbrainz.external_links" in sql
-        assert "ON CONFLICT (mbid, entity_type, service_name) DO UPDATE SET url = EXCLUDED.url" in sql
+        assert "ON CONFLICT (mbid, entity_type, service_name, url) DO UPDATE SET url = EXCLUDED.url" in sql
 
     @pytest.mark.asyncio
     async def test_insert_external_link_no_service_skips(self):

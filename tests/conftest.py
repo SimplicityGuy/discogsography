@@ -179,6 +179,9 @@ def reset_global_state() -> Iterator[None]:
         graphinator.graphinator.current_task = None
         graphinator.graphinator.current_progress = 0.0
         graphinator.graphinator.consumer_tags = {}
+        graphinator.graphinator.completed_files = set()
+        graphinator.graphinator.queues = {}
+        graphinator.graphinator.idle_mode = False
     except (ImportError, AttributeError):
         pass
 
@@ -205,6 +208,9 @@ def reset_global_state() -> Iterator[None]:
             "releases": 0.0,
         }
         tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.queues = {}
+        tableinator.tableinator.idle_mode = False
     except (ImportError, AttributeError):
         pass
 
@@ -239,6 +245,9 @@ def reset_global_state() -> Iterator[None]:
         graphinator.graphinator.current_task = None
         graphinator.graphinator.current_progress = 0.0
         graphinator.graphinator.consumer_tags = {}
+        graphinator.graphinator.completed_files = set()
+        graphinator.graphinator.queues = {}
+        graphinator.graphinator.idle_mode = False
     except (ImportError, AttributeError):
         pass
 
@@ -264,6 +273,9 @@ def reset_global_state() -> Iterator[None]:
             "releases": 0.0,
         }
         tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.queues = {}
+        tableinator.tableinator.idle_mode = False
     except (ImportError, AttributeError):
         pass
 

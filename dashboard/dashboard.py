@@ -403,10 +403,9 @@ class DashboardApp:
             )
         finally:
             # The resilient connection manages the single connection internally;
-            # do NOT close it here — just ensure any in-progress transaction is rolled back.
-            if conn is not None:
-                with contextlib.suppress(Exception):
-                    await conn.rollback()
+            # do NOT close it here.  Autocommit is always True on pool connections,
+            # so rollback() is a no-op — omit it per the autocommit contract.
+            pass
 
         # Check Neo4j
         try:
