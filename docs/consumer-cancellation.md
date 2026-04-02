@@ -46,7 +46,7 @@ sequenceDiagram
 
 ### Process Steps
 
-1. When the Python/Rust extractor sends a "file_complete" message, both tableinator and graphinator:
+1. When the Python/Rust extractor sends a "file_complete" message, all consumers (graphinator, tableinator, brainzgraphinator, brainztableinator):
 
    - Mark the file as complete (shows 🎉 in progress reports)
    - Schedule the consumer for that queue to be canceled after a grace period
@@ -153,7 +153,7 @@ and their consumers have been canceled.
 
 ### Extraction Completion Signal (March 2026)
 
-After all files finish, the extractor sends an `extraction_complete` message to all 4 fanout exchanges. Consumers use this signal to:
+After all files finish, the extractor sends an `extraction_complete` message to all fanout exchanges for the active source. Consumers use this signal to:
 
 - **Flush remaining batches** before cleanup
 - **Graphinator**: Delete stub Neo4j nodes (no `sha256` property) created by cross-type MERGE operations

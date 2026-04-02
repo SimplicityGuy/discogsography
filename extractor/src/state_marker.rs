@@ -267,6 +267,7 @@ impl StateMarker {
         self.download_phase.files_total = files_total;
         self.download_phase.files_downloaded = 0;
         self.download_phase.bytes_downloaded = 0;
+        self.download_phase.downloads_by_file.clear();
     }
 
     /// Mark a file download as started

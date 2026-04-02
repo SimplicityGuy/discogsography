@@ -52,14 +52,14 @@ When a file finishes processing:
 
 1. **Extractor** adds the data type to `completed_files` set
 
-1. **Consumers** (graphinator/tableinator) receive the message and:
+1. **Consumers** (graphinator, tableinator, brainzgraphinator, brainztableinator) receive the message and:
 
    - Mark the file as complete (🎉 in logs)
    - Schedule consumer cancellation after grace period
 
 ### 2a. Extraction Completion
 
-After **all** files finish processing, the extractor sends an `extraction_complete` message to all 4 fanout exchanges:
+After **all** files finish processing, the extractor sends an `extraction_complete` message to all 4 fanout exchanges for the active source (Discogs or MusicBrainz):
 
 1. **Extractor** builds an `extraction_complete` message with:
 
@@ -165,7 +165,7 @@ Test the feature:
 docker-compose up -d
 
 # Watch logs for completion tracking
-docker-compose logs -f extractor | grep -E "(Completed file types|Stalled extractors)"
+docker-compose logs -f extractor-discogs extractor-musicbrainz | grep -E "(Completed file types|Stalled extractors)"
 
 # Force a quick test with small files
 # Files will complete quickly and should not show as stalled

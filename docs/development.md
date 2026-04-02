@@ -389,7 +389,7 @@ See [Testing Guide](testing-guide.md) for comprehensive testing documentation.
 
 **Follow PEP 8** with these tools:
 
-- **ruff**: Linting and formatting (replaces flake8, isort, pyupgrade, black — 88 character line length)
+- **ruff**: Linting and formatting (replaces flake8, isort, pyupgrade, black — 150 character line length)
 - **mypy**: Static type checking
 
 ```bash

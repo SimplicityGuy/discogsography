@@ -95,7 +95,7 @@ docker run -e LOG_LEVEL=DEBUG discogsography/service:latest
 
 #### Python Services
 
-All Python services (graphinator, tableinator, dashboard, explore) use **[structlog](https://www.structlog.org/)** configured via `setup_logging()` from `common/config.py`. Use `structlog.get_logger()` — **not** `logging.getLogger()`:
+All Python services (api, brainzgraphinator, brainztableinator, common, dashboard, explore, graphinator, insights, mcp-server, schema-init, tableinator) use **[structlog](https://www.structlog.org/)** configured via `setup_logging()` from `common/config.py`. Use `structlog.get_logger()` — **not** `logging.getLogger()`:
 
 ```python
 import structlog

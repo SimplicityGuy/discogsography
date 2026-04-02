@@ -57,7 +57,7 @@ graph TD
     SCHEMA[["🔧 Schema-Init<br/>One-Shot DB<br/>Schema Initialiser"]]
     EXT_D[["⚡ Extractor<br/>--source discogs<br/>XML Processing"]]
     EXT_MB[["⚡ Extractor<br/>--source musicbrainz<br/>JSONL Processing"]]
-    RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>7 Fanout Exchanges"}}
+    RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>8 Fanout Exchanges"}}
     NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
     PG[("🐘 PostgreSQL 18<br/>Analytics DB<br/>Full-text Search")]
     GRAPH[["🔗 Graphinator<br/>Graph Builder"]]
@@ -70,11 +70,11 @@ graph TD
     S3 -->|1a. Download & Parse XML| EXT_D
     MB -->|1b. Parse JSONL| EXT_MB
     EXT_D -->|2a. 4 Discogs exchanges| RMQ
-    EXT_MB -->|2b. 3 MB exchanges| RMQ
+    EXT_MB -->|2b. 4 MB exchanges| RMQ
     RMQ -->|3a. Artists/Labels/Releases/Masters| GRAPH
     RMQ -->|3b. Artists/Labels/Releases/Masters| TABLE
-    RMQ -->|3c. MB Artists/Labels/Releases| BGRAPH
-    RMQ -->|3d. MB Artists/Labels/Releases| BTABLE
+    RMQ -->|3c. MB Artists/Labels/Release-Groups/Releases| BGRAPH
+    RMQ -->|3d. MB Artists/Labels/Release-Groups/Releases| BTABLE
     GRAPH -->|4a. Build Graph| NEO4J
     TABLE -->|4b. Store Data| PG
     BGRAPH -->|4c. Enrich Nodes| NEO4J
@@ -216,7 +216,7 @@ graph LR
 
 ### 2. Message Distribution Phase
 
-**RabbitMQ Fanout Exchanges** (7 total, one per data type per source, decoupled from consumers):
+**RabbitMQ Fanout Exchanges** (8 total, one per data type per source, decoupled from consumers):
 
 **Discogs exchanges** (4):
 
@@ -274,7 +274,7 @@ See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extrac
 
 **Brainzgraphinator** (Neo4j enrichment):
 
-- Consumes messages from 3 MusicBrainz queues (artists, labels, releases)
+- Consumes messages from 4 MusicBrainz queues (artists, labels, release-groups, releases)
 - Enriches existing Discogs nodes with `mb_`-prefixed properties (type, gender, dates, area, disambiguation)
 - Creates 8 new relationship edge types between Discogs-matched entities (COLLABORATED_WITH, TAUGHT, TRIBUTE_TO, FOUNDED, SUPPORTED, SUBGROUP_OF, RENAMED_TO, enriched MEMBER_OF)
 - All MB-sourced edges carry `source: 'musicbrainz'` for provenance tracking
@@ -283,7 +283,7 @@ See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extrac
 
 **Brainztableinator** (PostgreSQL):
 
-- Consumes messages from 3 MusicBrainz queues (artists, labels, releases)
+- Consumes messages from 4 MusicBrainz queues (artists, labels, release-groups, releases)
 - Stores **all** MusicBrainz entities in the `musicbrainz` PostgreSQL schema — including entities without Discogs matches
 - Records artist-to-artist relationships (collaborations, band membership, etc.)
 - Stores external links (Wikipedia, Wikidata, AllMusic, Last.fm, IMDb)
@@ -355,7 +355,7 @@ See [MusicBrainz Sync Guide](musicbrainz-sync.md) for operational instructions.
 **Responsibilities**:
 
 - **Discogs mode** (`--source discogs`): Download XML dumps from S3, parse, deduplicate, publish to 4 fanout exchanges
-- **MusicBrainz mode** (`--source musicbrainz`): Parse JSONL dumps, extract Discogs IDs, publish to 3 fanout exchanges
+- **MusicBrainz mode** (`--source musicbrainz`): Parse JSONL dumps, extract Discogs IDs, publish to 4 fanout exchanges
 - Validate checksums and metadata
 - Track progress via version-specific state markers
 
@@ -693,18 +693,21 @@ graph LR
         subgraph MB Fanout Exchanges
             MAQ[discogsography-musicbrainz-artists]
             MLQ[discogsography-musicbrainz-labels]
+            MRGQ[discogsography-musicbrainz-release-groups]
             MRQ[discogsography-musicbrainz-releases]
         end
 
         subgraph Brainzgraphinator Queues
             BGA[brainzgraphinator-artists]
             BGL[brainzgraphinator-labels]
+            BGRG[brainzgraphinator-release-groups]
             BGR[brainzgraphinator-releases]
         end
 
         subgraph Brainztableinator Queues
             BTA[brainztableinator-artists]
             BTL[brainztableinator-labels]
+            BTRG[brainztableinator-release-groups]
             BTR[brainztableinator-releases]
         end
     end
@@ -714,14 +717,15 @@ graph LR
         BTABLE[Brainztableinator]
     end
 
-    EXT_MB --> MAQ & MLQ & MRQ
+    EXT_MB --> MAQ & MLQ & MRGQ & MRQ
 
     MAQ --> BGA & BTA
     MLQ --> BGL & BTL
+    MRGQ --> BGRG & BTRG
     MRQ --> BGR & BTR
 
-    BGA & BGL & BGR --> BGRAPH
-    BTA & BTL & BTR --> BTABLE
+    BGA & BGL & BGRG & BGR --> BGRAPH
+    BTA & BTL & BTRG & BTR --> BTABLE
 
     style EXT_MB fill:#ffccbc,stroke:#d84315
     style BGRAPH fill:#f3e5f5,stroke:#4a148c

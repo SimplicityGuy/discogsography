@@ -36,7 +36,7 @@ df -h /discogs-data
 ls -la /discogs-data
 
 # View extractor logs
-docker-compose logs -f extractor
+docker-compose logs -f extractor-discogs extractor-musicbrainz
 ```
 
 **Solutions**:
@@ -383,6 +383,9 @@ curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
 curl http://localhost:8005/health  # API (health check port)
+curl http://localhost:8009/health  # Insights
+curl http://localhost:8010/health  # Brainztableinator
+curl http://localhost:8011/health  # Brainzgraphinator
 # Note: Explore ports (8006/8007) are not exposed in Docker Compose
 ```
 
@@ -526,7 +529,7 @@ SELECT 'masters', COUNT(*) FROM masters;
 ### Neo4j Schema Warnings
 
 **Symptoms**:
-You see warning messages in the Explore or Graphinator service logs like:
+You see warning messages in the Graphinator service logs like:
 
 ```json
 {"event":"Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownRelationshipTypeWarning} ...","level":"warning",...}
@@ -562,8 +565,8 @@ logging.getLogger("neo4j").setLevel(logging.ERROR)
 Run the extractor and graphinator to load data:
 
 ```bash
-docker-compose up -d extractor
-docker-compose logs -f extractor
+docker-compose up -d extractor-discogs
+docker-compose logs -f extractor-discogs
 
 docker-compose up -d graphinator
 docker-compose logs -f graphinator
@@ -631,10 +634,10 @@ docker-compose restart dashboard
 curl -I https://discogs-data-dumps.s3.us-west-2.amazonaws.com
 
 # Restart extractor
-docker-compose restart extractor  # or extractor
+docker-compose restart extractor-discogs  # or extractor-musicbrainz
 
 # Check logs
-docker-compose logs -f extractor
+docker-compose logs -f extractor-discogs extractor-musicbrainz
 ```
 
 #### Slow Download Speed

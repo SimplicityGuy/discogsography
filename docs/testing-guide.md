@@ -669,7 +669,7 @@ open htmlcov/index.html
 ```toml
 # pyproject.toml
 [tool.coverage.run]
-source = ["common", "dashboard", "explore", "graphinator", "schema-init", "tableinator"]
+source = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator"]
 omit = ["*/tests/*", "*/__pycache__/*", "*/static/*"]
 
 [tool.coverage.report]

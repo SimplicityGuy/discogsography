@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check RabbitMQ queue status for graphinator."""
+"""Check RabbitMQ queue status for all consumer services."""
 
 import os
 
@@ -9,7 +9,7 @@ from common.config import get_secret
 
 
 def check_rabbitmq_queues() -> None:
-    """Check the status of graphinator queues in RabbitMQ."""
+    """Check the status of all consumer queues in RabbitMQ."""
     base_url = os.environ.get("RABBITMQ_URL", "http://localhost:15672")
     url = f"{base_url}/api/queues"
     username = os.environ.get("RABBITMQ_USERNAME", "discogsography")
@@ -20,17 +20,18 @@ def check_rabbitmq_queues() -> None:
         response.raise_for_status()
         data = response.json()
 
-        # Filter for graphinator queues
-        graphinator_queues = [q for q in data if "graphinator" in q.get("name", "")]
+        # Filter for all consumer queues (graphinator, tableinator, brainzgraphinator, brainztableinator)
+        consumer_keywords = ("graphinator", "tableinator")
+        consumer_queues = [q for q in data if any(kw in q.get("name", "") for kw in consumer_keywords)]
 
-        if not graphinator_queues:
-            print("No graphinator queues found!")
+        if not consumer_queues:
+            print("No consumer queues found!")
             return
 
-        print("Graphinator Queue Status:")
+        print("Consumer Queue Status:")
         print("=" * 80)
 
-        for queue in graphinator_queues:
+        for queue in consumer_queues:
             name = queue.get("name", "Unknown")
             messages = queue.get("messages", 0)
             messages_ready = queue.get("messages_ready", 0)

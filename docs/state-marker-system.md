@@ -256,11 +256,12 @@ State markers are stored in the respective data root directories:
 /musicbrainz-data/
 ├── artist.jsonl.xz
 ├── label.jsonl.xz
+├── release-group.jsonl.xz
 ├── release.jsonl.xz
 └── .mb_extraction_status_20260326.json # MusicBrainz state marker
 ```
 
-MusicBrainz state markers use the `.mb_extraction_status_{version}.json` naming convention to distinguish from Discogs markers. They follow the same internal structure and status values as Discogs markers, but track 3 data types (artists, labels, releases) instead of 4 (no masters).
+MusicBrainz state markers use the `.mb_extraction_status_{version}.json` naming convention to distinguish from Discogs markers. They follow the same internal structure and status values as Discogs markers, but track 4 data types (artists, labels, release-groups, releases) instead of 4 (no masters).
 
 ## Version-Specific Tracking
 

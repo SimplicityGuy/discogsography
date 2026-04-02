@@ -122,7 +122,7 @@ git checkout -b fix/bug-description
 - Use **type hints** for all function parameters and returns
 - Write **docstrings** for public functions and classes
 - Follow **PEP 8** style guide (enforced by ruff)
-- Use **88-character line length** (Black standard)
+- Use **150-character line length** (Ruff formatter)
 - Add **emoji-prefixed logging** (see [Emoji Guide](emoji-guide.md))
 
 #### Testing

@@ -103,6 +103,14 @@ async def require_admin(
         revoked = await _redis.get(f"revoked:jti:{jti}")
         if revoked:
             raise HTTPException(status_code=401, detail="Token has been revoked")
+    # Check password-changed revocation
+    user_id = payload.get("sub")
+    if user_id and _redis:
+        pw_changed = await _redis.get(f"password_changed:{user_id}")
+        if pw_changed:
+            issued_at = payload.get("iat", 0)
+            if issued_at <= int(pw_changed):
+                raise HTTPException(status_code=401, detail="Token invalidated by password change")
     # DB verification: confirm user exists and is_admin=True
     if _pool is not None:
         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:

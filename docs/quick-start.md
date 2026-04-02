@@ -286,7 +286,7 @@ Look for log messages like:
 
 Visit http://localhost:15672 and verify:
 
-- All 4 queues are created (artists, labels, releases, masters)
+- All 4 Discogs queues are created (artists, labels, releases, masters)
 - Messages are being published and consumed
 - Consumer counts are appropriate
 
@@ -358,7 +358,7 @@ docker-compose restart [service-name]
 curl -I https://discogs-data-dumps.s3.us-west-2.amazonaws.com
 
 # Check extractor logs
-docker-compose logs extractor
+docker-compose logs extractor-discogs
 
 # Verify DISCOGS_ROOT permissions
 ls -la /discogs-data  # or your configured path

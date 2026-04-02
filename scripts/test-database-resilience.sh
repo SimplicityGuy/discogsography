@@ -84,8 +84,8 @@ check_health "API" 8004
 echo -e "\n${BLUE}📊 Initial Queue Depths${NC}"
 echo "======================="
 for data_type in artists labels masters releases; do
-  graphinator_queue="discogsography-graphinator-${data_type}"
-  tableinator_queue="discogsography-tableinator-${data_type}"
+  graphinator_queue="discogsography-discogs-graphinator-${data_type}"
+  tableinator_queue="discogsography-discogs-tableinator-${data_type}"
 
   g_depth=$(get_queue_depth "$graphinator_queue")
   t_depth=$(get_queue_depth "$tableinator_queue")
@@ -140,7 +140,7 @@ echo "Simulating RabbitMQ maintenance window..."
 echo -e "${RED}⚠️  This is more disruptive as it affects message flow${NC}"
 
 # Start monitoring all services
-for service in extractor graphinator tableinator; do
+for service in extractor-discogs extractor-musicbrainz graphinator tableinator; do
   monitor_logs "$service" 50 &
 done
 
@@ -170,8 +170,8 @@ check_health "API" 8004
 echo -e "\n${BLUE}📊 Final Queue Depths${NC}"
 echo "===================="
 for data_type in artists labels masters releases; do
-  graphinator_queue="discogsography-graphinator-${data_type}"
-  tableinator_queue="discogsography-tableinator-${data_type}"
+  graphinator_queue="discogsography-discogs-graphinator-${data_type}"
+  tableinator_queue="discogsography-discogs-tableinator-${data_type}"
 
   g_depth=$(get_queue_depth "$graphinator_queue")
   t_depth=$(get_queue_depth "$tableinator_queue")

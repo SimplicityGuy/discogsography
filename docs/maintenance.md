@@ -217,20 +217,32 @@ See [Neo4j Indexing Guide](neo4j-indexing.md) for advanced maintenance.
 #### Regular Tasks
 
 ```sql
--- Analyze tables (update statistics)
+-- Analyze tables (update statistics) — public schema
 ANALYZE artists;
 ANALYZE labels;
 ANALYZE masters;
 ANALYZE releases;
 
--- Or analyze all tables
+-- Analyze tables — musicbrainz schema
+ANALYZE musicbrainz.artists;
+ANALYZE musicbrainz.labels;
+ANALYZE musicbrainz.release_groups;
+ANALYZE musicbrainz.releases;
+
+-- Or analyze all tables in both schemas
 ANALYZE;
 
--- Vacuum tables (reclaim storage)
+-- Vacuum tables (reclaim storage) — public schema
 VACUUM ANALYZE artists;
 VACUUM ANALYZE labels;
 VACUUM ANALYZE masters;
 VACUUM ANALYZE releases;
+
+-- Vacuum tables — musicbrainz schema
+VACUUM ANALYZE musicbrainz.artists;
+VACUUM ANALYZE musicbrainz.labels;
+VACUUM ANALYZE musicbrainz.release_groups;
+VACUUM ANALYZE musicbrainz.releases;
 ```
 
 #### Index Maintenance
@@ -266,7 +278,7 @@ SELECT
     pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename) -
                    pg_relation_size(schemaname||'.'||tablename)) AS index_size
 FROM pg_tables
-WHERE schemaname = 'public'
+WHERE schemaname IN ('public', 'musicbrainz')
 ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 
 -- Check for dead tuples
@@ -471,6 +483,11 @@ services=(
   "Graphinator:8001"
   "Tableinator:8002"
   "Dashboard:8003"
+  "API:8005"
+  "Explore:8007"
+  "Insights:8009"
+  "Brainztableinator:8010"
+  "Brainzgraphinator:8011"
 )
 
 all_healthy=true

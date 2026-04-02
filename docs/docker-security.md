@@ -214,17 +214,18 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ### Check Security Configuration
 
 ```bash
-# Verify user execution
-docker-compose exec extractor id
+# Verify user execution (extractor runs as two services)
+docker-compose exec extractor-discogs id
+docker-compose exec extractor-musicbrainz id
 
 # Check capabilities
-docker-compose exec extractor capsh --print
+docker-compose exec extractor-discogs capsh --print
 
 # Verify read-only filesystem
-docker-compose exec extractor touch /test.txt  # Should fail
+docker-compose exec extractor-discogs touch /test.txt  # Should fail
 
 # Check security options
-docker inspect discogsography-extractor | jq '.[0].HostConfig.SecurityOpt'
+docker inspect discogsography-extractor-discogs | jq '.[0].HostConfig.SecurityOpt'
 ```
 
 ### Security Scanning
@@ -232,7 +233,9 @@ docker inspect discogsography-extractor | jq '.[0].HostConfig.SecurityOpt'
 ```bash
 # Scan images for vulnerabilities
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-  aquasec/trivy image discogsography/extractor:latest
+  aquasec/trivy image discogsography/extractor-discogs:latest
+# Also scan the MusicBrainz variant:
+#   aquasec/trivy image discogsography/extractor-musicbrainz:latest
 
 # Check for misconfigurations
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
