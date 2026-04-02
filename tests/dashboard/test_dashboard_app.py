@@ -1158,6 +1158,20 @@ class TestFastAPIEndpoints:
             # Prometheus metrics should contain some text
             assert len(response.text) > 0
 
+    def test_serve_admin_file_not_found(self) -> None:
+        """Test /admin endpoint returns 404 when admin.html does not exist."""
+        from fastapi import FastAPI
+
+        from dashboard.dashboard import serve_admin
+
+        test_app = FastAPI()
+        test_app.get("/admin")(serve_admin)
+
+        with patch("dashboard.dashboard.Path.read_text", side_effect=FileNotFoundError), TestClient(test_app) as client:
+            response = client.get("/admin")
+            assert response.status_code == 404
+            assert "Admin page not found" in response.text
+
 
 class TestWebSocketEndpoint:
     """Test WebSocket connection handling."""
