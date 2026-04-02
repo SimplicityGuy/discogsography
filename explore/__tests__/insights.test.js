@@ -416,6 +416,18 @@ describe('InsightsPanel', () => {
             document.getElementById('insightsGenreChart').remove();
             expect(() => window.insightsPanel._renderGenreTrends({ trends: [] })).not.toThrow();
         });
+
+        it('should purge Plotly chart before re-render', () => {
+            const el = document.getElementById('insightsGenreChart');
+            const data = {
+                genre: 'Rock',
+                trends: [{ decade: 1970, release_count: 1000 }],
+            };
+            window.insightsPanel._renderGenreTrends(data);
+            window.insightsPanel._renderGenreTrends(data);
+
+            expect(Plotly.purge).toHaveBeenCalledWith(el);
+        });
     });
 
     describe('_checkForUpdates', () => {

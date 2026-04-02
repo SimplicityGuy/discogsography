@@ -462,6 +462,69 @@ async fn test_parse_with_entity_references() {
 }
 
 #[tokio::test]
+async fn test_parse_with_numeric_character_references() {
+    // Test that numeric character references (&#x...;) are resolved correctly.
+    // This exercises the Ok(Some(ch)) branch of resolve_char_ref().
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>&#x41;rtist &#x42;</name>
+        <profile>Note &#x266A; Music</profile>
+    </artist>
+</artists>"#;
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1);
+
+    let message = receiver.recv().await.unwrap();
+    // &#x41; = 'A', &#x42; = 'B', &#x266A; = '♪'
+    assert_eq!(message.data["name"], json!("Artist B"));
+    assert_eq!(message.data["profile"], json!("Note ♪ Music"));
+}
+
+#[tokio::test]
+async fn test_parse_with_unknown_entity_reference() {
+    // Test that unknown named entity references are preserved as &name;
+    // This exercises the _ => fallback branch in the GeneralRef handler.
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE artists [
+    <!ENTITY custom "custom value">
+]>
+<artists>
+    <artist id="1">
+        <name>Test &custom; Artist</name>
+    </artist>
+</artists>"#;
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1);
+
+    let message = receiver.recv().await.unwrap();
+    // Custom entity should be preserved as &custom; since parser doesn't expand DTD entities
+    assert_eq!(message.data["name"], json!("Test &custom; Artist"));
+}
+
+#[tokio::test]
 async fn test_parse_file_not_found() {
     let (sender, _receiver) = mpsc::channel(10);
     let parser = XmlParser::new(DataType::Artists, sender);
