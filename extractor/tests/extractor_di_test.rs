@@ -13,6 +13,7 @@ use flate2::Compression;
 use flate2::write::GzEncoder;
 use std::io::Write;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tempfile::TempDir;
 use tokio::sync::{Mutex, RwLock};
 
@@ -493,12 +494,12 @@ async fn test_process_musicbrainz_data_empty_dump_dir() {
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_musicbrainz_data(config, state.clone(), shutdown, false, factory, None).await;
+    let result = process_musicbrainz_data(config, state.clone(), shutdown_flag, false, factory, None).await;
 
     assert!(result.is_ok());
     assert!(result.unwrap()); // Returns true — skipped (already complete)
@@ -524,12 +525,12 @@ async fn test_process_musicbrainz_data_skip_when_already_complete() {
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_musicbrainz_data(config, state.clone(), shutdown, false, factory, None).await;
+    let result = process_musicbrainz_data(config, state.clone(), shutdown_flag, false, factory, None).await;
 
     assert!(result.is_ok());
     assert!(result.unwrap()); // Returns true — skipped
@@ -555,7 +556,7 @@ async fn test_process_musicbrainz_data_force_reprocess_bypasses_skip() {
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     // With force_reprocess=true, it should NOT skip — it proceeds to MQ creation
     let mut mock_mq = MockMessagePublisher::new();
@@ -567,7 +568,7 @@ async fn test_process_musicbrainz_data_force_reprocess_bypasses_skip() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_musicbrainz_data(config, state.clone(), shutdown, true, factory, None).await;
+    let result = process_musicbrainz_data(config, state.clone(), shutdown_flag, true, factory, None).await;
 
     // force_reprocess bypasses skip — it should succeed with 0 records (empty file)
     assert!(result.is_ok());
@@ -587,7 +588,7 @@ async fn test_process_musicbrainz_data_mq_connection_failure() {
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     // Factory that fails to create MQ connection
     use extractor::extractor::MessageQueueFactory;
@@ -600,7 +601,7 @@ async fn test_process_musicbrainz_data_mq_connection_failure() {
     }
     let factory = Arc::new(FailingMqFactory);
 
-    let result = process_musicbrainz_data(config, state, shutdown, false, factory, None).await;
+    let result = process_musicbrainz_data(config, state, shutdown_flag, false, factory, None).await;
 
     // Should return an error because MQ connection failed
     assert!(result.is_err());
@@ -620,12 +621,12 @@ async fn test_process_musicbrainz_data_nonexistent_dir() {
     // fetching SHA256SUMS (no mock for it), so the function returns an error.
     let config = Arc::new(mb_test_config(std::path::Path::new("/tmp/nonexistent-mb-dir-12345"), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_musicbrainz_data(config, state.clone(), shutdown, false, factory, None).await;
+    let result = process_musicbrainz_data(config, state.clone(), shutdown_flag, false, factory, None).await;
 
     // Download will fail because the SHA256SUMS endpoint is not mocked
     assert!(result.is_err());
@@ -647,7 +648,7 @@ async fn test_process_musicbrainz_data_reprocess_decision() {
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     let mut mock_mq = MockMessagePublisher::new();
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
@@ -658,7 +659,7 @@ async fn test_process_musicbrainz_data_reprocess_decision() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_musicbrainz_data(config, state.clone(), shutdown, false, factory, None).await;
+    let result = process_musicbrainz_data(config, state.clone(), shutdown_flag, false, factory, None).await;
 
     // Should succeed — Reprocess creates a new marker and proceeds
     assert!(result.is_ok());
@@ -686,7 +687,7 @@ async fn test_process_musicbrainz_data_skips_completed_files() {
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     let mut mock_mq = MockMessagePublisher::new();
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
@@ -698,7 +699,7 @@ async fn test_process_musicbrainz_data_skips_completed_files() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_musicbrainz_data(config, state.clone(), shutdown, false, factory, None).await;
+    let result = process_musicbrainz_data(config, state.clone(), shutdown_flag, false, factory, None).await;
 
     assert!(result.is_ok());
     assert!(result.unwrap());
@@ -730,7 +731,7 @@ async fn test_process_musicbrainz_data_only_labels_no_artist_dump() {
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     let mut mock_mq = MockMessagePublisher::new();
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
@@ -741,7 +742,7 @@ async fn test_process_musicbrainz_data_only_labels_no_artist_dump() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_musicbrainz_data(config, state.clone(), shutdown, false, factory, None).await;
+    let result = process_musicbrainz_data(config, state.clone(), shutdown_flag, false, factory, None).await;
 
     assert!(result.is_ok());
     assert!(result.unwrap());
@@ -781,7 +782,7 @@ async fn test_run_musicbrainz_loop_shutdown_after_initial_processing() {
     let shutdown_clone = shutdown.clone();
     tokio::spawn(async move {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        shutdown_clone.notify_one();
+        shutdown_clone.notify_waiters();
     });
 
     let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
@@ -824,7 +825,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_true() {
         tokio::time::sleep(check_interval).await;
         // Let the periodic check complete
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        shutdown_clone.notify_one();
+        shutdown_clone.notify_waiters();
     });
 
     let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
@@ -885,7 +886,7 @@ async fn test_run_musicbrainz_loop_periodic_check_err() {
         tokio::time::sleep(check_interval).await;
         // Let the periodic check complete (it will fail on MQ create)
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        shutdown_clone.notify_one();
+        shutdown_clone.notify_waiters();
     });
 
     let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
@@ -946,7 +947,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_false() {
         tokio::time::sleep(check_interval).await;
         // Let the periodic check complete
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        shutdown_clone.notify_one();
+        shutdown_clone.notify_waiters();
     });
 
     let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
@@ -1000,7 +1001,7 @@ async fn test_run_musicbrainz_loop_trigger_ok_false() {
         }
         // Wait for processing
         tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
-        shutdown_clone.notify_one();
+        shutdown_clone.notify_waiters();
     });
 
     let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
@@ -1052,7 +1053,7 @@ async fn test_run_musicbrainz_loop_trigger_err() {
             *t = Some(false);
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
-        shutdown_clone.notify_one();
+        shutdown_clone.notify_waiters();
     });
 
     let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
@@ -1117,7 +1118,7 @@ async fn test_run_musicbrainz_loop_trigger_then_shutdown() {
         }
         // Give time for the trigger to be processed, then shut down
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-        shutdown_clone.notify_one();
+        shutdown_clone.notify_waiters();
     });
 
     let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
@@ -1834,7 +1835,7 @@ async fn test_process_musicbrainz_data_compresses_jsonl_after_extraction() {
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     let mut mock_mq = MockMessagePublisher::new();
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
@@ -1845,7 +1846,7 @@ async fn test_process_musicbrainz_data_compresses_jsonl_after_extraction() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_musicbrainz_data(config, state.clone(), shutdown, false, factory, None).await;
+    let result = process_musicbrainz_data(config, state.clone(), shutdown_flag, false, factory, None).await;
 
     assert!(result.is_ok());
     assert!(result.unwrap());
@@ -1897,7 +1898,7 @@ async fn test_process_musicbrainz_data_skips_compression_for_xz_files() {
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     let mut mock_mq = MockMessagePublisher::new();
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
@@ -1908,7 +1909,7 @@ async fn test_process_musicbrainz_data_skips_compression_for_xz_files() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_musicbrainz_data(config, state.clone(), shutdown, false, factory, None).await;
+    let result = process_musicbrainz_data(config, state.clone(), shutdown_flag, false, factory, None).await;
 
     assert!(result.is_ok(), "process_musicbrainz_data failed: {:?}", result.err());
     assert!(result.unwrap());
@@ -1935,7 +1936,7 @@ async fn test_process_musicbrainz_data_compression_state_marker_has_both_names()
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     let mut mock_mq = MockMessagePublisher::new();
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
@@ -1946,7 +1947,7 @@ async fn test_process_musicbrainz_data_compression_state_marker_has_both_names()
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_musicbrainz_data(config, state.clone(), shutdown, false, factory, None).await;
+    let result = process_musicbrainz_data(config, state.clone(), shutdown_flag, false, factory, None).await;
     assert!(result.is_ok());
     assert!(result.unwrap());
 
@@ -1984,7 +1985,7 @@ async fn test_process_musicbrainz_data_entity_failure_skips_compression() {
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     let mut mock_mq = MockMessagePublisher::new();
     // setup_exchange fails — MQ connection setup failure prevents processing
@@ -1996,7 +1997,7 @@ async fn test_process_musicbrainz_data_entity_failure_skips_compression() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_musicbrainz_data(config, state.clone(), shutdown, false, factory, None).await;
+    let result = process_musicbrainz_data(config, state.clone(), shutdown_flag, false, factory, None).await;
 
     // setup_exchange failure causes process_musicbrainz_data to return an error
     assert!(result.is_err(), "Should fail when exchange setup fails");
@@ -2028,7 +2029,7 @@ async fn test_process_musicbrainz_data_send_file_complete_failure_still_compress
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
 
     let mut mock_mq = MockMessagePublisher::new();
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
@@ -2040,7 +2041,7 @@ async fn test_process_musicbrainz_data_send_file_complete_failure_still_compress
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_musicbrainz_data(config, state.clone(), shutdown, false, factory, None).await;
+    let result = process_musicbrainz_data(config, state.clone(), shutdown_flag, false, factory, None).await;
 
     assert!(result.is_ok());
     // Returns false because success=false (send_file_complete failed)

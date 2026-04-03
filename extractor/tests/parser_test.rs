@@ -369,7 +369,9 @@ async fn test_parse_with_array_elements() {
 
 #[tokio::test]
 async fn test_parse_release_with_id_field() {
-    // Releases should have both @id (attribute) and id (plain field)
+    // Releases with @id attribute should NOT have a separate "id" field in data —
+    // DataMessage.id carries the record ID, and removing "id" from the data object
+    // avoids duplicate "id" keys when DataMessage is serialized with #[serde(flatten)].
     let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
 <releases>
     <release id="123">
@@ -392,14 +394,15 @@ async fn test_parse_release_with_id_field() {
 
     let message = receiver.recv().await.unwrap();
 
-    // Should have both @id and id
+    // @id is preserved; "id" is removed to avoid duplicate keys in serialization
     assert_eq!(message.data["@id"], json!("123"));
-    assert_eq!(message.data["id"], json!("123"));
+    assert_eq!(message.id, "123");
+    assert!(message.data.get("id").is_none(), "id should be removed when @id is present");
 }
 
 #[tokio::test]
 async fn test_parse_master_with_id_field() {
-    // Masters should also have both @id and id
+    // Masters with @id attribute should NOT have a separate "id" field in data
     let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
 <masters>
     <master id="456">
@@ -422,9 +425,10 @@ async fn test_parse_master_with_id_field() {
 
     let message = receiver.recv().await.unwrap();
 
-    // Should have both @id and id
+    // @id is preserved; "id" is removed to avoid duplicate keys in serialization
     assert_eq!(message.data["@id"], json!("456"));
-    assert_eq!(message.data["id"], json!("456"));
+    assert_eq!(message.id, "456");
+    assert!(message.data.get("id").is_none(), "id should be removed when @id is present");
 }
 
 #[tokio::test]
