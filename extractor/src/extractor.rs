@@ -865,7 +865,7 @@ pub async fn run_musicbrainz_loop(
 pub async fn process_musicbrainz_data(
     config: Arc<ExtractorConfig>,
     state: Arc<RwLock<ExtractorState>>,
-    _shutdown: Arc<tokio::sync::Notify>,
+    shutdown: Arc<tokio::sync::Notify>,
     force_reprocess: bool,
     mq_factory: Arc<dyn MessageQueueFactory>,
     _compiled_rules: Option<Arc<CompiledRulesConfig>>,
@@ -950,7 +950,10 @@ pub async fn process_musicbrainz_data(
         // Resume: update total count but do not reset progress counters
         state_marker.processing_phase.files_total = file_count;
         state_marker.save(&marker_path).await?;
-        info!("🔄 Resuming MusicBrainz processing phase: {} dump file(s), {} already completed", file_count, state_marker.processing_phase.files_processed);
+        info!(
+            "🔄 Resuming MusicBrainz processing phase: {} dump file(s), {} already completed",
+            file_count, state_marker.processing_phase.files_processed
+        );
     }
     let state_marker = Arc::new(tokio::sync::Mutex::new(state_marker));
 
@@ -968,6 +971,14 @@ pub async fn process_musicbrainz_data(
     let mut success = true;
 
     for (data_type, file_path) in &dump_files {
+        // Check for shutdown between files — allows graceful exit without waiting
+        // for the next (potentially multi-GB) file to finish processing
+        if tokio::time::timeout(std::time::Duration::ZERO, shutdown.notified()).await.is_ok() {
+            warn!("🛑 Shutdown requested, stopping MusicBrainz processing between files");
+            success = false;
+            break;
+        }
+
         let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
 
         // Skip files already completed in state marker
@@ -1090,9 +1101,7 @@ pub async fn process_musicbrainz_data(
         }
 
         // Send file_complete message only on success to avoid misleading consumers
-        if file_success
-            && let Err(e) = mq.send_file_complete(*data_type, file_name, total_count).await
-        {
+        if file_success && let Err(e) = mq.send_file_complete(*data_type, file_name, total_count).await {
             error!("❌ Failed to send file_complete for {}: {}", data_type, e);
             success = false;
         }
