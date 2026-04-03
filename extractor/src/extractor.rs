@@ -807,14 +807,8 @@ pub async fn wait_for_discogs_idle(url: &str, shutdown_flag: &AtomicBool) -> Res
 }
 
 /// Internal implementation with configurable poll interval (for testing).
-pub async fn wait_for_discogs_idle_with_interval(
-    url: &str,
-    shutdown_flag: &AtomicBool,
-    poll_interval: Duration,
-) -> Result<()> {
-    let client = reqwest::Client::builder()
-        .timeout(DISCOGS_HEALTH_TIMEOUT)
-        .build()?;
+pub async fn wait_for_discogs_idle_with_interval(url: &str, shutdown_flag: &AtomicBool, poll_interval: Duration) -> Result<()> {
+    let client = reqwest::Client::builder().timeout(DISCOGS_HEALTH_TIMEOUT).build()?;
 
     let mut unreachable_count: u32 = 0;
 
@@ -829,10 +823,7 @@ pub async fn wait_for_discogs_idle_with_interval(
                 unreachable_count = 0;
                 match response.json::<serde_json::Value>().await {
                     Ok(body) => {
-                        let status = body
-                            .get("extraction_status")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
+                        let status = body.get("extraction_status").and_then(|v| v.as_str()).unwrap_or("unknown");
 
                         if status == "running" {
                             info!("⏳ Discogs extraction in progress, waiting before starting MusicBrainz extraction...");

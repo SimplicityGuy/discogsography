@@ -1176,25 +1176,21 @@ async fn test_process_discogs_data_all_processed_extraction_complete_send_fails(
     marker.complete_file_processing("discogs_20260101_artists.xml.gz", 1000);
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
-    });
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(move || Some(marker.clone()));
 
     // MQ that fails on send_extraction_complete
     let mut mock_mq = MockMessagePublisher::new();
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Err(anyhow::anyhow!("extraction_complete send failed")));
+    mock_mq
+        .expect_send_extraction_complete()
+        .returning(|_, _, _, _| Err(anyhow::anyhow!("extraction_complete send failed")));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -1400,20 +1396,14 @@ async fn test_process_discogs_data_reprocess_decision() {
     marker.save(&marker_path).await.unwrap();
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
-    });
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
 
     let mut mock_mq = MockMessagePublisher::new();
@@ -1454,20 +1444,14 @@ async fn test_process_discogs_data_end_to_end_success() {
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
-    });
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
 
     let mut mock_mq = MockMessagePublisher::new();
@@ -1510,20 +1494,14 @@ async fn test_process_discogs_data_end_to_end_with_rules() {
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
-    });
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
 
     let mut mock_mq = MockMessagePublisher::new();
@@ -1578,20 +1556,14 @@ async fn test_process_discogs_data_extraction_complete_failure() {
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
-    });
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
 
     // MQ that fails on send_extraction_complete
@@ -1636,20 +1608,14 @@ async fn test_process_discogs_data_mq_factory_create_fails_at_extraction_complet
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
-    });
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
 
     // Factory that succeeds for per-file MQ but fails for the final extraction_complete MQ
@@ -1728,12 +1694,10 @@ async fn test_process_discogs_data_multiple_files() {
         ])
     });
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec![
-            "discogs_20260101_artists.xml.gz".to_string(),
-            "discogs_20260101_labels.xml.gz".to_string(),
-        ])
-    });
+    mock_dl
+        .expect_download_discogs_data()
+        .times(1)
+        .returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string(), "discogs_20260101_labels.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
 
     let mut mock_mq = MockMessagePublisher::new();
@@ -1769,16 +1733,12 @@ async fn test_process_discogs_data_version_extraction_failure() {
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/invalidfilename".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "invalidfilename".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/invalidfilename".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "invalidfilename".to_string(), size: 1000 }]));
 
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -1822,16 +1782,12 @@ async fn test_process_discogs_data_download_failure() {
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().returning(|_, _| ());
     mock_dl.expect_download_discogs_data().returning(|| Err(anyhow::anyhow!("Download failed")));
 
@@ -1986,19 +1942,9 @@ async fn test_process_musicbrainz_data_compression_state_marker_has_both_names()
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     let marker = StateMarker::load(&marker_path).await.unwrap().unwrap();
 
-    assert!(
-        marker.processing_phase.progress_by_file.contains_key("artist.jsonl"),
-        "State marker should contain original filename"
-    );
-    assert!(
-        marker.processing_phase.progress_by_file.contains_key("artist.jsonl.xz"),
-        "State marker should contain compressed filename"
-    );
-    assert_eq!(
-        marker.summary.overall_status,
-        extractor::state_marker::PhaseStatus::Completed,
-        "Extraction should be marked complete"
-    );
+    assert!(marker.processing_phase.progress_by_file.contains_key("artist.jsonl"), "State marker should contain original filename");
+    assert!(marker.processing_phase.progress_by_file.contains_key("artist.jsonl.xz"), "State marker should contain compressed filename");
+    assert_eq!(marker.summary.overall_status, extractor::state_marker::PhaseStatus::Completed, "Extraction should be marked complete");
 }
 
 #[tokio::test]
@@ -2034,14 +1980,8 @@ async fn test_process_musicbrainz_data_entity_failure_skips_compression() {
     assert!(result.is_err(), "Should fail when exchange setup fails");
 
     // Verify: .jsonl files should NOT be compressed because pipeline never ran
-    assert!(
-        versioned.join("artist.jsonl").exists(),
-        "artist.jsonl should remain (pipeline failed before compression)"
-    );
-    assert!(
-        !versioned.join("artist.jsonl.xz").exists(),
-        "artist.jsonl.xz should NOT exist (pipeline failed)"
-    );
+    assert!(versioned.join("artist.jsonl").exists(), "artist.jsonl should remain (pipeline failed before compression)");
+    assert!(!versioned.join("artist.jsonl.xz").exists(), "artist.jsonl.xz should NOT exist (pipeline failed)");
 }
 
 #[tokio::test]

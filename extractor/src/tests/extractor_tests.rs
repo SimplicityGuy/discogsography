@@ -1135,8 +1135,7 @@ mod wait_for_discogs_idle_tests {
 
         let shutdown = AtomicBool::new(false);
         let url = format!("{}/health", server.url());
-        let result =
-            wait_for_discogs_idle_with_interval(&url, &shutdown, Duration::from_millis(10)).await;
+        let result = wait_for_discogs_idle_with_interval(&url, &shutdown, Duration::from_millis(10)).await;
 
         assert!(result.is_ok());
     }
@@ -1146,8 +1145,7 @@ mod wait_for_discogs_idle_tests {
         // Use a port that nothing listens on
         let url = "http://127.0.0.1:19999/health";
         let shutdown = AtomicBool::new(false);
-        let result =
-            wait_for_discogs_idle_with_interval(url, &shutdown, Duration::from_millis(10)).await;
+        let result = wait_for_discogs_idle_with_interval(url, &shutdown, Duration::from_millis(10)).await;
 
         assert!(result.is_ok());
     }
@@ -1157,8 +1155,7 @@ mod wait_for_discogs_idle_tests {
         let shutdown = AtomicBool::new(true);
         // Use unreachable port — should return immediately due to shutdown flag
         let url = "http://127.0.0.1:19999/health";
-        let result =
-            wait_for_discogs_idle_with_interval(url, &shutdown, Duration::from_millis(10)).await;
+        let result = wait_for_discogs_idle_with_interval(url, &shutdown, Duration::from_millis(10)).await;
 
         assert!(result.is_ok());
     }
