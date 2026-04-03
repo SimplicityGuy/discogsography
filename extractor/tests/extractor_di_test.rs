@@ -1019,7 +1019,9 @@ async fn test_run_musicbrainz_loop_trigger_ok_false() {
     let shutdown_clone = shutdown.clone();
     let marker_path_clone = marker_path.clone();
     tokio::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        // Wait long enough for the initial processing to complete (including
+        // wait_for_discogs_idle HTTP call which can be slow in CI)
+        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
         // Remove the state marker so the triggered call proceeds past Skip and processes
         let _ = tokio::fs::remove_file(&marker_path_clone).await;
         // Set trigger to fire
@@ -1074,7 +1076,9 @@ async fn test_run_musicbrainz_loop_trigger_err() {
     let shutdown_clone = shutdown.clone();
     let marker_path_clone = marker_path.clone();
     tokio::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        // Wait long enough for the initial processing to complete (including
+        // wait_for_discogs_idle HTTP call which can be slow in CI)
+        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
         // Remove state marker so the triggered call proceeds past Skip to MQ creation (and fails)
         let _ = tokio::fs::remove_file(&marker_path_clone).await;
         {
