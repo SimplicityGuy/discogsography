@@ -34,6 +34,7 @@ logger = structlog.get_logger(__name__)
 DISCOGS_API_BASE = "https://api.discogs.com"
 SYNC_DELAY_SECONDS = 0.5  # 0.5s between requests to stay under 60 req/min
 PAGE_SIZE = 100
+MAX_RATE_LIMIT_RETRIES = 5
 
 
 def _auth_header(
@@ -90,6 +91,7 @@ async def sync_collection(
     """
     total_synced = 0
     page = 1
+    rate_limit_retries = 0
 
     logger.info("📋 Starting collection sync", user=discogs_username)
 
@@ -109,9 +111,14 @@ async def sync_collection(
             response = await client.get(full_url, headers=headers)
 
             if response.status_code == 429:
-                logger.warning("⚠️ Rate limited by Discogs, waiting 60s...")
+                rate_limit_retries += 1
+                if rate_limit_retries > MAX_RATE_LIMIT_RETRIES:
+                    logger.error("❌ Rate limit retries exhausted for collection sync", user=discogs_username, retries=rate_limit_retries)
+                    break
+                logger.warning("⚠️ Rate limited by Discogs, waiting 60s...", retry=rate_limit_retries, max_retries=MAX_RATE_LIMIT_RETRIES)
                 await asyncio.sleep(60)
                 continue
+            rate_limit_retries = 0
 
             if response.status_code != 200:
                 logger.error(
@@ -269,6 +276,7 @@ async def sync_wantlist(
     """
     total_synced = 0
     page = 1
+    rate_limit_retries = 0
 
     logger.info("📋 Starting wantlist sync", user=discogs_username)
 
@@ -288,9 +296,14 @@ async def sync_wantlist(
             response = await client.get(full_url, headers=headers)
 
             if response.status_code == 429:
-                logger.warning("⚠️ Rate limited by Discogs, waiting 60s...")
+                rate_limit_retries += 1
+                if rate_limit_retries > MAX_RATE_LIMIT_RETRIES:
+                    logger.error("❌ Rate limit retries exhausted for wantlist sync", user=discogs_username, retries=rate_limit_retries)
+                    break
+                logger.warning("⚠️ Rate limited by Discogs, waiting 60s...", retry=rate_limit_retries, max_retries=MAX_RATE_LIMIT_RETRIES)
                 await asyncio.sleep(60)
                 continue
+            rate_limit_retries = 0
 
             if response.status_code != 200:
                 logger.error(

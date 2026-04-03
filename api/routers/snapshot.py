@@ -51,9 +51,12 @@ async def _get_current_user(
                     detail="Token has been revoked",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+        # Validate sub claim presence
+        user_id: str | None = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"})
         # Check password-changed revocation
-        user_id = payload.get("sub")
-        if user_id and _redis:
+        if _redis:
             pw_changed = await _redis.get(f"password_changed:{user_id}")
             if pw_changed:
                 issued_at = payload.get("iat", 0)

@@ -211,8 +211,24 @@ fn setup_shutdown_handler() -> Arc<tokio::sync::Notify> {
     let shutdown_clone = shutdown.clone();
 
     tokio::spawn(async move {
-        let _ = signal::ctrl_c().await;
-        info!("🛑 Received shutdown signal");
+        #[cfg(unix)]
+        {
+            let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())
+                .expect("failed to install SIGTERM handler");
+            tokio::select! {
+                _ = signal::ctrl_c() => {
+                    info!("🛑 Received SIGINT (Ctrl+C)");
+                }
+                _ = sigterm.recv() => {
+                    info!("🛑 Received SIGTERM");
+                }
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = signal::ctrl_c().await;
+            info!("🛑 Received shutdown signal");
+        }
         shutdown_clone.notify_waiters();
     });
 

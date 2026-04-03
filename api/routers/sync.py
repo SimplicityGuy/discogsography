@@ -161,6 +161,10 @@ async def trigger_sync(
                 redis_client=_redis,
             )
         )
+        # Clean up completed task to prevent unbounded memory growth and
+        # pinned decrypted OAuth credentials in the coroutine closure.
+        _uid = user_id  # capture for callback
+        task.add_done_callback(lambda _t: _running_syncs.pop(_uid, None))
         _running_syncs[user_id] = task
     except Exception:
         # Release Redis lock on failure so user isn't locked out
