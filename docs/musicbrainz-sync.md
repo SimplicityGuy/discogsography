@@ -34,23 +34,26 @@ MusicBrainz publishes new JSONL dumps **twice weekly** (Wednesdays and Saturdays
 ### Initial Import
 
 1. Download MusicBrainz JSONL dumps (xz-compressed):
+
    - `artist.jsonl.xz`
    - `label.jsonl.xz`
    - `release-group.jsonl.xz`
    - `release.jsonl.xz`
 
-2. Place files in the `musicbrainz_data` Docker volume (or mounted directory)
+1. Place files in the `musicbrainz_data` Docker volume (or mounted directory)
 
-3. Start (or restart) the `extractor-musicbrainz` container:
+1. Start (or restart) the `extractor-musicbrainz` container:
+
    ```bash
    docker-compose up -d extractor-musicbrainz
    ```
 
-4. The extractor detects the dump files, parses them, and publishes messages to RabbitMQ
+1. The extractor detects the dump files, parses them, and publishes messages to RabbitMQ
 
-5. brainzgraphinator and brainztableinator consume and process all messages
+1. brainzgraphinator and brainztableinator consume and process all messages
 
-6. Monitor progress via health endpoints:
+1. Monitor progress via health endpoints:
+
    - Extractor: `http://localhost:8000/health`
    - Brainzgraphinator: `http://localhost:8011/health`
    - Brainztableinator: `http://localhost:8010/health`
@@ -58,22 +61,24 @@ MusicBrainz publishes new JSONL dumps **twice weekly** (Wednesdays and Saturdays
 ### Incremental Updates
 
 1. Download the latest MB JSONL dumps
-2. Replace the files in the data volume
-3. Restart `extractor-musicbrainz` or trigger via the `/trigger` endpoint:
+1. Replace the files in the data volume
+1. Restart `extractor-musicbrainz` or trigger via the `/trigger` endpoint:
    ```bash
    curl -X POST http://localhost:8000/trigger
    ```
-4. The state marker system detects the new dump version and triggers a full reprocess
-5. All writes are idempotent — existing data is updated, new data is inserted
+1. The state marker system detects the new dump version and triggers a full reprocess
+1. All writes are idempotent — existing data is updated, new data is inserted
 
 ### Force Reprocess
 
 To force reprocessing of the same dump version:
+
 ```bash
 curl -X POST http://localhost:8000/trigger -H "Content-Type: application/json" -d '{"force_reprocess": true}'
 ```
 
 Or set the environment variable:
+
 ```bash
 FORCE_REPROCESS=true docker-compose up extractor-musicbrainz
 ```
@@ -81,6 +86,7 @@ FORCE_REPROCESS=true docker-compose up extractor-musicbrainz
 ## State Markers
 
 The extractor tracks progress using version-specific state markers:
+
 - File: `.mb_extraction_status_{version}.json` in the data directory
 - States: `pending` → `in_progress` → `completed` (or `failed`)
 - A new dump version creates a new marker, triggering reprocessing
@@ -95,6 +101,7 @@ curl http://localhost:8004/api/enrichment/status
 ```
 
 Returns coverage statistics:
+
 ```json
 {
   "musicbrainz": {
@@ -108,11 +115,11 @@ Returns coverage statistics:
 
 ### Service Health
 
-| Service | URL | Key Metrics |
-|---------|-----|-------------|
-| Extractor (MB) | `:8000/health` | extraction_progress, extraction_status |
+| Service           | URL            | Key Metrics                                                |
+| ----------------- | -------------- | ---------------------------------------------------------- |
+| Extractor (MB)    | `:8000/health` | extraction_progress, extraction_status                     |
 | Brainzgraphinator | `:8011/health` | entities_enriched, relationships_created, entities_skipped |
-| Brainztableinator | `:8010/health` | message_counts per data type |
+| Brainztableinator | `:8010/health` | message_counts per data type                               |
 
 ## Future Enhancements
 

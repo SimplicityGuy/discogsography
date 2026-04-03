@@ -13,6 +13,7 @@ The NLQ engine uses Claude's native tool-use (function calling) to plan and exec
 ## Scope (v1)
 
 **In scope:**
+
 - Backend NLQ engine with tool-use loop inside the API service
 - `POST /api/nlq/query` endpoint with SSE streaming for status events
 - `GET /api/nlq/status` endpoint for feature detection
@@ -23,6 +24,7 @@ The NLQ engine uses Claude's native tool-use (function calling) to plan and exec
 - Off-topic query guardrails (system prompt + zero-tool validation)
 
 **Out of scope (v2+):**
+
 - Query history and persistence
 - Follow-up suggestions
 - Conversation memory (multi-turn)
@@ -50,27 +52,27 @@ The NLQ engine lives inside the API service (`api/nlq/`) and calls existing quer
 
 ### Public Tools (always available)
 
-| Tool | Wraps | Description |
-|---|---|---|
-| `search` | `search_queries.search()` | Full-text search across artists, releases, labels |
-| `explore_entity` | `neo4j_queries.explore_*()` | Get details for an artist, label, genre, or style by name |
-| `autocomplete` | `neo4j_queries.autocomplete_*()` | Fuzzy entity resolution by name prefix |
-| `find_path` | `neo4j_queries.find_path()` | Shortest path between two entities |
-| `get_collaborators` | `neo4j_queries.get_collaborators()` | Artists who share releases with a given artist |
-| `get_similar_artists` | `neo4j_queries.similar_artists()` | Musically similar artists based on graph structure |
-| `get_label_dna` | `label_dna_queries.get_label_dna()` | Label's genre/style fingerprint |
-| `get_trends` | `neo4j_queries.get_trends()` | Time-series data for an entity |
-| `get_genre_tree` | `neo4j_queries.get_genre_tree()` | Full genre/style hierarchy |
-| `get_graph_stats` | `neo4j_queries.get_graph_stats()` | Aggregate node and relationship counts |
+| Tool                  | Wraps                               | Description                                               |
+| --------------------- | ----------------------------------- | --------------------------------------------------------- |
+| `search`              | `search_queries.search()`           | Full-text search across artists, releases, labels         |
+| `explore_entity`      | `neo4j_queries.explore_*()`         | Get details for an artist, label, genre, or style by name |
+| `autocomplete`        | `neo4j_queries.autocomplete_*()`    | Fuzzy entity resolution by name prefix                    |
+| `find_path`           | `neo4j_queries.find_path()`         | Shortest path between two entities                        |
+| `get_collaborators`   | `neo4j_queries.get_collaborators()` | Artists who share releases with a given artist            |
+| `get_similar_artists` | `neo4j_queries.similar_artists()`   | Musically similar artists based on graph structure        |
+| `get_label_dna`       | `label_dna_queries.get_label_dna()` | Label's genre/style fingerprint                           |
+| `get_trends`          | `neo4j_queries.get_trends()`        | Time-series data for an entity                            |
+| `get_genre_tree`      | `neo4j_queries.get_genre_tree()`    | Full genre/style hierarchy                                |
+| `get_graph_stats`     | `neo4j_queries.get_graph_stats()`   | Aggregate node and relationship counts                    |
 
 ### Authenticated Tools (added when user has valid JWT)
 
-| Tool | Wraps | Description |
-|---|---|---|
-| `get_collection_gaps` | `gap_queries.get_*_gaps()` | Missing releases for an artist, label, or master |
-| `get_taste_fingerprint` | `taste_queries.get_fingerprint()` | User's genre/style preference profile |
-| `get_taste_blindspots` | `taste_queries.get_blindspots()` | Genres/styles missing from collection despite affinity |
-| `get_collection_stats` | `collection_queries.get_stats()` | Collection size, format breakdown, timeline |
+| Tool                    | Wraps                             | Description                                            |
+| ----------------------- | --------------------------------- | ------------------------------------------------------ |
+| `get_collection_gaps`   | `gap_queries.get_*_gaps()`        | Missing releases for an artist, label, or master       |
+| `get_taste_fingerprint` | `taste_queries.get_fingerprint()` | User's genre/style preference profile                  |
+| `get_taste_blindspots`  | `taste_queries.get_blindspots()`  | Genres/styles missing from collection despite affinity |
+| `get_collection_stats`  | `collection_queries.get_stats()`  | Collection size, format breakdown, timeline            |
 
 Each tool includes a typed `input_schema` matching the Anthropic tool-use format. The tool runner validates parameters and calls the underlying query function directly.
 
@@ -134,6 +136,7 @@ data: {"summary": "I found 8 artists...", "entities": [...], "tools_used": [...]
 Status events emitted as each tool call executes. Final `result` event contains the complete response.
 
 **Error responses:**
+
 - `400`: Query too short, too long, or invalid context
 - `429`: Rate limit exceeded
 - `503`: NLQ disabled or LLM unavailable
@@ -250,17 +253,18 @@ After each tool call, the engine extracts entity references (`id`, `name`, `type
 
 New fields in `ApiConfig` (`common/config.py`):
 
-| Field | Env Var | Default | Description |
-|---|---|---|---|
-| `nlq_enabled` | `NLQ_ENABLED` | `false` | Feature gate |
-| `nlq_api_key` | `NLQ_API_KEY` / `NLQ_API_KEY_FILE` | `None` | Anthropic API key |
-| `nlq_model` | `NLQ_MODEL` | `claude-sonnet-4-20250514` | Model ID |
-| `nlq_max_iterations` | `NLQ_MAX_ITERATIONS` | `5` | Tool-use loop cap |
-| `nlq_max_query_length` | `NLQ_MAX_QUERY_LENGTH` | `500` | Input character limit |
-| `nlq_cache_ttl` | `NLQ_CACHE_TTL` | `3600` | Public query cache TTL (seconds) |
-| `nlq_rate_limit` | `NLQ_RATE_LIMIT` | `10/minute` | Per-user rate limit |
+| Field                  | Env Var                            | Default                    | Description                      |
+| ---------------------- | ---------------------------------- | -------------------------- | -------------------------------- |
+| `nlq_enabled`          | `NLQ_ENABLED`                      | `false`                    | Feature gate                     |
+| `nlq_api_key`          | `NLQ_API_KEY` / `NLQ_API_KEY_FILE` | `None`                     | Anthropic API key                |
+| `nlq_model`            | `NLQ_MODEL`                        | `claude-sonnet-4-20250514` | Model ID                         |
+| `nlq_max_iterations`   | `NLQ_MAX_ITERATIONS`               | `5`                        | Tool-use loop cap                |
+| `nlq_max_query_length` | `NLQ_MAX_QUERY_LENGTH`             | `500`                      | Input character limit            |
+| `nlq_cache_ttl`        | `NLQ_CACHE_TTL`                    | `3600`                     | Public query cache TTL (seconds) |
+| `nlq_rate_limit`       | `NLQ_RATE_LIMIT`                   | `10/minute`                | Per-user rate limit              |
 
 When `nlq_enabled` is `false` or `nlq_api_key` is unset:
+
 - API returns `503` on `/api/nlq/query`
 - `/api/nlq/status` returns `{"enabled": false}`
 - Frontend hides the "Ask" toggle
@@ -274,16 +278,18 @@ When `nlq_enabled` is `false` or `nlq_api_key` is unset:
 
 1. **Mode toggle** in the search bar area: "Search" (existing) | "Ask" (NLQ). Keyboard shortcut: `?` activates Ask mode. Toggle hidden when feature disabled (checked via `/api/nlq/status` on page load).
 
-2. **Ask input** — text field, placeholder "Ask anything about the music graph...", submit button. Enter to submit.
+1. **Ask input** — text field, placeholder "Ask anything about the music graph...", submit button. Enter to submit.
 
-3. **Status area** — displays SSE status events during query execution: "Searching for Factory Records...", "Finding common artists..." Provides feedback during the 2-5 second wait.
+1. **Status area** — displays SSE status events during query execution: "Searching for Factory Records...", "Finding common artists..." Provides feedback during the 2-5 second wait.
 
-4. **Result area:**
+1. **Result area:**
+
    - Natural language summary text
    - Entity names matched against the `entities` array and rendered as clickable links (clicking opens that entity in the Explore graph pane via `app.explore(name, type)`)
    - "Tools used" shown as small pills below the result
 
-5. **Empty state** — 3-4 example queries as clickable chips:
+1. **Empty state** — 3-4 example queries as clickable chips:
+
    - "Most prolific electronic label"
    - "How are Kraftwerk and Afrika Bambaataa connected?"
    - "What genres emerged in the 1990s?"
@@ -338,6 +344,7 @@ All LLM calls mocked in tests. No real Anthropic API spend in CI.
 ## Cost Estimate
 
 Typical query (~2-3 tool iterations):
+
 - ~6,000 input tokens, ~800 output tokens
 - **~$0.03/query** with Claude Sonnet 4
 - **~$0.008/query** with Claude Haiku 3.5
@@ -347,6 +354,7 @@ Public query caching (1h TTL) reduces effective cost for repeated queries.
 ## Files Changed/Created
 
 ### New Files
+
 - `api/nlq/__init__.py`
 - `api/nlq/engine.py` — NLQ engine with tool-use loop
 - `api/nlq/tools.py` — Tool definitions and runner
@@ -361,6 +369,7 @@ Public query caching (1h TTL) reduces effective cost for repeated queries.
 - `explore/__tests__/nlq.test.js`
 
 ### Modified Files
+
 - `common/config.py` — Add NLQ config fields to `ApiConfig`
 - `api/api.py` — Wire NLQ router, initialize Anthropic client in lifespan
 - `api/routers/__init__.py` — Export NLQ router (if applicable)

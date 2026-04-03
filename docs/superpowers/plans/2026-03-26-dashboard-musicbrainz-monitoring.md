@@ -10,12 +10,14 @@
 
 **Worktree:** `.worktrees/217-dashboard-musicbrainz` on branch `feature/217-dashboard-musicbrainz`
 
----
+______________________________________________________________________
 
 ### Task 1: Add PipelineMetrics model and PIPELINE_CONFIGS
 
 **Files:**
+
 - Modify: `dashboard/dashboard.py:60-101` (models section)
+
 - Test: `tests/dashboard/test_dashboard_api.py`
 
 - [ ] **Step 1: Write the failing test for new model structure**
@@ -104,11 +106,12 @@ git add dashboard/dashboard.py
 git commit -m "feat(dashboard): add PipelineMetrics model and PIPELINE_CONFIGS (#217)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 2: Refactor backend to collect metrics per pipeline
 
 **Files:**
+
 - Modify: `dashboard/dashboard.py:207-317` (collect_all_metrics, get_service_statuses, get_queue_info)
 
 - [ ] **Step 1: Refactor get_service_statuses to accept service_configs parameter**
@@ -248,11 +251,12 @@ git add dashboard/dashboard.py
 git commit -m "refactor(dashboard): collect metrics per pipeline with auto-detection (#217)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: Update API endpoints for pipeline-grouped responses
 
 **Files:**
+
 - Modify: `dashboard/dashboard.py:475-517` (API endpoints)
 
 - [ ] **Step 1: Update /api/services endpoint**
@@ -314,11 +318,12 @@ git add dashboard/dashboard.py
 git commit -m "feat(dashboard): update API endpoints for pipeline-grouped responses (#217)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 4: Update test app factory for pipeline structure
 
 **Files:**
+
 - Modify: `tests/dashboard/dashboard_test_app.py`
 
 - [ ] **Step 1: Update MockDashboardApp.mock_collect_metrics_loop**
@@ -458,12 +463,14 @@ git add tests/dashboard/dashboard_test_app.py
 git commit -m "test(dashboard): update test app factory for pipeline structure (#217)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 5: Update all dashboard tests
 
 **Files:**
+
 - Modify: `tests/dashboard/test_dashboard_api_integration.py`
+
 - Modify: `tests/dashboard/test_dashboard_api.py`
 
 - [ ] **Step 1: Update integration tests**
@@ -542,12 +549,14 @@ git add tests/dashboard/test_dashboard_api_integration.py tests/dashboard/test_d
 git commit -m "test(dashboard): update API tests for pipeline-grouped responses (#217)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 6: Add pipeline auto-detection tests
 
 **Files:**
+
 - Modify: `tests/dashboard/test_dashboard_api_integration.py`
+
 - Modify: `tests/dashboard/dashboard_test_app.py`
 
 - [ ] **Step 1: Write test for pipeline omission when all services unreachable**
@@ -684,11 +693,12 @@ git add tests/dashboard/test_dashboard_api_integration.py tests/dashboard/dashbo
 git commit -m "test(dashboard): add pipeline auto-detection tests (#217)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 7: Update index.html with pipeline sections
 
 **Files:**
+
 - Modify: `dashboard/static/index.html`
 
 - [ ] **Step 1: Wrap existing service cards in a Discogs pipeline section**
@@ -811,11 +821,12 @@ git add dashboard/static/index.html
 git commit -m "feat(dashboard): restructure HTML into Discogs and MusicBrainz pipeline sections (#217)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 8: Update dashboard.js for pipeline-aware rendering
 
 **Files:**
+
 - Modify: `dashboard/static/dashboard.js`
 
 - [ ] **Step 1: Update updateDashboard to use pipelines**
@@ -970,7 +981,7 @@ updateQueues(pipelineName, queues) {
 }
 ```
 
-- [ ] **Step 4: Update _updateBarChart and _updateRateCircles to use pipeline prefix**
+- [ ] **Step 4: Update \_updateBarChart and \_updateRateCircles to use pipeline prefix**
 
 Add `pipelineName` as first parameter. All element ID lookups get the pipeline prefix:
 
@@ -997,7 +1008,7 @@ _updateRateCircles(pipelineName, graphinatorMap, tableInatorMap, types, isDlq = 
 }
 ```
 
-- [ ] **Step 5: Update _onDlqToggle to iterate all pipelines**
+- [ ] **Step 5: Update \_onDlqToggle to iterate all pipelines**
 
 ```javascript
 _onDlqToggle() {
@@ -1036,12 +1047,14 @@ git add dashboard/static/dashboard.js
 git commit -m "feat(dashboard): update JS for pipeline-aware rendering (#217)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 9: Add admin proxy route for MusicBrainz extraction trigger
 
 **Files:**
+
 - Modify: `dashboard/admin_proxy.py`
+
 - Modify: `tests/dashboard/test_admin_proxy.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -1105,11 +1118,12 @@ git add dashboard/admin_proxy.py tests/dashboard/test_admin_proxy.py
 git commit -m "feat(dashboard): add admin proxy route for MusicBrainz extraction trigger (#217)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 10: Run full test suite and fix issues
 
 **Files:**
+
 - All modified files
 
 - [ ] **Step 1: Run full dashboard test suite**
@@ -1142,20 +1156,26 @@ git add -A
 git commit -m "fix(dashboard): address test/lint issues from MusicBrainz monitoring (#217)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 11: Update documentation
 
 **Files:**
+
 - Modify: `dashboard/README.md`
+
 - Modify: `docs/monitoring.md` (if it references dashboard API structure)
 
 - [ ] **Step 1: Update dashboard README with new pipeline structure**
 
 Update the API section of `dashboard/README.md` to document:
+
 - The new `pipelines` dict in `/api/metrics`
+
 - The grouped responses from `/api/services` and `/api/queues`
+
 - The new `/admin/api/extractions/trigger-musicbrainz` route
+
 - The MusicBrainz pipeline auto-detection behavior
 
 - [ ] **Step 2: Commit**

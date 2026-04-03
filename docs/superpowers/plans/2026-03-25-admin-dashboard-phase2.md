@@ -12,36 +12,38 @@
 
 **Prerequisites:** Local `main` must include Phase 1 commit `67ff31c` from `origin/main`. Run `git pull --rebase origin main` before starting.
 
----
+______________________________________________________________________
 
 ## File Map
 
 ### Files to Create
 
-| File | Responsibility |
-|------|---------------|
-| `api/queries/admin_queries.py` | All query functions: `get_user_stats`, `get_sync_activity`, `get_neo4j_storage`, `get_postgres_storage`, `get_redis_storage` |
-| `tests/api/test_admin_queries.py` | Unit tests for all query functions with mocked DB connections |
+| File                              | Responsibility                                                                                                               |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `api/queries/admin_queries.py`    | All query functions: `get_user_stats`, `get_sync_activity`, `get_neo4j_storage`, `get_postgres_storage`, `get_redis_storage` |
+| `tests/api/test_admin_queries.py` | Unit tests for all query functions with mocked DB connections                                                                |
 
 ### Files to Modify
 
-| File | Change |
-|------|--------|
-| `api/models.py` | Add Pydantic response models for the 3 new endpoints |
-| `api/routers/admin.py` | Add 3 thin endpoint functions + extend `configure()` signature |
-| `api/api.py` | Pass `_neo4j` driver to `_admin_router.configure()` |
-| `dashboard/admin_proxy.py` | Add 3 proxy GET routes |
-| `dashboard/static/admin.html` | Add User Activity and Storage Utilization panel markup |
-| `dashboard/static/admin.js` | Add fetch + render logic for new panels |
-| `tests/api/test_admin_endpoints.py` | Add tests for 3 new endpoints |
-| `tests/dashboard/test_admin_proxy.py` | Add tests for 3 new proxy routes |
+| File                                  | Change                                                         |
+| ------------------------------------- | -------------------------------------------------------------- |
+| `api/models.py`                       | Add Pydantic response models for the 3 new endpoints           |
+| `api/routers/admin.py`                | Add 3 thin endpoint functions + extend `configure()` signature |
+| `api/api.py`                          | Pass `_neo4j` driver to `_admin_router.configure()`            |
+| `dashboard/admin_proxy.py`            | Add 3 proxy GET routes                                         |
+| `dashboard/static/admin.html`         | Add User Activity and Storage Utilization panel markup         |
+| `dashboard/static/admin.js`           | Add fetch + render logic for new panels                        |
+| `tests/api/test_admin_endpoints.py`   | Add tests for 3 new endpoints                                  |
+| `tests/dashboard/test_admin_proxy.py` | Add tests for 3 new proxy routes                               |
 
----
+______________________________________________________________________
 
 ## Task 1: Pydantic Response Models
 
 **Files:**
+
 - Modify: `api/models.py` (append after existing admin models, line ~369)
+
 - Test: `tests/api/test_api_models.py` (extend)
 
 - [ ] **Step 1: Write model validation tests**
@@ -303,12 +305,14 @@ git add api/models.py tests/api/test_api_models.py
 git commit -m "feat(admin): add Pydantic models for Phase 2 endpoints (#137)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 2: User Stats Query Function
 
 **Files:**
+
 - Create: `api/queries/admin_queries.py`
+
 - Create: `tests/api/test_admin_queries.py`
 
 - [ ] **Step 1: Write failing tests for `get_user_stats`**
@@ -522,12 +526,14 @@ git add api/queries/admin_queries.py tests/api/test_admin_queries.py
 git commit -m "feat(admin): add get_user_stats query function (#137)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 3: Sync Activity Query Function
 
 **Files:**
+
 - Modify: `api/queries/admin_queries.py`
+
 - Modify: `tests/api/test_admin_queries.py`
 
 - [ ] **Step 1: Write failing tests for `get_sync_activity`**
@@ -628,12 +634,14 @@ git add api/queries/admin_queries.py tests/api/test_admin_queries.py
 git commit -m "feat(admin): add get_sync_activity query function (#137)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 4: Storage Query Functions (Neo4j, PostgreSQL, Redis)
 
 **Files:**
+
 - Modify: `api/queries/admin_queries.py`
+
 - Modify: `tests/api/test_admin_queries.py`
 
 - [ ] **Step 1: Write failing tests for storage functions**
@@ -899,13 +907,16 @@ git add api/queries/admin_queries.py tests/api/test_admin_queries.py
 git commit -m "feat(admin): add storage query functions for Neo4j, PostgreSQL, Redis (#137)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 5: Admin Router Endpoints
 
 **Files:**
+
 - Modify: `api/routers/admin.py` — add 3 endpoints + extend `configure()`
+
 - Modify: `api/api.py` — pass `_neo4j` to admin configure
+
 - Modify: `tests/api/test_admin_endpoints.py` — add endpoint tests
 
 - [ ] **Step 1: Write failing endpoint tests**
@@ -1140,12 +1151,14 @@ git add api/routers/admin.py api/api.py tests/api/conftest.py tests/api/test_adm
 git commit -m "feat(admin): add user stats, sync activity, and storage endpoints (#137)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 6: Dashboard Proxy Routes
 
 **Files:**
+
 - Modify: `dashboard/admin_proxy.py`
+
 - Modify: `tests/dashboard/test_admin_proxy.py`
 
 - [ ] **Step 1: Write failing proxy tests**
@@ -1274,12 +1287,14 @@ git add dashboard/admin_proxy.py tests/dashboard/test_admin_proxy.py
 git commit -m "feat(admin): add dashboard proxy routes for Phase 2 endpoints (#137)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 7: Dashboard Frontend — User Activity Panel
 
 **Files:**
+
 - Modify: `dashboard/static/admin.html`
+
 - Modify: `dashboard/static/admin.js`
 
 - [ ] **Step 1: Read existing admin.html and admin.js**
@@ -1294,6 +1309,7 @@ git show origin/main:dashboard/static/admin.js | wc -l
 - [ ] **Step 2: Add User Activity panel HTML**
 
 Add a new tab button and panel section to `admin.html`, following the existing tab pattern. The panel should contain:
+
 - A "User Activity" tab button alongside existing tabs
 - Summary cards section (Total Users, Active 7d, Active 30d, OAuth Rate)
 - Sync activity cards section (Syncs/Day, Avg Items, Failure Rate)
@@ -1305,10 +1321,15 @@ Follow the existing CSS class naming and card layout pattern from Phase 1.
 - [ ] **Step 3: Add User Activity JS logic**
 
 Add to `admin.js`:
+
 - `fetchUserStats()` — calls `/admin/api/users/stats`, populates cards and registration table
+
 - `fetchSyncActivity()` — calls `/admin/api/users/sync-activity`, populates sync cards
+
 - Wire into the auto-refresh timer (60s interval)
+
 - Wire into tab switching logic
+
 - Handle errors gracefully (show inline warning, don't break the page)
 
 - [ ] **Step 4: Manual verification**
@@ -1322,29 +1343,40 @@ git add dashboard/static/admin.html dashboard/static/admin.js
 git commit -m "feat(admin): add User Activity panel to dashboard frontend (#137)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 8: Dashboard Frontend — Storage Utilization Panel
 
 **Files:**
+
 - Modify: `dashboard/static/admin.html`
+
 - Modify: `dashboard/static/admin.js`
 
 - [ ] **Step 1: Add Storage panel HTML**
 
 Add to `admin.html`:
+
 - A "Storage" tab button
+
 - Three collapsible sections: Neo4j, PostgreSQL, Redis
+
 - Each section has a status badge and a data table
+
 - Summary cards for total DB size, memory used, etc.
 
 - [ ] **Step 2: Add Storage JS logic**
 
 Add to `admin.js`:
+
 - `fetchStorage()` — calls `/admin/api/storage`, populates all three sections
+
 - Status badge rendering (green "ok" / red "error")
+
 - Collapsible section toggle
+
 - Error section display (when a source returns `status: "error"`)
+
 - Wire into auto-refresh and tab switching
 
 - [ ] **Step 3: Manual verification**
@@ -1358,7 +1390,7 @@ git add dashboard/static/admin.html dashboard/static/admin.js
 git commit -m "feat(admin): add Storage Utilization panel to dashboard frontend (#137)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 9: Final Validation
 

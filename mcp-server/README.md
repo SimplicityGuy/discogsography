@@ -6,19 +6,19 @@ All data is fetched via the Discogsography API — the MCP server has no direct 
 
 ## Tools
 
-| Tool | Description |
-|------|-------------|
-| `search` | Full-text search across artists, labels, masters, and releases |
-| `get_artist_details` | Detailed artist info (genres, styles, groups, release count) |
-| `get_label_details` | Label info with release count |
-| `get_release_details` | Release info (title, year, artists, labels, genres, styles) |
-| `get_genre_details` | Genre info with artist count |
-| `get_style_details` | Style (sub-genre) info with artist count |
-| `find_path` | Shortest path between any two entities in the graph |
-| `get_trends` | Release count by year for any entity |
-| `get_graph_stats` | Database-wide node counts |
-| `get_collaborators` | Artists who share releases with a given artist |
-| `get_genre_tree` | Full genre/style hierarchy with release counts |
+| Tool                  | Description                                                    |
+| --------------------- | -------------------------------------------------------------- |
+| `search`              | Full-text search across artists, labels, masters, and releases |
+| `get_artist_details`  | Detailed artist info (genres, styles, groups, release count)   |
+| `get_label_details`   | Label info with release count                                  |
+| `get_release_details` | Release info (title, year, artists, labels, genres, styles)    |
+| `get_genre_details`   | Genre info with artist count                                   |
+| `get_style_details`   | Style (sub-genre) info with artist count                       |
+| `find_path`           | Shortest path between any two entities in the graph            |
+| `get_trends`          | Release count by year for any entity                           |
+| `get_graph_stats`     | Database-wide node counts                                      |
+| `get_collaborators`   | Artists who share releases with a given artist                 |
+| `get_genre_tree`      | Full genre/style hierarchy with release counts                 |
 
 ## Installation
 
@@ -74,8 +74,8 @@ Use the same `command` and `args` in your editor's MCP server configuration.
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
+| Variable       | Default                 | Description                         |
+| -------------- | ----------------------- | ----------------------------------- |
 | `API_BASE_URL` | `http://localhost:8004` | Base URL for the Discogsography API |
 
 ## Transport

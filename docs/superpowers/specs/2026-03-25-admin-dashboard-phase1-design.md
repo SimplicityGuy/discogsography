@@ -6,12 +6,12 @@ Add a web-based admin panel to the existing Dashboard service (port 8003) that e
 
 ## Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Where does admin UI live? | Dashboard service (port 8003) | Single operational UI; dashboard proxies API calls |
-| Navigation pattern | Separate `/admin` page | Monitoring stays public; admin is login-gated |
-| Manual trigger behavior | Always force reprocess | Periodic scheduler already handles normal checks; manual trigger implies intent to reprocess |
-| Admin page layout | Single scrollable page | Matches monitoring dashboard pattern; simple |
+| Decision                  | Choice                        | Rationale                                                                                    |
+| ------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------- |
+| Where does admin UI live? | Dashboard service (port 8003) | Single operational UI; dashboard proxies API calls                                           |
+| Navigation pattern        | Separate `/admin` page        | Monitoring stays public; admin is login-gated                                                |
+| Manual trigger behavior   | Always force reprocess        | Periodic scheduler already handles normal checks; manual trigger implies intent to reprocess |
+| Admin page layout         | Single scrollable page        | Matches monitoring dashboard pattern; simple                                                 |
 
 ## 1. Force Reprocess — Extractor Changes
 
@@ -67,22 +67,22 @@ The dashboard service gets a new proxy router (`admin_proxy.py`) that forwards a
 
 ### New Files
 
-| File | Purpose |
-|------|---------|
-| `dashboard/static/admin.html` | Admin page — login form + admin panel |
-| `dashboard/static/admin.js` | Admin page logic — auth, API calls, UI updates |
-| `dashboard/admin_proxy.py` | FastAPI router — proxy endpoints to API service |
+| File                          | Purpose                                         |
+| ----------------------------- | ----------------------------------------------- |
+| `dashboard/static/admin.html` | Admin page — login form + admin panel           |
+| `dashboard/static/admin.js`   | Admin page logic — auth, API calls, UI updates  |
+| `dashboard/admin_proxy.py`    | FastAPI router — proxy endpoints to API service |
 
 ### Proxy Routes (`admin_proxy.py`)
 
-| Dashboard Route | Forwards To (API Service) | Method |
-|---|---|---|
-| `/admin/api/login` | `/api/admin/auth/login` | POST |
-| `/admin/api/logout` | `/api/admin/auth/logout` | POST |
-| `/admin/api/extractions` | `/api/admin/extractions` | GET |
-| `/admin/api/extractions/{id}` | `/api/admin/extractions/{id}` | GET |
-| `/admin/api/extractions/trigger` | `/api/admin/extractions/trigger` | POST |
-| `/admin/api/dlq/purge/{queue}` | `/api/admin/dlq/purge/{queue}` | POST |
+| Dashboard Route                  | Forwards To (API Service)        | Method |
+| -------------------------------- | -------------------------------- | ------ |
+| `/admin/api/login`               | `/api/admin/auth/login`          | POST   |
+| `/admin/api/logout`              | `/api/admin/auth/logout`         | POST   |
+| `/admin/api/extractions`         | `/api/admin/extractions`         | GET    |
+| `/admin/api/extractions/{id}`    | `/api/admin/extractions/{id}`    | GET    |
+| `/admin/api/extractions/trigger` | `/api/admin/extractions/trigger` | POST   |
+| `/admin/api/dlq/purge/{queue}`   | `/api/admin/dlq/purge/{queue}`   | POST   |
 
 The proxy:
 
@@ -155,10 +155,10 @@ Contents:
    docker exec -it discogsography-api-1 admin-setup \
      --email admin@example.com --password <min-8-chars>
    ```
-2. **Listing admin accounts** — `admin-setup --list`
-3. **Accessing the admin panel** — `http://<host>:8003/admin`
-4. **Triggering extraction** — What it does (forces full reprocessing regardless of state markers), when to use it
-5. **DLQ management** — What DLQs are, valid queue names, when purging is appropriate
+1. **Listing admin accounts** — `admin-setup --list`
+1. **Accessing the admin panel** — `http://<host>:8003/admin`
+1. **Triggering extraction** — What it does (forces full reprocessing regardless of state markers), when to use it
+1. **DLQ management** — What DLQs are, valid queue names, when purging is appropriate
 
 ## 4. Testing
 

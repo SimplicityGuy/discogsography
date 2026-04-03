@@ -11,15 +11,15 @@ Add self-service password reset and optional TOTP-based two-factor authenticatio
 
 ## Design Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| PR structure | Single PR | All three phases in one monolithic PR |
-| Notification abstraction | Thin protocol | `NotificationChannel` protocol with `LogNotificationChannel` — ready for email follow-on |
-| Encryption keys | HKDF from master key | `ENCRYPTION_MASTER_KEY` → derive per-purpose Fernet keys. Clean cutover with migration script. |
-| Session revocation | Redis-cached timestamp | `password_changed:<user_id>` in Redis, checked alongside existing jti blacklist |
-| Recovery code hashing | SHA-256 (unsalted) | Codes are 128+ bits of entropy — no dictionary attack risk. Industry standard. |
-| QR code rendering | qrcode.js via CDN | ~4KB, no dependencies, fits vanilla JS pattern |
-| Architecture | Auth router extraction | Move existing auth endpoints to `api/routers/auth.py`, matching project convention |
+| Decision                 | Choice                 | Rationale                                                                                      |
+| ------------------------ | ---------------------- | ---------------------------------------------------------------------------------------------- |
+| PR structure             | Single PR              | All three phases in one monolithic PR                                                          |
+| Notification abstraction | Thin protocol          | `NotificationChannel` protocol with `LogNotificationChannel` — ready for email follow-on       |
+| Encryption keys          | HKDF from master key   | `ENCRYPTION_MASTER_KEY` → derive per-purpose Fernet keys. Clean cutover with migration script. |
+| Session revocation       | Redis-cached timestamp | `password_changed:<user_id>` in Redis, checked alongside existing jti blacklist                |
+| Recovery code hashing    | SHA-256 (unsalted)     | Codes are 128+ bits of entropy — no dictionary attack risk. Industry standard.                 |
+| QR code rendering        | qrcode.js via CDN      | ~4KB, no dependencies, fits vanilla JS pattern                                                 |
+| Architecture             | Auth router extraction | Move existing auth endpoints to `api/routers/auth.py`, matching project convention             |
 
 ## Section 1: Encryption Key Migration & HKDF Derivation
 
@@ -56,10 +56,10 @@ Usage: `./scripts/migrate-encryption-key.sh <container> <pg_password> <old_oauth
 Follows the same pattern as `reset-password.sh` — runs Python inside the Docker container to access the database.
 
 1. Takes container name, PostgreSQL password, old `OAUTH_ENCRYPTION_KEY`, and new `ENCRYPTION_MASTER_KEY` as args
-2. Derives the new OAuth Fernet key from master key via HKDF
-3. Re-encrypts all `oauth_tokens.access_token` and `oauth_tokens.access_secret` values
-4. Verifies round-trip decryption for each token
-5. Prints instructions for updating `.env` file
+1. Derives the new OAuth Fernet key from master key via HKDF
+1. Re-encrypts all `oauth_tokens.access_token` and `oauth_tokens.access_secret` values
+1. Verifies round-trip decryption for each token
+1. Prints instructions for updating `.env` file
 
 **`scripts/reset-password.sh` update:** Add `password_changed_at = NOW()` to the UPDATE statement. Also write `password_changed:<user_id>` to Redis.
 
@@ -71,10 +71,10 @@ Add `password_changed_at TIMESTAMPTZ` column to `users` table in `schema-init/po
 
 ### Redis Keys
 
-| Key | Value | TTL |
-|-----|-------|-----|
-| `reset:<token>` | JSON: `{user_id, email, created_at}` | 15 min |
-| `password_changed:<user_id>` | Unix timestamp | Equal to `jwt_expire_minutes` |
+| Key                          | Value                                | TTL                           |
+| ---------------------------- | ------------------------------------ | ----------------------------- |
+| `reset:<token>`              | JSON: `{user_id, email, created_at}` | 15 min                        |
+| `password_changed:<user_id>` | Unix timestamp                       | Equal to `jwt_expire_minutes` |
 
 ### Endpoints (in `api/routers/auth.py`)
 
@@ -125,18 +125,18 @@ Injected into the auth router at startup.
 
 ### Database Changes (added to `users` table)
 
-| Column | Type | Default | Notes |
-|--------|------|---------|-------|
-| `totp_secret` | `VARCHAR` | `NULL` | Fernet-encrypted TOTP secret |
-| `totp_enabled` | `BOOLEAN` | `FALSE` | Whether 2FA is active |
-| `totp_recovery_codes` | `JSONB` | `NULL` | Array of SHA-256 hashed codes |
-| `totp_failed_attempts` | `INTEGER` | `0` | Brute force counter |
-| `totp_locked_until` | `TIMESTAMPTZ` | `NULL` | Lockout expiry |
+| Column                 | Type          | Default | Notes                         |
+| ---------------------- | ------------- | ------- | ----------------------------- |
+| `totp_secret`          | `VARCHAR`     | `NULL`  | Fernet-encrypted TOTP secret  |
+| `totp_enabled`         | `BOOLEAN`     | `FALSE` | Whether 2FA is active         |
+| `totp_recovery_codes`  | `JSONB`       | `NULL`  | Array of SHA-256 hashed codes |
+| `totp_failed_attempts` | `INTEGER`     | `0`     | Brute force counter           |
+| `totp_locked_until`    | `TIMESTAMPTZ` | `NULL`  | Lockout expiry                |
 
 ### Redis Keys
 
-| Key | Value | TTL |
-|-----|-------|-----|
+| Key                         | Value                    | TTL   |
+| --------------------------- | ------------------------ | ----- |
 | `2fa_challenge:<token_jti>` | JSON: `{user_id, email}` | 5 min |
 
 ### Auth Utility Functions (in `api/auth.py`)
@@ -311,24 +311,24 @@ New entries for: `POST /api/auth/reset-request`, `POST /api/auth/reset-confirm`,
 
 ## Section 7: File Change Summary
 
-| File | Action | Description |
-|------|--------|-------------|
-| `api/auth.py` | Modify | Add HKDF derivation, TOTP utilities, challenge token functions |
-| `api/api.py` | Modify | Remove auth endpoints, add auth router setup, update `_get_current_user` with password_changed check |
-| `api/routers/auth.py` | Create | All auth endpoints (existing + reset + 2FA) |
-| `api/notifications.py` | Create | NotificationChannel protocol + LogNotificationChannel |
-| `api/models.py` | Modify | Add reset + 2FA Pydantic models |
-| `common/config.py` | Modify | Replace `oauth_encryption_key` with `encryption_master_key` + derived properties |
-| `schema-init/postgres_schema.py` | Modify | Add `password_changed_at` + TOTP columns to users table |
-| `explore/static/index.html` | Modify | Add forgot password link, reset forms, 2FA code entry, 2FA setup UI |
-| `explore/static/js/api-client.js` | Modify | Add reset + 2FA API methods |
-| `explore/static/js/auth.js` | Modify | Handle 2FA challenge state in login flow |
-| `scripts/reset-password.sh` | Modify | Add `password_changed_at`, Redis write |
-| `scripts/migrate-encryption-key.sh` | Create | One-time OAuth token re-encryption |
-| `pyproject.toml` | Modify | Add `pyotp` dependency |
-| `tests/api/test_auth_router.py` | Create | All auth endpoint tests |
-| `tests/api/test_notifications.py` | Create | Notification channel tests |
-| `tests/perftest/config.yaml` | Modify | Add new endpoint entries |
+| File                                | Action | Description                                                                                          |
+| ----------------------------------- | ------ | ---------------------------------------------------------------------------------------------------- |
+| `api/auth.py`                       | Modify | Add HKDF derivation, TOTP utilities, challenge token functions                                       |
+| `api/api.py`                        | Modify | Remove auth endpoints, add auth router setup, update `_get_current_user` with password_changed check |
+| `api/routers/auth.py`               | Create | All auth endpoints (existing + reset + 2FA)                                                          |
+| `api/notifications.py`              | Create | NotificationChannel protocol + LogNotificationChannel                                                |
+| `api/models.py`                     | Modify | Add reset + 2FA Pydantic models                                                                      |
+| `common/config.py`                  | Modify | Replace `oauth_encryption_key` with `encryption_master_key` + derived properties                     |
+| `schema-init/postgres_schema.py`    | Modify | Add `password_changed_at` + TOTP columns to users table                                              |
+| `explore/static/index.html`         | Modify | Add forgot password link, reset forms, 2FA code entry, 2FA setup UI                                  |
+| `explore/static/js/api-client.js`   | Modify | Add reset + 2FA API methods                                                                          |
+| `explore/static/js/auth.js`         | Modify | Handle 2FA challenge state in login flow                                                             |
+| `scripts/reset-password.sh`         | Modify | Add `password_changed_at`, Redis write                                                               |
+| `scripts/migrate-encryption-key.sh` | Create | One-time OAuth token re-encryption                                                                   |
+| `pyproject.toml`                    | Modify | Add `pyotp` dependency                                                                               |
+| `tests/api/test_auth_router.py`     | Create | All auth endpoint tests                                                                              |
+| `tests/api/test_notifications.py`   | Create | Notification channel tests                                                                           |
+| `tests/perftest/config.yaml`        | Modify | Add new endpoint entries                                                                             |
 
 ## Security Considerations
 

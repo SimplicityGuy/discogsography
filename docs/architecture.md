@@ -16,32 +16,32 @@ Discogsography is built as a microservices platform that processes large-scale m
 
 ### ⚙️ Service Components
 
-| Service                                                  | Purpose                                     | Key Technologies                                             | Port(s)               |
-| -------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------ | --------------------- |
-| **[🔐](emoji-guide.md#service-identifiers) API**         | User auth, graph queries, and sync triggers | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0            | 8004 (ext), 8005      |
-| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor (runs as `extractor-discogs` and `extractor-musicbrainz` Docker services) | `tokio`, `quick-xml`, `lapin`                                | 8000 (health)         |
-| **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initializer              | `neo4j-driver`, `psycopg3`                                   | —                     |
-| **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs               | `neo4j-driver`, graph algorithms                             | 8001 (health)         |
-| **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables         | `psycopg3`, JSONB, full-text search                          | 8002 (health)         |
-| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Static frontend files and health check      | `FastAPI`, `Tailwind CSS`, `Alpine.js`, `D3.js`, `Plotly.js` | 8006, 8007 (internal) |
-| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time monitoring and admin panel        | `FastAPI`, WebSocket, reactive UI, `httpx`                   | 8003 (ext)            |
-| **[📈](emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends      | `FastAPI`, `psycopg3`, `httpx`                               | 8008, 8009 (internal) |
-| **[🤖](emoji-guide.md#service-identifiers) MCP Server**  | Exposes knowledge graph to AI assistants    | `FastMCP`, `httpx`                                           | stdio / streamable-http |
+| Service                                                  | Purpose                                                                                                         | Key Technologies                                             | Port(s)                 |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ----------------------- |
+| **[🔐](emoji-guide.md#service-identifiers) API**         | User auth, graph queries, and sync triggers                                                                     | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0            | 8004 (ext), 8005        |
+| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor (runs as `extractor-discogs` and `extractor-musicbrainz` Docker services) | `tokio`, `quick-xml`, `lapin`                                | 8000 (health)           |
+| **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initializer                                                                                  | `neo4j-driver`, `psycopg3`                                   | —                       |
+| **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs                                                                                   | `neo4j-driver`, graph algorithms                             | 8001 (health)           |
+| **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables                                                                             | `psycopg3`, JSONB, full-text search                          | 8002 (health)           |
+| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Static frontend files and health check                                                                          | `FastAPI`, `Tailwind CSS`, `Alpine.js`, `D3.js`, `Plotly.js` | 8006, 8007 (internal)   |
+| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time monitoring and admin panel                                                                            | `FastAPI`, WebSocket, reactive UI, `httpx`                   | 8003 (ext)              |
+| **[📈](emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends                                                                          | `FastAPI`, `psycopg3`, `httpx`                               | 8008, 8009 (internal)   |
+| **[🤖](emoji-guide.md#service-identifiers) MCP Server**  | Exposes knowledge graph to AI assistants                                                                        | `FastMCP`, `httpx`                                           | stdio / streamable-http |
 
 ### MusicBrainz Enrichment Services
 
-| Service                                                              | Purpose                                                          | Key Technologies                    | Port(s)       |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------- | ------------- |
-| **[🧠](emoji-guide.md#service-identifiers) Brainzgraphinator**      | Enriches Neo4j graph with MusicBrainz metadata and relationships | `neo4j-driver`, `pika`              | 8011 (health) |
-| **[🧬](emoji-guide.md#service-identifiers) Brainztableinator**      | Stores all MusicBrainz data in PostgreSQL                        | `psycopg3`, `pika`                  | 8010 (health) |
+| Service                                                        | Purpose                                                          | Key Technologies       | Port(s)       |
+| -------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------- | ------------- |
+| **[🧠](emoji-guide.md#service-identifiers) Brainzgraphinator** | Enriches Neo4j graph with MusicBrainz metadata and relationships | `neo4j-driver`, `pika` | 8011 (health) |
+| **[🧬](emoji-guide.md#service-identifiers) Brainztableinator** | Stores all MusicBrainz data in PostgreSQL                        | `psycopg3`, `pika`     | 8010 (health) |
 
 ### Infrastructure Components
 
-| Component                                               | Purpose                               | Port(s)       |
-| ------------------------------------------------------- | ------------------------------------- | ------------- |
-| **[🐰](emoji-guide.md#service-identifiers) RabbitMQ**   | Message broker and queue management   | 5672, 15672   |
-| **[🔗](emoji-guide.md#service-identifiers) Neo4j**      | Graph database for relationships      | 7474, 7687    |
-| **[🐘](emoji-guide.md#service-identifiers) PostgreSQL** | Relational database for analytics     | 5433 (mapped) |
+| Component                                               | Purpose                                          | Port(s)       |
+| ------------------------------------------------------- | ------------------------------------------------ | ------------- |
+| **[🐰](emoji-guide.md#service-identifiers) RabbitMQ**   | Message broker and queue management              | 5672, 15672   |
+| **[🔗](emoji-guide.md#service-identifiers) Neo4j**      | Graph database for relationships                 | 7474, 7687    |
+| **[🐘](emoji-guide.md#service-identifiers) PostgreSQL** | Relational database for analytics                | 5433 (mapped) |
 | **[🔴](emoji-guide.md#service-identifiers) Redis**      | Cache layer for queries, sessions, and analytics | 6379          |
 
 ## System Architecture Diagrams
@@ -839,15 +839,15 @@ See [Database Schema](database-schema.md) for details.
 - Dashboard metrics
 - **API query result caching** (cache-aside pattern):
 
-| Cache Key Pattern                    | TTL | Endpoints Covered               |
-| ------------------------------------ | --- | ------------------------------- |
-| `trends:{type}:{name}`               | 24h | `/api/trends?type=genre\|style` |
-| `label-dna:{label_id}`               | 24h | `/api/label/{id}/dna`           |
-| `label-similar:{label_id}:{limit}`   | 24h | `/api/label/{id}/similar`       |
+| Cache Key Pattern                      | TTL | Endpoints Covered                           |
+| -------------------------------------- | --- | ------------------------------------------- |
+| `trends:{type}:{name}`                 | 24h | `/api/trends?type=genre\|style`             |
+| `label-dna:{label_id}`                 | 24h | `/api/label/{id}/dna`                       |
+| `label-similar:{label_id}:{limit}`     | 24h | `/api/label/{id}/similar`                   |
 | `recommend:similar:artist:{artist_id}` | 24h | `/api/recommend/similar/artist/{artist_id}` |
-| `explore-artist:{name}`              | 24h | `/api/explore?type=artist`      |
-| `trends-label:{label_id}`            | 24h | `/api/trends?type=label`        |
-| `search:{md5_digest}`                | 5m  | `/api/search`                   |
+| `explore-artist:{name}`                | 24h | `/api/explore?type=artist`                  |
+| `trends-label:{label_id}`              | 24h | `/api/trends?type=label`                    |
+| `search:{md5_digest}`                  | 5m  | `/api/search`                               |
 
 **Configuration**:
 

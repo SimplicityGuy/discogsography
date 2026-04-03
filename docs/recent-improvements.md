@@ -34,7 +34,7 @@ ______________________________________________________________________
 - **Explore Frontend**: New Collaborators and Genre Tree panes integrated into the Explore UI with dedicated JavaScript modules (`collaborators.js`, `genre-tree.js`).
 - **Security Ignore System**: Added `.pip-audit-ignores` and `osv-scanner.toml` for managing known upstream vulnerabilities with no available fix. The `update-project.sh` script automatically sweeps these after dependency upgrades and removes entries that have been resolved.
 
----
+______________________________________________________________________
 
 ### ⚡ Comprehensive Query Performance Optimization — 249x Overall Improvement (#175-#184)
 
@@ -542,11 +542,11 @@ ______________________________________________________________________
 
 #### Before / After
 
-| Endpoint group       | Before                  | After               |
-| -------------------- | ----------------------- | ------------------- |
-| Graph queries        | Explore service (:8006) | API service (:8004) |
+| Endpoint group       | Before                                                 | After               |
+| -------------------- | ------------------------------------------------------ | ------------------- |
+| Graph queries        | Explore service (:8006)                                | API service (:8004) |
 | Sync triggers        | Curator service (removed; :8010 now brainztableinator) | API service (:8004) |
-| User collection data | (new)                   | API service (:8004) |
+| User collection data | (new)                                                  | API service (:8004) |
 
 #### Benefits
 

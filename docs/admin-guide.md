@@ -4,14 +4,18 @@
 
 Admin accounts are created via the `admin-setup` CLI tool inside the API container:
 
-    docker exec -it discogsography-api-1 admin-setup \
-      --email admin@example.com --password <password>
+```
+docker exec -it discogsography-api-1 admin-setup \
+  --email admin@example.com --password <password>
+```
 
 Passwords must be at least 8 characters. If the email already exists, the password is updated.
 
 ## Listing Admin Accounts
 
-    docker exec -it discogsography-api-1 admin-setup --list
+```
+docker exec -it discogsography-api-1 admin-setup --list
+```
 
 ## Accessing the Admin Panel
 
@@ -43,24 +47,24 @@ If an extraction is already running, the trigger returns an error — wait for i
 
 Dead-letter queues (DLQs) collect messages that consumers failed to process. Each data type has a DLQ per consumer:
 
-| Queue | Consumer |
-|-------|----------|
-| `graphinator-artists-dlq` | Graphinator |
-| `graphinator-labels-dlq` | Graphinator |
-| `graphinator-masters-dlq` | Graphinator |
-| `graphinator-releases-dlq` | Graphinator |
-| `tableinator-artists-dlq` | Tableinator |
-| `tableinator-labels-dlq` | Tableinator |
-| `tableinator-masters-dlq` | Tableinator |
-| `tableinator-releases-dlq` | Tableinator |
-| `brainzgraphinator-artists-dlq` | Brainzgraphinator |
-| `brainzgraphinator-labels-dlq` | Brainzgraphinator |
+| Queue                                  | Consumer          |
+| -------------------------------------- | ----------------- |
+| `graphinator-artists-dlq`              | Graphinator       |
+| `graphinator-labels-dlq`               | Graphinator       |
+| `graphinator-masters-dlq`              | Graphinator       |
+| `graphinator-releases-dlq`             | Graphinator       |
+| `tableinator-artists-dlq`              | Tableinator       |
+| `tableinator-labels-dlq`               | Tableinator       |
+| `tableinator-masters-dlq`              | Tableinator       |
+| `tableinator-releases-dlq`             | Tableinator       |
+| `brainzgraphinator-artists-dlq`        | Brainzgraphinator |
+| `brainzgraphinator-labels-dlq`         | Brainzgraphinator |
 | `brainzgraphinator-release-groups-dlq` | Brainzgraphinator |
-| `brainzgraphinator-releases-dlq` | Brainzgraphinator |
-| `brainztableinator-artists-dlq` | Brainztableinator |
-| `brainztableinator-labels-dlq` | Brainztableinator |
+| `brainzgraphinator-releases-dlq`       | Brainzgraphinator |
+| `brainztableinator-artists-dlq`        | Brainztableinator |
+| `brainztableinator-labels-dlq`         | Brainztableinator |
 | `brainztableinator-release-groups-dlq` | Brainztableinator |
-| `brainztableinator-releases-dlq` | Brainztableinator |
+| `brainztableinator-releases-dlq`       | Brainztableinator |
 
 **Purging** permanently deletes all messages in a DLQ. Do this when:
 
@@ -75,22 +79,24 @@ Purging cannot be undone.
 
 Two new endpoints expose time-series metrics for queue depths and service health:
 
-    GET /api/admin/queues/history?range=<range>
-    GET /api/admin/health/history?range=<range>
+```
+GET /api/admin/queues/history?range=<range>
+GET /api/admin/health/history?range=<range>
+```
 
 Both endpoints require admin authentication (Bearer token).
 
 **Valid range values:**
 
-| Range | Description | Data Granularity |
-|-------|-------------|-----------------|
-| `1h` | Last 1 hour | 5-minute buckets |
-| `6h` | Last 6 hours | 5-minute buckets |
-| `24h` | Last 24 hours (default) | 15-minute buckets |
-| `7d` | Last 7 days | 1-hour buckets |
-| `30d` | Last 30 days | 6-hour buckets |
-| `90d` | Last 90 days | 1-day buckets |
-| `365d` | Last 365 days | 1-day buckets |
+| Range  | Description             | Data Granularity  |
+| ------ | ----------------------- | ----------------- |
+| `1h`   | Last 1 hour             | 5-minute buckets  |
+| `6h`   | Last 6 hours            | 5-minute buckets  |
+| `24h`  | Last 24 hours (default) | 15-minute buckets |
+| `7d`   | Last 7 days             | 1-hour buckets    |
+| `30d`  | Last 30 days            | 6-hour buckets    |
+| `90d`  | Last 90 days            | 1-day buckets     |
+| `365d` | Last 365 days           | 1-day buckets     |
 
 Granularity is selected automatically based on the requested range. Omitting the `range` parameter defaults to `24h`.
 
@@ -102,15 +108,17 @@ The collector interval is controlled by the `METRICS_COLLECTION_INTERVAL` enviro
 
 ### New Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `METRICS_RETENTION_DAYS` | `366` | How many days of metrics to retain in the database. Older rows are pruned automatically. |
-| `METRICS_COLLECTION_INTERVAL` | `300` | Seconds between each metrics collection cycle in the background collector. |
+| Variable                      | Default | Description                                                                              |
+| ----------------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| `METRICS_RETENTION_DAYS`      | `366`   | How many days of metrics to retain in the database. Older rows are pruned automatically. |
+| `METRICS_COLLECTION_INTERVAL` | `300`   | Seconds between each metrics collection cycle in the background collector.               |
 
 Set these in your `docker-compose.yml` or environment file:
 
-    METRICS_RETENTION_DAYS=366
-    METRICS_COLLECTION_INTERVAL=300
+```
+METRICS_RETENTION_DAYS=366
+METRICS_COLLECTION_INTERVAL=300
+```
 
 ### New Database Tables
 
@@ -118,27 +126,27 @@ Metrics are stored in two PostgreSQL tables:
 
 **`queue_metrics`** — RabbitMQ queue depth snapshots:
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | bigint | Primary key (generated always as identity) |
-| `recorded_at` | timestamptz | When the sample was taken |
-| `queue_name` | varchar(100) | Name of the RabbitMQ queue |
-| `messages_ready` | integer | Number of ready messages at sample time |
-| `messages_unacknowledged` | integer | Number of unacknowledged messages at sample time |
-| `consumers` | integer | Number of active consumers at sample time |
-| `publish_rate` | real | Message publish rate |
-| `ack_rate` | real | Message acknowledgement rate |
+| Column                    | Type         | Description                                      |
+| ------------------------- | ------------ | ------------------------------------------------ |
+| `id`                      | bigint       | Primary key (generated always as identity)       |
+| `recorded_at`             | timestamptz  | When the sample was taken                        |
+| `queue_name`              | varchar(100) | Name of the RabbitMQ queue                       |
+| `messages_ready`          | integer      | Number of ready messages at sample time          |
+| `messages_unacknowledged` | integer      | Number of unacknowledged messages at sample time |
+| `consumers`               | integer      | Number of active consumers at sample time        |
+| `publish_rate`            | real         | Message publish rate                             |
+| `ack_rate`                | real         | Message acknowledgement rate                     |
 
 **`service_health_metrics`** — Per-service health check results:
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | bigint | Primary key (generated always as identity) |
-| `recorded_at` | timestamptz | When the sample was taken |
-| `service_name` | varchar(50) | Name of the service (e.g. `graphinator`, `tableinator`) |
-| `status` | varchar(20) | Health status (`healthy`, `unhealthy`, `unknown`) |
-| `response_time_ms` | real | Health check response time in milliseconds |
-| `endpoint_stats` | jsonb | Per-endpoint latency statistics (API service only) |
+| Column             | Type        | Description                                             |
+| ------------------ | ----------- | ------------------------------------------------------- |
+| `id`               | bigint      | Primary key (generated always as identity)              |
+| `recorded_at`      | timestamptz | When the sample was taken                               |
+| `service_name`     | varchar(50) | Name of the service (e.g. `graphinator`, `tableinator`) |
+| `status`           | varchar(20) | Health status (`healthy`, `unhealthy`, `unknown`)       |
+| `response_time_ms` | real        | Health check response time in milliseconds              |
+| `endpoint_stats`   | jsonb       | Per-endpoint latency statistics (API service only)      |
 
 Both tables are indexed on `recorded_at` for efficient range queries. Rows older than `METRICS_RETENTION_DAYS` are pruned automatically.
 

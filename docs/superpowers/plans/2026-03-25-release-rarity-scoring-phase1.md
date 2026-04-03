@@ -10,29 +10,31 @@
 
 **Spec:** `docs/superpowers/specs/2026-03-25-release-rarity-scoring-phase1-design.md`
 
----
+______________________________________________________________________
 
 ## File Structure
 
-| Action | File | Responsibility |
-|--------|------|---------------|
-| Create | `api/queries/rarity_queries.py` | Neo4j batch signal queries + PostgreSQL rarity lookups |
-| Create | `api/routers/rarity.py` | 5 public endpoints + 1 internal endpoint + `configure()` |
-| Create | `tests/api/test_rarity_queries.py` | Unit tests for query functions |
-| Create | `tests/api/test_rarity.py` | Endpoint integration tests |
-| Create | `tests/insights/test_rarity_computation.py` | Insights pipeline tests |
-| Modify | `api/models.py` | Add `RaritySignal`, `RarityBreakdown`, `RarityResponse`, `RarityListItem`, `RarityListResponse` |
-| Modify | `api/api.py` | Import + configure + include rarity router |
-| Modify | `schema-init/postgres_schema.py` | Add `insights.release_rarity` table + indexes |
-| Modify | `insights/computations.py` | Add `compute_and_store_rarity()` + wire into `run_all_computations()` |
-| Modify | `tests/api/conftest.py` | Configure rarity router in `test_client` fixture |
+| Action | File                                        | Responsibility                                                                                  |
+| ------ | ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Create | `api/queries/rarity_queries.py`             | Neo4j batch signal queries + PostgreSQL rarity lookups                                          |
+| Create | `api/routers/rarity.py`                     | 5 public endpoints + 1 internal endpoint + `configure()`                                        |
+| Create | `tests/api/test_rarity_queries.py`          | Unit tests for query functions                                                                  |
+| Create | `tests/api/test_rarity.py`                  | Endpoint integration tests                                                                      |
+| Create | `tests/insights/test_rarity_computation.py` | Insights pipeline tests                                                                         |
+| Modify | `api/models.py`                             | Add `RaritySignal`, `RarityBreakdown`, `RarityResponse`, `RarityListItem`, `RarityListResponse` |
+| Modify | `api/api.py`                                | Import + configure + include rarity router                                                      |
+| Modify | `schema-init/postgres_schema.py`            | Add `insights.release_rarity` table + indexes                                                   |
+| Modify | `insights/computations.py`                  | Add `compute_and_store_rarity()` + wire into `run_all_computations()`                           |
+| Modify | `tests/api/conftest.py`                     | Configure rarity router in `test_client` fixture                                                |
 
----
+______________________________________________________________________
 
 ## Task 1: PostgreSQL Schema — `insights.release_rarity` Table
 
 **Files:**
+
 - Modify: `schema-init/postgres_schema.py` (add table + indexes to `_INSIGHTS_TABLES`)
+
 - Test: `tests/schema-init/test_postgres_schema.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -147,12 +149,14 @@ git add schema-init/postgres_schema.py tests/schema-init/test_release_rarity_sch
 git commit -m "feat(schema): add insights.release_rarity table and indexes (#205)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 2: Pydantic Response Models
 
 **Files:**
+
 - Modify: `api/models.py`
+
 - Test: `tests/api/test_rarity_models.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -292,11 +296,12 @@ git add api/models.py tests/api/test_rarity_models.py
 git commit -m "feat(models): add rarity response models (#205)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 3: Rarity Scoring Engine — Query Functions
 
 **Files:**
+
 - Create: `api/queries/rarity_queries.py`
 - Test: `tests/api/test_rarity_queries.py`
 
@@ -1166,14 +1171,18 @@ git add api/queries/rarity_queries.py tests/api/test_rarity_queries.py
 git commit -m "feat(queries): add rarity scoring engine with 5-signal model (#205)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 4: API Router — Rarity Endpoints
 
 **Files:**
+
 - Create: `api/routers/rarity.py`
+
 - Create: `tests/api/test_rarity.py`
+
 - Modify: `api/api.py` (import + configure + include)
+
 - Modify: `tests/api/conftest.py` (configure rarity router)
 
 - [ ] **Step 1: Write the failing tests**
@@ -1581,13 +1590,16 @@ git add api/routers/rarity.py api/api.py tests/api/test_rarity.py tests/api/conf
 git commit -m "feat(api): add rarity scoring endpoints (#205)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 5: Internal Compute Endpoint + Insights Pipeline
 
 **Files:**
+
 - Modify: `api/routers/insights_compute.py` (add `/rarity-scores` endpoint)
+
 - Modify: `insights/computations.py` (add `compute_and_store_rarity`)
+
 - Create: `tests/insights/test_rarity_computation.py`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1803,7 +1815,7 @@ git add api/routers/insights_compute.py insights/computations.py tests/insights/
 git commit -m "feat(insights): add rarity score computation pipeline (#205)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 6: Full Test Suite Verification + Coverage
 
@@ -1837,8 +1849,11 @@ Expected: >=80% coverage on new code
 - [ ] **Step 6: Fix any coverage gaps**
 
 If coverage is below 80%, add additional tests targeting uncovered lines. Common gaps to check:
+
 - Error paths (database connection failures)
+
 - Edge cases in scoring functions (boundary values)
+
 - Empty result handling in query functions
 
 - [ ] **Step 7: Final commit if any fixes were needed**

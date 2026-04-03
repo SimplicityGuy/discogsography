@@ -8,13 +8,14 @@
 
 **Tech Stack:** Rust, reqwest (HTTP streaming), tar + xz2 (archive extraction), sha2 (checksum verification), mockito (test HTTP mocking)
 
----
+______________________________________________________________________
 
 ### Task 1: Add `tar` dependency to Cargo.toml
 
 `xz2` is already present. Only `tar` needs to be added.
 
 **Files:**
+
 - Modify: `extractor/Cargo.toml:25-26`
 
 - [ ] **Step 1: Add `tar` crate to dependencies**
@@ -40,14 +41,18 @@ git add extractor/Cargo.toml extractor/Cargo.lock
 git commit -m "feat: add tar dependency for MusicBrainz archive extraction"
 ```
 
----
+______________________________________________________________________
 
 ### Task 2: Add `musicbrainz_dump_url` to ExtractorConfig
 
 **Files:**
+
 - Modify: `extractor/src/config.rs:8` (struct definition)
+
 - Modify: `extractor/src/config.rs:24` (Default impl)
+
 - Modify: `extractor/src/config.rs:63` (from_env)
+
 - Test: `extractor/src/tests/config_tests.rs`
 
 - [ ] **Step 1: Write test for new config field**
@@ -116,14 +121,16 @@ git add extractor/src/config.rs extractor/src/tests/config_tests.rs
 git commit -m "feat: add musicbrainz_dump_url config field"
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: Add `find_latest_mb_directory` function
 
 Scans the local filesystem for version-stamped subdirectories (YYYYMMDD-HHMMSS pattern) and returns the path to the latest one.
 
 **Files:**
+
 - Modify: `extractor/src/musicbrainz_downloader.rs`
+
 - Test: `extractor/src/tests/musicbrainz_downloader_tests.rs`
 
 - [ ] **Step 1: Write tests for find_latest_mb_directory**
@@ -215,14 +222,16 @@ git add extractor/src/musicbrainz_downloader.rs extractor/src/tests/musicbrainz_
 git commit -m "feat: add find_latest_mb_directory for version directory scanning"
 ```
 
----
+______________________________________________________________________
 
 ### Task 4: Update `discover_mb_dump_files` to match bare `.jsonl` files
 
 The extracted files are `artist.jsonl`, not `artist.jsonl.xz`. Discovery needs to find them.
 
 **Files:**
+
 - Modify: `extractor/src/musicbrainz_downloader.rs:10-14` (MB_FILE_PATTERNS)
+
 - Test: `extractor/src/tests/musicbrainz_downloader_tests.rs`
 
 - [ ] **Step 1: Write test for bare .jsonl discovery**
@@ -287,12 +296,14 @@ git add extractor/src/musicbrainz_downloader.rs extractor/src/tests/musicbrainz_
 git commit -m "feat: support bare .jsonl files in MusicBrainz dump discovery"
 ```
 
----
+______________________________________________________________________
 
 ### Task 5: Implement `MbDownloader` core — version scraping and SHA256 parsing
 
 **Files:**
+
 - Modify: `extractor/src/musicbrainz_downloader.rs`
+
 - Test: `extractor/src/tests/musicbrainz_downloader_tests.rs`
 
 - [ ] **Step 1: Write tests for version scraping and SHA256 parsing**
@@ -432,12 +443,14 @@ git add extractor/src/musicbrainz_downloader.rs extractor/src/tests/musicbrainz_
 git commit -m "feat: add MbDownloader struct with version scraping and SHA256 parsing"
 ```
 
----
+______________________________________________________________________
 
 ### Task 6: Implement tar extraction helper
 
 **Files:**
+
 - Modify: `extractor/src/musicbrainz_downloader.rs`
+
 - Test: `extractor/src/tests/musicbrainz_downloader_tests.rs`
 
 - [ ] **Step 1: Write test for tar extraction**
@@ -591,14 +604,16 @@ git add extractor/src/musicbrainz_downloader.rs extractor/src/tests/musicbrainz_
 git commit -m "feat: add tar.xz extraction helper for MusicBrainz dumps"
 ```
 
----
+______________________________________________________________________
 
 ### Task 7: Implement `MbDownloader::download_latest`
 
 This is the main download orchestration method: scrape versions, check for existing files, download + verify + extract.
 
 **Files:**
+
 - Modify: `extractor/src/musicbrainz_downloader.rs`
+
 - Test: `extractor/src/tests/musicbrainz_downloader_tests.rs`
 
 - [ ] **Step 1: Write test for already-current scenario**
@@ -1001,13 +1016,14 @@ git add extractor/src/musicbrainz_downloader.rs extractor/src/tests/musicbrainz_
 git commit -m "feat: implement MbDownloader with streaming download, SHA256 verification, and retry"
 ```
 
----
+______________________________________________________________________
 
 ### Task 8: Integrate download into `process_musicbrainz_data`
 
 Update the extraction pipeline to download before discovery and use the versioned subdirectory.
 
 **Files:**
+
 - Modify: `extractor/src/extractor.rs:766-801`
 
 - [ ] **Step 1: Update process_musicbrainz_data to download first**
@@ -1077,12 +1093,14 @@ git add extractor/src/extractor.rs
 git commit -m "feat: integrate MusicBrainz download into extraction pipeline"
 ```
 
----
+______________________________________________________________________
 
 ### Task 9: Add `run_musicbrainz_loop` with periodic checking
 
 **Files:**
+
 - Modify: `extractor/src/extractor.rs` (add new function after `run_extraction_loop`)
+
 - Modify: `extractor/src/main.rs:130-148` (call the loop instead of one-shot)
 
 - [ ] **Step 1: Add run_musicbrainz_loop to extractor.rs**
@@ -1197,11 +1215,12 @@ git add extractor/src/extractor.rs extractor/src/main.rs
 git commit -m "feat: add run_musicbrainz_loop with periodic version checking"
 ```
 
----
+______________________________________________________________________
 
 ### Task 10: Add retry test
 
 **Files:**
+
 - Test: `extractor/src/tests/musicbrainz_downloader_tests.rs`
 
 - [ ] **Step 1: Write retry test**
@@ -1299,7 +1318,7 @@ git add extractor/src/tests/musicbrainz_downloader_tests.rs
 git commit -m "test: add retry test for MusicBrainz download"
 ```
 
----
+______________________________________________________________________
 
 ### Task 11: Run full test suite, lint, and format
 
@@ -1336,11 +1355,12 @@ git add -A
 git commit -m "fix: address lint and formatting issues from MusicBrainz download feature"
 ```
 
----
+______________________________________________________________________
 
 ### Task 12: Update docker-compose.yml (optional env var)
 
 **Files:**
+
 - Modify: `docker-compose.yml:335-337`
 
 - [ ] **Step 1: Add MUSICBRAINZ_DUMP_URL to extractor-musicbrainz service**

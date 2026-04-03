@@ -141,22 +141,22 @@ If a user attempts to start the Discogs OAuth flow before credentials are config
 
 ### Password Reset
 
-| Method | Path                      | Auth Required | Description                              |
-| ------ | ------------------------- | ------------- | ---------------------------------------- |
-| POST   | `/api/auth/reset-request` | No            | Request a password reset email/link      |
-| POST   | `/api/auth/reset-confirm` | No            | Confirm password reset with token        |
+| Method | Path                      | Auth Required | Description                         |
+| ------ | ------------------------- | ------------- | ----------------------------------- |
+| POST   | `/api/auth/reset-request` | No            | Request a password reset email/link |
+| POST   | `/api/auth/reset-confirm` | No            | Confirm password reset with token   |
 
 ### Two-Factor Authentication (TOTP 2FA)
 
 Requires `ENCRYPTION_MASTER_KEY` to be configured. All 2FA endpoints require JWT authentication.
 
-| Method | Path                    | Auth Required | Description                              |
-| ------ | ----------------------- | ------------- | ---------------------------------------- |
-| POST   | `/api/auth/2fa/setup`   | Yes           | Generate TOTP secret and QR code URI     |
-| POST   | `/api/auth/2fa/confirm` | Yes           | Confirm 2FA setup with TOTP code         |
-| POST   | `/api/auth/2fa/verify`  | Yes           | Verify TOTP code during login            |
-| POST   | `/api/auth/2fa/recovery`| Yes           | Use a recovery code to bypass 2FA        |
-| POST   | `/api/auth/2fa/disable` | Yes           | Disable 2FA for the account              |
+| Method | Path                     | Auth Required | Description                          |
+| ------ | ------------------------ | ------------- | ------------------------------------ |
+| POST   | `/api/auth/2fa/setup`    | Yes           | Generate TOTP secret and QR code URI |
+| POST   | `/api/auth/2fa/confirm`  | Yes           | Confirm 2FA setup with TOTP code     |
+| POST   | `/api/auth/2fa/verify`   | Yes           | Verify TOTP code during login        |
+| POST   | `/api/auth/2fa/recovery` | Yes           | Use a recovery code to bypass 2FA    |
+| POST   | `/api/auth/2fa/disable`  | Yes           | Disable 2FA for the account          |
 
 ### Discogs OAuth
 
@@ -256,8 +256,8 @@ Find the shortest path between any two entities in the knowledge graph.
 
 Find artists who share releases with a given artist, with temporal collaboration data (yearly counts, first/last year).
 
-| Method | Path                              | Auth Required | Rate Limit | Description                                          |
-| ------ | --------------------------------- | ------------- | ---------- | ---------------------------------------------------- |
+| Method | Path                             | Auth Required | Rate Limit | Description                                          |
+| ------ | -------------------------------- | ------------- | ---------- | ---------------------------------------------------- |
 | GET    | `/api/collaborators/{artist_id}` | No            | 30/min     | Get collaborating artists with release overlap stats |
 
 **Query parameters:**
@@ -268,11 +268,11 @@ Find artists who share releases with a given artist, with temporal collaboration
 
 Multi-hop collaborator traversal, centrality scoring, and community detection via the knowledge graph. Centrality and cluster results are cached in Redis (1h TTL). Rate limited to 30 requests/minute.
 
-| Method | Path                                        | Auth Required | Rate Limit | Description                                          |
-| ------ | ------------------------------------------- | ------------- | ---------- | ---------------------------------------------------- |
-| GET    | `/api/network/artist/{id}/collaborators`    | No            | 30/min     | Multi-hop collaborators via shared releases (depth 1–3) |
-| GET    | `/api/network/artist/{id}/centrality`       | No            | 30/min     | Degree centrality, collaborator count, group/alias counts |
-| GET    | `/api/network/cluster/{id}`                 | No            | 30/min     | Community detection via genre-based clustering       |
+| Method | Path                                     | Auth Required | Rate Limit | Description                                               |
+| ------ | ---------------------------------------- | ------------- | ---------- | --------------------------------------------------------- |
+| GET    | `/api/network/artist/{id}/collaborators` | No            | 30/min     | Multi-hop collaborators via shared releases (depth 1–3)   |
+| GET    | `/api/network/artist/{id}/centrality`    | No            | 30/min     | Degree centrality, collaborator count, group/alias counts |
+| GET    | `/api/network/cluster/{id}`              | No            | 30/min     | Community detection via genre-based clustering            |
 
 **Query parameters for `/api/network/artist/{id}/collaborators`:**
 
@@ -297,8 +297,8 @@ The genre tree is cached in-memory for 5 minutes since the hierarchy changes onl
 
 Aggregate node counts across the knowledge graph.
 
-| Method | Path               | Auth Required | Description                                 |
-| ------ | ------------------ | ------------- | ------------------------------------------- |
+| Method | Path               | Auth Required | Description                                                              |
+| ------ | ------------------ | ------------- | ------------------------------------------------------------------------ |
 | GET    | `/api/graph/stats` | No            | Total entity counts (artists, labels, releases, masters, genres, styles) |
 
 ### Vinyl Archaeology
@@ -331,22 +331,22 @@ Proxied endpoints forwarding to the insights microservice for precomputed analyt
 
 Natural language query interface for the knowledge graph. Translates plain English questions into graph queries.
 
-| Method | Path              | Auth Required | Description                              |
-| ------ | ----------------- | ------------- | ---------------------------------------- |
-| GET    | `/api/nlq/status` | No            | Check NLQ service availability           |
-| POST   | `/api/nlq/query`  | No            | Execute a natural language query         |
+| Method | Path              | Auth Required | Description                      |
+| ------ | ----------------- | ------------- | -------------------------------- |
+| GET    | `/api/nlq/status` | No            | Check NLQ service availability   |
+| POST   | `/api/nlq/query`  | No            | Execute a natural language query |
 
 ### Release Rarity Scoring
 
 Rarity analysis for releases based on market scarcity, pressing details, and collector demand.
 
-| Method | Path                            | Auth Required | Description                                |
-| ------ | ------------------------------- | ------------- | ------------------------------------------ |
-| GET    | `/api/rarity/leaderboard`       | No            | Top rarest releases overall                |
-| GET    | `/api/rarity/hidden-gems`       | No            | Underappreciated rare releases             |
-| GET    | `/api/rarity/artist/{artist_id}`| No            | Rarity scores for an artist's releases     |
-| GET    | `/api/rarity/label/{label_id}`  | No            | Rarity scores for a label's releases       |
-| GET    | `/api/rarity/{release_id}`      | No            | Rarity score for a specific release        |
+| Method | Path                             | Auth Required | Description                            |
+| ------ | -------------------------------- | ------------- | -------------------------------------- |
+| GET    | `/api/rarity/leaderboard`        | No            | Top rarest releases overall            |
+| GET    | `/api/rarity/hidden-gems`        | No            | Underappreciated rare releases         |
+| GET    | `/api/rarity/artist/{artist_id}` | No            | Rarity scores for an artist's releases |
+| GET    | `/api/rarity/label/{label_id}`   | No            | Rarity scores for a label's releases   |
+| GET    | `/api/rarity/{release_id}`       | No            | Rarity score for a specific release    |
 
 ### Label DNA
 
@@ -402,16 +402,16 @@ Temporal analysis of the authenticated user's collection, showing how their tast
 
 Query the credited personnel (producers, engineers, mastering engineers, session musicians, designers) behind releases. Person nodes are created by the graphinator from Discogs `extraartists` data.
 
-| Method | Path                                      | Auth Required | Rate Limit | Description                                                 |
-| ------ | ----------------------------------------- | ------------- | ---------- | ----------------------------------------------------------- |
-| GET    | `/api/credits/person/{name}`              | No            | 60/min     | All releases a person is credited on, grouped by role       |
-| GET    | `/api/credits/person/{name}/timeline`     | No            | 60/min     | Year-by-year credit activity for a person                   |
-| GET    | `/api/credits/person/{name}/profile`      | No            | 60/min     | Summary profile with role breakdown                         |
-| GET    | `/api/credits/release/{release_id}`       | No            | 60/min     | Full credits breakdown for a release                        |
-| GET    | `/api/credits/role/{role}/top`            | No            | 30/min     | Most prolific people in a given role category               |
-| GET    | `/api/credits/shared`                     | No            | 30/min     | Releases where two people are both credited                 |
-| GET    | `/api/credits/connections/{name}`         | No            | 30/min     | People connected through shared releases                    |
-| GET    | `/api/credits/autocomplete`               | No            | 120/min    | Search credits by person name (fulltext, min 2 chars)       |
+| Method | Path                                  | Auth Required | Rate Limit | Description                                           |
+| ------ | ------------------------------------- | ------------- | ---------- | ----------------------------------------------------- |
+| GET    | `/api/credits/person/{name}`          | No            | 60/min     | All releases a person is credited on, grouped by role |
+| GET    | `/api/credits/person/{name}/timeline` | No            | 60/min     | Year-by-year credit activity for a person             |
+| GET    | `/api/credits/person/{name}/profile`  | No            | 60/min     | Summary profile with role breakdown                   |
+| GET    | `/api/credits/release/{release_id}`   | No            | 60/min     | Full credits breakdown for a release                  |
+| GET    | `/api/credits/role/{role}/top`        | No            | 30/min     | Most prolific people in a given role category         |
+| GET    | `/api/credits/shared`                 | No            | 30/min     | Releases where two people are both credited           |
+| GET    | `/api/credits/connections/{name}`     | No            | 30/min     | People connected through shared releases              |
+| GET    | `/api/credits/autocomplete`           | No            | 120/min    | Search credits by person name (fulltext, min 2 chars) |
 
 **Role categories:** `production`, `engineering`, `mastering`, `session`, `design`, `management`, `other`
 
@@ -438,12 +438,12 @@ Query the credited personnel (producers, engineers, mastering engineers, session
 
 Endpoints exposing MusicBrainz enrichment data linked to Discogs entities. Requires data from brainzgraphinator (Neo4j) and brainztableinator (PostgreSQL).
 
-| Method | Path                                    | Auth Required | Rate Limit | Description                                              |
-| ------ | --------------------------------------- | ------------- | ---------- | -------------------------------------------------------- |
-| GET    | `/api/artist/{artist_id}/musicbrainz`   | No            | 30/min     | MusicBrainz metadata (type, gender, dates, area, disambiguation) |
-| GET    | `/api/artist/{artist_id}/relationships` | No            | 30/min     | MusicBrainz-sourced relationship edges (collaborations, memberships) |
-| GET    | `/api/artist/{artist_id}/external-links`| No            | 30/min     | External links (Wikipedia, Wikidata, AllMusic, Last.fm)  |
-| GET    | `/api/enrichment/status`                | No            | 10/min     | Enrichment coverage statistics (MB entities, Discogs matches, Neo4j enriched) |
+| Method | Path                                     | Auth Required | Rate Limit | Description                                                                   |
+| ------ | ---------------------------------------- | ------------- | ---------- | ----------------------------------------------------------------------------- |
+| GET    | `/api/artist/{artist_id}/musicbrainz`    | No            | 30/min     | MusicBrainz metadata (type, gender, dates, area, disambiguation)              |
+| GET    | `/api/artist/{artist_id}/relationships`  | No            | 30/min     | MusicBrainz-sourced relationship edges (collaborations, memberships)          |
+| GET    | `/api/artist/{artist_id}/external-links` | No            | 30/min     | External links (Wikipedia, Wikidata, AllMusic, Last.fm)                       |
+| GET    | `/api/enrichment/status`                 | No            | 10/min     | Enrichment coverage statistics (MB entities, Discogs matches, Neo4j enriched) |
 
 **Data sources:**
 
@@ -455,14 +455,14 @@ Endpoints exposing MusicBrainz enrichment data linked to Discogs entities. Requi
 
 Internal endpoints called by the Insights service over HTTP to fetch raw query results. Not intended for direct external use.
 
-| Method | Path                                       | Auth Required | Description                          |
-| ------ | ------------------------------------------ | ------------- | ------------------------------------ |
-| GET    | `/api/internal/insights/artist-centrality` | No            | Artist centrality data from Neo4j    |
-| GET    | `/api/internal/insights/genre-trends`      | No            | Genre trend data from Neo4j          |
-| GET    | `/api/internal/insights/label-longevity`   | No            | Label longevity data from Neo4j      |
-| GET    | `/api/internal/insights/anniversaries`     | No            | Anniversary data from PostgreSQL     |
-| GET    | `/api/internal/insights/data-completeness` | No            | Data completeness from both databases|
-| GET    | `/api/internal/insights/rarity-scores`     | No            | Rarity score data from PostgreSQL    |
+| Method | Path                                       | Auth Required | Description                           |
+| ------ | ------------------------------------------ | ------------- | ------------------------------------- |
+| GET    | `/api/internal/insights/artist-centrality` | No            | Artist centrality data from Neo4j     |
+| GET    | `/api/internal/insights/genre-trends`      | No            | Genre trend data from Neo4j           |
+| GET    | `/api/internal/insights/label-longevity`   | No            | Label longevity data from Neo4j       |
+| GET    | `/api/internal/insights/anniversaries`     | No            | Anniversary data from PostgreSQL      |
+| GET    | `/api/internal/insights/data-completeness` | No            | Data completeness from both databases |
+| GET    | `/api/internal/insights/rarity-scores`     | No            | Rarity score data from PostgreSQL     |
 
 ### Health
 

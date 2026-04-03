@@ -32,17 +32,17 @@ The performance test covers all API endpoints that execute database queries (Neo
 
 ### ID-Resolved Endpoints (IDs resolved via autocomplete)
 
-| Endpoint                                 | Test Coverage                                 | Database         |
-| ---------------------------------------- | --------------------------------------------- | ---------------- |
-| `GET /api/artist/{id}/musicbrainz`       | Each artist                                   | Neo4j            |
-| `GET /api/artist/{id}/relationships`     | Each artist                                   | Neo4j            |
-| `GET /api/artist/{id}/external-links`    | Each artist                                   | PostgreSQL       |
-| `GET /api/label/{id}/dna`                | Each label                                    | Neo4j            |
-| `GET /api/label/{id}/similar`            | Each label                                    | Neo4j            |
-| `GET /api/label/dna/compare`             | All labels combined                           | Neo4j            |
-| `GET /api/recommend/similar/artist/{id}` | Each artist                                   | Neo4j            |
-| `GET /api/node/{id}`                     | Each artist and label                         | Neo4j            |
-| `GET /api/expand`                        | Each artist (releases), each label (releases) | Neo4j            |
+| Endpoint                                 | Test Coverage                                 | Database   |
+| ---------------------------------------- | --------------------------------------------- | ---------- |
+| `GET /api/artist/{id}/musicbrainz`       | Each artist                                   | Neo4j      |
+| `GET /api/artist/{id}/relationships`     | Each artist                                   | Neo4j      |
+| `GET /api/artist/{id}/external-links`    | Each artist                                   | PostgreSQL |
+| `GET /api/label/{id}/dna`                | Each label                                    | Neo4j      |
+| `GET /api/label/{id}/similar`            | Each label                                    | Neo4j      |
+| `GET /api/label/dna/compare`             | All labels combined                           | Neo4j      |
+| `GET /api/recommend/similar/artist/{id}` | Each artist                                   | Neo4j      |
+| `GET /api/node/{id}`                     | Each artist and label                         | Neo4j      |
+| `GET /api/expand`                        | Each artist (releases), each label (releases) | Neo4j      |
 
 ## Prerequisites
 

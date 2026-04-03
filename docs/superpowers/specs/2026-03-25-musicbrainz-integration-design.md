@@ -48,6 +48,7 @@ graph TD
 ```
 
 When `--source musicbrainz`:
+
 - Downloads MB JSONL dumps (xz-compressed, one file per entity type)
 - Parses each line as a self-contained JSON object
 - Extracts Discogs IDs from URL relationships
@@ -55,10 +56,10 @@ When `--source musicbrainz`:
 
 ### Environment variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MUSICBRAINZ_ROOT` | `/musicbrainz-data` | Directory for downloaded MB dumps |
-| `AMQP_EXCHANGE_PREFIX` | `musicbrainz` | Exchange name prefix (overrides default `discogsography`) |
+| Variable               | Default             | Description                                               |
+| ---------------------- | ------------------- | --------------------------------------------------------- |
+| `MUSICBRAINZ_ROOT`     | `/musicbrainz-data` | Directory for downloaded MB dumps                         |
+| `AMQP_EXCHANGE_PREFIX` | `musicbrainz`       | Exchange name prefix (overrides default `discogsography`) |
 
 ### JSONL parsing
 
@@ -96,6 +97,7 @@ MB JSONL dumps contain one JSON object per line. Example artist record:
 ### Discogs ID extraction
 
 The extractor parses `url-rels` entries where `type == "discogs"`:
+
 - Extracts the numeric ID from the URL path: `/artist/108713` -> `108713`
 - Includes it in the published message as `discogs_artist_id` (or `discogs_label_id`, `discogs_release_id`)
 - For relationships, the target entity's Discogs ID is resolved by looking up the target MBID in the same JSONL file (since the dump contains all artists). The extractor builds an in-memory MBID→Discogs ID map during a first pass, then uses it to resolve relationship targets during the publish pass. If the target has no Discogs URL, the relationship's `target_discogs_id` is set to `null`.
@@ -106,6 +108,7 @@ The extractor parses `url-rels` entries where `type == "discogs"`:
 Same envelope pattern as Discogs messages:
 
 **Data message:**
+
 ```json
 {
   "type": "data",
@@ -134,6 +137,7 @@ Same envelope pattern as Discogs messages:
 ### State markers
 
 New version-specific markers: `.mb_extraction_status_{version}.json`
+
 - Same state machine as Discogs: `pending` -> `in_progress` -> `completed` / `failed`
 - Separate from Discogs markers — two extractors track progress independently
 - Version derived from the MB dump date
@@ -278,12 +282,12 @@ CREATE INDEX IF NOT EXISTS idx_mb_links_service ON musicbrainz.external_links (s
 
 ### Service details
 
-| Property | Value |
-|----------|-------|
-| Directory | `brainztableinator/` |
-| Health port | 8010 |
-| Queue prefix | `musicbrainz-brainztableinator` |
-| Batch mode | Configurable via `POSTGRES_BATCH_MODE` |
+| Property        | Value                                                  |
+| --------------- | ------------------------------------------------------ |
+| Directory       | `brainztableinator/`                                   |
+| Health port     | 8010                                                   |
+| Queue prefix    | `musicbrainz-brainztableinator`                        |
+| Batch mode      | Configurable via `POSTGRES_BATCH_MODE`                 |
 | Write semantics | `INSERT ... ON CONFLICT (mbid) DO UPDATE` (idempotent) |
 
 Follows tableinator's patterns: `AsyncPostgreSQLPool` from common, batch processor support, DLQ/DLX per queue, health endpoint with processing metrics.
@@ -293,9 +297,10 @@ Follows tableinator's patterns: `AsyncPostgreSQLPool` from common, batch process
 ### Core behavior
 
 For each message:
+
 1. Check if `discogs_artist_id` (or label/release equivalent) is present
-2. If absent: log at DEBUG, ack message, skip
-3. If present: enrich the existing Discogs node with MB metadata and relationships
+1. If absent: log at DEBUG, ack message, skip
+1. If present: enrich the existing Discogs node with MB metadata and relationships
 
 ### Metadata enrichment
 
@@ -337,16 +342,16 @@ SET r.mbid = $mbid,
 
 New Neo4j edge types from MB artist-artist relationships:
 
-| MB Relationship Type | Neo4j Edge | Direction | Properties |
-|---|---|---|---|
-| member of band | `MEMBER_OF` (enrich existing) | person -> group | begin_date, end_date, attributes |
-| collaboration | `COLLABORATED_WITH` | artist <-> artist | begin_date, end_date |
-| teacher | `TAUGHT` | teacher -> student | begin_date, end_date |
-| tribute | `TRIBUTE_TO` | tribute act -> original | — |
-| founder | `FOUNDED` | person -> group | begin_date |
-| supporting musician | `SUPPORTED` | supporter -> main artist | attributes (instrument) |
-| subgroup | `SUBGROUP_OF` | subgroup -> parent | — |
-| artist rename | `RENAMED_TO` | old -> new | begin_date |
+| MB Relationship Type | Neo4j Edge                    | Direction                | Properties                       |
+| -------------------- | ----------------------------- | ------------------------ | -------------------------------- |
+| member of band       | `MEMBER_OF` (enrich existing) | person -> group          | begin_date, end_date, attributes |
+| collaboration        | `COLLABORATED_WITH`           | artist \<-> artist       | begin_date, end_date             |
+| teacher              | `TAUGHT`                      | teacher -> student       | begin_date, end_date             |
+| tribute              | `TRIBUTE_TO`                  | tribute act -> original  | —                                |
+| founder              | `FOUNDED`                     | person -> group          | begin_date                       |
+| supporting musician  | `SUPPORTED`                   | supporter -> main artist | attributes (instrument)          |
+| subgroup             | `SUBGROUP_OF`                 | subgroup -> parent       | —                                |
+| artist rename        | `RENAMED_TO`                  | old -> new               | begin_date                       |
 
 **Both sides must have a Discogs match** in the graph. If either side lacks a `discogs_*_id`, the relationship is skipped. This is logged at DEBUG level with a counter exposed on the health endpoint.
 
@@ -376,12 +381,12 @@ CREATE INDEX release_mbid IF NOT EXISTS FOR (r:Release) ON (r.mbid)
 
 ### Service details
 
-| Property | Value |
-|----------|-------|
-| Directory | `brainzgraphinator/` |
-| Health port | 8011 |
-| Queue prefix | `musicbrainz-brainzgraphinator` |
-| Batch mode | Configurable via `NEO4J_BATCH_MODE` |
+| Property        | Value                                            |
+| --------------- | ------------------------------------------------ |
+| Directory       | `brainzgraphinator/`                             |
+| Health port     | 8011                                             |
+| Queue prefix    | `musicbrainz-brainzgraphinator`                  |
+| Batch mode      | Configurable via `NEO4J_BATCH_MODE`              |
 | Write semantics | `MATCH ... SET` (idempotent) + `MERGE` for edges |
 
 ### Health endpoint metrics
@@ -489,23 +494,23 @@ A future optimization could compare dump file checksums or record-level SHA256 h
 
 ## Implementation Phases
 
-| Phase | Scope | Dependencies | Key Deliverables |
-|-------|-------|-------------|-----------------|
-| **1** | Extractor: MB JSONL support | None | Rust JSONL parser, `--source musicbrainz` CLI, 3 fanout exchanges, Discogs ID extraction, state markers, Docker config for second extractor instance |
-| **2** | Schema + brainztableinator | Phase 1 | `musicbrainz` PostgreSQL schema in schema-init, brainztableinator service, tests, CI, Docker |
-| **3** | Brainzgraphinator — metadata | Phase 1 | brainzgraphinator service, MBID + metadata enrichment on existing nodes, new Neo4j indexes, tests, CI, Docker |
-| **4** | Brainzgraphinator — relationships | Phase 3 | New Neo4j edge types, skip-if-unmapped logic with logging, tests |
-| **5** | API endpoints | Phases 2 + 3 + 4 | `api/routers/musicbrainz.py`, 4 new endpoints, tests |
-| **6** | Incremental sync | Phase 1 | Periodic re-import support, version detection, documentation |
+| Phase | Scope                             | Dependencies     | Key Deliverables                                                                                                                                     |
+| ----- | --------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1** | Extractor: MB JSONL support       | None             | Rust JSONL parser, `--source musicbrainz` CLI, 3 fanout exchanges, Discogs ID extraction, state markers, Docker config for second extractor instance |
+| **2** | Schema + brainztableinator        | Phase 1          | `musicbrainz` PostgreSQL schema in schema-init, brainztableinator service, tests, CI, Docker                                                         |
+| **3** | Brainzgraphinator — metadata      | Phase 1          | brainzgraphinator service, MBID + metadata enrichment on existing nodes, new Neo4j indexes, tests, CI, Docker                                        |
+| **4** | Brainzgraphinator — relationships | Phase 3          | New Neo4j edge types, skip-if-unmapped logic with logging, tests                                                                                     |
+| **5** | API endpoints                     | Phases 2 + 3 + 4 | `api/routers/musicbrainz.py`, 4 new endpoints, tests                                                                                                 |
+| **6** | Incremental sync                  | Phase 1          | Periodic re-import support, version detection, documentation                                                                                         |
 
 Phases 2 and 3 can be parallelized (independent database targets). Phase 4 depends on 3. Phase 5 depends on 2+3+4. Phase 6 is independent follow-up.
 
 ## Service Port Summary
 
-| Service | Health Port |
-|---------|-------------|
-| brainztableinator | 8010 |
-| brainzgraphinator | 8011 |
+| Service           | Health Port |
+| ----------------- | ----------- |
+| brainztableinator | 8010        |
+| brainzgraphinator | 8011        |
 
 ## Known Limitations
 

@@ -163,20 +163,20 @@ just deep-clean           # Clean + Docker volumes (destructive)
 
 ## Service Ports
 
-| Service | Port | Health |
-|---------|------|--------|
-| API | 8004 | 8005 |
-| Dashboard | 8003 | 8003 |
-| Explore | 8006 | 8007 |
-| Insights | 8008 | 8009 |
-| Extractor | — | 8000 |
-| Graphinator | — | 8001 |
-| Tableinator | — | 8002 |
-| Brainztableinator | — | 8010 |
-| Brainzgraphinator | — | 8011 |
-| Neo4j | 7474 (browser), 7687 (bolt) | — |
-| PostgreSQL | 5433 (mapped from 5432) | — |
-| RabbitMQ | 5672 (AMQP), 15672 (management) | — |
+| Service           | Port                            | Health |
+| ----------------- | ------------------------------- | ------ |
+| API               | 8004                            | 8005   |
+| Dashboard         | 8003                            | 8003   |
+| Explore           | 8006                            | 8007   |
+| Insights          | 8008                            | 8009   |
+| Extractor         | —                               | 8000   |
+| Graphinator       | —                               | 8001   |
+| Tableinator       | —                               | 8002   |
+| Brainztableinator | —                               | 8010   |
+| Brainzgraphinator | —                               | 8011   |
+| Neo4j             | 7474 (browser), 7687 (bolt)     | —      |
+| PostgreSQL        | 5433 (mapped from 5432)         | —      |
+| RabbitMQ          | 5672 (AMQP), 15672 (management) | —      |
 
 ## Environment Variables
 
@@ -208,6 +208,7 @@ All variables support `_FILE` variants for Docker Compose runtime secrets in pro
 ## Common Bug Prevention
 
 ### PostgreSQL autocommit contract
+
 - `AsyncPostgreSQLPool` sets `autocommit=True` on all connections and resets it on return to pool
 - **Before `conn.transaction()`**: always call `await conn.set_autocommit(False)` first
 - **After transaction exits**: autocommit is restored by the pool automatically — do not rely on manual restoration
@@ -215,52 +216,63 @@ All variables support `_FILE` variants for Docker Compose runtime secrets in pro
 - **Never call `await conn.commit()`** on autocommit connections — it's a no-op
 
 ### asyncio primitives
+
 - **Never create `asyncio.Lock`, `asyncio.Queue`, `asyncio.Event`, or `asyncio.Semaphore` in `__init__` or at module level** — they bind to the current event loop at creation time
 - This applies to **all** scopes: `__init__`, class bodies, module-level globals, and dataclass `field(default_factory=...)`
 - Initialize as `None` in `__init__`/module scope, create lazily in the first async method or in `initialize()`
 - Pattern: `self._lock: asyncio.Lock | None = None` in `__init__`, then `if self._lock is None: self._lock = asyncio.Lock()` in the first async method
 
 ### Batch processor ack/nack contract
+
 - **`_flush_queue` is the single authority for ack/nack** — individual `_process_*_batch` methods must NEVER call ack or nack directly
 - If a message is invalid (e.g., missing `id`), mark it in a set (e.g., `nack_indices`) and let `_flush_queue` handle it
 - This prevents double-ack-after-nack when `_flush_queue` acks all messages after a "successful" batch that internally nacked some
 
 ### Lock scope discipline
+
 - If a lock protects shared state, **ALL reads AND writes** of that state must acquire the lock — not just `save()`/`flush()`
 - A lock that only protects serialization while mutations are unprotected is security theater
 
 ### Timestamp comparison convention
+
 - When checking if a token/session was invalidated by an event (password change, revocation), use `<=` (inclusive) — a token issued at the exact same second as the event MUST be invalidated
 - Pattern: `if issued_at <= int(changed_at):` — never use `<`
 
 ### Field name consistency
+
 - MusicBrainz messages from the extractor use `mb_type` (not `type`) for entity type, `service` (not `type`) for external link service names
 - When reading message fields, always match the exact field name the extractor outputs — check `extractor/src/jsonl_parser.rs` for the source of truth
 - When adding new fields, use consistent naming: extractor defines the schema, consumers must match
 
 ### Message acknowledgment
+
 - **Never ack a message before processing completes** — ack only after successful DB write
 - **Always nack (not silently skip)** messages with missing required fields — silent skips cause data loss
 - **After nack in an exception handler, always `return`** — do not fall through to subsequent processing code
 
 ### Exchange and queue naming
+
 - Exchange pattern: `{project}-{source}-{type}` (e.g., `discogsography-discogs-artists`)
 - Queue pattern: `{exchange-prefix}-{consumer}-{type}` (e.g., `discogsography-discogs-graphinator-artists`)
 - Use `DISCOGS_EXCHANGE_PREFIX` and `MUSICBRAINZ_EXCHANGE_PREFIX` env vars — never hardcode exchange names
 
 ### Rarity tier boundaries
+
 - Use `>=` (inclusive) for threshold comparisons: `if score >= threshold:` — a score exactly at the boundary belongs to the higher tier
 - Same principle applies to any tiered classification with ordered thresholds
 
 ### Docker service names
+
 - Extractor runs as two services: `extractor-discogs` and `extractor-musicbrainz` — there is no monolithic `extractor` service
 - When referencing services in utility scripts, always use the actual `docker-compose.yml` service names
 
 ### Subprocess timeout discipline
+
 - **Every `subprocess.run()` call must include `timeout=`** — omitting it risks indefinite hangs
 - **Always catch `subprocess.TimeoutExpired`** alongside `subprocess.CalledProcessError`
 
 ### Fix-one-fix-all discipline
+
 - When fixing a bug pattern, `grep -rn` for ALL instances of the same pattern across the entire codebase before marking the fix complete
 - Common patterns that repeat across files: timestamp comparisons, asyncio primitive creation, ack/nack guards, subprocess calls
 - Token validation code exists in `api/dependencies.py`, `api/api.py`, `api/routers/sync.py`, and `api/routers/snapshot.py` — changes to one must be applied to all

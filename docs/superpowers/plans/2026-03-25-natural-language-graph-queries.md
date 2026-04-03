@@ -8,48 +8,49 @@
 
 **Tech Stack:** Python 3.13+, `anthropic` SDK, FastAPI SSE (via `sse-starlette`), Redis caching, Vitest for frontend tests.
 
----
+______________________________________________________________________
 
 ## File Structure
 
 ### New Files
 
-| File | Responsibility |
-|---|---|
-| `api/nlq/__init__.py` | Package init — exports `NLQEngine`, `NLQConfig` |
-| `api/nlq/config.py` | NLQ-specific config dataclass, loaded from env vars |
-| `api/nlq/tools.py` | Tool definitions (schemas + execution wrappers) for Claude tool-use |
-| `api/nlq/engine.py` | Core engine: builds Claude request, runs tool-use loop, extracts entities |
-| `api/routers/nlq.py` | FastAPI router: POST /api/nlq/query (JSON + SSE), GET /api/nlq/status |
-| `explore/static/js/nlq.js` | Frontend "Ask" pane: input, SSE status, result display, entity linking |
-| `tests/api/nlq/__init__.py` | Test package init |
-| `tests/api/nlq/conftest.py` | Shared NLQ test fixtures (mock Anthropic client, mock tools) |
-| `tests/api/nlq/test_config.py` | NLQ config loading tests |
-| `tests/api/nlq/test_tools.py` | Tool wrapper unit tests |
-| `tests/api/nlq/test_engine.py` | Engine tool-use loop tests |
-| `tests/api/nlq/test_nlq_router.py` | Router endpoint tests |
-| `tests/mcp-server/test_nlq_tool.py` | MCP nlq_query tool tests |
-| `explore/__tests__/nlq.test.js` | Frontend NLQ pane Vitest tests |
+| File                                | Responsibility                                                            |
+| ----------------------------------- | ------------------------------------------------------------------------- |
+| `api/nlq/__init__.py`               | Package init — exports `NLQEngine`, `NLQConfig`                           |
+| `api/nlq/config.py`                 | NLQ-specific config dataclass, loaded from env vars                       |
+| `api/nlq/tools.py`                  | Tool definitions (schemas + execution wrappers) for Claude tool-use       |
+| `api/nlq/engine.py`                 | Core engine: builds Claude request, runs tool-use loop, extracts entities |
+| `api/routers/nlq.py`                | FastAPI router: POST /api/nlq/query (JSON + SSE), GET /api/nlq/status     |
+| `explore/static/js/nlq.js`          | Frontend "Ask" pane: input, SSE status, result display, entity linking    |
+| `tests/api/nlq/__init__.py`         | Test package init                                                         |
+| `tests/api/nlq/conftest.py`         | Shared NLQ test fixtures (mock Anthropic client, mock tools)              |
+| `tests/api/nlq/test_config.py`      | NLQ config loading tests                                                  |
+| `tests/api/nlq/test_tools.py`       | Tool wrapper unit tests                                                   |
+| `tests/api/nlq/test_engine.py`      | Engine tool-use loop tests                                                |
+| `tests/api/nlq/test_nlq_router.py`  | Router endpoint tests                                                     |
+| `tests/mcp-server/test_nlq_tool.py` | MCP nlq_query tool tests                                                  |
+| `explore/__tests__/nlq.test.js`     | Frontend NLQ pane Vitest tests                                            |
 
 ### Modified Files
 
-| File | Change |
-|---|---|
-| `pyproject.toml` | Add `anthropic` + `sse-starlette` to `api` extras |
-| `common/config.py` | Add NLQ fields to `ApiConfig` |
-| `api/api.py` | Import + wire NLQ router, configure in lifespan |
-| `tests/api/conftest.py` | Add NLQ router configuration to `test_client` fixture |
-| `mcp-server/mcp_server/server.py` | Add `nlq_query` tool + `_api_post` helper |
-| `explore/static/js/api-client.js` | Add `askNlq()` method with SSE support |
-| `explore/static/js/app.js` | Register NLQ pane, add Search/Ask toggle logic |
-| `explore/static/index.html` | Add Ask pane HTML markup |
-| `docker-compose.yml` | Add NLQ env vars to API service |
+| File                              | Change                                                |
+| --------------------------------- | ----------------------------------------------------- |
+| `pyproject.toml`                  | Add `anthropic` + `sse-starlette` to `api` extras     |
+| `common/config.py`                | Add NLQ fields to `ApiConfig`                         |
+| `api/api.py`                      | Import + wire NLQ router, configure in lifespan       |
+| `tests/api/conftest.py`           | Add NLQ router configuration to `test_client` fixture |
+| `mcp-server/mcp_server/server.py` | Add `nlq_query` tool + `_api_post` helper             |
+| `explore/static/js/api-client.js` | Add `askNlq()` method with SSE support                |
+| `explore/static/js/app.js`        | Register NLQ pane, add Search/Ask toggle logic        |
+| `explore/static/index.html`       | Add Ask pane HTML markup                              |
+| `docker-compose.yml`              | Add NLQ env vars to API service                       |
 
----
+______________________________________________________________________
 
 ## Task 1: Add Dependencies
 
 **Files:**
+
 - Modify: `pyproject.toml:34-47`
 
 - [ ] **Step 1: Add anthropic and sse-starlette to api extras**
@@ -87,15 +88,20 @@ git add pyproject.toml uv.lock
 git commit -m "chore: add anthropic and sse-starlette dependencies for NLQ (#203)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 2: NLQ Configuration
 
 **Files:**
+
 - Create: `api/nlq/__init__.py`
+
 - Create: `api/nlq/config.py`
+
 - Modify: `common/config.py`
+
 - Create: `tests/api/nlq/__init__.py`
+
 - Create: `tests/api/nlq/test_config.py`
 
 - [ ] **Step 1: Write failing tests for NLQ config**
@@ -218,13 +224,16 @@ git add api/nlq/__init__.py api/nlq/config.py tests/api/nlq/__init__.py tests/ap
 git commit -m "feat(nlq): add NLQ configuration with env var loading (#203)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 3: Tool Definitions and Runner
 
 **Files:**
+
 - Create: `api/nlq/tools.py`
+
 - Create: `tests/api/nlq/conftest.py`
+
 - Create: `tests/api/nlq/test_tools.py`
 
 - [ ] **Step 1: Write failing tests for tool definitions**
@@ -378,6 +387,7 @@ Expected: FAIL — `ImportError: cannot import name 'NLQToolRunner'`
 Create `api/nlq/tools.py`. This file defines 14 tool schemas (10 public + 4 authenticated) and an `NLQToolRunner` class that dispatches tool calls to existing query functions. Each tool handler validates parameters and calls the underlying function directly (no HTTP). The `extract_entities` method pulls entity references from tool results for UI linking.
 
 Key patterns:
+
 - `_tool()` helper builds Anthropic tool-use schema dicts
 - `get_public_tool_schemas()` and `get_authenticated_tool_schemas()` return the schema lists
 - `NLQToolRunner.execute(tool_name, params, user_id)` dispatches to handler methods
@@ -387,6 +397,7 @@ Key patterns:
 - Auth-required tools check `user_id is not None`
 
 The tool runner wraps these existing functions:
+
 - `search_queries.execute_search()`
 - `neo4j_queries.AUTOCOMPLETE_DISPATCH[type]()`
 - `neo4j_queries.EXPLORE_DISPATCH[type]()`
@@ -416,17 +427,20 @@ git add api/nlq/tools.py tests/api/nlq/conftest.py tests/api/nlq/test_tools.py
 git commit -m "feat(nlq): add tool definitions and runner with 14 tools (#203)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 4: NLQ Engine (Tool-Use Loop)
 
 **Files:**
+
 - Create: `api/nlq/engine.py`
+
 - Create: `tests/api/nlq/test_engine.py`
 
 - [ ] **Step 1: Write failing tests for the engine**
 
 Create `tests/api/nlq/test_engine.py`. Tests cover:
+
 - Single tool call → text response
 - Multi-step tool calls (3 iterations)
 - Max iterations cap (stops at limit)
@@ -445,6 +459,7 @@ Expected: FAIL — `ImportError: cannot import name 'NLQEngine'`
 - [ ] **Step 3: Implement the NLQ engine**
 
 Create `api/nlq/engine.py`. Key components:
+
 - `_SYSTEM_PROMPT`: Static prompt instructing Claude to use tools, ground answers in data, stay on-topic
 - `_AUTH_ADDENDUM`: Added when user is authenticated
 - `_OFF_TOPIC_REDIRECT`: Canned message for off-topic queries
@@ -468,19 +483,24 @@ git add api/nlq/engine.py tests/api/nlq/test_engine.py
 git commit -m "feat(nlq): add NLQ engine with tool-use loop and guardrails (#203)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 5: NLQ Router (API Endpoints)
 
 **Files:**
+
 - Create: `api/routers/nlq.py`
+
 - Modify: `api/api.py`
+
 - Modify: `tests/api/conftest.py`
+
 - Create: `tests/api/nlq/test_nlq_router.py`
 
 - [ ] **Step 1: Write failing tests for the router**
 
 Create `tests/api/nlq/test_nlq_router.py`. Tests cover:
+
 - `GET /api/nlq/status` returns `{"enabled": true}` when available
 - `GET /api/nlq/status` returns `{"enabled": false}` when disabled
 - `POST /api/nlq/query` returns 503 when disabled
@@ -499,20 +519,31 @@ Expected: FAIL — `ImportError: No module named 'api.routers.nlq'`
 - [ ] **Step 3: Implement the NLQ router**
 
 Create `api/routers/nlq.py`. Key components:
+
 - `configure(nlq_config, engine, redis)`: Sets module globals
+
 - `NLQQueryRequest(query, context)`: Pydantic request model
+
 - `GET /api/nlq/status`: Returns `{"enabled": bool}`
+
 - `POST /api/nlq/query`: Validates input, checks cache (public queries only), runs engine, caches result
+
 - SSE streaming via `sse_starlette.EventSourceResponse` when `Accept: text/event-stream`
+
 - Rate limited at 10/minute via `@limiter.limit()`
+
 - Auth context extracted from Bearer token (optional — unauthenticated is fine)
+
 - Cache key: `nlq:{sha256(normalized_query)[:16]}`
 
 - [ ] **Step 4: Wire the NLQ router into the API service**
 
 In `api/api.py`:
+
 - Add `import api.routers.nlq as _nlq_router` with the other router imports
+
 - In `lifespan()`, after existing configure calls: create `NLQConfig.from_env()`, conditionally create `AsyncAnthropic` client + `NLQToolRunner` + `NLQEngine`, call `_nlq_router.configure()`
+
 - Add `app.include_router(_nlq_router.router)` with other includes
 
 - [ ] **Step 5: Update test conftest to wire NLQ router**
@@ -542,17 +573,20 @@ git add api/routers/nlq.py api/api.py tests/api/conftest.py tests/api/nlq/test_n
 git commit -m "feat(nlq): add NLQ router with query endpoint and SSE streaming (#203)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 6: MCP Server Integration
 
 **Files:**
+
 - Modify: `mcp-server/mcp_server/server.py`
+
 - Create: `tests/mcp-server/test_nlq_tool.py`
 
 - [ ] **Step 1: Write failing test for the MCP nlq_query tool**
 
 Create `tests/mcp-server/test_nlq_tool.py`. Tests:
+
 - `nlq_query` sends POST to `/api/nlq/query` and returns result
 - `nlq_query` handles 503 disabled response
 
@@ -563,12 +597,16 @@ Uses existing MCP test patterns: `AppContext` fixture, `mock_context` fixture, `
 Run: `uv run pytest tests/mcp-server/test_nlq_tool.py -v`
 Expected: FAIL — `ImportError: cannot import name 'nlq_query'`
 
-- [ ] **Step 3: Add nlq_query tool and _api_post helper to MCP server**
+- [ ] **Step 3: Add nlq_query tool and \_api_post helper to MCP server**
 
 In `mcp-server/mcp_server/server.py`:
+
 - Add `_api_post(app, path, json_data)` helper near `_api_get`
+
 - Add `nlq_query(query, ctx)` tool with `@mcp.tool()` decorator
+
 - Tool calls `_api_post(app, "/api/nlq/query", json_data={"query": query})`
+
 - Returns `resp.json()`
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -588,20 +626,26 @@ git add mcp-server/mcp_server/server.py tests/mcp-server/test_nlq_tool.py
 git commit -m "feat(mcp): add nlq_query tool for natural language graph queries (#203)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 7: Frontend — Ask Pane
 
 **Files:**
+
 - Create: `explore/static/js/nlq.js`
+
 - Modify: `explore/static/js/api-client.js`
+
 - Modify: `explore/static/js/app.js`
+
 - Modify: `explore/static/index.html`
+
 - Create: `explore/__tests__/nlq.test.js`
 
 - [ ] **Step 1: Write failing frontend tests**
 
 Create `explore/__tests__/nlq.test.js`. Tests:
+
 - `checkNlqStatus()` returns enabled status
 - `checkNlqStatus()` returns disabled on error
 - `askNlq()` POSTs query and returns result
@@ -620,12 +664,15 @@ Expected: FAIL — `checkNlqStatus` and `askNlq` are not defined.
 Add `checkNlqStatus()`, `askNlq(query, context)`, and `askNlqStream(query, context, onStatus, onResult, onError)` methods to the `ApiClient` class.
 
 - `checkNlqStatus()`: GET `/api/nlq/status`, returns `{enabled: false}` on error
+
 - `askNlq()`: POST `/api/nlq/query` with JSON body, returns result or null
+
 - `askNlqStream()`: POST with `Accept: text/event-stream`, reads SSE events via ReadableStream
 
 - [ ] **Step 4: Create the NLQ panel JavaScript**
 
 Create `explore/static/js/nlq.js`. The `NLQPanel` class:
+
 - Binds to DOM elements (`nlqInput`, `nlqSubmit`, `nlqStatus`, `nlqResult`, `nlqExamples`)
 - `checkEnabled()`: calls `apiClient.checkNlqStatus()`
 - `_submit()`: sends query via `askNlqStream()`, shows status events, renders result
@@ -638,18 +685,27 @@ Create `explore/static/js/nlq.js`. The `NLQPanel` class:
 - [ ] **Step 5: Add HTML markup for the Ask pane**
 
 In `explore/static/index.html`:
+
 - Add `<script src="js/nlq.js"></script>` with other JS includes
+
 - Add Search/Ask toggle: `<div id="searchAskToggle">` with two toggle buttons
+
 - Add NLQ panel: `<div id="nlqPanel">` with input, submit button, status area, result area, example chips
+
 - Add CSS for `.nlq-panel`, `.nlq-input`, `.nlq-status`, `.nlq-result`, `.nlq-entity-link`, `.nlq-tool-pill`, `.nlq-example-chip`
 
 - [ ] **Step 6: Wire NLQ panel into app.js**
 
 In `explore/static/js/app.js`:
+
 - Create `NLQPanel` instance
+
 - Set `onExploreEntity` callback to switch back to explore mode and load entity
+
 - Call `checkEnabled()` on page load, show toggle if enabled
+
 - Bind Search/Ask toggle buttons
+
 - Add `?` keyboard shortcut for Ask mode
 
 - [ ] **Step 7: Run frontend tests**
@@ -664,11 +720,12 @@ git add explore/static/js/nlq.js explore/static/js/api-client.js explore/static/
 git commit -m "feat(explore): add NLQ Ask pane with SSE streaming and entity linking (#203)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 8: Docker and CI Configuration
 
 **Files:**
+
 - Modify: `docker-compose.yml`
 
 - [ ] **Step 1: Add NLQ env vars to docker-compose.yml**
@@ -696,7 +753,7 @@ git add docker-compose.yml
 git commit -m "chore: add NLQ environment variables to docker-compose (#203)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 9: Lint, Type Check, and Final Verification
 
@@ -724,16 +781,18 @@ git add -A
 git commit -m "chore(nlq): lint and type fixes (#203)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 10: Documentation and Final Commit
 
 **Files:**
+
 - Modify: `docs/emoji-guide.md` (if new emojis used)
 
 - [ ] **Step 1: Verify emoji compliance**
 
 Check that all log messages in NLQ code use emojis from `docs/emoji-guide.md`. The engine uses:
+
 - `🔥` for errors (existing in guide)
 - `⚠️` for warnings (existing in guide)
 - `🔄` for cache operations (existing in guide)

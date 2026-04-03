@@ -93,16 +93,18 @@ Security: Only the expected `mbdump/<entity>` entry is extracted. All other tar 
 ### process_musicbrainz_data changes
 
 Before (current):
+
 1. `discover_mb_dump_files(musicbrainz_root)` — if empty, warn and exit
-2. Detect version, process files
+1. Detect version, process files
 
 After:
+
 1. `MbDownloader::new(musicbrainz_root, dump_url).download_latest()` — returns version
-2. Set working root to `<musicbrainz_root>/<version>/`
-3. `discover_mb_dump_files(versioned_root)` — should always find files now
-4. `detect_mb_dump_version` naturally extracts YYYYMMDD from directory name
-5. State marker check — if already processed and not `force_reprocess`, skip
-6. Otherwise proceed with existing processing pipeline (unchanged)
+1. Set working root to `<musicbrainz_root>/<version>/`
+1. `discover_mb_dump_files(versioned_root)` — should always find files now
+1. `detect_mb_dump_version` naturally extracts YYYYMMDD from directory name
+1. State marker check — if already processed and not `force_reprocess`, skip
+1. Otherwise proceed with existing processing pipeline (unchanged)
 
 ### Periodic loop in main.rs
 
@@ -144,6 +146,7 @@ The `main.rs` MusicBrainz branch calls `run_musicbrainz_loop` instead of one-sho
 ## Rust Dependencies
 
 New in `Cargo.toml`:
+
 - `tar` — read tar archives
 - `xz2` — xz decompression (wraps liblzma)
 
@@ -152,12 +155,12 @@ Both are synchronous and used inside `spawn_blocking`.
 ## Files Changed
 
 1. **`extractor/src/musicbrainz_downloader.rs`** — add `MbDownloader`, `download_latest`, `find_latest_mb_directory`, update `discover_mb_dump_files` for bare `.jsonl` matching
-2. **`extractor/src/config.rs`** — add `musicbrainz_dump_url` field and env var loading
-3. **`extractor/src/extractor.rs`** — update `process_musicbrainz_data` to download first, add `run_musicbrainz_loop`
-4. **`extractor/src/main.rs`** — call `run_musicbrainz_loop` for MusicBrainz source
-5. **`extractor/Cargo.toml`** — add `tar`, `xz2` dependencies
-6. **`extractor/src/tests/musicbrainz_downloader_tests.rs`** — new download/extraction tests
-7. **`docker-compose.yml`** — optionally add `MUSICBRAINZ_DUMP_URL` env var
+1. **`extractor/src/config.rs`** — add `musicbrainz_dump_url` field and env var loading
+1. **`extractor/src/extractor.rs`** — update `process_musicbrainz_data` to download first, add `run_musicbrainz_loop`
+1. **`extractor/src/main.rs`** — call `run_musicbrainz_loop` for MusicBrainz source
+1. **`extractor/Cargo.toml`** — add `tar`, `xz2` dependencies
+1. **`extractor/src/tests/musicbrainz_downloader_tests.rs`** — new download/extraction tests
+1. **`docker-compose.yml`** — optionally add `MUSICBRAINZ_DUMP_URL` env var
 
 ## Tests
 

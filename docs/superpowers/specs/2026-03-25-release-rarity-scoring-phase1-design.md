@@ -19,48 +19,48 @@ Compute a rarity index (0-100) for every release in the knowledge graph using 5 
 
 ## Phasing Overview
 
-| Phase | Scope |
-|-------|-------|
-| **1 (this spec)** | Rarity computation engine, 5 core endpoints, hidden gem scoring, insights pipeline integration |
-| 2 | Collection rarity endpoints (authenticated), Explore UI integration (badges, dashboard), admin weight config |
-| 3 | MCP server tools, integration with achievements/storyteller/recommendations |
+| Phase             | Scope                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------ |
+| **1 (this spec)** | Rarity computation engine, 5 core endpoints, hidden gem scoring, insights pipeline integration               |
+| 2                 | Collection rarity endpoints (authenticated), Explore UI integration (badges, dashboard), admin weight config |
+| 3                 | MCP server tools, integration with achievements/storyteller/recommendations                                  |
 
 ## Rarity Signals
 
 ### Signal Definitions
 
-| Signal | Weight | Source | Description |
-|--------|--------|--------|-------------|
-| Pressing scarcity | 0.30 | Neo4j | Fewer pressings of the same master = rarer |
-| Label catalog size | 0.15 | Neo4j | Releases on small-catalog labels are rarer |
-| Format rarity | 0.15 | Neo4j | Scarce physical formats scored higher |
-| Temporal scarcity | 0.20 | Neo4j | Older releases without recent reissues score higher |
-| Graph isolation | 0.20 | Neo4j | Fewer graph connections = rarer |
+| Signal             | Weight | Source | Description                                         |
+| ------------------ | ------ | ------ | --------------------------------------------------- |
+| Pressing scarcity  | 0.30   | Neo4j  | Fewer pressings of the same master = rarer          |
+| Label catalog size | 0.15   | Neo4j  | Releases on small-catalog labels are rarer          |
+| Format rarity      | 0.15   | Neo4j  | Scarce physical formats scored higher               |
+| Temporal scarcity  | 0.20   | Neo4j  | Older releases without recent reissues score higher |
+| Graph isolation    | 0.20   | Neo4j  | Fewer graph connections = rarer                     |
 
 ### Pressing Scarcity (weight: 0.30)
 
 Count releases sharing the same Master via `(:Release)-[:DERIVED_FROM]->(:Master)`.
 
-| Pressing count | Score |
-|---------------|-------|
-| 1 (unique) | 100 |
-| 2 | 85 |
-| 3-5 | 60 |
-| 6-10 | 35 |
-| 11+ | 10 |
-| No master link (standalone) | 90 |
+| Pressing count              | Score |
+| --------------------------- | ----- |
+| 1 (unique)                  | 100   |
+| 2                           | 85    |
+| 3-5                         | 60    |
+| 6-10                        | 35    |
+| 11+                         | 10    |
+| No master link (standalone) | 90    |
 
 ### Label Catalog Size (weight: 0.15)
 
 Count total releases on the same label. Use pre-computed `Label.release_count` where available (graphinator already computes this), fall back to live count.
 
 | Label catalog size | Score |
-|-------------------|-------|
-| < 10 releases | 100 |
-| 10-50 | 75 |
-| 51-200 | 50 |
-| 201-1000 | 25 |
-| 1000+ | 10 |
+| ------------------ | ----- |
+| < 10 releases      | 100   |
+| 10-50              | 75    |
+| 51-200             | 50    |
+| 201-1000           | 25    |
+| 1000+              | 10    |
 
 ### Format Rarity (weight: 0.15)
 
@@ -91,20 +91,20 @@ FORMAT_RARITY_SCORES = {
 Two-part score:
 
 1. **Age score**: `min(100, (current_year - release_year) * 1.5)`
-2. **Reissue penalty**: If the master has any pressing with a year within the last 10 years, subtract 40 points (floor at 0)
-3. **No year**: Score 50
+1. **Reissue penalty**: If the master has any pressing with a year within the last 10 years, subtract 40 points (floor at 0)
+1. **No year**: Score 50
 
 ### Graph Isolation (weight: 0.20)
 
 Count total relationships on the Release node (`:BY`, `:ON`, `:IS`, `:DERIVED_FROM`).
 
 | Relationship count | Score |
-|-------------------|-------|
-| 1-2 | 90 |
-| 3-4 | 70 |
-| 5-7 | 50 |
-| 8-12 | 30 |
-| 13+ | 10 |
+| ------------------ | ----- |
+| 1-2                | 90    |
+| 3-4                | 70    |
+| 5-7                | 50    |
+| 8-12               | 30    |
+| 13+                | 10    |
 
 ## Hidden Gem Score
 
@@ -114,11 +114,11 @@ hidden_gem_score = rarity_score * quality_multiplier
 
 **Quality multiplier** (0.0 to 1.0) combines three graph-derived signals:
 
-| Signal | Weight in multiplier | Logic |
-|--------|---------------------|-------|
-| Artist prominence | 0.4 | Normalized artist degree (edges count) — higher degree = more prominent artist = stronger hidden gem signal |
-| Label strength | 0.3 | Normalized label catalog size — larger catalog = more established label |
-| Genre popularity | 0.3 | Normalized genre release count — more releases = more popular genre |
+| Signal            | Weight in multiplier | Logic                                                                                                       |
+| ----------------- | -------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Artist prominence | 0.4                  | Normalized artist degree (edges count) — higher degree = more prominent artist = stronger hidden gem signal |
+| Label strength    | 0.3                  | Normalized label catalog size — larger catalog = more established label                                     |
+| Genre popularity  | 0.3                  | Normalized genre release count — more releases = more popular genre                                         |
 
 Normalization: percentile rank within each signal's distribution, scaled to 0.0-1.0.
 
@@ -126,13 +126,13 @@ A release scores high as a hidden gem when it is **rare** (high rarity_score) AN
 
 ## Rarity Tiers
 
-| Tier | Score Range | Key |
-|------|------------|-----|
-| Common | 0-20 | `common` |
-| Uncommon | 21-40 | `uncommon` |
-| Scarce | 41-60 | `scarce` |
-| Rare | 61-80 | `rare` |
-| Ultra-Rare | 81-100 | `ultra-rare` |
+| Tier       | Score Range | Key          |
+| ---------- | ----------- | ------------ |
+| Common     | 0-20        | `common`     |
+| Uncommon   | 21-40       | `uncommon`   |
+| Scarce     | 41-60       | `scarce`     |
+| Rare       | 61-80       | `rare`       |
+| Ultra-Rare | 81-100      | `ultra-rare` |
 
 ## Computation Pipeline
 
@@ -163,10 +163,10 @@ sequenceDiagram
 Five aggregate queries, not per-release queries:
 
 1. **Pressing counts**: Group releases by master, count siblings
-2. **Label catalog sizes**: Use `Label.release_count` or count `(:Release)-[:ON]->(:Label)`
-3. **Format data**: Return release_id + formats list for Python-side scoring
-4. **Temporal data**: Release year + most recent sibling year per master
-5. **Graph degree**: Count relationships per release node
+1. **Label catalog sizes**: Use `Label.release_count` or count `(:Release)-[:ON]->(:Label)`
+1. **Format data**: Return release_id + formats list for Python-side scoring
+1. **Temporal data**: Release year + most recent sibling year per master
+1. **Graph degree**: Count relationships per release node
 
 Results joined in Python by release_id, composite score computed, then returned as a single JSON payload.
 
@@ -299,12 +299,14 @@ tests/insights/test_rarity_computation.py — computation pipeline tests
 ## Future Phases (out of scope)
 
 ### Phase 2
+
 - `GET /api/rarity/collection` — authenticated, user's collection rarity distribution
 - `GET /api/rarity/hidden-gems/collection` — hidden gems the user owns
 - Explore UI: rarity badges on release views, collection rarity dashboard panel
 - Admin-configurable weights via admin endpoint
 
 ### Phase 3
+
 - MCP server: `get_rarity_score`, `get_hidden_gems` tools
 - Integration with collector achievements (#200), storyteller (#202), crate digger (#204)
 - Gap analysis integration: "This missing pressing is rated Ultra-Rare"

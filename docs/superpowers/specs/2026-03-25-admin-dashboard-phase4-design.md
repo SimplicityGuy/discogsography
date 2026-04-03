@@ -9,7 +9,7 @@
 Two changes to the admin dashboard:
 
 1. **Unified identity** — merge `dashboard_admins` into the `users` table via an `is_admin` flag, eliminating separate admin credentials
-2. **Persistent audit log** — record all admin write actions to a new `admin_audit_log` table with a paginated API endpoint and dashboard UI
+1. **Persistent audit log** — record all admin write actions to a new `admin_audit_log` table with a paginated API endpoint and dashboard UI
 
 ## Feature 1: Unified Identity
 
@@ -30,25 +30,25 @@ ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT FALSE;
 Admin login (`POST /api/admin/auth/login`) queries `users` instead of `dashboard_admins`:
 
 1. Look up user by email in `users` table
-2. Verify password with `_verify_password`
-3. Check `is_admin = true` — return 403 if not
-4. Issue admin JWT with `"type": "admin"` claim
+1. Verify password with `_verify_password`
+1. Check `is_admin = true` — return 403 if not
+1. Issue admin JWT with `"type": "admin"` claim
 
 The `require_admin` dependency verifies admin status against the database on every request, not just the JWT claim:
 
 1. Extract `sub` (user ID) from JWT
-2. Verify JWT signature (rejects tampered tokens)
-3. Check Redis revocation list (rejects logged-out tokens)
-4. Query `SELECT is_admin FROM users WHERE id = $1 AND is_active = true`
-5. If `is_admin` is not `true` in the DB, return 403
+1. Verify JWT signature (rejects tampered tokens)
+1. Check Redis revocation list (rejects logged-out tokens)
+1. Query `SELECT is_admin FROM users WHERE id = $1 AND is_active = true`
+1. If `is_admin` is not `true` in the DB, return 403
 
 The `"type": "admin"` JWT claim serves as a fast pre-check only. The database is the source of truth.
 
 ### Security Layers
 
 1. **JWT signature verification** — HMAC-signed with server-side secret; rejects any tampered payload
-2. **DB `is_admin` check** — rejects valid non-admin tokens even if they contain `"type": "admin"`
-3. **Redis revocation list** — rejects revoked tokens (logout)
+1. **DB `is_admin` check** — rejects valid non-admin tokens even if they contain `"type": "admin"`
+1. **Redis revocation list** — rejects revoked tokens (logout)
 
 ### Admin Promotion
 
@@ -98,12 +98,12 @@ A `@audit_log(action="...")` decorator wraps admin endpoint handlers:
 
 ### Audited Actions
 
-| Action | Target | Details |
-|--------|--------|---------|
-| `admin.login` | admin email | `{"success": true/false}` |
-| `admin.logout` | admin email | `{}` |
-| `extraction.trigger` | — | `{"extraction_id": "..."}` |
-| `dlq.purge` | queue name | `{"purged_count": N}` |
+| Action               | Target      | Details                    |
+| -------------------- | ----------- | -------------------------- |
+| `admin.login`        | admin email | `{"success": true/false}`  |
+| `admin.logout`       | admin email | `{}`                       |
+| `extraction.trigger` | —           | `{"extraction_id": "..."}` |
+| `dlq.purge`          | queue name  | `{"purged_count": N}`      |
 
 ### API Endpoint
 
@@ -142,20 +142,20 @@ New "Audit Log" tab in `admin.html`:
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
+| File                             | Change                                                                                                            |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `schema-init/postgres_schema.py` | Remove `dashboard_admins`, add `is_admin` to `users`, add `admin_audit_log` table, update `extraction_history` FK |
-| `api/routers/admin.py` | Query `users` instead of `dashboard_admins`, add audit log decorator, add `GET /api/admin/audit-log` |
-| `api/admin_auth.py` | No changes (already generic) |
-| `api/dependencies.py` | Update `require_admin` to check `users.is_admin` with DB verification |
-| `api/audit_log.py` | New — decorator and DB write function |
-| `api/queries/admin_queries.py` | Add `get_audit_log` query function |
-| `api/models.py` | Add `AuditLogEntry` and `AuditLogResponse` Pydantic models |
-| `dashboard/admin_proxy.py` | Add audit-log proxy route |
-| `dashboard/static/admin.html` | Add Audit Log tab |
-| `dashboard/static/admin.js` | Add audit log fetch, render, filter, pagination |
-| `tests/api/test_admin.py` | Update for `users` table, add audit log tests |
-| `tests/api/test_audit_log.py` | New — decorator and endpoint tests |
+| `api/routers/admin.py`           | Query `users` instead of `dashboard_admins`, add audit log decorator, add `GET /api/admin/audit-log`              |
+| `api/admin_auth.py`              | No changes (already generic)                                                                                      |
+| `api/dependencies.py`            | Update `require_admin` to check `users.is_admin` with DB verification                                             |
+| `api/audit_log.py`               | New — decorator and DB write function                                                                             |
+| `api/queries/admin_queries.py`   | Add `get_audit_log` query function                                                                                |
+| `api/models.py`                  | Add `AuditLogEntry` and `AuditLogResponse` Pydantic models                                                        |
+| `dashboard/admin_proxy.py`       | Add audit-log proxy route                                                                                         |
+| `dashboard/static/admin.html`    | Add Audit Log tab                                                                                                 |
+| `dashboard/static/admin.js`      | Add audit log fetch, render, filter, pagination                                                                   |
+| `tests/api/test_admin.py`        | Update for `users` table, add audit log tests                                                                     |
+| `tests/api/test_audit_log.py`    | New — decorator and endpoint tests                                                                                |
 
 ## Testing Strategy
 

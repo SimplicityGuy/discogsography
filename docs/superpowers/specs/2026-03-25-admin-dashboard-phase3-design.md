@@ -23,29 +23,29 @@ Two new PostgreSQL tables in `schema-init/postgres_schema.py`.
 
 ### `queue_metrics`
 
-| Column | Type | Notes |
-|--------|------|-------|
-| id | BIGSERIAL PK | |
-| recorded_at | TIMESTAMPTZ NOT NULL | indexed |
-| queue_name | VARCHAR(100) NOT NULL | e.g. `graphinator-artists` |
-| messages_ready | INTEGER | |
-| messages_unacknowledged | INTEGER | |
-| consumers | INTEGER | |
-| publish_rate | REAL | msgs/sec from RabbitMQ API |
-| ack_rate | REAL | msgs/sec from RabbitMQ API |
+| Column                  | Type                  | Notes                      |
+| ----------------------- | --------------------- | -------------------------- |
+| id                      | BIGSERIAL PK          |                            |
+| recorded_at             | TIMESTAMPTZ NOT NULL  | indexed                    |
+| queue_name              | VARCHAR(100) NOT NULL | e.g. `graphinator-artists` |
+| messages_ready          | INTEGER               |                            |
+| messages_unacknowledged | INTEGER               |                            |
+| consumers               | INTEGER               |                            |
+| publish_rate            | REAL                  | msgs/sec from RabbitMQ API |
+| ack_rate                | REAL                  | msgs/sec from RabbitMQ API |
 
 Index: `idx_queue_metrics_recorded_at_queue (recorded_at, queue_name)`.
 
 ### `service_health_metrics`
 
-| Column | Type | Notes |
-|--------|------|-------|
-| id | BIGSERIAL PK | |
-| recorded_at | TIMESTAMPTZ NOT NULL | indexed |
-| service_name | VARCHAR(50) NOT NULL | e.g. `extractor`, `api` |
-| status | VARCHAR(20) | healthy/unhealthy/unknown |
-| response_time_ms | REAL | health endpoint latency |
-| endpoint_stats | JSONB | API-only: per-endpoint p50/p95/p99, error counts |
+| Column           | Type                 | Notes                                            |
+| ---------------- | -------------------- | ------------------------------------------------ |
+| id               | BIGSERIAL PK         |                                                  |
+| recorded_at      | TIMESTAMPTZ NOT NULL | indexed                                          |
+| service_name     | VARCHAR(50) NOT NULL | e.g. `extractor`, `api`                          |
+| status           | VARCHAR(20)          | healthy/unhealthy/unknown                        |
+| response_time_ms | REAL                 | health endpoint latency                          |
+| endpoint_stats   | JSONB                | API-only: per-endpoint p50/p95/p99, error counts |
 
 Index: `idx_service_health_metrics_recorded_at_service (recorded_at, service_name)`.
 
@@ -67,10 +67,10 @@ New module `api/metrics_collector.py`. An `asyncio.Task` started in the API life
 ### Collection cycle
 
 1. **Queue metrics** — HTTP call to RabbitMQ Management API (`/api/queues`), same approach as `dashboard/dashboard.py:get_queue_info()`. Filter for `discogsography` queues, extract messages_ready, messages_unacknowledged, consumers, publish_rate, ack_rate.
-2. **Service health** — Concurrent HTTP calls to each service's `/health` endpoint (extractor:8000, graphinator:8001, tableinator:8002, dashboard:8003, insights:8008). Record status + response latency.
-3. **API endpoint stats** — Flush the in-memory accumulator from the metrics middleware, compute percentiles, reset counters.
-4. **Write to PostgreSQL** — Single transaction: batch INSERT queue rows + health rows.
-5. **Prune old data** — `DELETE FROM queue_metrics WHERE recorded_at < NOW() - INTERVAL '{retention} days'`, same for `service_health_metrics`. Runs every cycle.
+1. **Service health** — Concurrent HTTP calls to each service's `/health` endpoint (extractor:8000, graphinator:8001, tableinator:8002, dashboard:8003, insights:8008). Record status + response latency.
+1. **API endpoint stats** — Flush the in-memory accumulator from the metrics middleware, compute percentiles, reset counters.
+1. **Write to PostgreSQL** — Single transaction: batch INSERT queue rows + health rows.
+1. **Prune old data** — `DELETE FROM queue_metrics WHERE recorded_at < NOW() - INTERVAL '{retention} days'`, same for `service_health_metrics`. Runs every cycle.
 
 ### Resilience
 
@@ -100,15 +100,15 @@ Queue depth time-series data.
 
 **Auto-granularity mapping:**
 
-| Range | Granularity | Max datapoints per queue |
-|-------|-------------|--------------------------|
-| 1h | 5 min (raw) | 12 |
-| 6h | 5 min (raw) | 72 |
-| 24h | 15 min (avg) | 96 |
-| 7d | 1 hour (avg) | 168 |
-| 30d | 6 hour (avg) | 120 |
-| 90d | 1 day (avg) | 90 |
-| 365d | 1 day (avg) | 365 |
+| Range | Granularity  | Max datapoints per queue |
+| ----- | ------------ | ------------------------ |
+| 1h    | 5 min (raw)  | 12                       |
+| 6h    | 5 min (raw)  | 72                       |
+| 24h   | 15 min (avg) | 96                       |
+| 7d    | 1 hour (avg) | 168                      |
+| 30d   | 6 hour (avg) | 120                      |
+| 90d   | 1 day (avg)  | 90                       |
+| 365d  | 1 day (avg)  | 365                      |
 
 Aggregation uses `date_trunc` + `AVG` in SQL for ranges beyond 6h.
 
@@ -230,10 +230,10 @@ Same proxy pattern as Phase 1/2 — forward auth header, re-serialize JSON, vali
 
 ## Configuration
 
-| Env Var | Default | Description |
-|---------|---------|-------------|
-| `METRICS_RETENTION_DAYS` | 366 | Days to retain metric snapshots |
-| `METRICS_COLLECTION_INTERVAL` | 300 | Seconds between collection cycles |
+| Env Var                       | Default | Description                       |
+| ----------------------------- | ------- | --------------------------------- |
+| `METRICS_RETENTION_DAYS`      | 366     | Days to retain metric snapshots   |
+| `METRICS_COLLECTION_INTERVAL` | 300     | Seconds between collection cycles |
 
 ## Error Handling
 
@@ -247,26 +247,26 @@ Same proxy pattern as Phase 1/2 — forward auth header, re-serialize JSON, vali
 
 ### Files to create
 
-| File | Purpose |
-|------|---------|
-| `api/metrics_collector.py` | Background task: queue/health snapshot collection, retention pruning, metrics middleware |
-| `api/queries/metrics_queries.py` | Query functions for history endpoints (time-series aggregation) |
-| `tests/api/test_metrics_collector.py` | Unit tests for collector, middleware, path normalization |
-| `tests/api/test_metrics_queries.py` | Unit tests for query functions |
+| File                                  | Purpose                                                                                  |
+| ------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `api/metrics_collector.py`            | Background task: queue/health snapshot collection, retention pruning, metrics middleware |
+| `api/queries/metrics_queries.py`      | Query functions for history endpoints (time-series aggregation)                          |
+| `tests/api/test_metrics_collector.py` | Unit tests for collector, middleware, path normalization                                 |
+| `tests/api/test_metrics_queries.py`   | Unit tests for query functions                                                           |
 
 ### Files to modify
 
-| File | Change |
-|------|--------|
-| `api/routers/admin.py` | Add 2 endpoints (`queues/history`, `health/history`) |
-| `api/models.py` | Pydantic response models for both endpoints |
-| `api/api.py` | Start collector task in lifespan, add metrics middleware |
-| `schema-init/postgres_schema.py` | Add `queue_metrics` and `service_health_metrics` tables |
-| `dashboard/admin_proxy.py` | Add 2 proxy routes |
-| `dashboard/static/admin.html` | Add Queue Trends and System Health tabs, load Chart.js CDN |
-| `dashboard/static/admin.js` | Fetch + render logic, Chart.js initialization, sparkline generation |
-| `tests/api/test_admin_endpoints.py` | Endpoint tests for 2 new routes |
-| `tests/dashboard/test_admin_proxy.py` | Proxy route tests |
+| File                                  | Change                                                              |
+| ------------------------------------- | ------------------------------------------------------------------- |
+| `api/routers/admin.py`                | Add 2 endpoints (`queues/history`, `health/history`)                |
+| `api/models.py`                       | Pydantic response models for both endpoints                         |
+| `api/api.py`                          | Start collector task in lifespan, add metrics middleware            |
+| `schema-init/postgres_schema.py`      | Add `queue_metrics` and `service_health_metrics` tables             |
+| `dashboard/admin_proxy.py`            | Add 2 proxy routes                                                  |
+| `dashboard/static/admin.html`         | Add Queue Trends and System Health tabs, load Chart.js CDN          |
+| `dashboard/static/admin.js`           | Fetch + render logic, Chart.js initialization, sparkline generation |
+| `tests/api/test_admin_endpoints.py`   | Endpoint tests for 2 new routes                                     |
+| `tests/dashboard/test_admin_proxy.py` | Proxy route tests                                                   |
 
 ## Testing
 

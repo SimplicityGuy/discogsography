@@ -65,51 +65,51 @@ The brainzgraphinator enriches existing Discogs nodes with MusicBrainz propertie
 
 ### Artist Properties
 
-| Property | Description |
-|----------|-------------|
-| `mbid` | MusicBrainz identifier |
-| `mb_type` | Artist type (person, group, orchestra, etc.) |
-| `mb_gender` | Gender (for person type) |
-| `mb_begin_date` | Career/life begin date |
-| `mb_end_date` | Career/life end date |
-| `mb_area` | Primary area |
-| `mb_begin_area` | Begin area |
-| `mb_end_area` | End area |
-| `mb_disambiguation` | Disambiguation comment |
+| Property            | Description                                  |
+| ------------------- | -------------------------------------------- |
+| `mbid`              | MusicBrainz identifier                       |
+| `mb_type`           | Artist type (person, group, orchestra, etc.) |
+| `mb_gender`         | Gender (for person type)                     |
+| `mb_begin_date`     | Career/life begin date                       |
+| `mb_end_date`       | Career/life end date                         |
+| `mb_area`           | Primary area                                 |
+| `mb_begin_area`     | Begin area                                   |
+| `mb_end_area`       | End area                                     |
+| `mb_disambiguation` | Disambiguation comment                       |
 
 ### Label Properties
 
-| Property | Description |
-|----------|-------------|
-| `mbid` | MusicBrainz identifier |
-| `mb_type` | Label type |
-| `mb_label_code` | Label code |
-| `mb_begin_date` | Founded date |
-| `mb_end_date` | Closed date |
-| `mb_area` | Geographic area |
+| Property        | Description            |
+| --------------- | ---------------------- |
+| `mbid`          | MusicBrainz identifier |
+| `mb_type`       | Label type             |
+| `mb_label_code` | Label code             |
+| `mb_begin_date` | Founded date           |
+| `mb_end_date`   | Closed date            |
+| `mb_area`       | Geographic area        |
 
 ### Release Properties
 
-| Property | Description |
-|----------|-------------|
-| `mbid` | MusicBrainz identifier |
-| `mb_barcode` | Barcode |
-| `mb_status` | Release status |
+| Property     | Description            |
+| ------------ | ---------------------- |
+| `mbid`       | MusicBrainz identifier |
+| `mb_barcode` | Barcode                |
+| `mb_status`  | Release status         |
 
 ## Relationship Edges
 
 Creates new relationship edges between Discogs-matched entities. Both source and target must have a Discogs match for the edge to be created.
 
-| MB Relationship Type | Neo4j Edge Type |
-|---------------------|-----------------|
-| member of band | `MEMBER_OF` (enriched with dates) |
-| collaboration | `COLLABORATED_WITH` |
-| teacher | `TAUGHT` |
-| tribute | `TRIBUTE_TO` |
-| founder | `FOUNDED` |
-| supporting musician | `SUPPORTED` |
-| subgroup | `SUBGROUP_OF` |
-| artist rename | `RENAMED_TO` |
+| MB Relationship Type | Neo4j Edge Type                   |
+| -------------------- | --------------------------------- |
+| member of band       | `MEMBER_OF` (enriched with dates) |
+| collaboration        | `COLLABORATED_WITH`               |
+| teacher              | `TAUGHT`                          |
+| tribute              | `TRIBUTE_TO`                      |
+| founder              | `FOUNDED`                         |
+| supporting musician  | `SUPPORTED`                       |
+| subgroup             | `SUBGROUP_OF`                     |
+| artist rename        | `RENAMED_TO`                      |
 
 All relationship edges include `source: 'musicbrainz'` for provenance tracking.
 

@@ -8,13 +8,14 @@
 
 **Tech Stack:** Python 3.13+ / FastAPI / psycopg / aioredis (API side), Rust / axum / tokio (extractor side)
 
----
+______________________________________________________________________
 
 ## Chunk 1: Database Schema & Admin Auth
 
 ### Task 1: Add database tables to schema-init
 
 **Files:**
+
 - Modify: `schema-init/postgres_schema.py`
 
 - [ ] **Step 1: Read current schema file**
@@ -77,12 +78,14 @@ git add schema-init/postgres_schema.py
 git commit -m "feat(schema): add dashboard_admins and extraction_history tables"
 ```
 
----
+______________________________________________________________________
 
 ### Task 2: Add admin auth module
 
 **Files:**
+
 - Create: `api/admin_auth.py`
+
 - Modify: `api/auth.py` (import reuse)
 
 - [ ] **Step 1: Write test for admin auth functions**
@@ -242,12 +245,14 @@ git add api/admin_auth.py tests/api/test_admin_auth.py
 git commit -m "feat(admin): add admin auth module with JWT creation and password verification"
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: Add require_admin dependency
 
 **Files:**
+
 - Modify: `api/dependencies.py`
+
 - Modify: `api/api.py` (reject admin tokens in `_get_current_user`)
 
 - [ ] **Step 1: Write tests for require_admin and token isolation**
@@ -388,7 +393,7 @@ async def require_admin(
 
 **Note:** Update all existing `configure()` call sites in `api/api.py` and `tests/api/conftest.py` to pass the redis parameter where needed.
 
-- [ ] **Step 4: Add token isolation to _get_current_user in api.py**
+- [ ] **Step 4: Add token isolation to \_get_current_user in api.py**
 
 In `api/api.py`, inside `_get_current_user()`, after the `payload = decode_token(...)` line and before extracting `user_id`, add:
 
@@ -428,11 +433,12 @@ git add api/dependencies.py api/api.py tests/api/test_admin_auth.py
 git commit -m "feat(admin): add require_admin dependency with token isolation"
 ```
 
----
+______________________________________________________________________
 
 ### Task 4: Add Pydantic models for admin endpoints
 
 **Files:**
+
 - Modify: `api/models.py`
 
 - [ ] **Step 1: Add admin models to api/models.py**
@@ -501,11 +507,12 @@ git add api/models.py
 git commit -m "feat(admin): add Pydantic models for admin endpoints"
 ```
 
----
+______________________________________________________________________
 
 ### Task 5: Add config for extractor and RabbitMQ management
 
 **Files:**
+
 - Modify: `common/config.py`
 
 - [ ] **Step 1: Add fields to ApiConfig**
@@ -547,14 +554,16 @@ git add common/config.py
 git commit -m "feat(config): add extractor and RabbitMQ management config to ApiConfig"
 ```
 
----
+______________________________________________________________________
 
 ## Chunk 2: Admin Router & Endpoints
 
 ### Task 6: Create admin router with login/logout
 
 **Files:**
+
 - Create: `api/routers/admin.py`
+
 - Modify: `api/api.py` (register router)
 
 - [ ] **Step 1: Write tests for admin login/logout**
@@ -1159,11 +1168,12 @@ git add api/routers/admin.py api/api.py tests/api/test_admin_endpoints.py tests/
 git commit -m "feat(admin): add admin router with login, logout, extraction history, trigger, and DLQ purge"
 ```
 
----
+______________________________________________________________________
 
 ### Task 7: Add extraction trigger and DLQ purge tests
 
 **Files:**
+
 - Modify: `tests/api/test_admin_endpoints.py`
 
 - [ ] **Step 1: Add trigger and DLQ tests**
@@ -1292,14 +1302,16 @@ git add tests/api/test_admin_endpoints.py
 git commit -m "test(admin): add trigger, extraction list, and DLQ purge tests"
 ```
 
----
+______________________________________________________________________
 
 ## Chunk 3: Admin CLI, Extractor Changes & Integration
 
 ### Task 8: Create admin-setup CLI tool
 
 **Files:**
+
 - Create: `api/admin_setup.py`
+
 - Modify: `api/pyproject.toml`
 
 - [ ] **Step 1: Implement admin_setup.py**
@@ -1425,14 +1437,18 @@ git add api/admin_setup.py api/pyproject.toml
 git commit -m "feat(admin): add admin-setup CLI tool for managing admin accounts"
 ```
 
----
+______________________________________________________________________
 
 ### Task 9: Extend Rust extractor with trigger endpoint and extraction_status
 
 **Files:**
+
 - Modify: `extractor/src/health.rs`
+
 - Modify: `extractor/src/extractor.rs` (add extraction_status to state)
+
 - Modify: `extractor/src/main.rs` (wire trigger flag)
+
 - Modify: `extractor/src/tests/health_tests.rs`
 
 - [ ] **Step 1: Add extraction_status to ExtractorState**
@@ -1474,6 +1490,7 @@ impl ExtractionStatus {
 ```
 
 Update `process_discogs_data()` to set extraction_status:
+
 - At the start (after resetting progress): `s.extraction_status = ExtractionStatus::Running;`
 - On success (end of function): `s.extraction_status = ExtractionStatus::Completed;`
 - On failure: `s.extraction_status = ExtractionStatus::Failed;`
@@ -1703,11 +1720,12 @@ git add extractor/src/health.rs extractor/src/extractor.rs extractor/src/main.rs
 git commit -m "feat(extractor): add POST /trigger endpoint and extraction_status to health response"
 ```
 
----
+______________________________________________________________________
 
 ### Task 10: Add httpx dependency and run full test suite
 
 **Files:**
+
 - Modify: `api/pyproject.toml` (if httpx not already a dependency)
 
 - [ ] **Step 1: Check if httpx is already a dependency**
@@ -1740,7 +1758,7 @@ git add -A
 git commit -m "chore: add httpx dependency and fix any remaining issues"
 ```
 
----
+______________________________________________________________________
 
 ### Task 11: Final integration verification
 

@@ -105,6 +105,7 @@ Combined storage utilization for Neo4j, PostgreSQL, and Redis. Queried concurren
 On source failure, that source returns `{"status": "error", "error": "connection failed"}` — other sources still return normally.
 
 **Query details:**
+
 - Neo4j: `CALL apoc.meta.stats()` for node/relationship counts by label/type (already used in `dashboard/dashboard.py`). Store sizes (bytes) require JMX queries (`CALL dbms.queryJmx('org.neo4j:*')`) which may not be available in all editions — `store_sizes` returns `null` if unavailable rather than failing.
 - PostgreSQL: `pg_total_relation_size`, `pg_indexes_size`, `pg_stat_user_tables` for row estimates
 - Redis: `INFO memory`, `INFO keyspace`, `SCAN` with prefix grouping (not `KEYS *`)

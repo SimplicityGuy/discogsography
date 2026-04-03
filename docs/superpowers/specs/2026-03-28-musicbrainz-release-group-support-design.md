@@ -14,16 +14,16 @@ Add MusicBrainz release-group extraction and processing to the existing pipeline
 
 ## Naming
 
-| Context | Value |
-|---------|-------|
-| Rust enum variant | `ReleaseGroups` |
-| Data type string (`as_str()`) | `"release-groups"` |
-| RabbitMQ exchange | `musicbrainz-release-groups` |
-| PostgreSQL table | `musicbrainz.release_groups` |
-| MusicBrainz tarball | `release-group.tar.xz` |
-| JSONL filename | `release-group` (inside `mbdump/`) |
-| Discogs ID field | `discogs_master_id` |
-| Neo4j node type | `Master` (existing Discogs nodes, enriched) |
+| Context                       | Value                                       |
+| ----------------------------- | ------------------------------------------- |
+| Rust enum variant             | `ReleaseGroups`                             |
+| Data type string (`as_str()`) | `"release-groups"`                          |
+| RabbitMQ exchange             | `musicbrainz-release-groups`                |
+| PostgreSQL table              | `musicbrainz.release_groups`                |
+| MusicBrainz tarball           | `release-group.tar.xz`                      |
+| JSONL filename                | `release-group` (inside `mbdump/`)          |
+| Discogs ID field              | `discogs_master_id`                         |
+| Neo4j node type               | `Master` (existing Discogs nodes, enriched) |
 
 ## Extractor (Rust)
 
@@ -53,6 +53,7 @@ Output: DataMessage with normalized fields
 ```
 
 Fields extracted:
+
 - `discogs_master_id` — from Discogs URL relation via `extract_discogs_id(url, "master")`
 - `name` — from `v["title"]` (release-groups use "title", not "name")
 - `mb_type` — primary type: Album, Single, EP, Compilation, Broadcast, Other
@@ -74,6 +75,7 @@ Follows the same pattern as `parse_mb_artist_line`, `parse_mb_label_line`, `pars
 ### common/config.py
 
 Add `"release-groups"` to `MUSICBRAINZ_DATA_TYPES`:
+
 ```python
 MUSICBRAINZ_DATA_TYPES = ["artists", "labels", "release-groups", "releases"]
 ```
@@ -83,12 +85,13 @@ MUSICBRAINZ_DATA_TYPES = ["artists", "labels", "release-groups", "releases"]
 New `enrich_release_group(tx, record) -> bool`:
 
 1. Read `discogs_master_id` from record
-2. If None, skip (no Discogs match) — increment `entities_skipped_no_discogs_match`
-3. `MATCH (m:Master {id: $discogs_id})`
-4. Set properties: `m.mbid`, `m.mb_type`, `m.mb_secondary_types`, `m.mb_first_release_date`, `m.mb_disambiguation`, `m.mb_updated_at`
-5. If matched, increment `entities_enriched`
+1. If None, skip (no Discogs match) — increment `entities_skipped_no_discogs_match`
+1. `MATCH (m:Master {id: $discogs_id})`
+1. Set properties: `m.mbid`, `m.mb_type`, `m.mb_secondary_types`, `m.mb_first_release_date`, `m.mb_disambiguation`, `m.mb_updated_at`
+1. If matched, increment `entities_enriched`
 
 Register:
+
 - `PROCESSORS["release-groups"] = enrich_release_group`
 - Add `"release-groups": 0` to `message_counts`
 - Add `"release-groups": 0` to `last_message_time`
@@ -98,10 +101,11 @@ Register:
 New `process_release_group(conn, record) -> None`:
 
 1. Insert/upsert into `musicbrainz.release_groups`
-2. Insert relationships via `_insert_relationship(conn, mbid, "release-group", rel)`
-3. Insert external links via `_insert_external_link(conn, mbid, "release-group", link)`
+1. Insert relationships via `_insert_relationship(conn, mbid, "release-group", rel)`
+1. Insert external links via `_insert_external_link(conn, mbid, "release-group", link)`
 
 Register:
+
 - `PROCESSORS["release-groups"] = process_release_group`
 - Add `"release-groups": 0` to `message_counts`
 - Add `"release-groups": 0` to `last_message_time`
@@ -111,6 +115,7 @@ Register:
 ### PostgreSQL (schema-init/postgres_schema.py)
 
 New table:
+
 ```sql
 CREATE TABLE IF NOT EXISTS musicbrainz.release_groups (
     mbid UUID PRIMARY KEY,
@@ -131,6 +136,7 @@ Relationships and external links use the existing shared `musicbrainz.relationsh
 ### Neo4j (schema-init/neo4j_schema.py)
 
 Add MBID index on existing Master nodes:
+
 ```
 CREATE INDEX master_mbid IF NOT EXISTS FOR (m:Master) ON (m.mbid)
 ```

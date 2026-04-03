@@ -53,14 +53,14 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 | **[🔧](docs/emoji-guide.md#service-identifiers) Schema-Init** | One-shot database schema initializer             | `neo4j-driver`, `psycopg3`                                   |
 | **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables              | `psycopg3`, JSONB, full-text search                          |
 | **[📈](docs/emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends           | `FastAPI`, `psycopg3`, `httpx`                               |
-| **[🤖](docs/emoji-guide.md#service-identifiers) MCP Server** | Exposes knowledge graph to AI assistants         | `FastMCP`, `httpx`                                           |
+| **[🤖](docs/emoji-guide.md#service-identifiers) MCP Server**  | Exposes knowledge graph to AI assistants         | `FastMCP`, `httpx`                                           |
 
 ### 🎵 MusicBrainz Enrichment Services
 
-| Service                                                              | Purpose                                                    | Key Technologies                    |
-| -------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------- |
-| **[🧠](docs/emoji-guide.md#service-identifiers) Brainzgraphinator** | Enriches Neo4j graph with MusicBrainz metadata and relationships | `neo4j-driver`, `pika`              |
-| **[🧬](docs/emoji-guide.md#service-identifiers) Brainztableinator** | Populates PostgreSQL with MusicBrainz data and external links    | `psycopg3`, `pika`                  |
+| Service                                                             | Purpose                                                          | Key Technologies       |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------- |
+| **[🧠](docs/emoji-guide.md#service-identifiers) Brainzgraphinator** | Enriches Neo4j graph with MusicBrainz metadata and relationships | `neo4j-driver`, `pika` |
+| **[🧬](docs/emoji-guide.md#service-identifiers) Brainztableinator** | Populates PostgreSQL with MusicBrainz data and external links    | `psycopg3`, `pika`     |
 
 ### 📐 System Architecture
 
@@ -190,13 +190,13 @@ See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local develo
 
 ### 🔧 Operations
 
-| Document                                                       | Purpose                                              |
-| -------------------------------------------------------------- | ---------------------------------------------------- |
-| **[Troubleshooting Guide](docs/troubleshooting.md)**           | 🔧 Common issues, solutions, and debugging steps     |
-| **[Maintenance Guide](docs/maintenance.md)**                   | 🔄 Package upgrades, dependency management           |
-| **[Performance Guide](docs/performance-guide.md)**             | ⚡ Database tuning, hardware specs, optimization     |
-| **[Database Resilience](docs/database-resilience.md)**         | 💾 Database connection patterns & error handling     |
-| **[MusicBrainz Sync Guide](docs/musicbrainz-sync.md)**        | 🎵 MusicBrainz data import and enrichment operations |
+| Document                                               | Purpose                                              |
+| ------------------------------------------------------ | ---------------------------------------------------- |
+| **[Troubleshooting Guide](docs/troubleshooting.md)**   | 🔧 Common issues, solutions, and debugging steps     |
+| **[Maintenance Guide](docs/maintenance.md)**           | 🔄 Package upgrades, dependency management           |
+| **[Performance Guide](docs/performance-guide.md)**     | ⚡ Database tuning, hardware specs, optimization     |
+| **[Database Resilience](docs/database-resilience.md)** | 💾 Database connection patterns & error handling     |
+| **[MusicBrainz Sync Guide](docs/musicbrainz-sync.md)** | 🎵 MusicBrainz data import and enrichment operations |
 
 ### 🐋 Infrastructure & CI/CD
 

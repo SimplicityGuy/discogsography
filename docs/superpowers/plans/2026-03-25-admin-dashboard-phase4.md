@@ -8,32 +8,33 @@
 
 **Tech Stack:** Python 3.13+, FastAPI, psycopg3 (async), Pydantic v2, structlog, vanilla JS/HTML frontend
 
----
+______________________________________________________________________
 
 ## File Map
 
-| File | Action | Responsibility |
-|------|--------|----------------|
-| `schema-init/postgres_schema.py` | Modify | Remove `dashboard_admins`, add `is_admin` to `users`, update `extraction_history` FK, add `admin_audit_log` |
-| `api/dependencies.py` | Modify | Add DB-verified `require_admin` with pool configuration |
-| `api/audit_log.py` | Create | `record_audit_entry()` function for writing audit log entries |
-| `api/queries/admin_queries.py` | Modify | Add `get_audit_log()` query function |
-| `api/models.py` | Modify | Add `AuditLogEntry` and `AuditLogResponse` models |
-| `api/routers/admin.py` | Modify | Query `users` for login, add inline audit logging, add audit-log endpoint |
-| `dashboard/admin_proxy.py` | Modify | Add audit-log proxy route |
-| `dashboard/static/admin.html` | Modify | Add Audit Log tab |
-| `dashboard/static/admin.js` | Modify | Add audit log fetch, render, filter, pagination |
-| `tests/api/test_dependencies.py` | Modify | Update `require_admin` tests for DB verification |
-| `tests/api/test_admin_endpoints.py` | Modify | Update login tests for `users` table, add audit log endpoint tests |
-| `tests/api/test_audit_log.py` | Create | Tests for `record_audit_entry()` |
-| `tests/api/conftest.py` | Modify | Update `_admin_router.configure` if signature changes |
-| `tests/dashboard/test_admin_proxy.py` | Modify | Add audit-log proxy test |
+| File                                  | Action | Responsibility                                                                                              |
+| ------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------- |
+| `schema-init/postgres_schema.py`      | Modify | Remove `dashboard_admins`, add `is_admin` to `users`, update `extraction_history` FK, add `admin_audit_log` |
+| `api/dependencies.py`                 | Modify | Add DB-verified `require_admin` with pool configuration                                                     |
+| `api/audit_log.py`                    | Create | `record_audit_entry()` function for writing audit log entries                                               |
+| `api/queries/admin_queries.py`        | Modify | Add `get_audit_log()` query function                                                                        |
+| `api/models.py`                       | Modify | Add `AuditLogEntry` and `AuditLogResponse` models                                                           |
+| `api/routers/admin.py`                | Modify | Query `users` for login, add inline audit logging, add audit-log endpoint                                   |
+| `dashboard/admin_proxy.py`            | Modify | Add audit-log proxy route                                                                                   |
+| `dashboard/static/admin.html`         | Modify | Add Audit Log tab                                                                                           |
+| `dashboard/static/admin.js`           | Modify | Add audit log fetch, render, filter, pagination                                                             |
+| `tests/api/test_dependencies.py`      | Modify | Update `require_admin` tests for DB verification                                                            |
+| `tests/api/test_admin_endpoints.py`   | Modify | Update login tests for `users` table, add audit log endpoint tests                                          |
+| `tests/api/test_audit_log.py`         | Create | Tests for `record_audit_entry()`                                                                            |
+| `tests/api/conftest.py`               | Modify | Update `_admin_router.configure` if signature changes                                                       |
+| `tests/dashboard/test_admin_proxy.py` | Modify | Add audit-log proxy test                                                                                    |
 
----
+______________________________________________________________________
 
 ### Task 1: Schema Changes — Remove `dashboard_admins`, Add `is_admin`, Add `admin_audit_log`
 
 **Files:**
+
 - Modify: `schema-init/postgres_schema.py:88-288`
 
 - [ ] **Step 1: Update `users` table to include `is_admin`**
@@ -136,12 +137,14 @@ git add schema-init/postgres_schema.py
 git commit -m "feat(schema): unify users/admins table, add admin_audit_log (#139)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 2: Update `require_admin` to Verify `is_admin` Against the Database
 
 **Files:**
+
 - Modify: `api/dependencies.py`
+
 - Test: `tests/api/test_dependencies.py`
 
 - [ ] **Step 1: Write failing tests for DB-verified `require_admin`**
@@ -428,12 +431,14 @@ git add api/dependencies.py tests/api/test_dependencies.py tests/api/conftest.py
 git commit -m "feat(auth): verify is_admin against DB in require_admin (#139)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: Create `record_audit_entry()` Function
 
 **Files:**
+
 - Create: `api/audit_log.py`
+
 - Create: `tests/api/test_audit_log.py`
 
 - [ ] **Step 1: Write failing tests for `record_audit_entry`**
@@ -603,11 +608,12 @@ git add api/audit_log.py tests/api/test_audit_log.py
 git commit -m "feat(audit): add record_audit_entry function (#139)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 4: Add Pydantic Models for Audit Log
 
 **Files:**
+
 - Modify: `api/models.py:368-370`
 
 - [ ] **Step 1: Add audit log models**
@@ -646,12 +652,14 @@ git add api/models.py
 git commit -m "feat(models): add AuditLogEntry and AuditLogResponse (#139)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 5: Add `get_audit_log` Query Function
 
 **Files:**
+
 - Modify: `api/queries/admin_queries.py`
+
 - Test: `tests/api/test_admin_queries.py`
 
 - [ ] **Step 1: Write failing tests for `get_audit_log`**
@@ -802,12 +810,14 @@ git add api/queries/admin_queries.py tests/api/test_admin_queries.py
 git commit -m "feat(queries): add get_audit_log query function (#139)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 6: Update Admin Router — Login Queries `users`, Add Audit Logging, Add Audit Log Endpoint
 
 **Files:**
+
 - Modify: `api/routers/admin.py`
+
 - Modify: `tests/api/test_admin_endpoints.py`
 
 - [ ] **Step 1: Write failing tests for updated login and audit log endpoint**
@@ -999,12 +1009,14 @@ git add api/routers/admin.py tests/api/test_admin_endpoints.py
 git commit -m "feat(admin): unify login with users table, add audit logging and endpoint (#139)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 7: Update `api/api.py` Lifespan — Pass Pool to Dependencies
 
 **Files:**
+
 - Modify: `api/api.py`
+
 - Modify: `tests/api/conftest.py`
 
 - [ ] **Step 1: Update `api/api.py` to pass pool to dependencies.configure**
@@ -1039,12 +1051,14 @@ git add api/api.py tests/api/conftest.py
 git commit -m "feat(api): pass pool to dependencies for DB-verified admin auth (#139)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 8: Add Audit Log Proxy Route
 
 **Files:**
+
 - Modify: `dashboard/admin_proxy.py`
+
 - Test: `tests/dashboard/test_admin_proxy.py`
 
 - [ ] **Step 1: Add audit-log proxy route**
@@ -1122,12 +1136,14 @@ git add dashboard/admin_proxy.py tests/dashboard/test_admin_proxy.py
 git commit -m "feat(proxy): add audit-log proxy route (#139)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 9: Frontend — Add Audit Log Tab
 
 **Files:**
+
 - Modify: `dashboard/static/admin.html`
+
 - Modify: `dashboard/static/admin.js`
 
 - [ ] **Step 1: Add Audit Log tab button to `admin.html`**
@@ -1362,7 +1378,7 @@ git add dashboard/static/admin.html dashboard/static/admin.js
 git commit -m "feat(dashboard): add Audit Log tab to admin UI (#139)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 10: Run Full Test Suite and Lint
 

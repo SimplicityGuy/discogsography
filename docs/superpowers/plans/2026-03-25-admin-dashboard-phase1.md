@@ -10,37 +10,42 @@
 
 **Spec:** `docs/superpowers/specs/2026-03-25-admin-dashboard-phase1-design.md`
 
----
+______________________________________________________________________
 
 ## File Map
 
-| File | Action | Responsibility |
-|------|--------|---------------|
-| `extractor/src/health.rs` | Modify | Trigger handler: accept JSON body with `force_reprocess` |
-| `extractor/src/extractor.rs` | Modify | `wait_for_trigger` returns `bool`; trigger branch passes it |
-| `extractor/src/main.rs` | Modify | Replace `AtomicBool` with `Mutex<Option<bool>>` |
-| `extractor/src/tests/health_tests.rs` | Modify | Update trigger handler tests for new type + JSON body |
-| `extractor/src/tests/extractor_tests.rs` | Modify | Update `wait_for_trigger` tests for `bool` return |
-| `api/routers/admin.py` | Modify | Send `force_reprocess: true` in trigger request body |
-| `tests/api/test_admin_endpoints.py` | Modify | Verify force_reprocess in trigger request |
-| `dashboard/admin_proxy.py` | Create | FastAPI router proxying admin API calls |
-| `dashboard/dashboard.py` | Modify | Mount admin proxy router + `/admin` route |
-| `dashboard/static/admin.html` | Create | Admin page (login form + admin panel) |
-| `dashboard/static/admin.js` | Create | Admin page logic (auth, API calls, UI) |
-| `dashboard/static/index.html` | Modify | Add "Admin" link in header |
-| `docker-compose.yml` | Modify | Add `API_HOST`/`API_PORT` env vars to dashboard |
-| `tests/dashboard/test_admin_proxy.py` | Create | Proxy route tests |
-| `docs/admin-guide.md` | Create | Admin user documentation |
+| File                                     | Action | Responsibility                                              |
+| ---------------------------------------- | ------ | ----------------------------------------------------------- |
+| `extractor/src/health.rs`                | Modify | Trigger handler: accept JSON body with `force_reprocess`    |
+| `extractor/src/extractor.rs`             | Modify | `wait_for_trigger` returns `bool`; trigger branch passes it |
+| `extractor/src/main.rs`                  | Modify | Replace `AtomicBool` with `Mutex<Option<bool>>`             |
+| `extractor/src/tests/health_tests.rs`    | Modify | Update trigger handler tests for new type + JSON body       |
+| `extractor/src/tests/extractor_tests.rs` | Modify | Update `wait_for_trigger` tests for `bool` return           |
+| `api/routers/admin.py`                   | Modify | Send `force_reprocess: true` in trigger request body        |
+| `tests/api/test_admin_endpoints.py`      | Modify | Verify force_reprocess in trigger request                   |
+| `dashboard/admin_proxy.py`               | Create | FastAPI router proxying admin API calls                     |
+| `dashboard/dashboard.py`                 | Modify | Mount admin proxy router + `/admin` route                   |
+| `dashboard/static/admin.html`            | Create | Admin page (login form + admin panel)                       |
+| `dashboard/static/admin.js`              | Create | Admin page logic (auth, API calls, UI)                      |
+| `dashboard/static/index.html`            | Modify | Add "Admin" link in header                                  |
+| `docker-compose.yml`                     | Modify | Add `API_HOST`/`API_PORT` env vars to dashboard             |
+| `tests/dashboard/test_admin_proxy.py`    | Create | Proxy route tests                                           |
+| `docs/admin-guide.md`                    | Create | Admin user documentation                                    |
 
----
+______________________________________________________________________
 
-### Task 1: Extractor — Replace AtomicBool Trigger with Mutex<Option<bool>>
+### Task 1: Extractor — Replace AtomicBool Trigger with Mutex\<Option<bool>>
 
 **Files:**
+
 - Modify: `extractor/src/health.rs:20-28,106-117`
+
 - Modify: `extractor/src/extractor.rs:663-671,674-681,734-748`
+
 - Modify: `extractor/src/main.rs:4,101,104,119`
+
 - Test: `extractor/src/tests/health_tests.rs:246-267`
+
 - Test: `extractor/src/tests/extractor_tests.rs:936-1055`
 
 - [ ] **Step 1: Update health.rs — change trigger type and handler**
@@ -48,6 +53,7 @@
 In `extractor/src/health.rs`:
 
 Replace the `AtomicBool` import and struct field:
+
 ```rust
 // Replace:
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -56,6 +62,7 @@ use std::sync::Mutex;
 ```
 
 Change `HealthServer` struct:
+
 ```rust
 pub struct HealthServer {
     port: u16,
@@ -74,6 +81,7 @@ impl HealthServer {
 Update all handler signatures from `Arc<AtomicBool>` to `Arc<Mutex<Option<bool>>>`.
 
 Replace `trigger_handler`:
+
 ```rust
 #[derive(serde::Deserialize)]
 struct TriggerRequest {
@@ -107,6 +115,7 @@ async fn trigger_handler(
 In `extractor/src/extractor.rs`:
 
 Replace `wait_for_trigger`:
+
 ```rust
 /// Wait for the trigger to be set, then take the value and return force_reprocess flag
 async fn wait_for_trigger(trigger: &Arc<std::sync::Mutex<Option<bool>>>) -> bool {
@@ -123,6 +132,7 @@ async fn wait_for_trigger(trigger: &Arc<std::sync::Mutex<Option<bool>>>) -> bool
 ```
 
 Update `run_extraction_loop` signature — change `trigger` param type:
+
 ```rust
 pub async fn run_extraction_loop(
     config: Arc<ExtractorConfig>,
@@ -136,6 +146,7 @@ pub async fn run_extraction_loop(
 ```
 
 Update the trigger branch (line ~734):
+
 ```rust
 force = wait_for_trigger(&trigger) => {
     info!("🔄 Extraction triggered via API (force_reprocess={})...", force);
@@ -172,11 +183,13 @@ In `extractor/src/tests/health_tests.rs`:
 Replace `use std::sync::atomic::{AtomicBool, Ordering};` with `use std::sync::Mutex;`.
 
 Every test that creates `let trigger = Arc::new(AtomicBool::new(false));` becomes:
+
 ```rust
 let trigger = Arc::new(Mutex::new(None::<bool>));
 ```
 
 Update `test_trigger_handler_success`:
+
 ```rust
 #[tokio::test]
 async fn test_trigger_handler_success() {
@@ -191,6 +204,7 @@ async fn test_trigger_handler_success() {
 ```
 
 Update `test_trigger_handler_already_running`:
+
 ```rust
 #[tokio::test]
 async fn test_trigger_handler_already_running() {
@@ -208,6 +222,7 @@ async fn test_trigger_handler_already_running() {
 ```
 
 Add new test for force_reprocess=true:
+
 ```rust
 #[tokio::test]
 async fn test_trigger_handler_force_reprocess() {
@@ -305,21 +320,26 @@ force_reprocess flag from the /trigger HTTP endpoint through to
 process_discogs_data. Manual triggers can now force full reprocessing."
 ```
 
----
+______________________________________________________________________
 
 ### Task 2: API — Send force_reprocess in Trigger Request
 
 **Files:**
+
 - Modify: `api/routers/admin.py:308`
+
 - Test: `tests/api/test_admin_endpoints.py:148-169`
 
 - [ ] **Step 1: Update admin.py — add JSON body to trigger POST**
 
 In `api/routers/admin.py`, line 308, change:
+
 ```python
 resp = await client.post(trigger_url)
 ```
+
 to:
+
 ```python
 resp = await client.post(trigger_url, json={"force_reprocess": True})
 ```
@@ -327,6 +347,7 @@ resp = await client.post(trigger_url, json={"force_reprocess": True})
 - [ ] **Step 2: Update trigger test to verify force_reprocess is sent**
 
 In `tests/api/test_admin_endpoints.py`, in `TestExtractionTrigger.test_success`, after the existing assertions add:
+
 ```python
 # Verify force_reprocess was sent in request body
 mock_client_instance.post.assert_called_once()
@@ -349,18 +370,22 @@ Manual trigger from admin dashboard always forces reprocessing since the
 periodic scheduler already handles normal check-for-new-data flow."
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: Dashboard — Admin Proxy Router
 
 **Files:**
+
 - Create: `dashboard/admin_proxy.py`
+
 - Modify: `dashboard/dashboard.py:562`
+
 - Create: `tests/dashboard/test_admin_proxy.py`
 
 - [ ] **Step 1: Write the proxy router test**
 
 Create `tests/dashboard/test_admin_proxy.py`:
+
 ```python
 """Tests for admin proxy router."""
 
@@ -456,6 +481,7 @@ Expected: FAIL — `dashboard.admin_proxy` does not exist yet.
 - [ ] **Step 3: Create admin_proxy.py**
 
 Create `dashboard/admin_proxy.py`:
+
 ```python
 """Proxy router for admin API calls to the API service."""
 
@@ -563,6 +589,7 @@ Expected: All tests pass.
 - [ ] **Step 5: Mount proxy router in dashboard.py**
 
 In `dashboard/dashboard.py`, before the static files mount (line 562), add:
+
 ```python
 # Admin proxy routes (must be before StaticFiles catch-all)
 from dashboard.admin_proxy import router as admin_router, configure as configure_admin_proxy
@@ -592,18 +619,22 @@ Proxy admin endpoints (login, logout, extractions, DLQ purge) from
 dashboard service to API service. Auth header forwarded as-is."
 ```
 
----
+______________________________________________________________________
 
 ### Task 4: Dashboard — Admin Frontend
 
 **Files:**
+
 - Create: `dashboard/static/admin.html`
+
 - Create: `dashboard/static/admin.js`
+
 - Modify: `dashboard/static/index.html:146`
 
 - [ ] **Step 1: Create admin.html**
 
 Create `dashboard/static/admin.html` — full HTML page with the same theme system as `index.html`. Contains:
+
 - Login form (hidden when authenticated)
 - Admin panel (hidden when not authenticated):
   - Header with email display, "Monitoring" link, logout, theme toggle
@@ -618,6 +649,7 @@ The HTML structure mirrors the monitoring page: header → stacked dashboard-car
 - [ ] **Step 2: Create admin.js**
 
 Create `dashboard/static/admin.js` — `AdminDashboard` class with:
+
 - `constructor()` — check for stored token, show login or panel
 - `login(email, password)` — POST `/admin/api/login`, store token
 - `logout()` — POST `/admin/api/logout`, clear token, show login
@@ -630,6 +662,7 @@ Create `dashboard/static/admin.js` — `AdminDashboard` class with:
 - Auto-refresh extraction list every 30 seconds
 
 DLQ queue names hardcoded in JS (matching `DATA_TYPES` × consumers):
+
 ```javascript
 const DLQ_NAMES = [
     'graphinator-artists-dlq', 'graphinator-labels-dlq',
@@ -642,6 +675,7 @@ const DLQ_NAMES = [
 - [ ] **Step 3: Add "Admin" link to monitoring dashboard header**
 
 In `dashboard/static/index.html`, line 146, inside the `<div class="flex items-center space-x-4">`, before the DLQ toggle, add:
+
 ```html
 <a href="/admin" class="text-xs font-bold uppercase tracking-wider t-dim hover:t-high transition-colors" style="text-decoration:none">Admin</a>
 ```
@@ -661,16 +695,18 @@ with trigger button, history table with auto-refresh, and DLQ
 management with purge buttons."
 ```
 
----
+______________________________________________________________________
 
 ### Task 5: Docker Compose — Dashboard Environment
 
 **Files:**
+
 - Modify: `docker-compose.yml:438-465`
 
 - [ ] **Step 1: Add API env vars to dashboard service**
 
 In `docker-compose.yml`, in the `dashboard` service `environment` section (after `REDIS_HOST: redis`), add:
+
 ```yaml
       API_HOST: api
       API_PORT: "8004"
@@ -679,6 +715,7 @@ In `docker-compose.yml`, in the `dashboard` service `environment` section (after
 - [ ] **Step 2: Add API dependency**
 
 In the `dashboard` service `depends_on` section, add:
+
 ```yaml
       api:
         condition: service_healthy
@@ -694,16 +731,18 @@ Dashboard admin proxy needs to reach the API service for admin
 endpoints."
 ```
 
----
+______________________________________________________________________
 
 ### Task 6: Documentation — Admin Guide
 
 **Files:**
+
 - Create: `docs/admin-guide.md`
 
 - [ ] **Step 1: Write admin guide**
 
 Create `docs/admin-guide.md`:
+
 ```markdown
 # Admin Guide
 
@@ -774,7 +813,7 @@ git add docs/admin-guide.md
 git commit -m "docs: add admin guide — account creation, trigger, DLQ purge"
 ```
 
----
+______________________________________________________________________
 
 ### Task 7: Final Verification
 

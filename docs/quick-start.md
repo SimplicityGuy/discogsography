@@ -84,13 +84,13 @@ Open your browser and visit:
 
 ### Service Access Details
 
-| Service           | URL                    | Default Credentials                 | Purpose                               |
-| ----------------- | ---------------------- | ----------------------------------- | ------------------------------------- |
-| 🔐 **API**        | http://localhost:8004  | Register via `/api/auth/register`   | User auth, graph queries, sync, OAuth |
-| 📊 **Dashboard**  | http://localhost:8003  | None (monitoring) / admin-setup CLI (admin panel) | System monitoring + admin panel |
-| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management                      |
-| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph database UI                     |
-| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` | Database access                       |
+| Service           | URL                    | Default Credentials                               | Purpose                               |
+| ----------------- | ---------------------- | ------------------------------------------------- | ------------------------------------- |
+| 🔐 **API**        | http://localhost:8004  | Register via `/api/auth/register`                 | User auth, graph queries, sync, OAuth |
+| 📊 **Dashboard**  | http://localhost:8003  | None (monitoring) / admin-setup CLI (admin panel) | System monitoring + admin panel       |
+| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography`               | Queue management                      |
+| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`                        | Graph database UI                     |
+| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography`               | Database access                       |
 
 ## 💻 Local Development Setup
 

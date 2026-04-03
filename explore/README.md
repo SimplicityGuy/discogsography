@@ -21,7 +21,7 @@ The Explore frontend organizes functionality into tabbed panes:
 | **wantlist**        | User's synced Discogs wantlist                                           | Yes           |
 | **recommendations** | Personalized release recommendations based on collection                 | Yes           |
 | **collaborators**   | Collaborator network for an artist — shared releases and timelines       | No            |
-| **genre-tree**      | Interactive genre/style hierarchy browser                                 | No            |
+| **genre-tree**      | Interactive genre/style hierarchy browser                                | No            |
 | **credits**         | Credits & Provenance — person search, profile, timeline, connections     | No            |
 | **gaps**            | Collection gap finder — missing releases for an artist, label, or master | Yes           |
 
@@ -331,8 +331,8 @@ The Explore service exposes only a health endpoint. All data endpoints are serve
 
 ### Collaborators
 
-| Method | Path                              | Description                                          |
-| ------ | --------------------------------- | ---------------------------------------------------- |
+| Method | Path                             | Description                                          |
+| ------ | -------------------------------- | ---------------------------------------------------- |
 | GET    | `/api/collaborators/{artist_id}` | Collaborating artists with release overlap and years |
 
 ### Genre Tree
@@ -350,16 +350,16 @@ The Explore service exposes only a health endpoint. All data endpoints are serve
 
 ### Credits & Provenance
 
-| Method | Path                                      | Description                                         |
-| ------ | ----------------------------------------- | --------------------------------------------------- |
-| GET    | `/api/credits/person/{name}`              | All releases a person is credited on                |
-| GET    | `/api/credits/person/{name}/timeline`     | Year-by-year credit activity                        |
-| GET    | `/api/credits/person/{name}/profile`      | Summary profile with role breakdown                 |
-| GET    | `/api/credits/release/{release_id}`       | Full credits breakdown for a release                |
-| GET    | `/api/credits/role/{role}/top`            | Most prolific people in a role category             |
-| GET    | `/api/credits/shared`                     | Releases where two people are both credited         |
-| GET    | `/api/credits/connections/{name}`         | People connected through shared releases            |
-| GET    | `/api/credits/autocomplete`               | Search credits by person name                       |
+| Method | Path                                  | Description                                 |
+| ------ | ------------------------------------- | ------------------------------------------- |
+| GET    | `/api/credits/person/{name}`          | All releases a person is credited on        |
+| GET    | `/api/credits/person/{name}/timeline` | Year-by-year credit activity                |
+| GET    | `/api/credits/person/{name}/profile`  | Summary profile with role breakdown         |
+| GET    | `/api/credits/release/{release_id}`   | Full credits breakdown for a release        |
+| GET    | `/api/credits/role/{role}/top`        | Most prolific people in a role category     |
+| GET    | `/api/credits/shared`                 | Releases where two people are both credited |
+| GET    | `/api/credits/connections/{name}`     | People connected through shared releases    |
+| GET    | `/api/credits/autocomplete`           | Search credits by person name               |
 
 ### Insights (Proxied from Insights Service)
 
@@ -374,8 +374,8 @@ The Explore service exposes only a health endpoint. All data endpoints are serve
 
 ### Health
 
-| Method | Path      | Service                  | Description  |
-| ------ | --------- | ------------------------ | ------------ |
+| Method | Path      | Service         | Description                          |
+| ------ | --------- | --------------- | ------------------------------------ |
 | GET    | `/health` | Explore (:8007) | Health check (dedicated health port) |
 
 ## ⚙️ Configuration

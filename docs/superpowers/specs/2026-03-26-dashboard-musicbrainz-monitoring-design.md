@@ -10,12 +10,12 @@ Extend the dashboard service to monitor MusicBrainz extraction and consumer serv
 
 ## Design Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Visual grouping | By data source (pipeline) | Maps to operational reasoning ("is the MB pipeline healthy?") |
-| Auto-detection | Service reachability-based | Zero-config; handles phased rollout naturally |
-| API response structure | Grouped `pipelines` dict (breaking change) | All consumers are internal; clean cut, no tech debt |
-| Overall status | Combined across all active pipelines | A single unhealthy service anywhere = "Degraded" |
+| Decision               | Choice                                     | Rationale                                                     |
+| ---------------------- | ------------------------------------------ | ------------------------------------------------------------- |
+| Visual grouping        | By data source (pipeline)                  | Maps to operational reasoning ("is the MB pipeline healthy?") |
+| Auto-detection         | Service reachability-based                 | Zero-config; handles phased rollout naturally                 |
+| API response structure | Grouped `pipelines` dict (breaking change) | All consumers are internal; clean cut, no tech debt           |
+| Overall status         | Combined across all active pipelines       | A single unhealthy service anywhere = "Degraded"              |
 
 ## Data Models
 
@@ -93,12 +93,12 @@ Same logic, but filters by the given `prefix` parameter instead of hardcoded `"d
 
 ### API Endpoints
 
-| Endpoint | Change |
-|----------|--------|
-| `GET /api/metrics` | Returns `SystemMetrics` with `pipelines` dict |
-| `GET /api/services` | Returns `{"discogs": [...], "musicbrainz": [...]}` (active pipelines only) |
-| `GET /api/queues` | Same grouped pattern |
-| `GET /api/databases` | Unchanged (flat list) |
+| Endpoint             | Change                                                                     |
+| -------------------- | -------------------------------------------------------------------------- |
+| `GET /api/metrics`   | Returns `SystemMetrics` with `pipelines` dict                              |
+| `GET /api/services`  | Returns `{"discogs": [...], "musicbrainz": [...]}` (active pipelines only) |
+| `GET /api/queues`    | Same grouped pattern                                                       |
+| `GET /api/databases` | Unchanged (flat list)                                                      |
 
 ## Frontend Changes
 
@@ -144,13 +144,13 @@ Sections are shown/hidden by JS based on which pipeline keys are present in the 
 
 All service-related element IDs follow the pattern `{pipeline}-{service}-{detail}`. Examples:
 
-| Old ID | New ID |
-|--------|--------|
-| `extractor-status-badge` | `discogs-extractor-discogs-status-badge` |
-| `extractor-masters-state` | `discogs-extractor-discogs-masters-state` |
-| `graphinator-masters-count` | `discogs-graphinator-masters-count` |
-| (new) | `musicbrainz-extractor-musicbrainz-status-badge` |
-| (new) | `musicbrainz-brainzgraphinator-artists-count` |
+| Old ID                      | New ID                                           |
+| --------------------------- | ------------------------------------------------ |
+| `extractor-status-badge`    | `discogs-extractor-discogs-status-badge`         |
+| `extractor-masters-state`   | `discogs-extractor-discogs-masters-state`        |
+| `graphinator-masters-count` | `discogs-graphinator-masters-count`              |
+| (new)                       | `musicbrainz-extractor-musicbrainz-status-badge` |
+| (new)                       | `musicbrainz-brainzgraphinator-artists-count`    |
 
 Queue chart/gauge IDs follow: `{pipeline}-bar-{type}-messages`, `{pipeline}-rate-circle-{service}-{type}-publish`, etc.
 

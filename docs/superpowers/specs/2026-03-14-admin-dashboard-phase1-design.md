@@ -52,19 +52,19 @@ All admin endpoints live in `api/routers/admin.py`, mounted at `/api/admin`.
 
 ### Auth (public, rate-limited)
 
-| Method | Path | Description | Rate Limit |
-|--------|------|-------------|------------|
-| `POST` | `/api/admin/auth/login` | Returns JWT with `"type": "admin"` claim | 5/minute |
-| `POST` | `/api/admin/auth/logout` | Blacklists token jti in Redis | — |
+| Method | Path                     | Description                              | Rate Limit |
+| ------ | ------------------------ | ---------------------------------------- | ---------- |
+| `POST` | `/api/admin/auth/login`  | Returns JWT with `"type": "admin"` claim | 5/minute   |
+| `POST` | `/api/admin/auth/logout` | Blacklists token jti in Redis            | —          |
 
 ### Protected (require `require_admin` dependency)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/admin/extractions` | List extraction history (paginated, newest first) |
-| `GET` | `/api/admin/extractions/{id}` | Single extraction detail |
-| `POST` | `/api/admin/extractions/trigger` | Trigger new extraction |
-| `POST` | `/api/admin/dlq/purge/{queue}` | Purge a dead-letter queue |
+| Method | Path                             | Description                                       |
+| ------ | -------------------------------- | ------------------------------------------------- |
+| `GET`  | `/api/admin/extractions`         | List extraction history (paginated, newest first) |
+| `GET`  | `/api/admin/extractions/{id}`    | Single extraction detail                          |
+| `POST` | `/api/admin/extractions/trigger` | Trigger new extraction                            |
+| `POST` | `/api/admin/dlq/purge/{queue}`   | Purge a dead-letter queue                         |
 
 ### Pagination
 
@@ -85,6 +85,7 @@ Admin auth reuses the same cryptographic primitives from `api/auth.py` (PBKDF2-S
 ### Token isolation
 
 To prevent admin tokens from being accepted by regular user endpoints:
+
 - The existing `_get_current_user` function must reject tokens with `"type": "admin"` — this is a required modification to `api/api.py`
 - Similarly, `require_admin` rejects tokens without `"type": "admin"`
 - This ensures complete separation between the two auth domains
@@ -92,6 +93,7 @@ To prevent admin tokens from being accepted by regular user endpoints:
 ### Admin seeding
 
 New CLI tool `admin-setup` (follows `discogs-setup` pattern in `api/setup.py`):
+
 - Uses argparse with `--email` and `--password` flags (consistent with `discogs-setup` using CLI arguments)
 - Supports `--list` flag to show existing admins (email + active status, no passwords)
 - Hashes password with PBKDF2-SHA256
@@ -134,12 +136,13 @@ sequenceDiagram
 ### Background tracking
 
 After a successful trigger, the API spawns an `asyncio.Task` that:
+
 1. Polls `GET http://{extractor_host}:{extractor_port}/health` every 10 seconds
-2. Updates `extraction_history.record_counts` with progress data from the health response
-3. Detects completion via the `extraction_status` field in the health response (see Extractor Changes below)
-4. On completion: sets `status=completed`, `completed_at=now()`
-5. On failure: sets `status=failed`, records `error_message`
-6. Handles extractor becoming unreachable — sets `status=failed` after 5 consecutive timeouts
+1. Updates `extraction_history.record_counts` with progress data from the health response
+1. Detects completion via the `extraction_status` field in the health response (see Extractor Changes below)
+1. On completion: sets `status=completed`, `completed_at=now()`
+1. On failure: sets `status=failed`, records `error_message`
+1. Handles extractor becoming unreachable — sets `status=failed` after 5 consecutive timeouts
 
 The task is tracked in a dict (similar to `_running_syncs` pattern in `api/routers/sync.py`) and cancelled on service shutdown.
 
@@ -174,35 +177,35 @@ This is a **required change** to the existing health endpoint. The existing `ext
 1. Validates `queue` against a whitelist of known DLQ names derived from `common/config.py` constants:
    - `graphinator-{data_type}-dlq` (4 queues)
    - `tableinator-{data_type}-dlq` (4 queues)
-2. Calls `DELETE /api/queues/%2f/{queue}/contents` on the RabbitMQ management API (using credentials from `ApiConfig`)
-3. Returns `{"queue": "...", "messages_purged": N}`
-4. Unknown queue names return `404`
-5. **Audit logging:** Each purge is logged via structured logging with admin email, queue name, and message count purged. A persistent `admin_audit_log` table is out of scope for this phase.
+1. Calls `DELETE /api/queues/%2f/{queue}/contents` on the RabbitMQ management API (using credentials from `ApiConfig`)
+1. Returns `{"queue": "...", "messages_purged": N}`
+1. Unknown queue names return `404`
+1. **Audit logging:** Each purge is logged via structured logging with admin email, queue name, and message count purged. A persistent `admin_audit_log` table is out of scope for this phase.
 
 ## File Changes
 
 ### New files
 
-| File | Purpose |
-|------|---------|
-| `api/routers/admin.py` | Admin router: auth + extraction history + DLQ purge endpoints |
-| `api/admin_auth.py` | Admin auth utils: password verification, JWT creation with admin type |
-| `api/admin_setup.py` | CLI tool for seeding admin accounts |
-| `tests/api/test_admin_auth.py` | Admin auth tests |
-| `tests/api/test_admin_extractions.py` | Extraction history + trigger tests |
-| `tests/api/test_admin_dlq.py` | DLQ purge tests |
+| File                                  | Purpose                                                               |
+| ------------------------------------- | --------------------------------------------------------------------- |
+| `api/routers/admin.py`                | Admin router: auth + extraction history + DLQ purge endpoints         |
+| `api/admin_auth.py`                   | Admin auth utils: password verification, JWT creation with admin type |
+| `api/admin_setup.py`                  | CLI tool for seeding admin accounts                                   |
+| `tests/api/test_admin_auth.py`        | Admin auth tests                                                      |
+| `tests/api/test_admin_extractions.py` | Extraction history + trigger tests                                    |
+| `tests/api/test_admin_dlq.py`         | DLQ purge tests                                                       |
 
 ### Modified files
 
-| File | Change |
-|------|--------|
-| `api/api.py` | Register admin router; reject admin tokens in `_get_current_user` |
-| `api/dependencies.py` | Add `require_admin()` dependency |
-| `api/models.py` | Add Pydantic models for admin request/response types |
-| `common/config.py` | Add `extractor_host`/`extractor_port` and `rabbitmq_username`/`rabbitmq_password`/`rabbitmq_management_host` to `ApiConfig` |
-| `schema-init/postgres_schema.py` | Add `dashboard_admins` and `extraction_history` tables |
-| `extractor/src/health.rs` (or equivalent) | Add `POST /trigger` endpoint; extend `/health` with `extraction_status` field |
-| `api/pyproject.toml` | Add `admin-setup` script entry point |
+| File                                      | Change                                                                                                                      |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `api/api.py`                              | Register admin router; reject admin tokens in `_get_current_user`                                                           |
+| `api/dependencies.py`                     | Add `require_admin()` dependency                                                                                            |
+| `api/models.py`                           | Add Pydantic models for admin request/response types                                                                        |
+| `common/config.py`                        | Add `extractor_host`/`extractor_port` and `rabbitmq_username`/`rabbitmq_password`/`rabbitmq_management_host` to `ApiConfig` |
+| `schema-init/postgres_schema.py`          | Add `dashboard_admins` and `extraction_history` tables                                                                      |
+| `extractor/src/health.rs` (or equivalent) | Add `POST /trigger` endpoint; extend `/health` with `extraction_status` field                                               |
+| `api/pyproject.toml`                      | Add `admin-setup` script entry point                                                                                        |
 
 ## Testing Strategy
 

@@ -8,39 +8,40 @@
 
 **Tech Stack:** Python 3.13+, FastAPI, PostgreSQL (time-series storage), Chart.js (CDN), Starlette middleware, httpx, asyncio
 
----
+______________________________________________________________________
 
 ## File Map
 
 ### Files to create
 
-| File | Responsibility |
-|------|----------------|
-| `api/metrics_collector.py` | Background collector task, metrics middleware, path normalization, retention pruning |
-| `api/queries/metrics_queries.py` | SQL queries for queue history and health history endpoints |
-| `tests/api/test_metrics_collector.py` | Tests for collector, middleware, path normalization |
-| `tests/api/test_metrics_queries.py` | Tests for query functions (granularity, aggregation, edge cases) |
+| File                                  | Responsibility                                                                       |
+| ------------------------------------- | ------------------------------------------------------------------------------------ |
+| `api/metrics_collector.py`            | Background collector task, metrics middleware, path normalization, retention pruning |
+| `api/queries/metrics_queries.py`      | SQL queries for queue history and health history endpoints                           |
+| `tests/api/test_metrics_collector.py` | Tests for collector, middleware, path normalization                                  |
+| `tests/api/test_metrics_queries.py`   | Tests for query functions (granularity, aggregation, edge cases)                     |
 
 ### Files to modify
 
-| File | Change |
-|------|--------|
-| `schema-init/postgres_schema.py` | Add `queue_metrics` and `service_health_metrics` tables + indexes |
-| `common/config.py` | Add `metrics_retention_days` and `metrics_collection_interval` to `ApiConfig` |
-| `api/models.py` | Pydantic response models for both history endpoints |
-| `api/routers/admin.py` | Add 2 endpoint functions (`queues/history`, `health/history`) |
-| `api/api.py` | Start collector task in lifespan, add metrics middleware |
-| `dashboard/admin_proxy.py` | Add 2 proxy routes |
-| `dashboard/static/admin.html` | Add Queue Trends and System Health tabs, load Chart.js CDN |
-| `dashboard/static/admin.js` | Fetch, render, Chart.js initialization, sparkline generation |
-| `tests/api/test_admin_endpoints.py` | Endpoint tests for 2 new routes |
-| `tests/dashboard/test_admin_proxy.py` | Proxy route tests |
+| File                                  | Change                                                                        |
+| ------------------------------------- | ----------------------------------------------------------------------------- |
+| `schema-init/postgres_schema.py`      | Add `queue_metrics` and `service_health_metrics` tables + indexes             |
+| `common/config.py`                    | Add `metrics_retention_days` and `metrics_collection_interval` to `ApiConfig` |
+| `api/models.py`                       | Pydantic response models for both history endpoints                           |
+| `api/routers/admin.py`                | Add 2 endpoint functions (`queues/history`, `health/history`)                 |
+| `api/api.py`                          | Start collector task in lifespan, add metrics middleware                      |
+| `dashboard/admin_proxy.py`            | Add 2 proxy routes                                                            |
+| `dashboard/static/admin.html`         | Add Queue Trends and System Health tabs, load Chart.js CDN                    |
+| `dashboard/static/admin.js`           | Fetch, render, Chart.js initialization, sparkline generation                  |
+| `tests/api/test_admin_endpoints.py`   | Endpoint tests for 2 new routes                                               |
+| `tests/dashboard/test_admin_proxy.py` | Proxy route tests                                                             |
 
----
+______________________________________________________________________
 
 ### Task 1: Database Schema — `queue_metrics` and `service_health_metrics` tables
 
 **Files:**
+
 - Modify: `schema-init/postgres_schema.py:244-252` (after `idx_extraction_history_created_at`)
 
 - [ ] **Step 1: Write test for new schema tables**
@@ -144,12 +145,14 @@ git add schema-init/postgres_schema.py tests/schema-init/test_metrics_schema.py
 git commit -m "feat(schema): add queue_metrics and service_health_metrics tables (#138)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 2: Config — Add metrics retention and collection interval to `ApiConfig`
 
 **Files:**
+
 - Modify: `common/config.py:430-440` (add fields to `ApiConfig` dataclass)
+
 - Modify: `common/config.py:505-528` (add to `from_env` constructor)
 
 - [ ] **Step 1: Write test for new config fields**
@@ -275,12 +278,14 @@ git add common/config.py tests/common/test_metrics_config.py
 git commit -m "feat(config): add metrics retention and collection interval settings (#138)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: Metrics Middleware — Request timing capture with path normalization
 
 **Files:**
+
 - Create: `api/metrics_collector.py`
+
 - Create: `tests/api/test_metrics_collector.py`
 
 - [ ] **Step 1: Write tests for path normalization and middleware buffer**
@@ -485,12 +490,14 @@ git add api/metrics_collector.py tests/api/test_metrics_collector.py
 git commit -m "feat(api): add metrics buffer with path normalization (#138)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 4: Background Collector — Queue and health snapshot collection
 
 **Files:**
+
 - Modify: `api/metrics_collector.py` (add collector functions)
+
 - Modify: `tests/api/test_metrics_collector.py` (add collector tests)
 
 - [ ] **Step 1: Write tests for queue metric collection**
@@ -710,12 +717,14 @@ git add api/metrics_collector.py tests/api/test_metrics_collector.py
 git commit -m "feat(api): add queue and service health collection functions (#138)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 5: Collector — PostgreSQL persistence and retention pruning
 
 **Files:**
+
 - Modify: `api/metrics_collector.py` (add persist + prune + run_collector)
+
 - Modify: `tests/api/test_metrics_collector.py` (add persistence tests)
 
 - [ ] **Step 1: Write tests for persist and prune**
@@ -921,11 +930,12 @@ git add api/metrics_collector.py tests/api/test_metrics_collector.py
 git commit -m "feat(api): add metrics persistence, pruning, and collector loop (#138)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 6: Pydantic Response Models
 
 **Files:**
+
 - Modify: `api/models.py` (append after `StorageResponse` at line 513)
 
 - [ ] **Step 1: Write test for response model validation**
@@ -1041,12 +1051,14 @@ git add api/models.py tests/api/test_metrics_models.py
 git commit -m "feat(api): add Pydantic response models for metrics history endpoints (#138)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 7: Query Module — Time-series aggregation queries
 
 **Files:**
+
 - Create: `api/queries/metrics_queries.py`
+
 - Create: `tests/api/test_metrics_queries.py`
 
 - [ ] **Step 1: Write tests for granularity mapping and queue history query**
@@ -1427,12 +1439,14 @@ git add api/queries/metrics_queries.py tests/api/test_metrics_queries.py
 git commit -m "feat(api): add metrics time-series query functions (#138)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 8: Admin Router Endpoints — `queues/history` and `health/history`
 
 **Files:**
+
 - Modify: `api/routers/admin.py` (add 2 endpoint functions after Phase 2 section)
+
 - Modify: `tests/api/test_admin_endpoints.py` (add endpoint tests)
 
 - [ ] **Step 1: Write endpoint tests**
@@ -1587,11 +1601,12 @@ git add api/routers/admin.py tests/api/test_admin_endpoints.py
 git commit -m "feat(api): add queue history and health history admin endpoints (#138)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 9: API Lifespan — Start collector task and add metrics middleware
 
 **Files:**
+
 - Modify: `api/api.py:184-268` (lifespan function)
 
 - [ ] **Step 1: Add middleware and collector startup to lifespan**
@@ -1651,12 +1666,14 @@ git add api/api.py
 git commit -m "feat(api): start metrics collector and add timing middleware (#138)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 10: Dashboard Proxy Routes
 
 **Files:**
+
 - Modify: `dashboard/admin_proxy.py` (add 2 proxy routes after Phase 2 section)
+
 - Modify: `tests/dashboard/test_admin_proxy.py` (add proxy tests)
 
 - [ ] **Step 1: Write proxy route tests**
@@ -1781,11 +1798,12 @@ git add dashboard/admin_proxy.py tests/dashboard/test_admin_proxy.py
 git commit -m "feat(dashboard): add queue and health history proxy routes (#138)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 11: Frontend — Admin HTML tabs and Chart.js CDN
 
 **Files:**
+
 - Modify: `dashboard/static/admin.html`
 
 - [ ] **Step 1: Add Chart.js CDN and new tabs**
@@ -1891,11 +1909,12 @@ git add dashboard/static/admin.html
 git commit -m "feat(dashboard): add Queue Trends and System Health tab markup (#138)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 12: Frontend — JavaScript logic for Queue Trends and System Health
 
 **Files:**
+
 - Modify: `dashboard/static/admin.js`
 
 - [ ] **Step 1: Add Queue Trends fetch and render logic**
@@ -1903,32 +1922,51 @@ git commit -m "feat(dashboard): add Queue Trends and System Health tab markup (#
 Add the following to `dashboard/static/admin.js` (in the appropriate section, following the existing panel patterns):
 
 Queue Trends functionality:
+
 - `fetchQueueHistory(range)` — calls `/admin/api/queues/history?range=<range>`, updates summary tiles, Chart.js chart, and DLQ grid
+
 - Range selector click handlers on `#queue-range-selector` buttons — updates active state, re-fetches with new range, stores in `localStorage`
+
 - `renderQueueSummaryTiles(data)` — renders 5 tiles (Total Queue Depth, DLQ Messages, Avg Publish Rate, Avg Ack Rate, Active Consumers) with inline SVG sparklines
+
 - `renderQueueDepthChart(data)` — initializes/updates a Chart.js line chart on `#queue-depth-chart` canvas with one dataset per queue
+
 - `renderDlqGrid(data)` — renders per-DLQ cards with mini SVG sparklines and current count
+
 - `generateSparklineSVG(points, color, width, height)` — utility to create inline SVG polyline from array of numbers
+
 - Auto-refresh via `setInterval(fetchQueueHistory, 60000)`
+
 - Manual refresh button handler on `#queue-refresh-btn`
 
 - [ ] **Step 2: Add System Health fetch and render logic**
 
 System Health functionality:
+
 - `fetchHealthHistory(range)` — calls `/admin/api/health/history?range=<range>`, updates service cards, Chart.js chart, and endpoints table
+
 - Range selector and refresh handlers (same pattern as Queue Trends)
+
 - `renderServiceCards(data)` — renders 5 service status cards with color-coded borders (green/yellow/red), uptime %, latency
+
 - `renderResponseTimeChart(data)` — Chart.js line chart with 3 datasets (p50, p95, p99) aggregated across all endpoints
+
 - `renderEndpointsTable(data)` — populates `#endpoints-tbody` sorted by request count, error rate color-coded
+
 - Auto-refresh and manual refresh (same pattern)
 
 - [ ] **Step 3: Test in browser**
 
 Open the admin dashboard, log in, navigate to Queue Trends and System Health tabs. Verify:
+
 - Range selector buttons toggle correctly and persist selection in localStorage
+
 - Charts render (will show "no data" until collector has run)
+
 - Auto-refresh fires every 60 seconds
+
 - Manual refresh button works
+
 - Both tabs handle API errors gracefully (inline warning, no page crash)
 
 - [ ] **Step 4: Commit**
@@ -1938,7 +1976,7 @@ git add dashboard/static/admin.js
 git commit -m "feat(dashboard): add Queue Trends and System Health JavaScript (#138)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 13: Final Integration — Run all tests and lint
 
@@ -1971,20 +2009,26 @@ git add -u
 git commit -m "style: format Phase 3 code (#138)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 14: Documentation — Update admin guide and diagrams
 
 **Files:**
+
 - Modify: `docs/admin-guide.md`
 
 - [ ] **Step 1: Add Phase 3 section to admin guide**
 
 Add a section documenting:
+
 - New endpoints: `GET /api/admin/queues/history?range=`, `GET /api/admin/health/history?range=`
+
 - Valid range values: 1h, 6h, 24h, 7d, 30d, 90d, 365d
+
 - New config: `METRICS_RETENTION_DAYS` (default 366), `METRICS_COLLECTION_INTERVAL` (default 300)
+
 - New database tables: `queue_metrics`, `service_health_metrics`
+
 - Dashboard: Queue Trends and System Health tabs
 
 - [ ] **Step 2: Commit**

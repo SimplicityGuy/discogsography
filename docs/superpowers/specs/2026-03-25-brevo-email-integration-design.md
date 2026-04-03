@@ -29,11 +29,11 @@ class BrevoNotificationChannel:
 
 ### Config (`common/config.py` — `ApiConfig`)
 
-| Field | Env Var | Default | Notes |
-|-------|---------|---------|-------|
-| `brevo_api_key` | `BREVO_API_KEY` | `None` | Read via `get_secret()` for Docker secrets support |
-| `brevo_sender_email` | `BREVO_SENDER_EMAIL` | `"noreply@discogsography.com"` | Must be verified in Brevo |
-| `brevo_sender_name` | `BREVO_SENDER_NAME` | `"Discogsography"` | Display name |
+| Field                | Env Var              | Default                        | Notes                                              |
+| -------------------- | -------------------- | ------------------------------ | -------------------------------------------------- |
+| `brevo_api_key`      | `BREVO_API_KEY`      | `None`                         | Read via `get_secret()` for Docker secrets support |
+| `brevo_sender_email` | `BREVO_SENDER_EMAIL` | `"noreply@discogsography.com"` | Must be verified in Brevo                          |
+| `brevo_sender_name`  | `BREVO_SENDER_NAME`  | `"Discogsography"`             | Display name                                       |
 
 ### Startup Auto-Detection (`api/api.py`)
 
@@ -64,10 +64,10 @@ else:
 
 ## File Changes
 
-| File | Action | Description |
-|------|--------|-------------|
-| `pyproject.toml` | Modify | Add `brevo-python` dependency |
-| `api/notifications.py` | Modify | Add `BrevoNotificationChannel` class |
-| `common/config.py` | Modify | Add 3 Brevo config fields to `ApiConfig` |
-| `api/api.py` | Modify | Auto-detect notification channel at startup |
-| `tests/api/test_notifications.py` | Modify | Add Brevo channel tests |
+| File                              | Action | Description                                 |
+| --------------------------------- | ------ | ------------------------------------------- |
+| `pyproject.toml`                  | Modify | Add `brevo-python` dependency               |
+| `api/notifications.py`            | Modify | Add `BrevoNotificationChannel` class        |
+| `common/config.py`                | Modify | Add 3 Brevo config fields to `ApiConfig`    |
+| `api/api.py`                      | Modify | Auto-detect notification channel at startup |
+| `tests/api/test_notifications.py` | Modify | Add Brevo channel tests                     |

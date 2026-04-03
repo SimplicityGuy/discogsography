@@ -10,15 +10,18 @@
 
 **Spec:** `docs/superpowers/specs/2026-03-25-musicbrainz-integration-design.md`
 
----
+______________________________________________________________________
 
 ## Phase 1: Extractor — MusicBrainz JSONL Support
 
 ### Task 1: Add Source enum and CLI argument
 
 **Files:**
+
 - Modify: `extractor/src/types.rs`
+
 - Modify: `extractor/src/main.rs`
+
 - Modify: `extractor/Cargo.toml`
 
 - [ ] **Step 1: Add xz2 dependency to Cargo.toml**
@@ -145,12 +148,14 @@ git add extractor/src/types.rs extractor/src/main.rs extractor/src/config.rs ext
 git commit -m "feat(extractor): add --source CLI argument and Source enum (#168)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 2: MusicBrainz JSONL parser
 
 **Files:**
+
 - Create: `extractor/src/jsonl_parser.rs`
+
 - Modify: `extractor/src/lib.rs`
 
 - [ ] **Step 1: Write parser tests first**
@@ -456,13 +461,16 @@ git add extractor/src/jsonl_parser.rs extractor/src/lib.rs
 git commit -m "feat(extractor): add MusicBrainz JSONL parser with Discogs ID extraction (#168)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: MusicBrainz download and extraction pipeline
 
 **Files:**
+
 - Create: `extractor/src/mb_downloader.rs`
+
 - Modify: `extractor/src/extractor.rs`
+
 - Modify: `extractor/src/message_queue.rs`
 
 - [ ] **Step 1: Write mb_downloader.rs**
@@ -716,11 +724,12 @@ git add extractor/src/mb_downloader.rs extractor/src/extractor.rs extractor/src/
 git commit -m "feat(extractor): add MusicBrainz download, pipeline, and configurable exchange prefix (#168)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 4: Discogs ID resolution for relationship targets (two-pass)
 
 **Files:**
+
 - Modify: `extractor/src/jsonl_parser.rs`
 
 - [ ] **Step 1: Write test for two-pass ID resolution**
@@ -863,11 +872,12 @@ git add extractor/src/jsonl_parser.rs extractor/src/extractor.rs
 git commit -m "feat(extractor): add two-pass Discogs ID resolution for relationship targets (#168)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 5: MB state markers
 
 **Files:**
+
 - Modify: `extractor/src/state_marker.rs`
 
 - [ ] **Step 1: Add MB-specific state marker support**
@@ -875,6 +885,7 @@ git commit -m "feat(extractor): add two-pass Discogs ID resolution for relations
 The existing `StateMarker` struct is generic enough. The only change needed is ensuring MB uses a different file pattern (`.mb_extraction_status_{version}.json`). This is already handled in `process_musicbrainz_data` by constructing the path with the `mb_` prefix.
 
 Verify the `StateMarker` API supports the operations we need:
+
 - `StateMarker::new(version)` — create new marker
 - `StateMarker::load(path)` — load from disk
 - `marker.is_completed()` — check if complete
@@ -890,11 +901,12 @@ git add extractor/src/state_marker.rs
 git commit -m "feat(extractor): ensure state markers support MB extraction tracking (#168)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 6: Docker configuration for second extractor
 
 **Files:**
+
 - Modify: `docker-compose.yml`
 
 - [ ] **Step 1: Add extractor-musicbrainz service to docker-compose.yml**
@@ -961,20 +973,26 @@ git add docker-compose.yml
 git commit -m "feat(docker): add extractor-musicbrainz service container (#168)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 7: Extractor Rust tests
 
 **Files:**
+
 - Create or modify: `extractor/tests/` test files
 
 - [ ] **Step 1: Write integration tests for MB pipeline**
 
 Create test fixtures — small JSONL test files. Add integration tests that verify:
+
 - JSONL parsing produces correct DataMessage fields
+
 - Discogs ID extraction handles all URL formats
+
 - Two-pass map building works end-to-end
+
 - Exchange prefix is configurable
+
 - State marker files are created correctly
 
 - [ ] **Step 2: Run full test suite**
@@ -999,13 +1017,14 @@ git add extractor/tests/
 git commit -m "test(extractor): add MusicBrainz JSONL parser and pipeline tests (#168)"
 ```
 
----
+______________________________________________________________________
 
 ## Phase 2: Schema + Brainztableinator
 
 ### Task 8: PostgreSQL musicbrainz schema in schema-init
 
 **Files:**
+
 - Modify: `schema-init/postgres_schema.py`
 
 - [ ] **Step 1: Write test for new schema statements**
@@ -1185,16 +1204,22 @@ git add schema-init/postgres_schema.py tests/schema-init/test_musicbrainz_schema
 git commit -m "feat(schema-init): add MusicBrainz PostgreSQL schema and indexes (#168)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 9: Brainztableinator service scaffold
 
 **Files:**
+
 - Create: `brainztableinator/__init__.py`
+
 - Create: `brainztableinator/pyproject.toml`
+
 - Create: `brainztableinator/brainztableinator.py`
+
 - Modify: `common/config.py`
+
 - Modify: `common/__init__.py`
+
 - Modify: `pyproject.toml` (root)
 
 - [ ] **Step 1: Add BrainztableinatorConfig to common/config.py**
@@ -1734,17 +1759,24 @@ git add brainztableinator/ common/config.py common/__init__.py pyproject.toml
 git commit -m "feat: add brainztableinator service scaffold for MusicBrainz PostgreSQL storage (#168)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 10: Brainztableinator tests, CI, Docker, coverage
 
 **Files:**
+
 - Create: `tests/brainztableinator/conftest.py`
+
 - Create: `tests/brainztableinator/test_brainztableinator.py`
+
 - Create: `.coveragerc.brainztableinator`
+
 - Create: `brainztableinator/Dockerfile`
+
 - Modify: `docker-compose.yml`
+
 - Modify: `justfile`
+
 - Modify: `.github/workflows/test.yml`
 
 - [ ] **Step 1: Create test conftest.py**
@@ -2097,13 +2129,14 @@ git add tests/brainztableinator/ .coveragerc.brainztableinator brainztableinator
 git commit -m "feat: add brainztableinator tests, Docker, CI, and coverage (#168)"
 ```
 
----
+______________________________________________________________________
 
 ## Phase 3: Brainzgraphinator — Metadata Enrichment
 
 ### Task 11: Neo4j MBID indexes in schema-init
 
 **Files:**
+
 - Modify: `schema-init/neo4j_schema.py`
 
 - [ ] **Step 1: Write test**
@@ -2140,16 +2173,22 @@ git add schema-init/neo4j_schema.py tests/schema-init/
 git commit -m "feat(schema-init): add Neo4j MBID indexes for MusicBrainz enrichment (#168)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 12: Brainzgraphinator service scaffold
 
 **Files:**
+
 - Create: `brainzgraphinator/__init__.py`
+
 - Create: `brainzgraphinator/pyproject.toml`
+
 - Create: `brainzgraphinator/brainzgraphinator.py`
+
 - Modify: `common/config.py`
+
 - Modify: `common/__init__.py`
+
 - Modify: `pyproject.toml` (root)
 
 - [ ] **Step 1: Add BrainzgraphinatorConfig to common/config.py**
@@ -2354,7 +2393,7 @@ git add brainzgraphinator/ common/config.py common/__init__.py pyproject.toml
 git commit -m "feat: add brainzgraphinator service scaffold for Neo4j metadata enrichment (#168)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 13: Brainzgraphinator tests, CI, Docker, coverage
 
@@ -2508,9 +2547,13 @@ class TestEnrichRelease:
 - [ ] **Step 3: Create .coveragerc.brainzgraphinator, Dockerfile, Docker compose, justfile, CI**
 
 Follow exact same pattern as Task 10, substituting:
+
 - Port: 8011
+
 - Service name: brainzgraphinator
+
 - Database: Neo4j (NEO4J_HOST, NEO4J_USERNAME, NEO4J_PASSWORD)
+
 - Depends on: schema-init, rabbitmq, neo4j
 
 - [ ] **Step 4: Run tests**
@@ -2525,13 +2568,14 @@ git add tests/brainzgraphinator/ .coveragerc.brainzgraphinator brainzgraphinator
 git commit -m "feat: add brainzgraphinator tests, Docker, CI, and coverage (#168)"
 ```
 
----
+______________________________________________________________________
 
 ## Phase 4: Brainzgraphinator — Relationship Enrichment
 
 ### Task 14: Relationship edge creation logic
 
 **Files:**
+
 - Modify: `brainzgraphinator/brainzgraphinator.py`
 
 - [ ] **Step 1: Write tests for relationship creation**
@@ -2709,15 +2753,18 @@ git add brainzgraphinator/brainzgraphinator.py tests/brainzgraphinator/test_brai
 git commit -m "feat(brainzgraphinator): add relationship edge creation with skip-if-unmapped logic (#168)"
 ```
 
----
+______________________________________________________________________
 
 ## Phase 5: API Endpoints
 
 ### Task 15: MusicBrainz API router
 
 **Files:**
+
 - Create: `api/routers/musicbrainz.py`
+
 - Create: `api/queries/musicbrainz_queries.py`
+
 - Modify: `api/api.py`
 
 - [ ] **Step 1: Write tests first**
@@ -3047,18 +3094,20 @@ git add api/routers/musicbrainz.py api/queries/musicbrainz_queries.py api/api.py
 git commit -m "feat(api): add MusicBrainz metadata, relationships, and enrichment status endpoints (#168)"
 ```
 
----
+______________________________________________________________________
 
 ## Phase 6: Incremental Sync
 
 ### Task 16: Document incremental sync strategy
 
 **Files:**
+
 - Modify: `docs/superpowers/specs/2026-03-25-musicbrainz-integration-design.md`
 
 - [ ] **Step 1: Verify idempotent writes**
 
 The incremental sync strategy relies on idempotent writes. Verify:
+
 - brainztableinator uses `ON CONFLICT (mbid) DO UPDATE` — re-importing is safe
 - brainzgraphinator uses `MATCH ... SET` (updates in place) and `MERGE` for edges — re-importing is safe
 - State markers use version-specific files — new dump = new version = full reprocess
@@ -3091,13 +3140,16 @@ git add docs/
 git commit -m "docs: document MusicBrainz incremental sync operational process (#168)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 17: Final documentation and cleanup
 
 **Files:**
+
 - Modify: `docs/architecture.md` (if it exists)
+
 - Create: `brainzgraphinator/README.md`
+
 - Create: `brainztableinator/README.md`
 
 - [ ] **Step 1: Create service READMEs**

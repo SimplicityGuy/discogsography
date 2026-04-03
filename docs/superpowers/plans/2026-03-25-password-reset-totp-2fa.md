@@ -10,36 +10,37 @@
 
 **Spec:** `docs/superpowers/specs/2026-03-25-password-reset-totp-2fa-design.md`
 
----
+______________________________________________________________________
 
 ## File Structure
 
-| File | Action | Responsibility |
-|------|--------|----------------|
-| `common/config.py` | Modify | Replace `oauth_encryption_key` with `encryption_master_key`, add HKDF-derived properties |
-| `api/auth.py` | Modify | Add HKDF key derivation, TOTP utilities, challenge token, recovery code helpers |
-| `api/notifications.py` | Create | `NotificationChannel` protocol + `LogNotificationChannel` |
-| `api/models.py` | Modify | Add Pydantic models for reset + 2FA requests/responses |
-| `api/routers/auth.py` | Create | All auth endpoints: register, login, logout, me, reset, 2FA |
-| `api/api.py` | Modify | Remove inline auth endpoints, add auth router setup, update `_get_current_user` |
-| `schema-init/postgres_schema.py` | Modify | Add `password_changed_at` + TOTP columns to users table |
-| `explore/static/index.html` | Modify | Add forgot password link, reset forms, 2FA code entry, 2FA setup UI |
-| `explore/static/js/api-client.js` | Modify | Add reset + 2FA API client methods |
-| `explore/static/js/auth.js` | Modify | Handle 2FA challenge state in login flow |
-| `scripts/reset-password.sh` | Modify | Add `password_changed_at` update |
-| `scripts/migrate-encryption-key.sh` | Create | One-time OAuth token re-encryption |
-| `pyproject.toml` | Modify | Add `pyotp` dependency |
-| `tests/api/test_auth.py` | Modify | Add HKDF, TOTP utility, recovery code tests |
-| `tests/api/test_auth_router.py` | Create | All auth endpoint tests |
-| `tests/api/test_notifications.py` | Create | Notification channel tests |
-| `tests/api/conftest.py` | Modify | Add auth router to test_client fixture, add helper for 2FA |
-| `tests/perftest/config.yaml` | Modify | Add new auth endpoint entries |
+| File                                | Action | Responsibility                                                                           |
+| ----------------------------------- | ------ | ---------------------------------------------------------------------------------------- |
+| `common/config.py`                  | Modify | Replace `oauth_encryption_key` with `encryption_master_key`, add HKDF-derived properties |
+| `api/auth.py`                       | Modify | Add HKDF key derivation, TOTP utilities, challenge token, recovery code helpers          |
+| `api/notifications.py`              | Create | `NotificationChannel` protocol + `LogNotificationChannel`                                |
+| `api/models.py`                     | Modify | Add Pydantic models for reset + 2FA requests/responses                                   |
+| `api/routers/auth.py`               | Create | All auth endpoints: register, login, logout, me, reset, 2FA                              |
+| `api/api.py`                        | Modify | Remove inline auth endpoints, add auth router setup, update `_get_current_user`          |
+| `schema-init/postgres_schema.py`    | Modify | Add `password_changed_at` + TOTP columns to users table                                  |
+| `explore/static/index.html`         | Modify | Add forgot password link, reset forms, 2FA code entry, 2FA setup UI                      |
+| `explore/static/js/api-client.js`   | Modify | Add reset + 2FA API client methods                                                       |
+| `explore/static/js/auth.js`         | Modify | Handle 2FA challenge state in login flow                                                 |
+| `scripts/reset-password.sh`         | Modify | Add `password_changed_at` update                                                         |
+| `scripts/migrate-encryption-key.sh` | Create | One-time OAuth token re-encryption                                                       |
+| `pyproject.toml`                    | Modify | Add `pyotp` dependency                                                                   |
+| `tests/api/test_auth.py`            | Modify | Add HKDF, TOTP utility, recovery code tests                                              |
+| `tests/api/test_auth_router.py`     | Create | All auth endpoint tests                                                                  |
+| `tests/api/test_notifications.py`   | Create | Notification channel tests                                                               |
+| `tests/api/conftest.py`             | Modify | Add auth router to test_client fixture, add helper for 2FA                               |
+| `tests/perftest/config.yaml`        | Modify | Add new auth endpoint entries                                                            |
 
----
+______________________________________________________________________
 
 ## Task 1: Add `pyotp` Dependency
 
 **Files:**
+
 - Modify: `pyproject.toml`
 
 - [ ] **Step 1: Add pyotp to API optional dependencies**
@@ -80,13 +81,16 @@ git add pyproject.toml uv.lock
 git commit -m "chore: add pyotp dependency for TOTP 2FA (#190)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 2: HKDF Key Derivation & Config Migration
 
 **Files:**
+
 - Modify: `common/config.py`
+
 - Modify: `api/auth.py`
+
 - Test: `tests/api/test_auth.py`
 
 - [ ] **Step 1: Write failing tests for HKDF key derivation**
@@ -172,28 +176,37 @@ Expected: All 3 tests PASS.
 Replace the `oauth_encryption_key` field and its `from_env` loading:
 
 In the `ApiConfig` dataclass fields, replace:
+
 ```python
     oauth_encryption_key: str | None = None
 ```
+
 with:
+
 ```python
     encryption_master_key: str | None = None
 ```
 
 In `ApiConfig.from_env()`, replace:
+
 ```python
         oauth_encryption_key = get_secret("OAUTH_ENCRYPTION_KEY") or None
 ```
+
 with:
+
 ```python
         encryption_master_key = get_secret("ENCRYPTION_MASTER_KEY") or None
 ```
 
 In the `return cls(...)` call, replace:
+
 ```python
             oauth_encryption_key=oauth_encryption_key,
 ```
+
 with:
+
 ```python
             encryption_master_key=encryption_master_key,
 ```
@@ -261,12 +274,14 @@ git add api/auth.py common/config.py api/api.py tests/api/test_auth.py
 git commit -m "feat: add HKDF key derivation, migrate oauth_encryption_key to encryption_master_key (#190)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 3: Database Schema Changes
 
 **Files:**
+
 - Modify: `schema-init/postgres_schema.py`
+
 - Test: `tests/schema-init/test_postgres_schema.py` (verify it compiles)
 
 - [ ] **Step 1: Add `password_changed_at` and TOTP columns to users table**
@@ -386,12 +401,14 @@ git add schema-init/postgres_schema.py
 git commit -m "feat: add password_changed_at and TOTP columns to users table (#190)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 4: Notification Channel
 
 **Files:**
+
 - Create: `api/notifications.py`
+
 - Create: `tests/api/test_notifications.py`
 
 - [ ] **Step 1: Write failing test**
@@ -469,11 +486,12 @@ git add api/notifications.py tests/api/test_notifications.py
 git commit -m "feat: add NotificationChannel protocol with log implementation (#190)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 5: Pydantic Models for Reset & 2FA
 
 **Files:**
+
 - Modify: `api/models.py`
 
 - [ ] **Step 1: Add new models to `api/models.py`**
@@ -559,12 +577,14 @@ git add api/models.py
 git commit -m "feat: add Pydantic models for password reset and TOTP 2FA (#190)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 6: TOTP Utility Functions in `api/auth.py`
 
 **Files:**
+
 - Modify: `api/auth.py`
+
 - Modify: `tests/api/test_auth.py`
 
 - [ ] **Step 1: Write failing tests for TOTP utilities**
@@ -737,13 +757,16 @@ git add api/auth.py tests/api/test_auth.py
 git commit -m "feat: add TOTP utility functions — generate, encrypt, verify, recovery codes (#190)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 7: Auth Router — Extract Existing Endpoints
 
 **Files:**
+
 - Create: `api/routers/auth.py`
+
 - Modify: `api/api.py`
+
 - Modify: `tests/api/conftest.py`
 
 - [ ] **Step 1: Create `api/routers/auth.py` with existing endpoints**
@@ -1025,7 +1048,7 @@ In `api/api.py`:
 
 1. Add import: `import api.routers.auth as _auth_router`
 
-2. In the `lifespan` function, after the existing router `configure()` calls (around line 237), add:
+1. In the `lifespan` function, after the existing router `configure()` calls (around line 237), add:
 
 ```python
     from api.notifications import LogNotificationChannel
@@ -1037,13 +1060,14 @@ In `api/api.py`:
 
 3. After `app = FastAPI(...)`, add: `app.include_router(_auth_router.router)`
 
-4. Remove the following endpoint functions from `api/api.py`:
+1. Remove the following endpoint functions from `api/api.py`:
+
    - `register` (lines ~325-374)
    - `login` (lines ~377-421)
    - `logout` (lines ~424-436)
    - `get_me` (lines ~439-478)
 
-5. Keep `_create_access_token` and `_get_current_user` in `api/api.py` (they're used by OAuth endpoints and passed to the auth router).
+1. Keep `_create_access_token` and `_get_current_user` in `api/api.py` (they're used by OAuth endpoints and passed to the auth router).
 
 - [ ] **Step 3: Update `_get_current_user` with `password_changed_at` check**
 
@@ -1098,12 +1122,14 @@ git add api/routers/auth.py api/api.py tests/api/conftest.py
 git commit -m "refactor: extract auth endpoints into api/routers/auth.py (#190)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 8: Password Reset Endpoints
 
 **Files:**
+
 - Modify: `api/routers/auth.py`
+
 - Create: `tests/api/test_auth_router.py`
 
 - [ ] **Step 1: Write failing tests for password reset**
@@ -1301,12 +1327,14 @@ git add api/routers/auth.py tests/api/test_auth_router.py
 git commit -m "feat: add password reset endpoints — request and confirm (#190)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 9: 2FA Endpoints
 
 **Files:**
+
 - Modify: `api/routers/auth.py`
+
 - Modify: `tests/api/test_auth_router.py`
 
 - [ ] **Step 1: Write failing tests for 2FA setup and verify**
@@ -1720,12 +1748,14 @@ git add api/routers/auth.py tests/api/test_auth_router.py
 git commit -m "feat: add 2FA endpoints — setup, confirm, verify, recovery, disable (#190)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 10: Frontend — Password Reset UI
 
 **Files:**
+
 - Modify: `explore/static/index.html`
+
 - Modify: `explore/static/js/api-client.js`
 
 - [ ] **Step 1: Add API client methods for password reset**
@@ -1803,9 +1833,13 @@ After the login tab closing `</div>` and before the register tab, add a new rese
 The engineer should add event listeners in the appropriate initialization section of `app.js` (or a new `reset.js` if preferred) for:
 
 - `forgotPasswordLink` click → set Alpine `tab` to `'reset-request'`
+
 - `backToLoginFromReset` click → set Alpine `tab` to `'login'`
+
 - `resetRequestBtn` click → call `apiClient.resetRequest(email)`, show success/error
+
 - `resetConfirmBtn` click → validate passwords match, call `apiClient.resetConfirm(token, password)`, show success
+
 - On page load: check `window.location.search` for `reset_token` param, if present open modal with `tab = 'reset-confirm'`, store token, clear URL param with `history.replaceState`
 
 - [ ] **Step 4: Commit**
@@ -1815,13 +1849,16 @@ git add explore/static/index.html explore/static/js/api-client.js explore/static
 git commit -m "feat: add password reset UI — forgot password link, request form, confirm form (#190)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 11: Frontend — 2FA Login & Setup UI
 
 **Files:**
+
 - Modify: `explore/static/index.html`
+
 - Modify: `explore/static/js/api-client.js`
+
 - Modify: `explore/static/js/auth.js`
 
 - [ ] **Step 1: Add qrcode.js CDN script tag**
@@ -1951,9 +1988,13 @@ The engineer should add event listeners in `app.js` for:
 - On successful 2FA verify/recovery: store access token, complete login flow
 
 For the 2FA setup UI (account settings), add a section in the settings area with:
+
 - "Enable 2FA" button → calls `apiClient.twoFactorSetup(token)`, renders QR code with `new QRCode(element, otpauthUri)`, shows recovery codes
+
 - Confirm code input + button → calls `apiClient.twoFactorConfirm(token, code)`
+
 - "Download Codes" button → creates a text file blob and triggers download
+
 - "Disable 2FA" section (shown when `totp_enabled` is true) → requires code + password
 
 - [ ] **Step 6: Commit**
@@ -1963,12 +2004,14 @@ git add explore/static/index.html explore/static/js/api-client.js explore/static
 git commit -m "feat: add 2FA frontend — code entry, recovery, QR setup, account settings (#190)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 12: Update Scripts & Migration
 
 **Files:**
+
 - Modify: `scripts/reset-password.sh`
+
 - Create: `scripts/migrate-encryption-key.sh`
 
 - [ ] **Step 1: Update `scripts/reset-password.sh`**
@@ -2106,17 +2149,20 @@ git add scripts/reset-password.sh scripts/migrate-encryption-key.sh
 git commit -m "feat: update reset-password script, add encryption key migration script (#190)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 13: Perf Test Config & Documentation
 
 **Files:**
+
 - Modify: `tests/perftest/config.yaml` (if auth endpoints warrant perf testing)
+
 - Modify: `docs/emoji-guide.md` (verify emojis)
 
 - [ ] **Step 1: Verify emoji guide compliance**
 
 Check `docs/emoji-guide.md` contains emojis used in new log messages:
+
 - 🔑 (password reset)
 - 🔐 (2FA challenge)
 - 🔓 (2FA disabled)
@@ -2147,11 +2193,12 @@ git add -A
 git commit -m "chore: lint, type check, and emoji guide compliance (#190)"
 ```
 
----
+______________________________________________________________________
 
 ## Task 14: Final Integration Test & Cleanup
 
 **Files:**
+
 - All modified files
 
 - [ ] **Step 1: Run the full test suite including JS tests**
@@ -2167,9 +2214,10 @@ Expected: No new security findings from new code.
 - [ ] **Step 3: Verify all endpoints work with TestClient**
 
 Create a quick smoke test or add to existing integration tests that exercises the full flow:
+
 1. Register → Login → Get Me (existing, verify still works)
-2. Reset Request → Reset Confirm (verify token in mock Redis)
-3. 2FA Setup → 2FA Confirm → Login (challenge) → 2FA Verify (access token)
+1. Reset Request → Reset Confirm (verify token in mock Redis)
+1. 2FA Setup → 2FA Confirm → Login (challenge) → 2FA Verify (access token)
 
 - [ ] **Step 4: Final commit if needed**
 

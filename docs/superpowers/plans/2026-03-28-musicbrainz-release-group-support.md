@@ -10,12 +10,14 @@
 
 **Spec:** `docs/superpowers/specs/2026-03-28-musicbrainz-release-group-support-design.md`
 
----
+______________________________________________________________________
 
 ### Task 1: Add ReleaseGroups to DataType enum (Rust)
 
 **Files:**
+
 - Modify: `extractor/src/types.rs`
+
 - Test: `extractor/src/tests/types_tests.rs`
 
 - [ ] **Step 1: Add ReleaseGroups variant to DataType enum**
@@ -73,16 +75,19 @@ pub struct ExtractionProgress {
 ```
 
 Add to `increment()` match at line 101:
+
 ```rust
 DataType::ReleaseGroups => self.release_groups += 1,
 ```
 
 Add to `get()` match at line 110:
+
 ```rust
 DataType::ReleaseGroups => self.release_groups,
 ```
 
 Update `total()` at line 117:
+
 ```rust
 self.artists + self.labels + self.masters + self.release_groups + self.releases
 ```
@@ -100,11 +105,12 @@ git add extractor/src/types.rs
 git commit -m "feat: add ReleaseGroups variant to DataType enum"
 ```
 
----
+______________________________________________________________________
 
 ### Task 2: Update MusicBrainz downloader for release-groups (Rust)
 
 **Files:**
+
 - Modify: `extractor/src/musicbrainz_downloader.rs`
 
 - [ ] **Step 1: Add file pattern for release-groups**
@@ -144,12 +150,14 @@ git add extractor/src/musicbrainz_downloader.rs
 git commit -m "feat: add release-group to MusicBrainz downloader"
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: Add parse_mb_release_group_line parser (Rust)
 
 **Files:**
+
 - Modify: `extractor/src/jsonl_parser.rs`
+
 - Modify: `extractor/src/tests/jsonl_parser_tests.rs`
 
 - [ ] **Step 1: Write failing tests for parse_mb_release_group_line**
@@ -266,11 +274,12 @@ git add extractor/src/jsonl_parser.rs extractor/src/tests/jsonl_parser_tests.rs
 git commit -m "feat: add parse_mb_release_group_line parser with tests"
 ```
 
----
+______________________________________________________________________
 
 ### Task 4: Add release_groups PostgreSQL table
 
 **Files:**
+
 - Modify: `schema-init/postgres_schema.py`
 
 - [ ] **Step 1: Add release_groups table to MUSICBRAINZ_TABLES**
@@ -308,11 +317,12 @@ git add schema-init/postgres_schema.py
 git commit -m "feat: add musicbrainz.release_groups PostgreSQL table"
 ```
 
----
+______________________________________________________________________
 
 ### Task 5: Add Master MBID index in Neo4j
 
 **Files:**
+
 - Modify: `schema-init/neo4j_schema.py`
 
 - [ ] **Step 1: Add master_mbid index**
@@ -339,11 +349,12 @@ git add schema-init/neo4j_schema.py
 git commit -m "feat: add Master MBID index for Neo4j"
 ```
 
----
+______________________________________________________________________
 
 ### Task 6: Add release-groups to Python config
 
 **Files:**
+
 - Modify: `common/config.py`
 
 - [ ] **Step 1: Add release-groups to MUSICBRAINZ_DATA_TYPES**
@@ -367,13 +378,16 @@ git add common/config.py
 git commit -m "feat: add release-groups to MUSICBRAINZ_DATA_TYPES"
 ```
 
----
+______________________________________________________________________
 
 ### Task 7: Add release-group enrichment to brainzgraphinator
 
 **Files:**
+
 - Modify: `brainzgraphinator/brainzgraphinator.py`
+
 - Modify: `tests/brainzgraphinator/conftest.py`
+
 - Modify: `tests/brainzgraphinator/test_brainzgraphinator.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -488,16 +502,19 @@ def enrich_release_group(tx: Any, record: dict[str, Any]) -> bool:
 - [ ] **Step 4: Register in PROCESSORS and add tracking**
 
 Update `message_counts` (line 32):
+
 ```python
 message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
 ```
 
 Update `last_message_time` (line 34):
+
 ```python
 last_message_time = {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}
 ```
 
 Update PROCESSORS dict (line 426):
+
 ```python
 PROCESSORS: dict[str, Any] = {
     "artists": enrich_artist,
@@ -508,6 +525,7 @@ PROCESSORS: dict[str, Any] = {
 ```
 
 Add handler instance (after line 492):
+
 ```python
 on_release_group_message = make_message_handler("release-groups", enrich_release_group)
 ```
@@ -531,12 +549,14 @@ git add brainzgraphinator/brainzgraphinator.py tests/brainzgraphinator/conftest.
 git commit -m "feat: add release-group enrichment to brainzgraphinator"
 ```
 
----
+______________________________________________________________________
 
 ### Task 8: Add release-group processing to brainztableinator
 
 **Files:**
+
 - Modify: `brainztableinator/brainztableinator.py`
+
 - Modify: `tests/brainztableinator/test_brainztableinator.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -603,6 +623,7 @@ class TestProcessReleaseGroup:
 ```
 
 Update imports at top of test file to include `process_release_group`:
+
 ```python
 from brainztableinator.brainztableinator import process_release_group
 ```
@@ -658,16 +679,19 @@ async def process_release_group(conn: Any, record: dict[str, Any]) -> None:
 - [ ] **Step 4: Register in PROCESSORS and add tracking**
 
 Update `message_counts` (line 35):
+
 ```python
 message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
 ```
 
 Update `last_message_time` (line 37):
+
 ```python
 last_message_time = {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}
 ```
 
 Update PROCESSORS dict (line 595):
+
 ```python
 PROCESSORS: dict[str, Any] = {
     "artists": process_artist,
@@ -696,26 +720,32 @@ git add brainztableinator/brainztableinator.py tests/brainztableinator/test_brai
 git commit -m "feat: add release-group processing to brainztableinator"
 ```
 
----
+______________________________________________________________________
 
 ### Task 9: Update documentation
 
 **Files:**
+
 - Modify: `CLAUDE.md`
+
 - Modify: `docs/architecture.md`
 
 - [ ] **Step 1: Update CLAUDE.md**
 
 At line 48, change:
+
 ```
 - **MusicBrainz exchanges**: `musicbrainz-{artists,labels,releases}` (3 fanout exchanges, no masters)
 ```
+
 to:
+
 ```
 - **MusicBrainz exchanges**: `musicbrainz-{artists,labels,release-groups,releases}` (4 fanout exchanges)
 ```
 
 Also update line 45:
+
 ```
 - **Extractor** supports two modes: `--source discogs` (XML → 4 fanout exchanges) and `--source musicbrainz` (JSONL → 4 fanout exchanges). It has zero knowledge of consumers.
 ```
@@ -723,6 +753,7 @@ Also update line 45:
 - [ ] **Step 2: Update docs/architecture.md**
 
 At lines 228-232, change:
+
 ```markdown
 **MusicBrainz exchanges** (3, no masters):
 
@@ -730,7 +761,9 @@ At lines 228-232, change:
 - `musicbrainz-labels`: MusicBrainz label data with Discogs cross-references
 - `musicbrainz-releases`: MusicBrainz release data with Discogs cross-references
 ```
+
 to:
+
 ```markdown
 **MusicBrainz exchanges** (4):
 
@@ -747,7 +780,7 @@ git add CLAUDE.md docs/architecture.md
 git commit -m "docs: update architecture for release-group support"
 ```
 
----
+______________________________________________________________________
 
 ### Task 10: Final verification
 
