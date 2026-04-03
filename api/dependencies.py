@@ -64,14 +64,16 @@ async def require_user(
     # Reject admin tokens on user endpoints
     if payload.get("type") == "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin tokens cannot be used for user endpoints")
+    # Validate sub claim presence
+    user_id: str | None = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"})
     # Check JTI revocation
     jti: str | None = payload.get("jti")
     if jti and _redis:
         revoked = await _redis.get(f"revoked:jti:{jti}")
         if revoked:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked", headers={"WWW-Authenticate": "Bearer"})
-    # Check password-changed revocation
-    user_id = payload.get("sub")
     if user_id and _redis:
         pw_changed = await _redis.get(f"password_changed:{user_id}")
         if pw_changed:
@@ -97,6 +99,10 @@ async def require_admin(
         raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
     if payload.get("type") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
+    # Validate sub claim presence
+    user_id: str | None = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
     # Check token revocation in Redis
     jti: str | None = payload.get("jti")
     if jti and _redis:
@@ -104,8 +110,7 @@ async def require_admin(
         if revoked:
             raise HTTPException(status_code=401, detail="Token has been revoked")
     # Check password-changed revocation
-    user_id = payload.get("sub")
-    if user_id and _redis:
+    if _redis:
         pw_changed = await _redis.get(f"password_changed:{user_id}")
         if pw_changed:
             issued_at = payload.get("iat", 0)

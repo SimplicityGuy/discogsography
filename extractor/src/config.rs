@@ -75,7 +75,7 @@ impl ExtractorConfig {
 
         let discogs_root = PathBuf::from(std::env::var("DISCOGS_ROOT").unwrap_or_else(|_| "/discogs-data".to_string()));
 
-        let periodic_check_days = std::env::var("PERIODIC_CHECK_DAYS").unwrap_or_else(|_| "15".to_string()).parse::<u64>().unwrap_or(15);
+        let periodic_check_days = std::env::var("PERIODIC_CHECK_DAYS").unwrap_or_else(|_| "15".to_string()).parse::<u64>().unwrap_or(15).max(1);
 
         let max_workers = std::env::var("MAX_WORKERS")
             .unwrap_or_else(|_| num_cpus::get().to_string())
