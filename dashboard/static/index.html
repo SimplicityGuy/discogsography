@@ -625,6 +625,10 @@
                         <span>Labels</span>
                         <span id="musicbrainz-extractor-musicbrainz-labels-state" class="t-muted">—</span>
                     </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Release Groups</span>
+                        <span id="musicbrainz-extractor-musicbrainz-release-groups-state" class="t-muted">—</span>
+                    </div>
                     <div class="flex justify-between text-xs mono py-1">
                         <span>Releases</span>
                         <span id="musicbrainz-extractor-musicbrainz-releases-state" class="t-muted">—</span>
@@ -656,6 +660,10 @@
                         <span>Labels</span>
                         <span id="musicbrainz-brainzgraphinator-labels-count" class="t-high">—</span>
                     </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Release Groups</span>
+                        <span id="musicbrainz-brainzgraphinator-release-groups-count" class="t-high">—</span>
+                    </div>
                     <div class="flex justify-between text-xs mono py-1">
                         <span>Releases</span>
                         <span id="musicbrainz-brainzgraphinator-releases-count" class="t-high">—</span>
@@ -682,6 +690,10 @@
                     <div class="flex justify-between text-xs mono py-1 border-b b-row">
                         <span>Labels</span>
                         <span id="musicbrainz-brainztableinator-labels-count" class="t-high">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Release Groups</span>
+                        <span id="musicbrainz-brainztableinator-release-groups-count" class="t-high">—</span>
                     </div>
                     <div class="flex justify-between text-xs mono py-1">
                         <span>Releases</span>
@@ -720,7 +732,7 @@
                     <div class="border-t b-theme w-full"></div>
                 </div>
 
-                <!-- Bar groups (3 columns — no masters) -->
+                <!-- Bar groups (4 columns) -->
                 <div class="flex-1 flex justify-around items-end z-10 h-full">
                     <div class="flex flex-col items-center gap-4 h-full">
                         <div class="flex items-end gap-2 flex-1">
@@ -735,6 +747,13 @@
                             <div id="musicbrainz-bar-labels-ready" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--blue-accent);height:0%"></div>
                         </div>
                         <span class="text-[10px] font-bold t-dim uppercase tracking-widest">Labels</span>
+                    </div>
+                    <div class="flex flex-col items-center gap-4 h-full">
+                        <div class="flex items-end gap-2 flex-1">
+                            <div id="musicbrainz-bar-release-groups-messages" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--purple-accent);height:0%"></div>
+                            <div id="musicbrainz-bar-release-groups-ready" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--blue-accent);height:0%"></div>
+                        </div>
+                        <span class="text-[10px] font-bold t-dim uppercase tracking-widest">Rel. Groups</span>
                     </div>
                     <div class="flex flex-col items-center gap-4 h-full">
                         <div class="flex items-end gap-2 flex-1">
@@ -769,7 +788,7 @@
                 <!-- Brainzgraphinator publish row (purple) -->
                 <div class="flex items-center gap-4 mb-6">
                     <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--purple-accent)">Graph.</span>
-                    <div class="grid grid-cols-3 gap-4 flex-1">
+                    <div class="grid grid-cols-4 gap-4 flex-1">
                         <div class="flex flex-col items-center space-y-2">
                             <div class="relative w-16 h-16">
                                 <svg class="w-full h-full -rotate-90">
@@ -798,6 +817,18 @@
                             <div class="relative w-16 h-16">
                                 <svg class="w-full h-full -rotate-90">
                                     <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainzgraphinator-release-groups-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainzgraphinator-release-groups-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Rel. Groups</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
                                     <circle id="musicbrainz-rate-circle-brainzgraphinator-releases-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
                                 </svg>
                                 <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
@@ -812,7 +843,7 @@
                 <!-- Brainztableinator publish row (blue) -->
                 <div class="flex items-center gap-4">
                     <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--blue-accent)">Table.</span>
-                    <div class="grid grid-cols-3 gap-4 flex-1">
+                    <div class="grid grid-cols-4 gap-4 flex-1">
                         <div class="flex flex-col items-center space-y-2">
                             <div class="relative w-16 h-16">
                                 <svg class="w-full h-full -rotate-90">
@@ -836,6 +867,18 @@
                                 </div>
                             </div>
                             <span class="text-[9px] t-muted font-bold uppercase">Labels</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainztableinator-release-groups-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainztableinator-release-groups-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Rel. Groups</span>
                         </div>
                         <div class="flex flex-col items-center space-y-2">
                             <div class="relative w-16 h-16">
@@ -872,7 +915,7 @@
                 <!-- Brainzgraphinator ack row (purple) -->
                 <div class="flex items-center gap-4 mb-6">
                     <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--purple-accent)">Graph.</span>
-                    <div class="grid grid-cols-3 gap-4 flex-1">
+                    <div class="grid grid-cols-4 gap-4 flex-1">
                         <div class="flex flex-col items-center space-y-2">
                             <div class="relative w-16 h-16">
                                 <svg class="w-full h-full -rotate-90">
@@ -901,6 +944,18 @@
                             <div class="relative w-16 h-16">
                                 <svg class="w-full h-full -rotate-90">
                                     <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainzgraphinator-release-groups-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainzgraphinator-release-groups-ack" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Rel. Groups</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
                                     <circle id="musicbrainz-rate-circle-brainzgraphinator-releases-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
                                 </svg>
                                 <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
@@ -915,7 +970,7 @@
                 <!-- Brainztableinator ack row (blue) -->
                 <div class="flex items-center gap-4">
                     <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--blue-accent)">Table.</span>
-                    <div class="grid grid-cols-3 gap-4 flex-1">
+                    <div class="grid grid-cols-4 gap-4 flex-1">
                         <div class="flex flex-col items-center space-y-2">
                             <div class="relative w-16 h-16">
                                 <svg class="w-full h-full -rotate-90">
@@ -944,6 +999,18 @@
                             <div class="relative w-16 h-16">
                                 <svg class="w-full h-full -rotate-90">
                                     <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainztableinator-release-groups-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainztableinator-release-groups-ack" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Rel. Groups</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
                                     <circle id="musicbrainz-rate-circle-brainztableinator-releases-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
                                 </svg>
                                 <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
@@ -960,8 +1027,13 @@
     </section>
 
     <!-- ================================================================
-         BOTTOM ROW: DATABASE CARDS  +  SYSTEM EVENT LOG
+         DATABASE STATISTICS
          ================================================================ -->
+    <div class="flex items-center gap-3">
+        <h2 class="text-sm font-bold uppercase tracking-[0.15em] t-dim">Database Statistics</h2>
+        <div class="flex-1 border-t b-theme"></div>
+    </div>
+
     <div class="grid grid-cols-2 gap-6 items-stretch">
 
         <!-- Database cards stacked vertically -->
