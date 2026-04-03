@@ -386,7 +386,7 @@ curl http://localhost:8005/health  # API (health check port)
 curl http://localhost:8009/health  # Insights
 curl http://localhost:8010/health  # Brainztableinator
 curl http://localhost:8011/health  # Brainzgraphinator
-# Note: Explore ports (8006/8007) are not exposed in Docker Compose
+curl http://localhost:8007/health  # Explore (health check port)
 ```
 
 Expected response:

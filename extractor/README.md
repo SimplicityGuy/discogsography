@@ -362,20 +362,25 @@ extractor --source musicbrainz
 | `EXTRACTOR_SOURCE` | `discogs` | Data source: `discogs` or `musicbrainz` |
 | `MUSICBRAINZ_ROOT` | `/musicbrainz-data` | Directory containing MB JSONL dump files |
 | `DISCOGS_EXCHANGE_PREFIX` | `discogsography-discogs` | Exchange name prefix for Discogs mode |
+| `MUSICBRAINZ_EXCHANGE_PREFIX` | `discogsography-musicbrainz` | Exchange name prefix for MusicBrainz mode |
 
 ### MusicBrainz Dump Files
 
 Place xz-compressed JSONL dump files in the `MUSICBRAINZ_ROOT` directory:
 - `artist.jsonl.xz`
 - `label.jsonl.xz`
+- `release-group.jsonl.xz`
 - `release.jsonl.xz`
 
 ### Fanout Exchanges
 
-In MusicBrainz mode, the extractor publishes to:
+In MusicBrainz mode, the extractor publishes to 4 fanout exchanges:
 - `discogsography-musicbrainz-artists`
 - `discogsography-musicbrainz-labels`
+- `discogsography-musicbrainz-release-groups`
 - `discogsography-musicbrainz-releases`
+
+> **Docker Compose**: The extractor runs as two separate services — `extractor-discogs` and `extractor-musicbrainz` — each with its own container and `EXTRACTOR_SOURCE` env var.
 
 ### Two-Pass Processing
 

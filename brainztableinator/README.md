@@ -137,18 +137,19 @@ CREATE TABLE musicbrainz.external_links (
 
 ## Data Types
 
-The brainztableinator consumes three MusicBrainz data types (no masters, unlike Discogs):
+The brainztableinator consumes four MusicBrainz data types (no masters, unlike Discogs):
 
 ```python
-MUSICBRAINZ_DATA_TYPES = ["artists", "labels", "releases"]
+MUSICBRAINZ_DATA_TYPES = ["artists", "labels", "release-groups", "releases"]
 ```
 
 ## AMQP Exchanges
 
-Subscribes to three fanout exchanges:
+Subscribes to four fanout exchanges:
 
 - `discogsography-musicbrainz-artists`
 - `discogsography-musicbrainz-labels`
+- `discogsography-musicbrainz-release-groups`
 - `discogsography-musicbrainz-releases`
 
 Each data type has its own consumer queue with dead letter exchange (DLX) and dead letter queue (DLQ).

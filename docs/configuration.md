@@ -669,7 +669,7 @@ CORS_ORIGINS="http://localhost:3000,http://localhost:8003"  # comma-separated or
 LOG_LEVEL=INFO
 ```
 
-Health check: http://localhost:8007/health (internal only — ports not exposed in Docker Compose)
+Health check: http://localhost:8007/health
 
 ### Dashboard
 

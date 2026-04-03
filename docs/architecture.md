@@ -19,7 +19,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 | Service                                                  | Purpose                                     | Key Technologies                                             | Port(s)               |
 | -------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------ | --------------------- |
 | **[🔐](emoji-guide.md#service-identifiers) API**         | User auth, graph queries, and sync triggers | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0            | 8004 (ext), 8005      |
-| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor       | `tokio`, `quick-xml`, `lapin`                                | 8000 (health)         |
+| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor (runs as `extractor-discogs` and `extractor-musicbrainz` Docker services) | `tokio`, `quick-xml`, `lapin`                                | 8000 (health)         |
 | **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initializer              | `neo4j-driver`, `psycopg3`                                   | —                     |
 | **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs               | `neo4j-driver`, graph algorithms                             | 8001 (health)         |
 | **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables         | `psycopg3`, JSONB, full-text search                          | 8002 (health)         |

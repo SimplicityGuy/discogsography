@@ -606,8 +606,7 @@ curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
 curl http://localhost:8005/health  # API (health check port)
-curl http://localhost:8006/health  # Explore (service port — local dev only, not exposed in Docker Compose)
-curl http://localhost:8007/health  # Explore (health check port — local dev only, not exposed in Docker Compose)
+curl http://localhost:8007/health  # Explore (health check port)
 ```
 
 ### Step 2: Enable Debug Logging
