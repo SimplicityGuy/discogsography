@@ -342,6 +342,7 @@ services:
     command: ["--source", "musicbrainz"]
     user: "1000:1000"
     environment:
+      DISCOGS_HEALTH_URL: "http://extractor-discogs:8000/health"
       LOG_LEVEL: info
       MUSICBRAINZ_ROOT: /musicbrainz-data
       PERIODIC_CHECK_DAYS: "3"

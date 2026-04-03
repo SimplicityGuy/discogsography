@@ -1050,3 +1050,113 @@ async fn test_extraction_status_set_failed_on_error() {
     let s = state.read().await;
     assert_eq!(s.extraction_status, ExtractionStatus::Failed);
 }
+
+mod wait_for_discogs_idle_tests {
+    use crate::extractor::{wait_for_discogs_idle, wait_for_discogs_idle_with_interval};
+    use std::sync::atomic::AtomicBool;
+    use tokio::time::Duration;
+
+    #[tokio::test]
+    async fn test_proceeds_when_idle() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/health")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"extraction_status": "idle"}"#)
+            .create_async()
+            .await;
+
+        let shutdown = AtomicBool::new(false);
+        let url = format!("{}/health", server.url());
+        let result = wait_for_discogs_idle(&url, &shutdown).await;
+
+        assert!(result.is_ok());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_proceeds_when_completed() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/health")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"extraction_status": "completed"}"#)
+            .create_async()
+            .await;
+
+        let shutdown = AtomicBool::new(false);
+        let url = format!("{}/health", server.url());
+        let result = wait_for_discogs_idle(&url, &shutdown).await;
+
+        assert!(result.is_ok());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_proceeds_when_failed() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/health")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"extraction_status": "failed"}"#)
+            .create_async()
+            .await;
+
+        let shutdown = AtomicBool::new(false);
+        let url = format!("{}/health", server.url());
+        let result = wait_for_discogs_idle(&url, &shutdown).await;
+
+        assert!(result.is_ok());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_waits_then_proceeds_when_running_then_idle() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock_running = server
+            .mock("GET", "/health")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"extraction_status": "running"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let _mock_idle = server
+            .mock("GET", "/health")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"extraction_status": "idle"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let shutdown = AtomicBool::new(false);
+        let url = format!("{}/health", server.url());
+        let result = wait_for_discogs_idle_with_interval(&url, &shutdown, Duration::from_millis(10)).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_proceeds_after_max_unreachable_retries() {
+        // Use a port that nothing listens on
+        let url = "http://127.0.0.1:19999/health";
+        let shutdown = AtomicBool::new(false);
+        let result = wait_for_discogs_idle_with_interval(url, &shutdown, Duration::from_millis(10)).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_respects_shutdown_signal() {
+        let shutdown = AtomicBool::new(true);
+        // Use unreachable port — should return immediately due to shutdown flag
+        let url = "http://127.0.0.1:19999/health";
+        let result = wait_for_discogs_idle_with_interval(url, &shutdown, Duration::from_millis(10)).await;
+
+        assert!(result.is_ok());
+    }
+}

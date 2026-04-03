@@ -38,6 +38,7 @@ fn test_config(root: &std::path::Path) -> ExtractorConfig {
         discogs_exchange_prefix: "discogsography-discogs".to_string(),
         musicbrainz_exchange_prefix: "discogsography-musicbrainz".to_string(),
         musicbrainz_dump_url: "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string(),
+        discogs_health_url: "http://extractor-discogs:8000/health".to_string(),
     }
 }
 
@@ -421,6 +422,11 @@ async fn test_process_discogs_data_mq_factory_create_fails_on_all_processed() {
 
 /// Helper to create a test config pointing musicbrainz_root at a temp dir.
 fn mb_test_config(mb_root: &std::path::Path, dump_url: &str) -> ExtractorConfig {
+    mb_test_config_with_health(mb_root, dump_url, "http://extractor-discogs:8000/health")
+}
+
+/// Helper to create a test config with a custom discogs_health_url.
+fn mb_test_config_with_health(mb_root: &std::path::Path, dump_url: &str, health_url: &str) -> ExtractorConfig {
     ExtractorConfig {
         amqp_connection: "amqp://localhost:5672/%2F".to_string(),
         discogs_root: std::path::PathBuf::from("/discogs-data"),
@@ -437,7 +443,24 @@ fn mb_test_config(mb_root: &std::path::Path, dump_url: &str) -> ExtractorConfig 
         discogs_exchange_prefix: "discogsography-discogs".to_string(),
         musicbrainz_exchange_prefix: "discogsography-musicbrainz".to_string(),
         musicbrainz_dump_url: dump_url.to_string(),
+        discogs_health_url: health_url.to_string(),
     }
+}
+
+/// Helper to create a mock health server returning idle status for Discogs extractor.
+/// Returns (server, health_url). The caller MUST keep `server` alive for the test duration.
+async fn discogs_health_mock_server() -> (mockito::Server, String) {
+    let opts = mockito::ServerOpts::default();
+    let mut server = mockito::Server::new_with_opts_async(opts).await;
+    let health_url = format!("{}/health", server.url());
+    server
+        .mock("GET", "/health")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"status":"ok","extraction_status":"idle"}"#)
+        .create_async()
+        .await;
+    (server, health_url)
 }
 
 /// Helper to create a mockito server that returns a single version `20260322` in the index.
@@ -760,6 +783,7 @@ async fn test_run_musicbrainz_loop_shutdown_after_initial_processing() {
     // Initial processing succeeds (already-current), then shutdown fires immediately.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let _versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker so extraction is skipped
@@ -769,7 +793,7 @@ async fn test_run_musicbrainz_loop_shutdown_after_initial_processing() {
     let marker_path = temp_dir.path().join("20260322-000000").join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -796,6 +820,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_true() {
     // Uses paused time to instantly advance past check_interval.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker
@@ -805,7 +830,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_true() {
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -838,6 +863,7 @@ async fn test_run_musicbrainz_loop_periodic_check_err() {
     // Test that the periodic check arm handles Err(e) gracefully (logs error, continues loop).
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker so initial processing succeeds
@@ -847,7 +873,7 @@ async fn test_run_musicbrainz_loop_periodic_check_err() {
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -901,6 +927,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_false() {
     // We achieve this by having send_extraction_complete fail during the periodic check.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker so initial processing succeeds
@@ -910,7 +937,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_false() {
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -962,6 +989,7 @@ async fn test_run_musicbrainz_loop_trigger_ok_false() {
     // We achieve this by having send_extraction_complete fail.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker so initial processing succeeds immediately
@@ -971,7 +999,7 @@ async fn test_run_musicbrainz_loop_trigger_ok_false() {
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -991,7 +1019,9 @@ async fn test_run_musicbrainz_loop_trigger_ok_false() {
     let shutdown_clone = shutdown.clone();
     let marker_path_clone = marker_path.clone();
     tokio::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        // Wait long enough for the initial processing to complete (including
+        // wait_for_discogs_idle HTTP call which can be slow in CI)
+        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
         // Remove the state marker so the triggered call proceeds past Skip and processes
         let _ = tokio::fs::remove_file(&marker_path_clone).await;
         // Set trigger to fire
@@ -999,8 +1029,8 @@ async fn test_run_musicbrainz_loop_trigger_ok_false() {
             let mut t = trigger_clone.lock().await;
             *t = Some(false);
         }
-        // Wait for processing
-        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        // Wait for processing (health check + MQ processing can take time in CI)
+        tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
         shutdown_clone.notify_waiters();
     });
 
@@ -1015,6 +1045,7 @@ async fn test_run_musicbrainz_loop_trigger_err() {
     // Test the trigger arm with Err(e) — process_musicbrainz_data returns an error.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker so initial processing succeeds immediately
@@ -1024,7 +1055,7 @@ async fn test_run_musicbrainz_loop_trigger_err() {
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -1045,14 +1076,17 @@ async fn test_run_musicbrainz_loop_trigger_err() {
     let shutdown_clone = shutdown.clone();
     let marker_path_clone = marker_path.clone();
     tokio::spawn(async move {
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        // Wait long enough for the initial processing to complete (including
+        // wait_for_discogs_idle HTTP call which can be slow in CI)
+        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
         // Remove state marker so the triggered call proceeds past Skip to MQ creation (and fails)
         let _ = tokio::fs::remove_file(&marker_path_clone).await;
         {
             let mut t = trigger_clone.lock().await;
             *t = Some(false);
         }
-        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        // Wait for processing (health check + MQ processing can take time in CI)
+        tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
         shutdown_clone.notify_waiters();
     });
 
@@ -1068,9 +1102,10 @@ async fn test_run_musicbrainz_loop_initial_failure_returns_error() {
     // so the loop returns an error without entering the periodic check.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
 
     // Do NOT create versioned dir — downloader will try to fetch SHA256SUMS and fail.
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -1089,6 +1124,7 @@ async fn test_run_musicbrainz_loop_trigger_then_shutdown() {
     // Initial processing succeeds, then API trigger fires, then shutdown.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let _versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker
@@ -1098,7 +1134,7 @@ async fn test_run_musicbrainz_loop_trigger_then_shutdown() {
     let marker_path = temp_dir.path().join("20260322-000000").join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -1145,25 +1181,21 @@ async fn test_process_discogs_data_all_processed_extraction_complete_send_fails(
     marker.complete_file_processing("discogs_20260101_artists.xml.gz", 1000);
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
-    });
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(move || Some(marker.clone()));
 
     // MQ that fails on send_extraction_complete
     let mut mock_mq = MockMessagePublisher::new();
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Err(anyhow::anyhow!("extraction_complete send failed")));
+    mock_mq
+        .expect_send_extraction_complete()
+        .returning(|_, _, _, _| Err(anyhow::anyhow!("extraction_complete send failed")));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -1369,20 +1401,14 @@ async fn test_process_discogs_data_reprocess_decision() {
     marker.save(&marker_path).await.unwrap();
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
-    });
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
 
     let mut mock_mq = MockMessagePublisher::new();
@@ -1423,20 +1449,14 @@ async fn test_process_discogs_data_end_to_end_success() {
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
-    });
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
 
     let mut mock_mq = MockMessagePublisher::new();
@@ -1479,20 +1499,14 @@ async fn test_process_discogs_data_end_to_end_with_rules() {
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
-    });
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
 
     let mut mock_mq = MockMessagePublisher::new();
@@ -1547,20 +1561,14 @@ async fn test_process_discogs_data_extraction_complete_failure() {
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
-    });
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
 
     // MQ that fails on send_extraction_complete
@@ -1605,20 +1613,14 @@ async fn test_process_discogs_data_mq_factory_create_fails_at_extraction_complet
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
-    });
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
 
     // Factory that succeeds for per-file MQ but fails for the final extraction_complete MQ
@@ -1697,12 +1699,10 @@ async fn test_process_discogs_data_multiple_files() {
         ])
     });
     mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| {
-        Ok(vec![
-            "discogs_20260101_artists.xml.gz".to_string(),
-            "discogs_20260101_labels.xml.gz".to_string(),
-        ])
-    });
+    mock_dl
+        .expect_download_discogs_data()
+        .times(1)
+        .returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string(), "discogs_20260101_labels.xml.gz".to_string()]));
     mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
 
     let mut mock_mq = MockMessagePublisher::new();
@@ -1738,16 +1738,12 @@ async fn test_process_discogs_data_version_extraction_failure() {
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/invalidfilename".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "invalidfilename".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/invalidfilename".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "invalidfilename".to_string(), size: 1000 }]));
 
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -1791,16 +1787,12 @@ async fn test_process_discogs_data_download_failure() {
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
     let mut mock_dl = MockDataSource::new();
-    mock_dl.expect_list_s3_files().returning(|| {
-        Ok(vec![
-            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
-    mock_dl.expect_get_latest_monthly_files().returning(|_| {
-        Ok(vec![
-            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
-        ])
-    });
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl.expect_set_state_marker().returning(|_, _| ());
     mock_dl.expect_download_discogs_data().returning(|| Err(anyhow::anyhow!("Download failed")));
 
@@ -1955,19 +1947,9 @@ async fn test_process_musicbrainz_data_compression_state_marker_has_both_names()
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     let marker = StateMarker::load(&marker_path).await.unwrap().unwrap();
 
-    assert!(
-        marker.processing_phase.progress_by_file.contains_key("artist.jsonl"),
-        "State marker should contain original filename"
-    );
-    assert!(
-        marker.processing_phase.progress_by_file.contains_key("artist.jsonl.xz"),
-        "State marker should contain compressed filename"
-    );
-    assert_eq!(
-        marker.summary.overall_status,
-        extractor::state_marker::PhaseStatus::Completed,
-        "Extraction should be marked complete"
-    );
+    assert!(marker.processing_phase.progress_by_file.contains_key("artist.jsonl"), "State marker should contain original filename");
+    assert!(marker.processing_phase.progress_by_file.contains_key("artist.jsonl.xz"), "State marker should contain compressed filename");
+    assert_eq!(marker.summary.overall_status, extractor::state_marker::PhaseStatus::Completed, "Extraction should be marked complete");
 }
 
 #[tokio::test]
@@ -2003,14 +1985,8 @@ async fn test_process_musicbrainz_data_entity_failure_skips_compression() {
     assert!(result.is_err(), "Should fail when exchange setup fails");
 
     // Verify: .jsonl files should NOT be compressed because pipeline never ran
-    assert!(
-        versioned.join("artist.jsonl").exists(),
-        "artist.jsonl should remain (pipeline failed before compression)"
-    );
-    assert!(
-        !versioned.join("artist.jsonl.xz").exists(),
-        "artist.jsonl.xz should NOT exist (pipeline failed)"
-    );
+    assert!(versioned.join("artist.jsonl").exists(), "artist.jsonl should remain (pipeline failed before compression)");
+    assert!(!versioned.join("artist.jsonl.xz").exists(), "artist.jsonl.xz should NOT exist (pipeline failed)");
 }
 
 #[tokio::test]

@@ -21,6 +21,7 @@ pub struct ExtractorConfig {
     pub discogs_exchange_prefix: String,
     pub musicbrainz_exchange_prefix: String,
     pub musicbrainz_dump_url: String,
+    pub discogs_health_url: String,
 }
 
 impl Default for ExtractorConfig {
@@ -41,6 +42,7 @@ impl Default for ExtractorConfig {
             discogs_exchange_prefix: "discogsography-discogs".to_string(),
             musicbrainz_exchange_prefix: "discogsography-musicbrainz".to_string(),
             musicbrainz_dump_url: "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string(),
+            discogs_health_url: "http://extractor-discogs:8000/health".to_string(),
         }
     }
 }
@@ -97,12 +99,13 @@ impl ExtractorConfig {
         let musicbrainz_dump_url =
             std::env::var("MUSICBRAINZ_DUMP_URL").unwrap_or_else(|_| "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string());
 
+        let discogs_health_url = std::env::var("DISCOGS_HEALTH_URL").unwrap_or_else(|_| "http://extractor-discogs:8000/health".to_string());
+
         let health_port = std::env::var("HEALTH_PORT").unwrap_or_else(|_| "8000".to_string()).parse::<u16>().unwrap_or(8000);
         let queue_size = std::env::var("QUEUE_SIZE").unwrap_or_else(|_| "5000".to_string()).parse::<usize>().unwrap_or(5000).max(1);
         let progress_log_interval =
             std::env::var("PROGRESS_LOG_INTERVAL").unwrap_or_else(|_| "1000".to_string()).parse::<usize>().unwrap_or(1000).max(1);
-        let state_save_interval =
-            std::env::var("STATE_SAVE_INTERVAL").unwrap_or_else(|_| "5000".to_string()).parse::<usize>().unwrap_or(5000).max(1);
+        let state_save_interval = std::env::var("STATE_SAVE_INTERVAL").unwrap_or_else(|_| "5000".to_string()).parse::<usize>().unwrap_or(5000).max(1);
 
         Ok(Self {
             amqp_connection,
@@ -120,6 +123,7 @@ impl ExtractorConfig {
             discogs_exchange_prefix,
             musicbrainz_exchange_prefix,
             musicbrainz_dump_url,
+            discogs_health_url,
         })
     }
 }
