@@ -1027,8 +1027,8 @@ async fn test_run_musicbrainz_loop_trigger_ok_false() {
             let mut t = trigger_clone.lock().await;
             *t = Some(false);
         }
-        // Wait for processing
-        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        // Wait for processing (health check + MQ processing can take time in CI)
+        tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
         shutdown_clone.notify_waiters();
     });
 
@@ -1081,7 +1081,8 @@ async fn test_run_musicbrainz_loop_trigger_err() {
             let mut t = trigger_clone.lock().await;
             *t = Some(false);
         }
-        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        // Wait for processing (health check + MQ processing can take time in CI)
+        tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
         shutdown_clone.notify_waiters();
     });
 
