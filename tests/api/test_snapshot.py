@@ -145,6 +145,38 @@ class TestSnapshotAuth:
         )
         assert response.status_code == 401
 
+    def test_missing_sub_returns_401(self, test_client: TestClient) -> None:
+        """snapshot.py:55-57 — 401 when token has no sub claim."""
+        import base64
+        import hashlib
+        import hmac
+        import json
+
+        from tests.api.conftest import TEST_JWT_SECRET
+
+        def b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+        body_payload = b64url(
+            json.dumps(
+                {"email": "test@example.com", "exp": 9_999_999_999},
+                separators=(",", ":"),
+            ).encode()
+        )
+        signing_input = f"{header}.{body_payload}".encode("ascii")
+        sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
+        token = f"{header}.{body_payload}.{sig}"
+
+        body = {"nodes": [{"id": "1", "type": "artist"}], "center": {"id": "1", "type": "artist"}}
+        response = test_client.post(
+            "/api/snapshot",
+            json=body,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+        assert "Invalid token" in response.json()["detail"]
+
     def test_revoked_jti_returns_401(self, test_client: TestClient) -> None:
         """snapshot.py:42-50 — 401 when jti is in the revocation blacklist."""
         import base64

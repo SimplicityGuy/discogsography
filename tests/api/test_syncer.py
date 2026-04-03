@@ -6,6 +6,7 @@ from uuid import UUID
 import pytest
 
 from api.syncer import (
+    MAX_RATE_LIMIT_RETRIES,
     _auth_header,
     run_full_sync,
     sync_collection,
@@ -221,6 +222,79 @@ class TestSyncCollection:
 
         assert result == 1
         mock_sleep.assert_any_await(60)
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_retries_exhausted(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """Persistent 429 responses break the loop after MAX_RATE_LIMIT_RETRIES."""
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+
+        with (
+            patch("api.syncer.httpx.AsyncClient") as mock_client_cls,
+            patch("api.syncer.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=rate_limited)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            result = await sync_collection(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        assert result == 0
+        assert mock_sleep.await_count == MAX_RATE_LIMIT_RETRIES
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_counter_resets_on_success(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """429 counter resets after a successful response, allowing further retries."""
+        release = _make_release_item(1)
+        success_response = MagicMock()
+        success_response.status_code = 200
+        success_response.json.return_value = _make_collection_response([release])
+
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+
+        # 4 rate limits, then success (page 1), then 4 more rate limits, then success (empty page 2)
+        empty_response = MagicMock()
+        empty_response.status_code = 200
+        empty_response.json.return_value = _make_collection_response([])
+
+        responses = [rate_limited] * 4 + [success_response] + [rate_limited] * 4 + [empty_response]
+
+        with (
+            patch("api.syncer.httpx.AsyncClient") as mock_client_cls,
+            patch("api.syncer.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(side_effect=responses)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            result = await sync_collection(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        assert result == 1
 
     @pytest.mark.asyncio
     async def test_non_200_breaks_loop(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
@@ -448,6 +522,37 @@ class TestSyncWantlist:
             )
 
         assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_retries_exhausted(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """Persistent 429 responses break the wantlist loop after MAX_RATE_LIMIT_RETRIES."""
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+
+        with (
+            patch("api.syncer.httpx.AsyncClient") as mock_client_cls,
+            patch("api.syncer.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=rate_limited)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            result = await sync_wantlist(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        assert result == 0
+        assert mock_sleep.await_count == MAX_RATE_LIMIT_RETRIES
 
     @pytest.mark.asyncio
     async def test_non_200_breaks(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:

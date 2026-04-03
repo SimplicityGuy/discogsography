@@ -35,6 +35,40 @@ def _make_valid_token(secret: str = TEST_SECRET) -> str:
     return f"{header}.{body}.{sig}"
 
 
+def _make_token_without_sub(secret: str = TEST_SECRET) -> str:
+    """Create a valid HS256 JWT that has no sub claim."""
+    import base64
+    import hashlib
+    import hmac
+    import json
+
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    body = b64url(json.dumps({"email": "test@example.com", "exp": 9_999_999_999}, separators=(",", ":")).encode())
+    signing_input = f"{header}.{body}".encode("ascii")
+    sig = b64url(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
+    return f"{header}.{body}.{sig}"
+
+
+def _make_admin_token_without_sub(secret: str = TEST_SECRET) -> str:
+    """Create a valid admin JWT that has type=admin but no sub claim."""
+    import base64
+    import hashlib
+    import hmac
+    import json
+
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    body = b64url(json.dumps({"email": "admin@test.com", "exp": 9_999_999_999, "type": "admin"}, separators=(",", ":")).encode())
+    signing_input = f"{header}.{body}".encode("ascii")
+    sig = b64url(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
+    return f"{header}.{body}.{sig}"
+
+
 def _make_admin_token(
     admin_id: str = "admin-1",
     email: str = "admin@test.com",
@@ -175,6 +209,19 @@ class TestRequireUser:
             await require_user(creds)
         assert exc_info.value.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_raises_401_when_sub_claim_missing(self) -> None:
+        """Token without sub claim is rejected."""
+        configure(TEST_SECRET)
+        from fastapi import HTTPException
+
+        token = _make_token_without_sub()
+        creds = _make_credentials(token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_user(creds)
+        assert exc_info.value.status_code == 401
+        assert "Invalid token" in str(exc_info.value.detail)
+
 
 class TestRequireAdmin:
     """Tests for the require_admin dependency."""
@@ -217,6 +264,19 @@ class TestRequireAdmin:
         with pytest.raises(HTTPException) as exc_info:
             await require_admin(creds)
         assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_raises_401_when_sub_claim_missing(self) -> None:
+        """Admin token without sub claim is rejected."""
+        configure(TEST_SECRET)
+        from fastapi import HTTPException
+
+        token = _make_admin_token_without_sub()
+        creds = _make_credentials(token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(creds)
+        assert exc_info.value.status_code == 401
+        assert "Invalid token" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
     async def test_db_verified_admin_succeeds(self) -> None:
