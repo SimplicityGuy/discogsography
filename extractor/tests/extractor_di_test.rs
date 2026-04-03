@@ -422,6 +422,11 @@ async fn test_process_discogs_data_mq_factory_create_fails_on_all_processed() {
 
 /// Helper to create a test config pointing musicbrainz_root at a temp dir.
 fn mb_test_config(mb_root: &std::path::Path, dump_url: &str) -> ExtractorConfig {
+    mb_test_config_with_health(mb_root, dump_url, "http://extractor-discogs:8000/health")
+}
+
+/// Helper to create a test config with a custom discogs_health_url.
+fn mb_test_config_with_health(mb_root: &std::path::Path, dump_url: &str, health_url: &str) -> ExtractorConfig {
     ExtractorConfig {
         amqp_connection: "amqp://localhost:5672/%2F".to_string(),
         discogs_root: std::path::PathBuf::from("/discogs-data"),
@@ -438,8 +443,24 @@ fn mb_test_config(mb_root: &std::path::Path, dump_url: &str) -> ExtractorConfig 
         discogs_exchange_prefix: "discogsography-discogs".to_string(),
         musicbrainz_exchange_prefix: "discogsography-musicbrainz".to_string(),
         musicbrainz_dump_url: dump_url.to_string(),
-        discogs_health_url: "http://extractor-discogs:8000/health".to_string(),
+        discogs_health_url: health_url.to_string(),
     }
+}
+
+/// Helper to create a mock health server returning idle status for Discogs extractor.
+/// Returns (server, health_url). The caller MUST keep `server` alive for the test duration.
+async fn discogs_health_mock_server() -> (mockito::Server, String) {
+    let opts = mockito::ServerOpts::default();
+    let mut server = mockito::Server::new_with_opts_async(opts).await;
+    let health_url = format!("{}/health", server.url());
+    server
+        .mock("GET", "/health")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(r#"{"status":"ok","extraction_status":"idle"}"#)
+        .create_async()
+        .await;
+    (server, health_url)
 }
 
 /// Helper to create a mockito server that returns a single version `20260322` in the index.
@@ -762,6 +783,7 @@ async fn test_run_musicbrainz_loop_shutdown_after_initial_processing() {
     // Initial processing succeeds (already-current), then shutdown fires immediately.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let _versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker so extraction is skipped
@@ -771,7 +793,7 @@ async fn test_run_musicbrainz_loop_shutdown_after_initial_processing() {
     let marker_path = temp_dir.path().join("20260322-000000").join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -798,6 +820,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_true() {
     // Uses paused time to instantly advance past check_interval.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker
@@ -807,7 +830,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_true() {
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -840,6 +863,7 @@ async fn test_run_musicbrainz_loop_periodic_check_err() {
     // Test that the periodic check arm handles Err(e) gracefully (logs error, continues loop).
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker so initial processing succeeds
@@ -849,7 +873,7 @@ async fn test_run_musicbrainz_loop_periodic_check_err() {
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -903,6 +927,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_false() {
     // We achieve this by having send_extraction_complete fail during the periodic check.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker so initial processing succeeds
@@ -912,7 +937,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_false() {
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -964,6 +989,7 @@ async fn test_run_musicbrainz_loop_trigger_ok_false() {
     // We achieve this by having send_extraction_complete fail.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker so initial processing succeeds immediately
@@ -973,7 +999,7 @@ async fn test_run_musicbrainz_loop_trigger_ok_false() {
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -1017,6 +1043,7 @@ async fn test_run_musicbrainz_loop_trigger_err() {
     // Test the trigger arm with Err(e) — process_musicbrainz_data returns an error.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker so initial processing succeeds immediately
@@ -1026,7 +1053,7 @@ async fn test_run_musicbrainz_loop_trigger_err() {
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -1070,9 +1097,10 @@ async fn test_run_musicbrainz_loop_initial_failure_returns_error() {
     // so the loop returns an error without entering the periodic check.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
 
     // Do NOT create versioned dir — downloader will try to fetch SHA256SUMS and fail.
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
@@ -1091,6 +1119,7 @@ async fn test_run_musicbrainz_loop_trigger_then_shutdown() {
     // Initial processing succeeds, then API trigger fires, then shutdown.
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
+    let (_health_server, health_url) = discogs_health_mock_server().await;
     let _versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
 
     // Write a completed state marker
@@ -1100,7 +1129,7 @@ async fn test_run_musicbrainz_loop_trigger_then_shutdown() {
     let marker_path = temp_dir.path().join("20260322-000000").join(".mb_extraction_status_20260322-000000.json");
     marker.save(&marker_path).await.unwrap();
 
-    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let config = Arc::new(mb_test_config_with_health(temp_dir.path(), &base_url, &health_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 

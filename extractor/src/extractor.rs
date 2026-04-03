@@ -797,21 +797,16 @@ pub async fn run_extraction_loop(
     Ok(())
 }
 
-#[allow(dead_code)]
 pub(crate) const DISCOGS_POLL_INTERVAL: Duration = Duration::from_secs(60);
-#[allow(dead_code)]
 pub(crate) const DISCOGS_HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
-#[allow(dead_code)]
 pub(crate) const DISCOGS_MAX_UNREACHABLE_RETRIES: u32 = 10;
 
 /// Wait until the Discogs extractor is not actively extracting.
-#[allow(dead_code)]
 pub async fn wait_for_discogs_idle(url: &str, shutdown_flag: &AtomicBool) -> Result<()> {
     wait_for_discogs_idle_with_interval(url, shutdown_flag, DISCOGS_POLL_INTERVAL).await
 }
 
 /// Internal implementation with configurable poll interval (for testing).
-#[allow(dead_code)]
 pub async fn wait_for_discogs_idle_with_interval(
     url: &str,
     shutdown_flag: &AtomicBool,
@@ -896,6 +891,9 @@ pub async fn run_musicbrainz_loop(
 
     info!("🎵 Starting MusicBrainz extraction...");
 
+    // Wait for Discogs extractor to finish before starting MusicBrainz
+    wait_for_discogs_idle(&config.discogs_health_url, &shutdown_flag).await?;
+
     let success =
         process_musicbrainz_data(config.clone(), state.clone(), shutdown_flag.clone(), force_reprocess, mq_factory.clone(), compiled_rules.clone())
             .await?;
@@ -921,6 +919,10 @@ pub async fn run_musicbrainz_loop(
         tokio::select! {
             _ = sleep(check_interval) => {
                 info!("🔄 Starting periodic check for new MusicBrainz dumps...");
+                // Wait for Discogs extractor to finish before starting MusicBrainz
+                if let Err(e) = wait_for_discogs_idle(&config.discogs_health_url, &shutdown_flag).await {
+                    error!("❌ Failed to check Discogs health: {}", e);
+                }
                 let start = Instant::now();
                 match process_musicbrainz_data(config.clone(), state.clone(), shutdown_flag.clone(), false, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => {
@@ -936,6 +938,10 @@ pub async fn run_musicbrainz_loop(
             }
             trigger_force_reprocess = wait_for_trigger(&trigger) => {
                 info!("🔄 MusicBrainz extraction triggered via API (force_reprocess={})...", trigger_force_reprocess);
+                // Wait for Discogs extractor to finish before starting MusicBrainz
+                if let Err(e) = wait_for_discogs_idle(&config.discogs_health_url, &shutdown_flag).await {
+                    error!("❌ Failed to check Discogs health: {}", e);
+                }
                 let start = Instant::now();
                 match process_musicbrainz_data(config.clone(), state.clone(), shutdown_flag.clone(), trigger_force_reprocess, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => info!("✅ Triggered MusicBrainz extraction completed in {:?}", start.elapsed()),
