@@ -797,6 +797,81 @@ pub async fn run_extraction_loop(
     Ok(())
 }
 
+#[allow(dead_code)]
+pub(crate) const DISCOGS_POLL_INTERVAL: Duration = Duration::from_secs(60);
+#[allow(dead_code)]
+pub(crate) const DISCOGS_HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
+#[allow(dead_code)]
+pub(crate) const DISCOGS_MAX_UNREACHABLE_RETRIES: u32 = 10;
+
+/// Wait until the Discogs extractor is not actively extracting.
+#[allow(dead_code)]
+pub async fn wait_for_discogs_idle(url: &str, shutdown_flag: &AtomicBool) -> Result<()> {
+    wait_for_discogs_idle_with_interval(url, shutdown_flag, DISCOGS_POLL_INTERVAL).await
+}
+
+/// Internal implementation with configurable poll interval (for testing).
+#[allow(dead_code)]
+pub async fn wait_for_discogs_idle_with_interval(
+    url: &str,
+    shutdown_flag: &AtomicBool,
+    poll_interval: Duration,
+) -> Result<()> {
+    let client = reqwest::Client::builder()
+        .timeout(DISCOGS_HEALTH_TIMEOUT)
+        .build()?;
+
+    let mut unreachable_count: u32 = 0;
+
+    loop {
+        if shutdown_flag.load(Ordering::SeqCst) {
+            info!("🛑 Shutdown requested, stopping Discogs health check wait");
+            return Ok(());
+        }
+
+        match client.get(url).send().await {
+            Ok(response) => {
+                unreachable_count = 0;
+                match response.json::<serde_json::Value>().await {
+                    Ok(body) => {
+                        let status = body
+                            .get("extraction_status")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+
+                        if status == "running" {
+                            info!("⏳ Discogs extraction in progress, waiting before starting MusicBrainz extraction...");
+                        } else {
+                            info!("✅ Discogs extractor idle (status: {}), proceeding with MusicBrainz extraction", status);
+                            return Ok(());
+                        }
+                    }
+                    Err(e) => {
+                        warn!("⚠️ Failed to parse Discogs health response: {}, proceeding", e);
+                        return Ok(());
+                    }
+                }
+            }
+            Err(_) => {
+                unreachable_count += 1;
+                if unreachable_count >= DISCOGS_MAX_UNREACHABLE_RETRIES {
+                    warn!(
+                        "⚠️ Discogs health endpoint unreachable after {} attempts, proceeding with MusicBrainz extraction",
+                        DISCOGS_MAX_UNREACHABLE_RETRIES
+                    );
+                    return Ok(());
+                }
+                warn!(
+                    "⚠️ Discogs health endpoint unreachable (attempt {}/{}), retrying in {:?}...",
+                    unreachable_count, DISCOGS_MAX_UNREACHABLE_RETRIES, poll_interval
+                );
+            }
+        }
+
+        tokio::time::sleep(poll_interval).await;
+    }
+}
+
 /// Main MusicBrainz extraction loop with periodic checks for new dumps.
 pub async fn run_musicbrainz_loop(
     config: Arc<ExtractorConfig>,

@@ -52,7 +52,7 @@ anyhow = "1.0"
 thiserror = "2.0"
 
 # HTTP client for downloads (replaces AWS S3 SDK)
-reqwest = { version = "0.13", features = ["stream", "rustls"] }
+reqwest = { version = "0.13", features = ["json", "stream", "rustls"] }
 bytes = "1.11"
 regex = "1.12"
 urlencoding = "2.1"
