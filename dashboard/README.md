@@ -47,7 +47,7 @@ CORS_ORIGINS="http://localhost:3000,http://localhost:8003"
 LOG_LEVEL=INFO
 ```
 
-Service health URLs (`http://extractor:8000/health`, etc.) and the RabbitMQ management URL (`http://rabbitmq:15672`) are hardcoded. The dashboard port is fixed at **8003**.
+Service health URLs (`http://extractor-discogs:8000/health`, `http://extractor-musicbrainz:8000/health`, etc.) and the RabbitMQ management URL (`http://rabbitmq:15672`) are hardcoded. The dashboard port is fixed at **8003**.
 
 ## API Endpoints
 

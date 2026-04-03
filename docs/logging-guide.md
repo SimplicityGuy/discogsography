@@ -487,8 +487,8 @@ grep -o "❌ [^:]*" logs/*.log | sort | uniq -c
 ### Progress Tracking
 
 ```bash
-# Monitor progress
-grep "📊" logs/extractor.log | tail -n 10
+# Monitor extractor progress (Rust — uses Docker logging only, no file-based log)
+docker-compose logs extractor-discogs | grep "📊" | tail -n 10
 
 # Check completion
 grep "✅" logs/*.log | grep "complete"
