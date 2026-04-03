@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use tokio::sync::{RwLock, mpsc};
 use tokio::time::{Duration, sleep};
@@ -806,10 +807,22 @@ pub async fn run_musicbrainz_loop(
     trigger: Arc<tokio::sync::Mutex<Option<bool>>>,
     compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<()> {
+    // AtomicBool for non-consuming shutdown checks. Notify::notified() consumes the
+    // permit, so polling it inside process_musicbrainz_data would steal the signal from
+    // the outer select!. The monitor task listens on the Notify and sets the flag;
+    // process_musicbrainz_data polls the flag without side effects.
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    let flag_for_monitor = shutdown_flag.clone();
+    let shutdown_for_monitor = shutdown.clone();
+    tokio::spawn(async move {
+        shutdown_for_monitor.notified().await;
+        flag_for_monitor.store(true, Ordering::SeqCst);
+    });
+
     info!("🎵 Starting MusicBrainz extraction...");
 
     let success =
-        process_musicbrainz_data(config.clone(), state.clone(), shutdown.clone(), force_reprocess, mq_factory.clone(), compiled_rules.clone())
+        process_musicbrainz_data(config.clone(), state.clone(), shutdown_flag.clone(), force_reprocess, mq_factory.clone(), compiled_rules.clone())
             .await?;
 
     if !success {
@@ -819,8 +832,14 @@ pub async fn run_musicbrainz_loop(
 
     info!("✅ Initial MusicBrainz processing completed successfully");
 
-    // Periodic check loop
+    // Periodic check loop — uses the AtomicBool flag for shutdown detection instead of
+    // Notify::notified() in the select!, since the monitor task already consumes it.
     loop {
+        if shutdown_flag.load(Ordering::SeqCst) {
+            info!("🛑 Shutdown detected, exiting MusicBrainz periodic check loop");
+            break;
+        }
+
         let check_interval = Duration::from_secs(config.periodic_check_days * 24 * 60 * 60);
         info!("⏰ Waiting {} days before next MusicBrainz check...", config.periodic_check_days);
 
@@ -828,7 +847,7 @@ pub async fn run_musicbrainz_loop(
             _ = sleep(check_interval) => {
                 info!("🔄 Starting periodic check for new MusicBrainz dumps...");
                 let start = Instant::now();
-                match process_musicbrainz_data(config.clone(), state.clone(), shutdown.clone(), false, mq_factory.clone(), compiled_rules.clone()).await {
+                match process_musicbrainz_data(config.clone(), state.clone(), shutdown_flag.clone(), false, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => {
                         info!("✅ Periodic MusicBrainz check completed successfully in {:?}", start.elapsed());
                     }
@@ -843,7 +862,7 @@ pub async fn run_musicbrainz_loop(
             trigger_force_reprocess = wait_for_trigger(&trigger) => {
                 info!("🔄 MusicBrainz extraction triggered via API (force_reprocess={})...", trigger_force_reprocess);
                 let start = Instant::now();
-                match process_musicbrainz_data(config.clone(), state.clone(), shutdown.clone(), trigger_force_reprocess, mq_factory.clone(), compiled_rules.clone()).await {
+                match process_musicbrainz_data(config.clone(), state.clone(), shutdown_flag.clone(), trigger_force_reprocess, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => info!("✅ Triggered MusicBrainz extraction completed in {:?}", start.elapsed()),
                     Ok(false) => error!("❌ Triggered MusicBrainz extraction completed with errors"),
                     Err(e) => error!("❌ Triggered MusicBrainz extraction failed: {}", e),
@@ -865,7 +884,7 @@ pub async fn run_musicbrainz_loop(
 pub async fn process_musicbrainz_data(
     config: Arc<ExtractorConfig>,
     state: Arc<RwLock<ExtractorState>>,
-    shutdown: Arc<tokio::sync::Notify>,
+    shutdown_flag: Arc<AtomicBool>,
     force_reprocess: bool,
     mq_factory: Arc<dyn MessageQueueFactory>,
     _compiled_rules: Option<Arc<CompiledRulesConfig>>,
@@ -972,8 +991,10 @@ pub async fn process_musicbrainz_data(
 
     for (data_type, file_path) in &dump_files {
         // Check for shutdown between files — allows graceful exit without waiting
-        // for the next (potentially multi-GB) file to finish processing
-        if tokio::time::timeout(std::time::Duration::ZERO, shutdown.notified()).await.is_ok() {
+        // for the next (potentially multi-GB) file to finish processing.
+        // Uses AtomicBool instead of Notify::notified() to avoid consuming the
+        // notification permit that the outer select! in run_musicbrainz_loop needs.
+        if shutdown_flag.load(Ordering::SeqCst) {
             warn!("🛑 Shutdown requested, stopping MusicBrainz processing between files");
             success = false;
             break;
