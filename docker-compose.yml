@@ -246,6 +246,7 @@ services:
       RABBITMQ_USERNAME: discogsography
       REDIS_HOST: redis
       STARTUP_DELAY: "5"
+      DB_PROFILING: "${DB_PROFILING:-true}"
       # NLQ (Natural Language Queries) — disabled by default
       NLQ_ENABLED: "${NLQ_ENABLED:-false}"
       NLQ_API_KEY: "${NLQ_API_KEY:-}"
@@ -310,7 +311,7 @@ services:
       DATA_QUALITY_RULES: /discogs-data/extraction-rules.yaml
     volumes:
       - discogs_data:/discogs-data
-      - extractor_logs:/logs
+      - extractor_discogs_logs:/logs
       - ./extractor/extraction-rules.yaml:/discogs-data/extraction-rules.yaml:ro
     depends_on:
       rabbitmq:
@@ -343,9 +344,7 @@ services:
     environment:
       LOG_LEVEL: info
       MUSICBRAINZ_ROOT: /musicbrainz-data
-      MUSICBRAINZ_DUMP_URL: "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/"
-      MUSICBRAINZ_EXCHANGE_PREFIX: discogsography-musicbrainz
-      PERIODIC_CHECK_DAYS: "7"
+      PERIODIC_CHECK_DAYS: "3"
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PASSWORD: discogsography
       RABBITMQ_USERNAME: discogsography
@@ -655,6 +654,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+      - /.cache
     volumes:
       - dashboard_logs:/logs
 
@@ -674,11 +674,16 @@ services:
     environment:
       API_BASE_URL: "http://api:8004"
       LOG_LEVEL: INFO
+      NEO4J_HOST: neo4j
+      NEO4J_PASSWORD: discogsography
+      NEO4J_USERNAME: neo4j
       PYTHONUNBUFFERED: "1"
     depends_on:
       schema-init:
         condition: service_completed_successfully
       api:
+        condition: service_healthy
+      neo4j:
         condition: service_healthy
     networks:
       - discogsography
@@ -766,7 +771,7 @@ volumes:
   neo4j_plugins:
   redis_data:
   discogs_data:
-  extractor_logs:
+  extractor_discogs_logs:
   extractor_musicbrainz_logs:
   schema_init_logs:
   api_logs:

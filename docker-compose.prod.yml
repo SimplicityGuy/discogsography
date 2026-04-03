@@ -16,6 +16,8 @@ secrets:
   # Required for email delivery — create with: scripts/create-secrets.sh or manually
   brevo_api_key:
     file: ./secrets/brevo_api_key.txt
+  nlq_api_key:
+    file: ./secrets/nlq_api_key.txt
   postgres_password:
     file: ./secrets/postgres_password.txt
   postgres_username:
@@ -193,6 +195,7 @@ services:
       BREVO_SENDER_NAME: "${BREVO_SENDER_NAME:-Discogsography}"
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
+      NLQ_API_KEY_FILE: /run/secrets/nlq_api_key
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
       RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
     secrets:
@@ -200,6 +203,7 @@ services:
       - neo4j_password
       - encryption_master_key
       - brevo_api_key
+      - nlq_api_key
       - postgres_username
       - postgres_password
       - rabbitmq_username
@@ -330,6 +334,10 @@ services:
 
   explore:
     restart: always
+    environment:
+      NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
+    secrets:
+      - neo4j_password
     deploy:
       restart_policy:
         condition: any
