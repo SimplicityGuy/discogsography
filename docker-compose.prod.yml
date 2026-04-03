@@ -334,10 +334,6 @@ services:
 
   explore:
     restart: always
-    environment:
-      NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
-    secrets:
-      - neo4j_password
     deploy:
       restart_policy:
         condition: any
