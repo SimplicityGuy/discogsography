@@ -215,6 +215,75 @@ def reset_global_state() -> Iterator[None]:
         pass
 
     try:
+        import brainzgraphinator.brainzgraphinator
+
+        brainzgraphinator.brainzgraphinator.shutdown_requested = False
+        brainzgraphinator.brainzgraphinator.config = None
+        brainzgraphinator.brainzgraphinator.graph = None
+        brainzgraphinator.brainzgraphinator.rabbitmq_manager = None
+        brainzgraphinator.brainzgraphinator.active_connection = None
+        brainzgraphinator.brainzgraphinator.active_channel = None
+        brainzgraphinator.brainzgraphinator.connection_check_task = None
+        brainzgraphinator.brainzgraphinator._stats_lock = None
+        brainzgraphinator.brainzgraphinator.message_counts = {
+            "artists": 0,
+            "labels": 0,
+            "release-groups": 0,
+            "releases": 0,
+        }
+        brainzgraphinator.brainzgraphinator.last_message_time = {
+            "artists": 0.0,
+            "labels": 0.0,
+            "release-groups": 0.0,
+            "releases": 0.0,
+        }
+        brainzgraphinator.brainzgraphinator.consumer_tags = {}
+        brainzgraphinator.brainzgraphinator.completed_files = set()
+        brainzgraphinator.brainzgraphinator.queues = {}
+        brainzgraphinator.brainzgraphinator.idle_mode = False
+        brainzgraphinator.brainzgraphinator.enrichment_stats = {
+            "entities_enriched": 0,
+            "entities_skipped_no_discogs_match": 0,
+            "relationships_created": 0,
+            "relationships_updated": 0,
+            "relationships_skipped_missing_side": 0,
+        }
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        import brainztableinator.brainztableinator
+
+        brainztableinator.brainztableinator.shutdown_requested = False
+        brainztableinator.brainztableinator.config = None
+        brainztableinator.brainztableinator.connection_pool = None
+        brainztableinator.brainztableinator.rabbitmq_manager = None
+        brainztableinator.brainztableinator.active_connection = None
+        brainztableinator.brainztableinator.active_channel = None
+        brainztableinator.brainztableinator.connection_check_task = None
+        brainztableinator.brainztableinator.current_task = None
+        brainztableinator.brainztableinator.current_progress = 0.0
+        brainztableinator.brainztableinator.connection_params = {}
+        brainztableinator.brainztableinator.message_counts = {
+            "artists": 0,
+            "labels": 0,
+            "release-groups": 0,
+            "releases": 0,
+        }
+        brainztableinator.brainztableinator.last_message_time = {
+            "artists": 0.0,
+            "labels": 0.0,
+            "release-groups": 0.0,
+            "releases": 0.0,
+        }
+        brainztableinator.brainztableinator.consumer_tags = {}
+        brainztableinator.brainztableinator.completed_files = set()
+        brainztableinator.brainztableinator.queues = {}
+        brainztableinator.brainztableinator.idle_mode = False
+    except (ImportError, AttributeError):
+        pass
+
+    try:
         import extractor.extractor
 
         extractor.extractor.shutdown_requested = False
@@ -276,6 +345,75 @@ def reset_global_state() -> Iterator[None]:
         tableinator.tableinator.completed_files = set()
         tableinator.tableinator.queues = {}
         tableinator.tableinator.idle_mode = False
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        import brainzgraphinator.brainzgraphinator
+
+        brainzgraphinator.brainzgraphinator.shutdown_requested = False
+        brainzgraphinator.brainzgraphinator.config = None
+        brainzgraphinator.brainzgraphinator.graph = None
+        brainzgraphinator.brainzgraphinator.rabbitmq_manager = None
+        brainzgraphinator.brainzgraphinator.active_connection = None
+        brainzgraphinator.brainzgraphinator.active_channel = None
+        brainzgraphinator.brainzgraphinator.connection_check_task = None
+        brainzgraphinator.brainzgraphinator._stats_lock = None
+        brainzgraphinator.brainzgraphinator.message_counts = {
+            "artists": 0,
+            "labels": 0,
+            "release-groups": 0,
+            "releases": 0,
+        }
+        brainzgraphinator.brainzgraphinator.last_message_time = {
+            "artists": 0.0,
+            "labels": 0.0,
+            "release-groups": 0.0,
+            "releases": 0.0,
+        }
+        brainzgraphinator.brainzgraphinator.consumer_tags = {}
+        brainzgraphinator.brainzgraphinator.completed_files = set()
+        brainzgraphinator.brainzgraphinator.queues = {}
+        brainzgraphinator.brainzgraphinator.idle_mode = False
+        brainzgraphinator.brainzgraphinator.enrichment_stats = {
+            "entities_enriched": 0,
+            "entities_skipped_no_discogs_match": 0,
+            "relationships_created": 0,
+            "relationships_updated": 0,
+            "relationships_skipped_missing_side": 0,
+        }
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        import brainztableinator.brainztableinator
+
+        brainztableinator.brainztableinator.shutdown_requested = False
+        brainztableinator.brainztableinator.config = None
+        brainztableinator.brainztableinator.connection_pool = None
+        brainztableinator.brainztableinator.rabbitmq_manager = None
+        brainztableinator.brainztableinator.active_connection = None
+        brainztableinator.brainztableinator.active_channel = None
+        brainztableinator.brainztableinator.connection_check_task = None
+        brainztableinator.brainztableinator.current_task = None
+        brainztableinator.brainztableinator.current_progress = 0.0
+        brainztableinator.brainztableinator.connection_params = {}
+        brainztableinator.brainztableinator.message_counts = {
+            "artists": 0,
+            "labels": 0,
+            "release-groups": 0,
+            "releases": 0,
+        }
+        brainztableinator.brainztableinator.last_message_time = {
+            "artists": 0.0,
+            "labels": 0.0,
+            "release-groups": 0.0,
+            "releases": 0.0,
+        }
+        brainztableinator.brainztableinator.consumer_tags = {}
+        brainztableinator.brainztableinator.completed_files = set()
+        brainztableinator.brainztableinator.queues = {}
+        brainztableinator.brainztableinator.idle_mode = False
     except (ImportError, AttributeError):
         pass
 

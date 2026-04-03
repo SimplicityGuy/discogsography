@@ -399,7 +399,6 @@ all = [
     { name = "httpx", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "mcp", extra = ["cli"], marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "mypy", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
-    { name = "neo4j", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "neo4j-rust-ext", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "orjson", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "playwright", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
@@ -493,8 +492,6 @@ insights = [
 ]
 mcp-server = [
     { name = "mcp", extra = ["cli"], marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
-    { name = "neo4j", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
-    { name = "psycopg", extra = ["binary"], marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "structlog", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 schema-init = [
@@ -550,7 +547,6 @@ requires-dist = [
     { name = "mcp", extras = ["cli"], marker = "extra == 'mcp-server'", specifier = ">=1.12.0" },
     { name = "multidict", specifier = ">=6.5.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
-    { name = "neo4j", marker = "extra == 'mcp-server'", specifier = ">=6.1.0" },
     { name = "neo4j-rust-ext", specifier = ">=6.1.0" },
     { name = "neo4j-rust-ext", marker = "extra == 'api'", specifier = ">=6.1.0" },
     { name = "neo4j-rust-ext", marker = "extra == 'brainzgraphinator'", specifier = ">=6.1.0" },
@@ -569,7 +565,6 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], marker = "extra == 'api'", specifier = ">=3.1.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'brainztableinator'", specifier = ">=3.1.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'dashboard'", specifier = ">=3.1.0" },
-    { name = "psycopg", extras = ["binary"], marker = "extra == 'mcp-server'", specifier = ">=3.0.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'schema-init'", specifier = ">=3.1.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'tableinator'", specifier = ">=3.1.0" },
     { name = "pydantic", marker = "extra == 'api'", specifier = ">=2.10.5" },

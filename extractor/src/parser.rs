@@ -212,14 +212,15 @@ impl XmlParser {
                                 // Get ID - try @id first (attribute), then id (child element)
                                 let id = obj.get("@id").or_else(|| obj.get("id")).and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
 
-                                // For releases and masters, pyextractor adds a plain 'id' field
-                                // in addition to @id (see pyextractor.py line 536)
+                                // For releases/masters with @id attribute, the old pyextractor
+                                // added a synthetic "id" field alongside @id. We skip that now
+                                // because DataMessage.id carries the record ID, and
+                                // #[serde(flatten)] would produce duplicate "id" JSON keys.
+                                // For artists/labels that use <id> child elements (no @id),
+                                // "id" is real data from the XML and must be preserved.
                                 let mut final_obj = obj;
-                                if matches!(self.data_type, DataType::Releases | DataType::Masters)
-                                    && final_obj.get("@id").is_some()
-                                    && final_obj.get("id").is_none()
-                                {
-                                    final_obj.insert("id".to_string(), Value::String(id.clone()));
+                                if final_obj.contains_key("@id") {
+                                    final_obj.remove("id");
                                 }
 
                                 let final_value = Value::Object(final_obj);
@@ -328,11 +329,7 @@ fn reconstruct_xml(element_name: &str, value: &Value) -> Vec<u8> {
     writer.into_inner().into_inner()
 }
 
-fn write_element<W: std::io::Write>(
-    writer: &mut quick_xml::Writer<W>,
-    name: &str,
-    value: &Value,
-) -> std::io::Result<()> {
+fn write_element<W: std::io::Write>(writer: &mut quick_xml::Writer<W>, name: &str, value: &Value) -> std::io::Result<()> {
     use quick_xml::events::{BytesEnd, BytesStart, BytesText};
 
     match value {

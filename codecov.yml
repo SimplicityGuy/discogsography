@@ -79,6 +79,14 @@ flags:
     paths:
       - "extractor/**"
     carryforward: true
+  brainzgraphinator:
+    paths:
+      - "brainzgraphinator/**"
+    carryforward: true
+  brainztableinator:
+    paths:
+      - "brainztableinator/**"
+    carryforward: true
   e2e-chromium:
     paths:
       - "dashboard/**"
@@ -157,6 +165,14 @@ component_management:
       name: Tableinator
       paths:
         - "tableinator/**"
+    - component_id: brainzgraphinator
+      name: Brainzgraphinator
+      paths:
+        - "brainzgraphinator/**"
+    - component_id: brainztableinator
+      name: Brainztableinator
+      paths:
+        - "brainztableinator/**"
 
 # Ignore patterns
 ignore:

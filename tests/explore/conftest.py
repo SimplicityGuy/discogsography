@@ -111,7 +111,7 @@ def test_client(mock_neo4j_driver: MagicMock, fake_redis_server: fakeredis.FakeS
     # Wire the mock driver into both api routers
     jwt_secret = os.environ.get("JWT_SECRET_KEY")
     fake_redis = aioredis_fake.FakeRedis(server=fake_redis_server)
-    explore_router_module.configure(mock_neo4j_driver, jwt_secret)
+    explore_router_module.configure(mock_neo4j_driver, jwt_secret, redis=fake_redis)
     user_router_module.configure(mock_neo4j_driver, jwt_secret)
     snapshot_router_module.configure(jwt_secret=jwt_secret, redis_client=fake_redis)
 
