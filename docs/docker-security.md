@@ -139,13 +139,14 @@ This creates `secrets/` (mode `700`) with one file per secret (mode `600`):
 
 ```
 secrets/
-├── jwt_secret_key.txt        # openssl rand -hex 32
-├── neo4j_password.txt        # openssl rand -base64 24
-├── oauth_encryption_key.txt  # Fernet.generate_key()
-├── postgres_password.txt     # openssl rand -base64 24
-├── postgres_username.txt         # discogsography
-├── rabbitmq_password.txt         # openssl rand -base64 24
-└── rabbitmq_username.txt         # discogsography
+├── jwt_secret_key.txt          # openssl rand -hex 32
+├── encryption_master_key.txt   # base64-urlsafe 32-byte HKDF master key
+├── brevo_api_key.txt           # Brevo API key (empty disables email delivery)
+├── postgres_username.txt       # discogsography
+├── postgres_password.txt       # openssl rand -base64 24
+├── rabbitmq_username.txt       # discogsography
+├── rabbitmq_password.txt       # openssl rand -base64 24
+└── neo4j_password.txt          # openssl rand -base64 24
 ```
 
 Use `secrets.example/` as a reference for each file's format and generation command.

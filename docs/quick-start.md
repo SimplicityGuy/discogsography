@@ -270,7 +270,8 @@ Watch the logs to see data processing:
 docker-compose logs -f
 
 # Specific service
-docker-compose logs -f extractor
+docker-compose logs -f extractor-discogs
+docker-compose logs -f extractor-musicbrainz
 docker-compose logs -f graphinator
 docker-compose logs -f tableinator
 ```
