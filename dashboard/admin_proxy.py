@@ -27,7 +27,8 @@ router = APIRouter()
 _api_base_url: str = "http://api:8004"
 
 # Strict pattern for path parameters forwarded to the API.
-_SAFE_PATH_SEGMENT = re.compile(r"^[a-zA-Z0-9_-]+$")
+# Dots are allowed to support version strings like "20240101.0".
+_SAFE_PATH_SEGMENT = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 
 def configure(api_host: str, api_port: int) -> None:
@@ -345,6 +346,152 @@ async def proxy_audit_log(
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers, params=params)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Extraction Analysis proxy routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/admin/api/extraction-analysis/versions")
+async def proxy_ea_versions(request: Request) -> Response:
+    """Proxy extraction analysis versions list to the API service."""
+    url = _build_url("/api/admin/extraction-analysis/versions")
+    headers = _auth_headers(request)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=headers)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
+@router.get("/admin/api/extraction-analysis/{version}/summary")
+async def proxy_ea_summary(version: str, request: Request) -> Response:
+    """Proxy extraction analysis summary for a single version."""
+    if not _validate_path_segment(version):
+        return Response(content=b'{"detail":"Invalid version"}', status_code=400, media_type="application/json")
+    url = _build_url(f"/api/admin/extraction-analysis/{version}/summary")
+    headers = _auth_headers(request)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=headers)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
+@router.get("/admin/api/extraction-analysis/{version}/violations/{record_id}")
+async def proxy_ea_violation_detail(version: str, record_id: str, request: Request) -> Response:
+    """Proxy extraction analysis violation record detail — must be registered before the bare violations route."""
+    if not _validate_path_segment(version):
+        return Response(content=b'{"detail":"Invalid version"}', status_code=400, media_type="application/json")
+    if not _validate_path_segment(record_id):
+        return Response(content=b'{"detail":"Invalid record ID"}', status_code=400, media_type="application/json")
+    url = _build_url(f"/api/admin/extraction-analysis/{version}/violations/{record_id}")
+    headers = _auth_headers(request)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=headers)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
+@router.get("/admin/api/extraction-analysis/{version}/violations")
+async def proxy_ea_violations(
+    version: str,
+    request: Request,
+    entity_type: str | None = Query(default=None, pattern=r"^[a-z-]+$"),
+    severity: str | None = Query(default=None, pattern=r"^(error|warning|info)$"),
+    rule: str | None = Query(default=None, pattern=r"^[a-zA-Z0-9_-]+$"),
+    page: int | None = Query(default=None, ge=1),
+    page_size: int | None = Query(default=None, ge=1, le=200),
+) -> Response:
+    """Proxy extraction analysis violations list with optional query param filtering."""
+    if not _validate_path_segment(version):
+        return Response(content=b'{"detail":"Invalid version"}', status_code=400, media_type="application/json")
+    url = _build_url(f"/api/admin/extraction-analysis/{version}/violations")
+    params: dict[str, str] = {}
+    if entity_type is not None:
+        params["entity_type"] = entity_type
+    if severity is not None:
+        params["severity"] = severity
+    if rule is not None:
+        params["rule"] = rule
+    if page is not None:
+        params["page"] = str(page)
+    if page_size is not None:
+        params["page_size"] = str(page_size)
+    headers = _auth_headers(request)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=headers, params=params)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
+@router.get("/admin/api/extraction-analysis/{version}/parsing-errors")
+async def proxy_ea_parsing_errors(version: str, request: Request) -> Response:
+    """Proxy extraction analysis parsing errors — uses longer timeout as parsing can be slow."""
+    if not _validate_path_segment(version):
+        return Response(content=b'{"detail":"Invalid version"}', status_code=400, media_type="application/json")
+    url = _build_url(f"/api/admin/extraction-analysis/{version}/parsing-errors")
+    headers = _auth_headers(request)
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.get(url, headers=headers)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
+@router.get("/admin/api/extraction-analysis/{version}/compare/{other_version}")
+async def proxy_ea_compare(version: str, other_version: str, request: Request) -> Response:
+    """Proxy extraction analysis version comparison."""
+    if not _validate_path_segment(version):
+        return Response(content=b'{"detail":"Invalid version"}', status_code=400, media_type="application/json")
+    if not _validate_path_segment(other_version):
+        return Response(content=b'{"detail":"Invalid other_version"}', status_code=400, media_type="application/json")
+    url = _build_url(f"/api/admin/extraction-analysis/{version}/compare/{other_version}")
+    headers = _auth_headers(request)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=headers)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
+@router.post("/admin/api/extraction-analysis/{version}/prompt-context")
+async def proxy_ea_prompt_context(version: str, request: Request) -> Response:
+    """Proxy extraction analysis prompt context generation."""
+    if not _validate_path_segment(version):
+        return Response(content=b'{"detail":"Invalid version"}', status_code=400, media_type="application/json")
+    url = _build_url(f"/api/admin/extraction-analysis/{version}/prompt-context")
+    headers = _auth_headers(request)
+    try:
+        sanitised_body = await _validated_json_body(request)
+    except json.JSONDecodeError:
+        return JSONResponse(content={"detail": "Malformed JSON in request body"}, status_code=400)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            if sanitised_body:
+                headers["Content-Type"] = "application/json"
+                resp = await client.post(url, headers=headers, content=sanitised_body)
+            else:
+                resp = await client.post(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
         logger.error("❌ API service unreachable", url=url, error=str(exc))
         return _unavailable_response()

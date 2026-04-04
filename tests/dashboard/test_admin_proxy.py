@@ -76,8 +76,9 @@ class TestValidatePathSegment:
     def test_rejects_slashes(self) -> None:
         assert _validate_path_segment("../etc/passwd") is False
 
-    def test_rejects_dots(self) -> None:
-        assert _validate_path_segment("foo.bar") is False
+    def test_allows_dots(self) -> None:
+        # Dots are allowed to support version strings like "20240101.0"
+        assert _validate_path_segment("foo.bar") is True
 
     def test_rejects_empty(self) -> None:
         assert _validate_path_segment("") is False
@@ -196,10 +197,13 @@ class TestGetExtractionProxy:
         resp = proxy_client.get("/admin/api/extractions/../../../etc/passwd")
         assert resp.status_code in (400, 404)  # FastAPI may reject before handler
 
-    def test_rejects_id_with_dots(self, proxy_client: TestClient) -> None:
+    def test_allows_id_with_dots(self, proxy_client: TestClient) -> None:
+        # Dots are now allowed in path segments (needed for version strings)
+        # foo.bar passes validation; the upstream API returns the actual status
+        # We just verify the proxy doesn't reject it at the validation layer.
+        # Without a mock the upstream call fails with a connection error → 502.
         resp = proxy_client.get("/admin/api/extractions/foo.bar")
-        assert resp.status_code == 400
-        assert "Invalid" in resp.json()["detail"]
+        assert resp.status_code != 400
 
     @patch("dashboard.admin_proxy.httpx.AsyncClient")
     def test_get_extraction_unreachable(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
@@ -269,10 +273,11 @@ class TestDlqPurgeProxy:
         resp = proxy_client.post("/admin/api/dlq/purge/../../etc")
         assert resp.status_code in (400, 404)
 
-    def test_rejects_queue_with_dots(self, proxy_client: TestClient) -> None:
+    def test_allows_queue_with_dots(self, proxy_client: TestClient) -> None:
+        # Dots are now allowed in path segments; the upstream will handle validity.
+        # Without a mock the upstream call fails with a connection error → 502.
         resp = proxy_client.post("/admin/api/dlq/purge/bad.queue.name")
-        assert resp.status_code == 400
-        assert "Invalid" in resp.json()["detail"]
+        assert resp.status_code != 400
 
     @patch("dashboard.admin_proxy.httpx.AsyncClient")
     def test_purge_unreachable(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
