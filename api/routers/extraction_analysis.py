@@ -4,8 +4,10 @@ import json
 import math
 from pathlib import Path
 import re
+import time
 from typing import Annotated, Any
 
+import defusedxml.ElementTree as ET
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 import structlog
@@ -24,6 +26,10 @@ _musicbrainz_data_root: Path | None = None
 # Input-validation patterns — only allow safe characters in version / record_id
 _SAFE_VERSION = re.compile(r"^[a-zA-Z0-9._-]+$")
 _SAFE_RECORD_ID = re.compile(r"^[a-zA-Z0-9._-]+$")
+
+# Parsing-error classification cache: version → (expiry_timestamp, result_dict)
+_parsing_error_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_PARSING_ERROR_CACHE_TTL: float = 300.0  # 5 minutes
 
 
 def configure(discogs_root: str | Path | None = None, musicbrainz_root: str | Path | None = None) -> None:
@@ -322,3 +328,147 @@ async def get_violation_detail(
             "parsed_json": parsed_json,
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — helpers
+# ---------------------------------------------------------------------------
+
+
+def _extract_xml_field_value(xml_text: str, field: str) -> str | None:
+    """Safely parse *xml_text* and return the text of the element named *field*.
+
+    Supports dot-notation by taking only the last segment (e.g. ``"release.year"`` → ``"year"``).
+    Returns None if the field is absent, empty, or XML is malformed.
+    """
+    leaf = field.rsplit(".", maxsplit=1)[-1]
+    try:
+        root = ET.fromstring(xml_text)
+    except Exception:
+        logger.warning("⚠️ Could not parse XML for field extraction", field=field)
+        return None
+
+    # Search direct children first, then recursively
+    element = root.find(leaf)
+    if element is None:
+        for elem in root.iter(leaf):
+            element = elem
+            break
+
+    if element is None:
+        return None
+    text = element.text
+    return text.strip() if text and text.strip() else None
+
+
+def _classify_violation(
+    violation: dict[str, Any],
+    flagged_dir: Path,
+    entity_type: str,
+) -> dict[str, Any]:
+    """Classify a violation as parsing_error, source_issue, or indeterminate.
+
+    - indeterminate: XML or JSON file is missing
+    - parsing_error: XML has the field value but JSON does not
+    - source_issue: XML also lacks the field value
+    """
+    record_id: str = violation.get("record_id", "")
+    field: str = violation.get("field", "")
+    rule: str = violation.get("rule", "")
+
+    raw_xml, parsed_json = _load_record_files(flagged_dir, entity_type, record_id)
+
+    xml_value: str | None = None
+    json_value: str | None = None
+    classification: str
+
+    if raw_xml is None or parsed_json is None:
+        classification = "indeterminate"
+    else:
+        xml_value = _extract_xml_field_value(raw_xml, field) if field else None
+
+        # Extract JSON value: support dot-notation — use the last segment as the key
+        leaf = field.rsplit(".", maxsplit=1)[-1] if field else field
+        raw_json_val = parsed_json.get(leaf)
+        json_value = str(raw_json_val).strip() if raw_json_val is not None and str(raw_json_val).strip() else None
+
+        if xml_value and not json_value:
+            classification = "parsing_error"
+        elif not xml_value and not json_value:
+            classification = "source_issue"
+        else:
+            # Both present — field exists in both, flagged for another reason; treat as source_issue
+            classification = "source_issue"
+
+    return {
+        "record_id": record_id,
+        "entity_type": entity_type,
+        "rule": rule,
+        "field": field,
+        "xml_value": xml_value,
+        "json_value": json_value,
+        "classification": classification,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/admin/extraction-analysis/{version}/parsing-errors")
+async def get_parsing_errors(
+    version: str,
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+) -> JSONResponse:
+    """Classify violations as parsing errors, source issues, or indeterminate.
+
+    Results are cached in memory for 5 minutes to avoid repeated filesystem scans.
+    """
+    _validate_version(version)
+
+    location = _find_version_root(version)
+    if location is None:
+        raise HTTPException(status_code=404, detail=f"Version not found: {version!r}")
+
+    cache_key = version
+    now = time.monotonic()
+    if cache_key in _parsing_error_cache:
+        expiry, cached_result = _parsing_error_cache[cache_key]
+        if now < expiry:
+            return JSONResponse(content=cached_result)
+
+    data_root, _source = location
+    flagged_version_dir = data_root / "flagged" / version
+
+    violations = _read_violations(flagged_version_dir)
+
+    parsing_errors: list[dict[str, Any]] = []
+    source_issues: list[dict[str, Any]] = []
+    indeterminate: list[dict[str, Any]] = []
+
+    for v in violations:
+        entity_type: str = v.get("entity_type", "unknown")
+        entry = _classify_violation(v, flagged_version_dir, entity_type)
+        cls = entry["classification"]
+        if cls == "parsing_error":
+            parsing_errors.append(entry)
+        elif cls == "source_issue":
+            source_issues.append(entry)
+        else:
+            indeterminate.append(entry)
+
+    result: dict[str, Any] = {
+        "parsing_errors": parsing_errors,
+        "source_issues": source_issues,
+        "indeterminate": indeterminate,
+        "stats": {
+            "total_analyzed": len(violations),
+            "parsing_errors": len(parsing_errors),
+            "source_issues": len(source_issues),
+            "indeterminate": len(indeterminate),
+        },
+    }
+
+    _parsing_error_cache[cache_key] = (now + _PARSING_ERROR_CACHE_TTL, result)
+    return JSONResponse(content=result)

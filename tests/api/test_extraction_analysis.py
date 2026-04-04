@@ -491,3 +491,110 @@ class TestViolationDetailEndpoint:
         assert data["record_id"] == "3"
         assert data["raw_xml"] is None
         assert data["parsed_json"] is None
+
+
+# ---------------------------------------------------------------------------
+# Task 5: Parsing Errors endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestParsingErrorsEndpoint:
+    def test_requires_auth(self, test_client: TestClient) -> None:
+        """Returns 401 without a valid token."""
+        resp = test_client.get("/api/admin/extraction-analysis/20260101/parsing-errors")
+        assert resp.status_code == 401
+
+    def test_not_found_for_unknown_version(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns 404 for an unknown version."""
+        import api.routers.extraction_analysis as ea
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get("/api/admin/extraction-analysis/99990101/parsing-errors", headers=_admin_auth_headers())
+        assert resp.status_code == 404
+
+    def test_classifies_parsing_error(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Record 1 is a parsing_error: XML has year but JSON doesn't."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/parsing-errors",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        parsing_errors = data["parsing_errors"]
+        assert any(e["record_id"] == "1" and e["classification"] == "parsing_error" for e in parsing_errors)
+
+    def test_classifies_source_issue(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Record 2 is a source_issue: neither XML nor JSON has the year field."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/parsing-errors",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        source_issues = data["source_issues"]
+        assert any(e["record_id"] == "2" and e["classification"] == "source_issue" for e in source_issues)
+
+    def test_classifies_indeterminate(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Record 3 is indeterminate: XML and JSON files are missing."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/parsing-errors",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        indeterminate = data["indeterminate"]
+        assert any(e["record_id"] == "3" and e["classification"] == "indeterminate" for e in indeterminate)
+
+    def test_stats_totals(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Stats totals add up to total_analyzed."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/parsing-errors",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        stats = resp.json()["stats"]
+        assert stats["total_analyzed"] == stats["parsing_errors"] + stats["source_issues"] + stats["indeterminate"]
+
+    def test_caches_result(self, test_client: TestClient, tmp_path: Path) -> None:
+        """A second identical request returns the same result (cached)."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp1 = test_client.get(
+                "/api/admin/extraction-analysis/20260101/parsing-errors",
+                headers=_admin_auth_headers(),
+            )
+            resp2 = test_client.get(
+                "/api/admin/extraction-analysis/20260101/parsing-errors",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp1.status_code == 200
+        assert resp2.status_code == 200
+        assert resp1.json() == resp2.json()
