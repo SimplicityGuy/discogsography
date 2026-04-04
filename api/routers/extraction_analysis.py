@@ -10,7 +10,9 @@ from typing import Annotated, Any
 import defusedxml.ElementTree as ET
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 import structlog
+import yaml
 
 from api.dependencies import require_admin
 
@@ -30,6 +32,16 @@ _SAFE_RECORD_ID = re.compile(r"^[a-zA-Z0-9._-]+$")
 # Parsing-error classification cache: version → (expiry_timestamp, result_dict)
 _parsing_error_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _PARSING_ERROR_CACHE_TTL: float = 300.0  # 5 minutes
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
+
+
+class PromptContextRequest(BaseModel):
+    record_ids: list[str] = Field(..., min_length=1, max_length=20)
+    rule: str = Field(..., pattern=r"^[a-zA-Z0-9_-]+$")
 
 
 def configure(discogs_root: str | Path | None = None, musicbrainz_root: str | Path | None = None) -> None:
@@ -472,3 +484,163 @@ async def get_parsing_errors(
 
     _parsing_error_cache[cache_key] = (now + _PARSING_ERROR_CACHE_TTL, result)
     return JSONResponse(content=result)
+
+
+# ---------------------------------------------------------------------------
+# Task 6 — endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/admin/extraction-analysis/{version}/compare/{other_version}")
+async def compare_versions(
+    version: str,
+    other_version: str,
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+) -> JSONResponse:
+    """Return a delta between two extraction versions, grouped by (rule, severity, entity_type)."""
+    _validate_version(version)
+    _validate_version(other_version)
+
+    loc_a = _find_version_root(version)
+    if loc_a is None:
+        raise HTTPException(status_code=404, detail=f"Version not found: {version!r}")
+    loc_b = _find_version_root(other_version)
+    if loc_b is None:
+        raise HTTPException(status_code=404, detail=f"Version not found: {other_version!r}")
+
+    def _count_violations(data_root: Path, ver: str) -> dict[tuple[str, str, str], int]:
+        flagged_version_dir = data_root / "flagged" / ver
+        counts: dict[tuple[str, str, str], int] = {}
+        for v in _read_violations(flagged_version_dir):
+            key = (v.get("rule", "unknown"), v.get("severity", "unknown"), v.get("entity_type", "unknown"))
+            counts[key] = counts.get(key, 0) + 1
+        return counts
+
+    counts_a = _count_violations(loc_a[0], version)
+    counts_b = _count_violations(loc_b[0], other_version)
+
+    all_keys = set(counts_a) | set(counts_b)
+
+    improved = 0
+    worsened = 0
+    unchanged = 0
+    new_rules = 0
+    removed_rules = 0
+    details: list[dict[str, Any]] = []
+
+    for rule, sev, etype in sorted(all_keys):
+        count_a = counts_a.get((rule, sev, etype), 0)
+        count_b = counts_b.get((rule, sev, etype), 0)
+
+        if count_a == 0:
+            direction = "worsened"
+            new_rules += 1
+            worsened += 1
+        elif count_b == 0:
+            direction = "improved"
+            removed_rules += 1
+            improved += 1
+        elif count_b < count_a:
+            direction = "improved"
+            improved += 1
+        elif count_b > count_a:
+            direction = "worsened"
+            worsened += 1
+        else:
+            direction = "unchanged"
+            unchanged += 1
+
+        details.append(
+            {
+                "rule": rule,
+                "severity": sev,
+                "entity_type": etype,
+                "count_a": count_a,
+                "count_b": count_b,
+                "direction": direction,
+            }
+        )
+
+    return JSONResponse(
+        content={
+            "version_a": version,
+            "version_b": other_version,
+            "summary": {
+                "improved": improved,
+                "worsened": worsened,
+                "unchanged": unchanged,
+                "new_rules": new_rules,
+                "removed_rules": removed_rules,
+            },
+            "details": details,
+        }
+    )
+
+
+@router.post("/api/admin/extraction-analysis/{version}/prompt-context")
+async def get_prompt_context(
+    version: str,
+    body: PromptContextRequest,
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+) -> JSONResponse:
+    """Assemble structured context for AI prompts — violations, raw XML, and parsed JSON for a set of records."""
+    _validate_version(version)
+
+    for rid in body.record_ids:
+        _validate_record_id(rid)
+
+    location = _find_version_root(version)
+    if location is None:
+        raise HTTPException(status_code=404, detail=f"Version not found: {version!r}")
+
+    data_root, _source = location
+    flagged_version_dir = data_root / "flagged" / version
+
+    # Load rule definition from extraction-rules.yaml if present
+    rule_definition: dict[str, Any] | None = None
+    rules_yaml_path = data_root / "extraction-rules.yaml"
+    if rules_yaml_path.is_file():
+        try:
+            rules_data = yaml.safe_load(rules_yaml_path.read_text(encoding="utf-8"))
+            if isinstance(rules_data, dict):
+                for rule_entry in rules_data.get("rules", []):
+                    if isinstance(rule_entry, dict) and rule_entry.get("id") == body.rule:
+                        rule_definition = rule_entry
+                        break
+        except Exception:
+            logger.warning("⚠️ Could not load extraction-rules.yaml", path=str(rules_yaml_path))
+
+    all_violations = _read_violations(flagged_version_dir)
+
+    records: list[dict[str, Any]] = []
+    for rid in body.record_ids:
+        matching = [v for v in all_violations if v.get("record_id") == rid and v.get("rule") == body.rule]
+        if not matching:
+            continue
+        violation = matching[0]
+        entity_type: str = violation.get("entity_type", "unknown")
+        raw_xml, parsed_json = _load_record_files(flagged_version_dir, entity_type, rid)
+        records.append(
+            {
+                "record_id": rid,
+                "entity_type": entity_type,
+                "violation": {
+                    "field": violation.get("field", ""),
+                    "field_value": violation.get("field_value", ""),
+                },
+                "raw_xml": raw_xml,
+                "parsed_json": parsed_json,
+            }
+        )
+
+    return JSONResponse(
+        content={
+            "rule": body.rule,
+            "rule_definition": rule_definition,
+            "records": records,
+            "extractor_context": {
+                "parser_file": "extractor/src/xml_parser.rs",
+                "rules_file": "extractor/extraction-rules.yaml",
+            },
+        }
+    )

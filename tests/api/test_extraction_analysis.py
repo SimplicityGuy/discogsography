@@ -598,3 +598,198 @@ class TestParsingErrorsEndpoint:
         assert resp1.status_code == 200
         assert resp2.status_code == 200
         assert resp1.json() == resp2.json()
+
+
+# ---------------------------------------------------------------------------
+# Task 6: Compare endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestCompareEndpoint:
+    def test_requires_auth(self, test_client: TestClient) -> None:
+        """Returns 401 without a valid token."""
+        resp = test_client.get("/api/admin/extraction-analysis/20260101/compare/20260201")
+        assert resp.status_code == 401
+
+    def test_not_found_for_unknown_version_a(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns 404 when version_a is not found."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path, version="20260201")
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/99990101/compare/20260201",
+                headers=_admin_auth_headers(),
+            )
+        assert resp.status_code == 404
+
+    def test_not_found_for_unknown_version_b(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns 404 when version_b is not found."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path, version="20260101")
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/compare/99990201",
+                headers=_admin_auth_headers(),
+            )
+        assert resp.status_code == 404
+
+    def test_compare_two_versions(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns a delta between two versions with correct direction labels."""
+        import api.routers.extraction_analysis as ea
+
+        # Version A: 2 year-out-of-range warnings, 1 missing-field error
+        _make_flagged_version(tmp_path, version="20260101")
+
+        # Version B: 1 year-out-of-range warning (improved), same missing-field, new extra-field info
+        violations_b = [
+            {"record_id": "1", "rule": "year-out-of-range", "severity": "warning", "field": "year"},
+            {"record_id": "3", "rule": "missing-field", "severity": "error", "field": "title"},
+            {"record_id": "4", "rule": "extra-field", "severity": "info", "field": "notes"},
+        ]
+        _make_flagged_dir(tmp_path, "20260201", "artists", violations=violations_b)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/compare/20260201",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["version_a"] == "20260101"
+        assert data["version_b"] == "20260201"
+
+        by_rule = {d["rule"]: d for d in data["details"]}
+        assert by_rule["year-out-of-range"]["direction"] == "improved"  # 2 → 1
+        assert by_rule["missing-field"]["direction"] == "unchanged"  # 1 → 1
+        assert by_rule["extra-field"]["direction"] == "worsened"  # 0 → 1 (new rule)
+
+        summary = data["summary"]
+        assert summary["improved"] >= 1
+        assert summary["worsened"] >= 1
+        assert summary["new_rules"] >= 1
+
+
+# ---------------------------------------------------------------------------
+# Task 6: Prompt Context endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestPromptContextEndpoint:
+    def test_requires_auth(self, test_client: TestClient) -> None:
+        """Returns 401 without a valid token."""
+        resp = test_client.post(
+            "/api/admin/extraction-analysis/20260101/prompt-context",
+            json={"record_ids": ["1"], "rule": "year-out-of-range"},
+        )
+        assert resp.status_code == 401
+
+    def test_not_found_for_unknown_version(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns 404 when version is not found."""
+        import api.routers.extraction_analysis as ea
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/99990101/prompt-context",
+                json={"record_ids": ["1"], "rule": "year-out-of-range"},
+                headers=_admin_auth_headers(),
+            )
+        assert resp.status_code == 404
+
+    def test_validation_rejects_empty_record_ids(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns 422 when record_ids is empty."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/20260101/prompt-context",
+                json={"record_ids": [], "rule": "year-out-of-range"},
+                headers=_admin_auth_headers(),
+            )
+        assert resp.status_code == 422
+
+    def test_prompt_context_with_records(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns records with violation, raw_xml, and parsed_json."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/20260101/prompt-context",
+                json={"record_ids": ["1", "2"], "rule": "year-out-of-range"},
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["rule"] == "year-out-of-range"
+        assert data["extractor_context"]["parser_file"] == "extractor/src/xml_parser.rs"
+        assert data["extractor_context"]["rules_file"] == "extractor/extraction-rules.yaml"
+        assert len(data["records"]) == 2
+        record_ids = {r["record_id"] for r in data["records"]}
+        assert "1" in record_ids
+        assert "2" in record_ids
+
+    def test_prompt_context_rule_definition_loaded(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Loads rule definition from extraction-rules.yaml when present."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+        (tmp_path / "extraction-rules.yaml").write_text(
+            "rules:\n  - id: year-out-of-range\n    description: Year is out of valid range\n    severity: warning\n"
+        )
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/20260101/prompt-context",
+                json={"record_ids": ["1"], "rule": "year-out-of-range"},
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["rule_definition"] is not None
+        assert data["rule_definition"]["id"] == "year-out-of-range"
+        assert data["rule_definition"]["description"] == "Year is out of valid range"
+
+    def test_prompt_context_rule_definition_null_when_missing(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns null rule_definition when extraction-rules.yaml is absent."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/20260101/prompt-context",
+                json={"record_ids": ["1"], "rule": "year-out-of-range"},
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["rule_definition"] is None
+
+    def test_prompt_context_skips_unmatched_records(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Skips record_ids that have no violations for the given rule."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/20260101/prompt-context",
+                json={"record_ids": ["3", "9999"], "rule": "year-out-of-range"},
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # Record 3 has missing-field rule, not year-out-of-range; 9999 doesn't exist
+        assert data["records"] == []
