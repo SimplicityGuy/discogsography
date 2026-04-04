@@ -124,7 +124,7 @@ PIPELINE_CONFIGS: dict[str, dict] = {
             ("brainztableinator", "http://brainztableinator:8010/health"),
         ],
         "queue_prefix": "discogsography-musicbrainz",
-        "entity_types": ["artists", "labels", "release-groups", "releases"],
+        "entity_types": ["release-groups", "releases", "artists", "labels"],
     },
 }
 

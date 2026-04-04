@@ -249,7 +249,7 @@ class Dashboard {
     updateServices(pipelineName, services) {
         const PIPELINE_ENTITY_TYPES = {
             discogs: ['masters', 'releases', 'artists', 'labels'],
-            musicbrainz: ['artists', 'labels', 'release-groups', 'releases'],
+            musicbrainz: ['release-groups', 'releases', 'artists', 'labels'],
         };
         const types = PIPELINE_ENTITY_TYPES[pipelineName] || ['artists', 'labels', 'releases'];
 
@@ -296,7 +296,7 @@ class Dashboard {
     updateQueues(pipelineName, queues) {
         const PIPELINE_ENTITY_TYPES = {
             discogs: ['masters', 'releases', 'artists', 'labels'],
-            musicbrainz: ['artists', 'labels', 'release-groups', 'releases'],
+            musicbrainz: ['release-groups', 'releases', 'artists', 'labels'],
         };
         const PIPELINE_CONSUMERS = {
             discogs: { graph: 'graphinator', table: 'tableinator' },
