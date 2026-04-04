@@ -273,7 +273,7 @@ ______________________________________________________________________
 
 <div align="center">
 
-**Last Updated**: 2026-03-22
+**Last Updated**: 2026-04-03
 
 Made with ❤️ by the Discogsography community
 

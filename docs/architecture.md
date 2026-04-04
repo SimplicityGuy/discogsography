@@ -135,42 +135,47 @@ graph TD
 
 ### Dashboard Monitoring
 
-Shows the Dashboard service's monitoring connections to all pipeline services and infrastructure.
+Shows the Dashboard service's monitoring connections to pipeline services and infrastructure. The Dashboard monitors pipeline services grouped by source (Discogs and MusicBrainz). It does not monitor API, Explore, or Insights health.
 
 ```mermaid
 graph TD
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
 
-    EXT[["⚡ Extractor"]]
-    GRAPH[["🔗 Graphinator"]]
-    TABLE[["🐘 Tableinator"]]
-    BGRAPH[["🧠 Brainzgraphinator"]]
-    BTABLE[["🧬 Brainztableinator"]]
-    EXPLORE[["🔍 Explore"]]
+    subgraph Discogs ["Discogs Pipeline"]
+        EXT_D[["⚡ Extractor Discogs"]]
+        GRAPH[["🔗 Graphinator"]]
+        TABLE[["🐘 Tableinator"]]
+    end
+
+    subgraph MB ["MusicBrainz Pipeline"]
+        EXT_MB[["⚡ Extractor MB"]]
+        BGRAPH[["🧠 Brainzgraphinator"]]
+        BTABLE[["🧬 Brainztableinator"]]
+    end
 
     RMQ{{"🐰 RabbitMQ"}}
     NEO4J[("🔗 Neo4j")]
     PG[("🐘 PostgreSQL")]
     REDIS[("🔴 Redis")]
 
-    DASH -.->|Monitor| EXT
+    DASH -.->|Monitor| EXT_D
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
+    DASH -.->|Monitor| EXT_MB
     DASH -.->|Monitor| BGRAPH
     DASH -.->|Monitor| BTABLE
-    DASH -.->|Monitor| EXPLORE
     DASH -.->|Stats| RMQ
     DASH -.->|Stats| NEO4J
     DASH -.->|Stats| PG
     DASH -.->|Cache| REDIS
 
     style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style EXT_D fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style EXT_MB fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
     style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style BGRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
     style BTABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
@@ -461,7 +466,7 @@ See [Tableinator README](../tableinator/README.md) for details.
 
 **Key Features**:
 
-- Enriches Artist, Label, and Release nodes with `mb_`-prefixed properties (mbid, type, gender, dates, area, disambiguation)
+- Enriches Artist, Label, Release, and Master nodes with `mb_`-prefixed properties (mbid, type, gender, dates, area, disambiguation, secondary_types, first_release_date)
 - Creates 8 relationship edge types: MEMBER_OF (enriched), COLLABORATED_WITH, TAUGHT, TRIBUTE_TO, FOUNDED, SUPPORTED, SUBGROUP_OF, RENAMED_TO
 - All MB-sourced edges carry `source: 'musicbrainz'` provenance
 - Discogs-matched entities only — skips entities without a Discogs ID in the MB data
@@ -487,7 +492,7 @@ See [Brainzgraphinator README](../brainzgraphinator/README.md) for details.
 
 **Key Features**:
 
-- Stores artists, labels, and releases with structured columns plus JSONB `data` for full record
+- Stores artists, labels, release-groups, and releases with structured columns plus JSONB `data` for full record
 - Records relationships (collaborations, band membership, etc.) with source/target MBIDs
 - Stores external links (Wikipedia, Wikidata, AllMusic, Last.fm, IMDb) per entity
 - Stores **all** entities — including those without Discogs matches (available for future use)
@@ -1049,4 +1054,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-26
+**Last Updated**: 2026-04-03

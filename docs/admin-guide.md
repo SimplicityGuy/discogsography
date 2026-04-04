@@ -47,24 +47,24 @@ If an extraction is already running, the trigger returns an error — wait for i
 
 Dead-letter queues (DLQs) collect messages that consumers failed to process. Each data type has a DLQ per consumer:
 
-| Queue                                  | Consumer          |
-| -------------------------------------- | ----------------- |
-| `graphinator-artists-dlq`              | Graphinator       |
-| `graphinator-labels-dlq`               | Graphinator       |
-| `graphinator-masters-dlq`              | Graphinator       |
-| `graphinator-releases-dlq`             | Graphinator       |
-| `tableinator-artists-dlq`              | Tableinator       |
-| `tableinator-labels-dlq`               | Tableinator       |
-| `tableinator-masters-dlq`              | Tableinator       |
-| `tableinator-releases-dlq`             | Tableinator       |
-| `brainzgraphinator-artists-dlq`        | Brainzgraphinator |
-| `brainzgraphinator-labels-dlq`         | Brainzgraphinator |
-| `brainzgraphinator-release-groups-dlq` | Brainzgraphinator |
-| `brainzgraphinator-releases-dlq`       | Brainzgraphinator |
-| `brainztableinator-artists-dlq`        | Brainztableinator |
-| `brainztableinator-labels-dlq`         | Brainztableinator |
-| `brainztableinator-release-groups-dlq` | Brainztableinator |
-| `brainztableinator-releases-dlq`       | Brainztableinator |
+| Queue                                                             | Consumer          |
+| ----------------------------------------------------------------- | ----------------- |
+| `discogsography-discogs-graphinator-artists.dlq`                  | Graphinator       |
+| `discogsography-discogs-graphinator-labels.dlq`                   | Graphinator       |
+| `discogsography-discogs-graphinator-masters.dlq`                  | Graphinator       |
+| `discogsography-discogs-graphinator-releases.dlq`                 | Graphinator       |
+| `discogsography-discogs-tableinator-artists.dlq`                  | Tableinator       |
+| `discogsography-discogs-tableinator-labels.dlq`                   | Tableinator       |
+| `discogsography-discogs-tableinator-masters.dlq`                  | Tableinator       |
+| `discogsography-discogs-tableinator-releases.dlq`                 | Tableinator       |
+| `discogsography-musicbrainz-brainzgraphinator-artists.dlq`       | Brainzgraphinator |
+| `discogsography-musicbrainz-brainzgraphinator-labels.dlq`        | Brainzgraphinator |
+| `discogsography-musicbrainz-brainzgraphinator-release-groups.dlq` | Brainzgraphinator |
+| `discogsography-musicbrainz-brainzgraphinator-releases.dlq`      | Brainzgraphinator |
+| `discogsography-musicbrainz-brainztableinator-artists.dlq`       | Brainztableinator |
+| `discogsography-musicbrainz-brainztableinator-labels.dlq`        | Brainztableinator |
+| `discogsography-musicbrainz-brainztableinator-release-groups.dlq` | Brainztableinator |
+| `discogsography-musicbrainz-brainztableinator-releases.dlq`      | Brainztableinator |
 
 **Purging** permanently deletes all messages in a DLQ. Do this when:
 
@@ -72,6 +72,8 @@ Dead-letter queues (DLQs) collect messages that consumers failed to process. Eac
 - After fixing the root cause and retriggering an extraction
 
 Purging cannot be undone.
+
+DLQ names follow the pattern `{exchange-prefix}-{consumer}-{data-type}.dlq`, using the `DISCOGS_EXCHANGE_PREFIX` and `MUSICBRAINZ_EXCHANGE_PREFIX` env vars as the base.
 
 ## Phase 3: Metrics History and Trend Analysis
 

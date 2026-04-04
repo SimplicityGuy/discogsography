@@ -466,10 +466,10 @@ Internal endpoints called by the Insights service over HTTP to fetch raw query r
 
 ### Health
 
-| Method | Path      | Port | Description          |
-| ------ | --------- | ---- | -------------------- |
-| GET    | `/health` | 8004 | Service health check |
-| GET    | `/health` | 8005 | Health check port    |
+| Method | Path      | Port | Description                                     |
+| ------ | --------- | ---- | ----------------------------------------------- |
+| GET    | `/health` | 8004 | Health check on the main API server             |
+| GET    | `/health` | 8005 | Health check on the dedicated health server     |
 
 ## Development
 
