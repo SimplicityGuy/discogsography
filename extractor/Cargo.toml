@@ -16,7 +16,7 @@ test-support = ["mockall"]
 
 [dependencies]
 # Core async runtime
-tokio = { version = "1.50", features = ["full"] }
+tokio = { version = "1.51", features = ["full"] }
 
 # XML parsing (following disco-quick's approach)
 quick-xml = { version = "0.39", features = ["serialize"] }
@@ -86,7 +86,7 @@ mockall = { version = "0.14", optional = true }
 [dev-dependencies]
 extractor = { path = ".", features = ["test-support"] }
 tempfile = "3.27"
-tokio = { version = "1.50", features = ["test-util"] }
+tokio = { version = "1.51", features = ["test-util"] }
 mockito = "1.7"
 proptest = "1.11"
 criterion = "0.8"
