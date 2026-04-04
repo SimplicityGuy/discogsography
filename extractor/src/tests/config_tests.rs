@@ -196,6 +196,7 @@ fn test_from_env_secret_file_not_found() {
 }
 
 #[test]
+#[serial]
 fn test_musicbrainz_dump_url_default() {
     unsafe {
         std::env::remove_var("MUSICBRAINZ_DUMP_URL");
