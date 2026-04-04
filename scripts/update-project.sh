@@ -952,6 +952,8 @@ run_tests() {
 
   # Run JavaScript tests if explore package.json exists
   if [[ -f "explore/package.json" ]]; then
+    print_info "Installing JavaScript dependencies..."
+    just install-js
     print_info "Running JavaScript tests..."
     if just test-js; then
       print_success "JavaScript tests passed"
