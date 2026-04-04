@@ -793,3 +793,308 @@ class TestPromptContextEndpoint:
         data = resp.json()
         # Record 3 has missing-field rule, not year-out-of-range; 9999 doesn't exist
         assert data["records"] == []
+
+    def test_prompt_context_corrupt_yaml_still_returns_200(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns 200 with null rule_definition when extraction-rules.yaml is corrupt (line 610-611)."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+        # Write a corrupt YAML file that will raise an exception during load
+        (tmp_path / "extraction-rules.yaml").write_bytes(b"\x00\xff\xfe invalid yaml \x80\x81")
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/20260101/prompt-context",
+                json={"record_ids": ["1"], "rule": "year-out-of-range"},
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["rule_definition"] is None
+
+
+# ---------------------------------------------------------------------------
+# Additional edge-case coverage tests
+# ---------------------------------------------------------------------------
+
+
+class TestValidateRecordId:
+    def test_rejects_invalid_record_id_in_detail_endpoint(self, test_client: TestClient, tmp_path: Path) -> None:
+        """_validate_record_id raises HTTP 400 when record_id contains unsafe characters (line 70)."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations/bad%2Frecord",
+                headers=_admin_auth_headers(),
+            )
+        # FastAPI may 404 before reaching the handler for encoded slashes, but
+        # if it does reach the handler the validation must reject with 400.
+        assert resp.status_code in (400, 404, 422)
+
+    def test_rejects_dotdot_record_id(self) -> None:
+        """Direct call to _validate_record_id raises HTTPException for ../etc style strings (line 70)."""
+        from fastapi import HTTPException
+
+        import api.routers.extraction_analysis as ea
+
+        try:
+            ea._validate_record_id("../etc/passwd")
+            raised = False
+        except HTTPException as exc:
+            raised = True
+            assert exc.status_code == 400
+        assert raised, "Expected HTTPException to be raised"
+
+
+class TestScanVersionsNonDir:
+    def test_skips_non_directory_entries_in_flagged(self, test_client: TestClient, tmp_path: Path) -> None:
+        """_scan_versions skips regular files inside flagged/ — only version dirs are scanned (line 91)."""
+        import api.routers.extraction_analysis as ea
+
+        # Create a valid version dir
+        _make_flagged_dir(tmp_path, "20260101", "artists")
+        # Place a regular file alongside it in flagged/
+        (tmp_path / "flagged" / "stale_file.txt").write_text("not a dir")
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get("/api/admin/extraction-analysis/versions", headers=_admin_auth_headers())
+
+        assert resp.status_code == 200
+        versions = resp.json()["versions"]
+        # Only the real version dir should appear; the regular file must be skipped
+        assert len(versions) == 1
+        assert versions[0]["version"] == "20260101"
+
+
+class TestReadViolationsEdgeCases:
+    def test_skips_non_directory_entity_entries(self, test_client: TestClient, tmp_path: Path) -> None:
+        """_read_violations skips non-directory entries inside the version dir (line 119)."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_dir(tmp_path, "20260101", "artists")
+        # Place a regular file alongside the entity dir
+        (tmp_path / "flagged" / "20260101" / "junk.txt").write_text("not a dir")
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/summary",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        # The junk file must not inflate the violation count
+        assert resp.json()["violation_summary"]["total"] == 1
+
+    def test_skips_entity_dirs_without_violations_jsonl(self, test_client: TestClient, tmp_path: Path) -> None:
+        """_read_violations skips entity dirs that have no violations.jsonl (line 122)."""
+        import api.routers.extraction_analysis as ea
+
+        # Create a version dir with one entity that has violations and one that doesn't
+        _make_flagged_dir(tmp_path, "20260101", "artists")
+        empty_entity = tmp_path / "flagged" / "20260101" / "labels"
+        empty_entity.mkdir(parents=True)
+        # No violations.jsonl in labels dir
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/summary",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        # Only the artists violation should be counted
+        assert resp.json()["violation_summary"]["total"] == 1
+
+    def test_skips_empty_lines_in_jsonl(self, test_client: TestClient, tmp_path: Path) -> None:
+        """_read_violations skips blank lines in violations.jsonl (line 127)."""
+        import api.routers.extraction_analysis as ea
+
+        entity_dir = tmp_path / "flagged" / "20260101" / "artists"
+        entity_dir.mkdir(parents=True)
+        (entity_dir / "violations.jsonl").write_text(
+            '{"record_id": "1", "rule": "missing-field", "severity": "error"}\n'
+            "\n"
+            "   \n"
+            '{"record_id": "2", "rule": "missing-field", "severity": "error"}\n'
+        )
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/summary",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        # Empty lines must be skipped; only 2 real records
+        assert resp.json()["violation_summary"]["total"] == 2
+
+
+class TestLoadStateMarkerCorrupt:
+    def test_corrupt_state_marker_returns_none(self, test_client: TestClient, tmp_path: Path) -> None:
+        """_load_state_marker returns None (and logs warning) for corrupt JSON state marker (lines 150-152)."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_dir(tmp_path, "20260101", "artists")
+        # Write corrupt JSON to the state marker file
+        (tmp_path / ".extraction_status_20260101.json").write_text("{ NOT VALID JSON }")
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/summary",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        # pipeline_status must be None when state marker is corrupt
+        assert resp.json()["pipeline_status"] is None
+
+
+class TestLoadRecordFilesErrors:
+    def test_unreadable_xml_file_returns_null(self, test_client: TestClient, tmp_path: Path) -> None:
+        """OSError reading XML file yields null raw_xml in violation detail (lines 190-191)."""
+        import api.routers.extraction_analysis as ea
+
+        violations = [{"record_id": "42", "rule": "missing-field", "severity": "error", "field": "title"}]
+        entity_dir = tmp_path / "flagged" / "20260101" / "artists"
+        entity_dir.mkdir(parents=True)
+        (entity_dir / "violations.jsonl").write_text(json.dumps(violations[0]) + "\n")
+        xml_path = entity_dir / "42.xml"
+        xml_path.write_text("<artist><title>Test</title></artist>")
+        xml_path.chmod(0o000)
+
+        try:
+            with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+                resp = test_client.get(
+                    "/api/admin/extraction-analysis/20260101/violations/42",
+                    headers=_admin_auth_headers(),
+                )
+        finally:
+            xml_path.chmod(0o644)
+
+        assert resp.status_code == 200
+        assert resp.json()["raw_xml"] is None
+
+    def test_corrupt_json_file_returns_null(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Corrupt JSON file yields null parsed_json in violation detail (lines 197-198)."""
+        import api.routers.extraction_analysis as ea
+
+        violations = [{"record_id": "55", "rule": "missing-field", "severity": "error", "field": "title"}]
+        entity_dir = tmp_path / "flagged" / "20260101" / "artists"
+        entity_dir.mkdir(parents=True)
+        (entity_dir / "violations.jsonl").write_text(json.dumps(violations[0]) + "\n")
+        (entity_dir / "55.xml").write_text("<artist><title>Test</title></artist>")
+        (entity_dir / "55.json").write_text("{ NOT VALID JSON }")
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations/55",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["parsed_json"] is None
+
+
+class TestViolationDetailNotFound:
+    def test_version_not_found_returns_404(self, test_client: TestClient, tmp_path: Path) -> None:
+        """violation_detail returns 404 when version directory does not exist (line 319)."""
+        import api.routers.extraction_analysis as ea
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/99990101/violations/abc123",
+                headers=_admin_auth_headers(),
+            )
+        assert resp.status_code == 404
+
+
+class TestExtractXmlFieldValue:
+    def test_invalid_xml_returns_none(self) -> None:
+        """_extract_xml_field_value returns None for malformed XML (lines 359-361)."""
+        import api.routers.extraction_analysis as ea
+
+        result = ea._extract_xml_field_value("<<< not xml >>>", "year")
+        assert result is None
+
+    def test_nested_element_found_via_iter(self) -> None:
+        """_extract_xml_field_value finds element using iter() when find() misses nested path (lines 367-368)."""
+        import api.routers.extraction_analysis as ea
+
+        # <root><data><year>1995</year></data></root> — find('year') fails on root, iter finds it
+        xml = "<root><data><year>1995</year></data></root>"
+        result = ea._extract_xml_field_value(xml, "year")
+        assert result == "1995"
+
+
+class TestClassifyViolationBothPresent:
+    def test_both_xml_and_json_have_value_returns_source_issue(self, tmp_path: Path) -> None:
+        """_classify_violation returns source_issue when both XML and JSON have the field (line 413)."""
+        import api.routers.extraction_analysis as ea
+
+        entity_dir = tmp_path / "artists"
+        entity_dir.mkdir(parents=True)
+        (entity_dir / "99.xml").write_text("<artist><year>1990</year></artist>")
+        (entity_dir / "99.json").write_text(json.dumps({"year": "1990"}))
+
+        violation = {"record_id": "99", "rule": "year-out-of-range", "severity": "warning", "field": "year"}
+        result = ea._classify_violation(violation, tmp_path, "artists")
+        # Both present — should be classified as source_issue (not parsing_error)
+        assert result["classification"] == "source_issue"
+        assert result["xml_value"] == "1990"
+        assert result["json_value"] == "1990"
+
+
+class TestCompareVersionsEdgeCases:
+    def test_removed_rule_in_version_b(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Rule present in A but absent in B is counted as improved/removed_rules (lines 540-542)."""
+        import api.routers.extraction_analysis as ea
+
+        violations_a = [{"record_id": "1", "rule": "old-rule", "severity": "warning", "field": "x"}]
+        violations_b = [{"record_id": "2", "rule": "new-rule", "severity": "warning", "field": "y"}]
+        _make_flagged_dir(tmp_path, "20260101", "artists", violations=violations_a)
+        _make_flagged_dir(tmp_path, "20260201", "artists", violations=violations_b)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/compare/20260201",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        summary = data["summary"]
+        # old-rule is in A but not B → improved + removed_rules
+        assert summary["removed_rules"] >= 1
+        assert summary["improved"] >= 1
+        by_rule = {d["rule"]: d for d in data["details"]}
+        assert by_rule["old-rule"]["direction"] == "improved"
+
+    def test_worsened_non_new_rule(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Rule in both versions with more violations in B is worsened (not new_rule) (lines 547-548)."""
+        import api.routers.extraction_analysis as ea
+
+        violations_a = [{"record_id": "1", "rule": "missing-field", "severity": "error", "field": "title"}]
+        violations_b = [
+            {"record_id": "2", "rule": "missing-field", "severity": "error", "field": "title"},
+            {"record_id": "3", "rule": "missing-field", "severity": "error", "field": "title"},
+        ]
+        _make_flagged_dir(tmp_path, "20260101", "artists", violations=violations_a)
+        _make_flagged_dir(tmp_path, "20260201", "artists", violations=violations_b)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/compare/20260201",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        by_rule = {d["rule"]: d for d in data["details"]}
+        assert by_rule["missing-field"]["direction"] == "worsened"
+        # Must NOT be counted as a new rule
+        assert data["summary"]["new_rules"] == 0
+        assert data["summary"]["worsened"] == 1

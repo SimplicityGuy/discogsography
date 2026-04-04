@@ -294,6 +294,55 @@ class TestDlqPurgeProxy:
 
 
 # ---------------------------------------------------------------------------
+# Additional path-segment validation tests for lines 145 and 258
+# ---------------------------------------------------------------------------
+
+
+class TestExtractionIdValidationRejectsInvalidChars:
+    def test_rejects_extraction_id_with_exclamation(self, proxy_client: TestClient) -> None:
+        """proxy_get_extraction returns 400 for extraction_id containing '!' (line 145).
+
+        The '!' character fails _SAFE_PATH_SEGMENT and is not normalised away by FastAPI.
+        """
+        resp = proxy_client.get("/admin/api/extractions/bad!id")
+        assert resp.status_code == 400
+
+    def test_rejects_extraction_id_with_space(self, proxy_client: TestClient) -> None:
+        """proxy_get_extraction returns 400 for extraction_id containing a space (line 145)."""
+        resp = proxy_client.get("/admin/api/extractions/bad%20id")
+        assert resp.status_code == 400
+
+
+class TestDlqPurgeInvalidQueueValidation:
+    def test_rejects_queue_name_with_invalid_chars(self, proxy_client: TestClient) -> None:
+        """proxy_dlq_purge returns 400 for queue names containing '!' (line 258).
+
+        The '!' character fails _SAFE_PATH_SEGMENT and is not normalised away by FastAPI.
+        """
+        resp = proxy_client.post("/admin/api/dlq/purge/bad!queue")
+        assert resp.status_code == 400
+
+
+class TestQueueHistoryInvalidGranularity:
+    def test_rejects_invalid_granularity_pattern(self, proxy_client: TestClient) -> None:
+        """proxy_queue_history returns 422 for granularity not matching pattern (line 287 branch)."""
+        resp = proxy_client.get("/admin/api/queues/history?granularity=bad")
+        assert resp.status_code == 422
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_forwards_granularity_param(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        """proxy_queue_history forwards granularity param when provided (line 287)."""
+        _, mock_instance = _mock_httpx("get", 200, b'{"queues":{}}')
+        mock_cls_patch.return_value = mock_instance
+
+        resp = proxy_client.get("/admin/api/queues/history?granularity=1hour")
+        assert resp.status_code == 200
+        call_kwargs = mock_instance.get.call_args
+        params = call_kwargs[1].get("params", {})
+        assert params.get("granularity") == "1hour"
+
+
+# ---------------------------------------------------------------------------
 # Phase 2 — User Activity & Storage proxy routes
 # ---------------------------------------------------------------------------
 

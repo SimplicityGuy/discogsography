@@ -353,3 +353,78 @@ class TestEaPromptContextProxy:
             json={"rules": []},
         )
         assert resp.status_code == 502
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_no_body_posts_without_content_type(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        """Empty/missing body goes through the else branch (line 494 — post without body)."""
+        _, mock_instance = _mock_httpx("post", 200, b'{"prompt":""}')
+        mock_cls_patch.return_value = mock_instance
+
+        # Send with no body at all
+        resp = proxy_client.post(
+            "/admin/api/extraction-analysis/20240101/prompt-context",
+            headers={"Authorization": "Bearer tok"},
+        )
+        assert resp.status_code == 200
+        # Verify the no-body post path was taken
+        call_kwargs = mock_instance.post.call_args
+        assert call_kwargs[1].get("content") is None
+
+
+# ---------------------------------------------------------------------------
+# Invalid path-segment validation tests (missing lines 378, 394, 396, 420, 447, 463, 465, 481)
+# ---------------------------------------------------------------------------
+
+
+class TestEaInvalidVersionRejections:
+    """One test per route that validates the version path segment (line 378, 420, 447, 463, 481).
+
+    Uses '!' which is rejected by the _SAFE_PATH_SEGMENT pattern and is not normalised away by FastAPI.
+    """
+
+    def test_summary_invalid_version_returns_400(self, proxy_client: TestClient) -> None:
+        """proxy_ea_summary rejects invalid version with 400 (line 378)."""
+        resp = proxy_client.get("/admin/api/extraction-analysis/bad!version/summary")
+        assert resp.status_code == 400
+
+    def test_violations_list_invalid_version_returns_400(self, proxy_client: TestClient) -> None:
+        """proxy_ea_violations rejects invalid version with 400 (line 420)."""
+        resp = proxy_client.get("/admin/api/extraction-analysis/bad!version/violations")
+        assert resp.status_code == 400
+
+    def test_parsing_errors_invalid_version_returns_400(self, proxy_client: TestClient) -> None:
+        """proxy_ea_parsing_errors rejects invalid version with 400 (line 447)."""
+        resp = proxy_client.get("/admin/api/extraction-analysis/bad!version/parsing-errors")
+        assert resp.status_code == 400
+
+    def test_compare_invalid_version_returns_400(self, proxy_client: TestClient) -> None:
+        """proxy_ea_compare rejects invalid version with 400 (line 463)."""
+        resp = proxy_client.get("/admin/api/extraction-analysis/bad!version/compare/20240201")
+        assert resp.status_code == 400
+
+    def test_compare_invalid_other_version_returns_400(self, proxy_client: TestClient) -> None:
+        """proxy_ea_compare rejects invalid other_version with 400 (line 465)."""
+        resp = proxy_client.get("/admin/api/extraction-analysis/20240101/compare/bad!other")
+        assert resp.status_code == 400
+
+    def test_prompt_context_invalid_version_returns_400(self, proxy_client: TestClient) -> None:
+        """proxy_ea_prompt_context rejects invalid version with 400 (line 481)."""
+        resp = proxy_client.post("/admin/api/extraction-analysis/bad!version/prompt-context", json={})
+        assert resp.status_code == 400
+
+
+class TestEaViolationDetailInvalidSegments:
+    """Invalid version and record_id checks for violation detail (lines 394, 396).
+
+    Uses '!' which is rejected by the _SAFE_PATH_SEGMENT pattern and is not normalised away by FastAPI.
+    """
+
+    def test_violation_detail_invalid_version_returns_400(self, proxy_client: TestClient) -> None:
+        """proxy_ea_violation_detail rejects invalid version with 400 (line 394)."""
+        resp = proxy_client.get("/admin/api/extraction-analysis/bad!version/violations/abc123")
+        assert resp.status_code == 400
+
+    def test_violation_detail_invalid_record_id_returns_400(self, proxy_client: TestClient) -> None:
+        """proxy_ea_violation_detail rejects invalid record_id with 400 (line 396)."""
+        resp = proxy_client.get("/admin/api/extraction-analysis/20240101/violations/bad!record")
+        assert resp.status_code == 400
