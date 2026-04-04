@@ -339,8 +339,8 @@ class AdminDashboard {
 
             if (response.ok) {
                 const data = await response.json();
-                this.token = data.token;
-                localStorage.setItem('admin_token', data.token);
+                this.token = data.access_token;
+                localStorage.setItem('admin_token', data.access_token);
                 localStorage.setItem('admin_email', email);
                 this.showPanel();
             } else {
