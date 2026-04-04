@@ -10,25 +10,29 @@
 
 **Spec:** `docs/superpowers/specs/2026-04-03-extractor-mutual-exclusion-design.md`
 
----
+______________________________________________________________________
 
 ### File Map
 
-| File | Action | Responsibility |
-|------|--------|---------------|
-| `extractor/src/config.rs` | Modify | Add `discogs_health_url` field |
-| `extractor/src/extractor.rs` | Modify | Add `wait_for_discogs_idle()`, call it from `run_musicbrainz_loop()` |
-| `extractor/src/tests/config_tests.rs` | Modify | Test new config field |
-| `extractor/src/tests/extractor_tests.rs` | Modify | Tests for `wait_for_discogs_idle()` |
+| File                                     | Action | Responsibility                                                       |
+| ---------------------------------------- | ------ | -------------------------------------------------------------------- |
+| `extractor/src/config.rs`                | Modify | Add `discogs_health_url` field                                       |
+| `extractor/src/extractor.rs`             | Modify | Add `wait_for_discogs_idle()`, call it from `run_musicbrainz_loop()` |
+| `extractor/src/tests/config_tests.rs`    | Modify | Test new config field                                                |
+| `extractor/src/tests/extractor_tests.rs` | Modify | Tests for `wait_for_discogs_idle()`                                  |
 
----
+______________________________________________________________________
 
 ### Task 1: Add `discogs_health_url` to config
 
 **Files:**
+
 - Modify: `extractor/src/config.rs:7-23` (struct definition)
+
 - Modify: `extractor/src/config.rs:25-44` (Default impl)
+
 - Modify: `extractor/src/config.rs:66-124` (from_env)
+
 - Test: `extractor/src/tests/config_tests.rs`
 
 - [ ] **Step 1: Write the failing test**
@@ -92,12 +96,14 @@ git add extractor/src/config.rs extractor/src/tests/config_tests.rs
 git commit -m "feat(extractor): add discogs_health_url config field"
 ```
 
----
+______________________________________________________________________
 
 ### Task 2: Implement `wait_for_discogs_idle()`
 
 **Files:**
+
 - Modify: `extractor/src/extractor.rs` — add the new function
+
 - Test: `extractor/src/tests/extractor_tests.rs`
 
 - [ ] **Step 1: Write the failing tests**
@@ -344,11 +350,12 @@ git add extractor/src/extractor.rs extractor/src/tests/extractor_tests.rs extrac
 git commit -m "feat(extractor): add wait_for_discogs_idle() with health polling"
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: Integrate into `run_musicbrainz_loop()`
 
 **Files:**
+
 - Modify: `extractor/src/extractor.rs:800-879` — add calls before each `process_musicbrainz_data()`
 
 - [ ] **Step 1: Add wait call before initial extraction**
@@ -413,7 +420,7 @@ git add extractor/src/extractor.rs
 git commit -m "feat(extractor): integrate Discogs health check into MusicBrainz loop"
 ```
 
----
+______________________________________________________________________
 
 ### Task 4: Final verification
 

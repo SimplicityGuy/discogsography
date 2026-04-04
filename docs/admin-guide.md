@@ -57,14 +57,14 @@ Dead-letter queues (DLQs) collect messages that consumers failed to process. Eac
 | `discogsography-discogs-tableinator-labels.dlq`                   | Tableinator       |
 | `discogsography-discogs-tableinator-masters.dlq`                  | Tableinator       |
 | `discogsography-discogs-tableinator-releases.dlq`                 | Tableinator       |
-| `discogsography-musicbrainz-brainzgraphinator-artists.dlq`       | Brainzgraphinator |
-| `discogsography-musicbrainz-brainzgraphinator-labels.dlq`        | Brainzgraphinator |
+| `discogsography-musicbrainz-brainzgraphinator-artists.dlq`        | Brainzgraphinator |
+| `discogsography-musicbrainz-brainzgraphinator-labels.dlq`         | Brainzgraphinator |
 | `discogsography-musicbrainz-brainzgraphinator-release-groups.dlq` | Brainzgraphinator |
-| `discogsography-musicbrainz-brainzgraphinator-releases.dlq`      | Brainzgraphinator |
-| `discogsography-musicbrainz-brainztableinator-artists.dlq`       | Brainztableinator |
-| `discogsography-musicbrainz-brainztableinator-labels.dlq`        | Brainztableinator |
+| `discogsography-musicbrainz-brainzgraphinator-releases.dlq`       | Brainzgraphinator |
+| `discogsography-musicbrainz-brainztableinator-artists.dlq`        | Brainztableinator |
+| `discogsography-musicbrainz-brainztableinator-labels.dlq`         | Brainztableinator |
 | `discogsography-musicbrainz-brainztableinator-release-groups.dlq` | Brainztableinator |
-| `discogsography-musicbrainz-brainztableinator-releases.dlq`      | Brainztableinator |
+| `discogsography-musicbrainz-brainztableinator-releases.dlq`       | Brainztableinator |
 
 **Purging** permanently deletes all messages in a DLQ. Do this when:
 

@@ -10,28 +10,30 @@
 
 **Spec:** `docs/superpowers/specs/2026-04-03-extraction-analysis-dashboard-design.md`
 
----
+______________________________________________________________________
 
 ## File Structure
 
-| Action | File | Responsibility |
-|--------|------|----------------|
-| Create | `api/routers/extraction_analysis.py` | All 7 API endpoints under `/api/admin/extraction-analysis/` |
-| Create | `tests/api/test_extraction_analysis.py` | API endpoint tests with mock filesystem |
-| Modify | `api/api.py:39,258,399` | Import, configure, and register the new router |
-| Modify | `docker-compose.yml:263-264` | Add read-only data volume mounts to API service |
-| Modify | `docker-compose.prod.yml:186+` | Add read-only data volume mounts to API (prod) |
-| Modify | `dashboard/admin_proxy.py:30,352` | Add path regex with dots + 7 new proxy routes |
-| Modify | `dashboard/static/admin.html:282,773` | Add tab button + tab panel HTML |
-| Modify | `dashboard/static/admin.js:229,247,1454` | Add tab switching + all fetch/render methods |
-| Create | `tests/dashboard/test_extraction_analysis_proxy.py` | Dashboard proxy route tests |
+| Action | File                                                | Responsibility                                              |
+| ------ | --------------------------------------------------- | ----------------------------------------------------------- |
+| Create | `api/routers/extraction_analysis.py`                | All 7 API endpoints under `/api/admin/extraction-analysis/` |
+| Create | `tests/api/test_extraction_analysis.py`             | API endpoint tests with mock filesystem                     |
+| Modify | `api/api.py:39,258,399`                             | Import, configure, and register the new router              |
+| Modify | `docker-compose.yml:263-264`                        | Add read-only data volume mounts to API service             |
+| Modify | `docker-compose.prod.yml:186+`                      | Add read-only data volume mounts to API (prod)              |
+| Modify | `dashboard/admin_proxy.py:30,352`                   | Add path regex with dots + 7 new proxy routes               |
+| Modify | `dashboard/static/admin.html:282,773`               | Add tab button + tab panel HTML                             |
+| Modify | `dashboard/static/admin.js:229,247,1454`            | Add tab switching + all fetch/render methods                |
+| Create | `tests/dashboard/test_extraction_analysis_proxy.py` | Dashboard proxy route tests                                 |
 
----
+______________________________________________________________________
 
 ### Task 1: Docker Compose Volume Mounts
 
 **Files:**
+
 - Modify: `docker-compose.yml:263-264`
+
 - Modify: `docker-compose.prod.yml:186+`
 
 - [ ] **Step 1: Add data volumes to API service in docker-compose.yml**
@@ -70,12 +72,14 @@ git add docker-compose.yml docker-compose.prod.yml
 git commit -m "feat: mount discogs/musicbrainz data volumes on API service (read-only)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 2: API Router — Versions Endpoint
 
 **Files:**
+
 - Create: `api/routers/extraction_analysis.py`
+
 - Create: `tests/api/test_extraction_analysis.py`
 
 - [ ] **Step 1: Write tests for the versions endpoint**
@@ -262,11 +266,13 @@ async def list_versions(
 - [ ] **Step 4: Register the router in api/api.py**
 
 Add import at line 39 (with the other router imports):
+
 ```python
 import api.routers.extraction_analysis as _extraction_analysis_router
 ```
 
 Add configure call around line 258 (with the other configure calls):
+
 ```python
 _extraction_analysis_router.configure(
     discogs_root=os.environ.get("DISCOGS_DATA_ROOT"),
@@ -275,6 +281,7 @@ _extraction_analysis_router.configure(
 ```
 
 Add router inclusion around line 403 (with the other include_router calls):
+
 ```python
 app.include_router(_extraction_analysis_router.router)
 ```
@@ -291,12 +298,14 @@ git add api/routers/extraction_analysis.py tests/api/test_extraction_analysis.py
 git commit -m "feat: add extraction analysis versions endpoint"
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: API Router — Summary Endpoint
 
 **Files:**
+
 - Modify: `api/routers/extraction_analysis.py`
+
 - Modify: `tests/api/test_extraction_analysis.py`
 
 - [ ] **Step 1: Write tests for the summary endpoint**
@@ -544,12 +553,14 @@ git add api/routers/extraction_analysis.py tests/api/test_extraction_analysis.py
 git commit -m "feat: add extraction analysis summary endpoint"
 ```
 
----
+______________________________________________________________________
 
 ### Task 4: API Router — Violations Endpoints (List + Detail)
 
 **Files:**
+
 - Modify: `api/routers/extraction_analysis.py`
+
 - Modify: `tests/api/test_extraction_analysis.py`
 
 - [ ] **Step 1: Write tests for violations list and detail**
@@ -809,12 +820,14 @@ git add api/routers/extraction_analysis.py tests/api/test_extraction_analysis.py
 git commit -m "feat: add violations list and detail endpoints"
 ```
 
----
+______________________________________________________________________
 
 ### Task 5: API Router — Parsing Errors Endpoint
 
 **Files:**
+
 - Modify: `api/routers/extraction_analysis.py`
+
 - Modify: `tests/api/test_extraction_analysis.py`
 
 - [ ] **Step 1: Write tests for parsing error detection**
@@ -1080,12 +1093,14 @@ git add api/routers/extraction_analysis.py tests/api/test_extraction_analysis.py
 git commit -m "feat: add parsing error detection endpoint with XML vs JSON comparison"
 ```
 
----
+______________________________________________________________________
 
 ### Task 6: API Router — Compare and Prompt Context Endpoints
 
 **Files:**
+
 - Modify: `api/routers/extraction_analysis.py`
+
 - Modify: `tests/api/test_extraction_analysis.py`
 
 - [ ] **Step 1: Write tests for compare endpoint**
@@ -1395,12 +1410,14 @@ git add api/routers/extraction_analysis.py tests/api/test_extraction_analysis.py
 git commit -m "feat: add version comparison and prompt context endpoints"
 ```
 
----
+______________________________________________________________________
 
 ### Task 7: Dashboard Proxy Routes
 
 **Files:**
+
 - Modify: `dashboard/admin_proxy.py`
+
 - Create: `tests/dashboard/test_extraction_analysis_proxy.py`
 
 - [ ] **Step 1: Write tests for proxy routes**
@@ -1694,11 +1711,12 @@ git add dashboard/admin_proxy.py tests/dashboard/test_extraction_analysis_proxy.
 git commit -m "feat: add extraction analysis proxy routes to dashboard"
 ```
 
----
+______________________________________________________________________
 
 ### Task 8: Dashboard UI — Tab Button and Panel HTML
 
 **Files:**
+
 - Modify: `dashboard/static/admin.html`
 
 - [ ] **Step 1: Add the tab button**
@@ -1866,11 +1884,12 @@ git add dashboard/static/admin.html
 git commit -m "feat: add extraction analysis tab HTML to admin dashboard"
 ```
 
----
+______________________________________________________________________
 
 ### Task 9: Dashboard UI — JavaScript Logic
 
 **Files:**
+
 - Modify: `dashboard/static/admin.js`
 
 This task adds all the JavaScript methods for the extraction analysis tab. **Security note:** All dynamic content from API responses that is inserted into the DOM must be HTML-escaped to prevent XSS. Use `textContent` for plain text and an escape helper for any HTML templates.
@@ -1893,15 +1912,19 @@ function _esc(str) {
 In `admin.js`, update the `switchTab()` method (line 229):
 
 Change:
+
 ```javascript
 const panels = ['extractions', 'dlq', 'users', 'storage', 'queue-trends', 'system-health', 'audit-log'];
 ```
+
 To:
+
 ```javascript
 const panels = ['extractions', 'dlq', 'users', 'storage', 'queue-trends', 'system-health', 'audit-log', 'extraction-analysis'];
 ```
 
 Add after the `audit-log` fetch block (line 246):
+
 ```javascript
         } else if (tabName === 'extraction-analysis') {
             this.fetchExtractionAnalysisVersions();
@@ -1911,6 +1934,7 @@ Add after the `audit-log` fetch block (line 246):
 - [ ] **Step 3: Add constructor state and event bindings**
 
 In the constructor (around line 32-47), add state properties:
+
 ```javascript
     this._eaVersions = [];
     this._eaSelectedRecords = new Map();
@@ -1918,6 +1942,7 @@ In the constructor (around line 32-47), add state properties:
 ```
 
 In the `bindEvents()` method, add event bindings for the extraction analysis tab:
+
 ```javascript
     // Extraction Analysis sub-view switching
     document.querySelectorAll('.ea-view-btn').forEach(btn => {
@@ -1945,7 +1970,7 @@ In the `bindEvents()` method, add event bindings for the extraction analysis tab
 
 Before the closing `}` of the `AdminDashboard` class (line 1454), add all methods. Use `_esc()` for all values inserted via innerHTML, and `textContent` for plain text values:
 
-```javascript
+````javascript
     // ─── Extraction Analysis ─────────────────────────────────────────────
 
     _eaSwitchView(viewName) {
@@ -2409,7 +2434,7 @@ Before the closing `}` of the `AdminDashboard` class (line 1454), add all method
             textarea.select();
         }
     }
-```
+````
 
 - [ ] **Step 5: Commit**
 
@@ -2418,11 +2443,12 @@ git add dashboard/static/admin.js dashboard/static/admin.html
 git commit -m "feat: add extraction analysis JavaScript logic to admin dashboard"
 ```
 
----
+______________________________________________________________________
 
 ### Task 10: Integration Verification
 
 **Files:**
+
 - All modified files
 
 - [ ] **Step 1: Run full API test suite**
@@ -2453,6 +2479,7 @@ Expected: No output (success)
 - [ ] **Step 6: Commit any fixes**
 
 If any fixes were needed, commit them:
+
 ```bash
 git add -A
 git commit -m "fix: resolve integration issues from extraction analysis feature"

@@ -10,6 +10,7 @@ Add an "Extraction Analysis" tab to the admin dashboard that analyzes extraction
 ## Architecture
 
 **Approach:** Balanced API + Frontend (Approach 3)
+
 - API provides pre-aggregated summaries AND raw paginated data
 - Parsing error detection (XML vs JSON comparison) happens server-side
 - Frontend handles display, filtering within fetched summaries, and prompt assembly
@@ -18,14 +19,17 @@ Add an "Extraction Analysis" tab to the admin dashboard that analyzes extraction
 ### Infrastructure Changes
 
 **Docker Compose volume mounts (API service):**
+
 - `discogs_data:/discogs-data:ro`
 - `musicbrainz_data:/musicbrainz-data:ro`
 
 **New environment variables (API):**
+
 - `DISCOGS_DATA_ROOT` — default `/discogs-data`
 - `MUSICBRAINZ_DATA_ROOT` — default `/musicbrainz-data`
 
 **New files:**
+
 - `api/routers/extraction_analysis.py` — API router, registered on the admin router with `extraction-analysis` prefix
 - Dashboard: new tab in `admin.html` + logic in `admin.js`
 - Dashboard: new proxy routes in `admin_proxy.py`
@@ -36,7 +40,8 @@ Two data sources, both on the mounted volumes:
 
 1. **State marker files** — `.extraction_status_{version}.json` (Discogs) and `.mb_extraction_status_{version}.json` (MusicBrainz). Track phase-by-phase pipeline status (download → processing → publishing) with error arrays.
 
-2. **Flagged records** — `flagged/{version}/{entity_type}/` directories containing:
+1. **Flagged records** — `flagged/{version}/{entity_type}/` directories containing:
+
    - `violations.jsonl` — one violation entry per line (record_id, rule, severity, field, field_value, xml_file, json_file, timestamp)
    - `{record_id}.xml` — raw XML snippet of the flagged record
    - `{record_id}.json` — parsed JSON representation
@@ -53,6 +58,7 @@ All endpoints require admin JWT authentication (same dependency as existing `/ap
 List available extraction versions by scanning `flagged/` directories in both data roots.
 
 **Response:**
+
 ```json
 {
   "versions": [
@@ -71,6 +77,7 @@ List available extraction versions by scanning `flagged/` directories in both da
 Aggregated report for a single version.
 
 **Response:**
+
 ```json
 {
   "version": "20260101",
@@ -116,6 +123,7 @@ If the state marker file is missing, `pipeline_status` is `null` — the endpoin
 Paginated violation entries with filtering.
 
 **Query parameters:**
+
 - `entity_type` — filter by entity type (artists, labels, masters, releases, release-groups)
 - `severity` — filter by severity (error, warning, info)
 - `rule` — filter by rule name
@@ -123,6 +131,7 @@ Paginated violation entries with filtering.
 - `page_size` — items per page (default 50, max 200)
 
 **Response:**
+
 ```json
 {
   "violations": [
@@ -150,6 +159,7 @@ Paginated violation entries with filtering.
 Single record detail with raw XML and parsed JSON.
 
 **Response:**
+
 ```json
 {
   "record_id": "123456",
@@ -175,9 +185,10 @@ If the XML or JSON file is missing, the respective field is `null`.
 Server-side comparison of XML vs JSON for flagged records to classify violations.
 
 **Classification logic:**
+
 1. Load both raw XML and parsed JSON for each flagged record
-2. Check if the flagged field's data exists in the XML
-3. Classify:
+1. Check if the flagged field's data exists in the XML
+1. Classify:
    - **`parsing_error`** — field data present in XML but missing/wrong in JSON (fixable in extractor code)
    - **`source_issue`** — field data missing/invalid in the XML itself (Discogs-side problem)
    - **`indeterminate`** — can't conclusively classify
@@ -185,6 +196,7 @@ Server-side comparison of XML vs JSON for flagged records to classify violations
 Results are cached in memory with 5-minute TTL keyed by version (flagged data is immutable after extraction completes).
 
 **Response:**
+
 ```json
 {
   "parsing_errors": [
@@ -214,6 +226,7 @@ Results are cached in memory with 5-minute TTL keyed by version (flagged data is
 Delta between two versions.
 
 **Response:**
+
 ```json
 {
   "version_a": "20260101",
@@ -243,6 +256,7 @@ Delta between two versions.
 Assemble context for Claude prompt generation. Frontend formats the final prompt.
 
 **Request body:**
+
 ```json
 {
   "record_ids": ["123456", "789012"],
@@ -251,6 +265,7 @@ Assemble context for Claude prompt generation. Frontend formats the final prompt
 ```
 
 **Response:**
+
 ```json
 {
   "rule": "year-out-of-range",

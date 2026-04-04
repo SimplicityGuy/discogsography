@@ -17,6 +17,7 @@ The Discogs and MusicBrainz extractors run as independent Docker containers with
 **Approach: Health Endpoint Polling** — the MusicBrainz extractor polls the Discogs extractor's `/health` endpoint before starting extraction. No new infrastructure dependencies.
 
 Alternatives considered and rejected:
+
 - **Redis distributed lock** — adds Redis as a new dependency for the Rust extractor; doesn't inherently enforce Discogs-first ordering
 - **RabbitMQ signaling** — overly complex for coordinating exactly 2 processes; message durability concerns
 - **Shared volume lock file** — rejected by stakeholder
@@ -30,10 +31,10 @@ Only the MusicBrainz extractor (`--source musicbrainz`) is modified. The Discogs
 Before `process_musicbrainz_data()` runs (both initial and periodic), the MusicBrainz extractor:
 
 1. Makes a GET request to the Discogs extractor's health endpoint: `http://extractor-discogs:8000/health`
-2. Checks the `extraction_status` field in the JSON response
-3. If `running` — logs a message, waits 60 seconds, retries (loop)
-4. If `idle`, `completed`, or `failed` — proceeds with MusicBrainz extraction
-5. If unreachable (connection refused, timeout after 5s) — retries up to 10 times with 60s intervals. After 10 consecutive failures, proceeds anyway (Discogs container is likely not running)
+1. Checks the `extraction_status` field in the JSON response
+1. If `running` — logs a message, waits 60 seconds, retries (loop)
+1. If `idle`, `completed`, or `failed` — proceeds with MusicBrainz extraction
+1. If unreachable (connection refused, timeout after 5s) — retries up to 10 times with 60s intervals. After 10 consecutive failures, proceeds anyway (Discogs container is likely not running)
 
 Once Discogs extraction finishes (extractor reports idle), MusicBrainz may start even if Discogs consumers still have queued messages. Consumer overlap is acceptable.
 
@@ -50,6 +51,7 @@ Location: `extractor/src/extractor.rs`
 Encapsulates the polling logic. Called inside `run_musicbrainz_loop()` right before each call to `process_musicbrainz_data()`.
 
 Parameters:
+
 - `discogs_health_url: &str` — the URL to poll
 - `shutdown_flag: &AtomicBool` — to break out of the wait loop if shutdown is requested
 
