@@ -100,7 +100,8 @@ COPY --from=builder --chown=discogsography:discogsography /app/api /app/api
 # hadolint ignore=SC2016
 RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/python -m api.api "$@"\n' > /app/start.sh && \
     printf '#!/bin/sh\nset -e\nexec /app/.venv/bin/python -m api.setup "$@"\n' > /app/.venv/bin/discogs-setup && \
-    chmod +x /app/start.sh /app/.venv/bin/discogs-setup
+    printf '#!/bin/sh\nset -e\nexec /app/.venv/bin/python -m api.admin_setup "$@"\n' > /app/.venv/bin/admin-setup && \
+    chmod +x /app/start.sh /app/.venv/bin/discogs-setup /app/.venv/bin/admin-setup
 
 # Health check on health port 8005
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
