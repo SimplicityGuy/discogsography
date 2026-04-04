@@ -118,6 +118,11 @@
             color: #fff;
         }
 
+        /* Extraction Analysis sub-view toggle buttons */
+        .ea-view-btn { color: var(--text-dim); background: transparent; border: 1px solid var(--border-color); cursor: pointer; }
+        .ea-view-btn:hover { color: var(--text-high); }
+        .ea-view-btn.active { background: var(--purple-accent); color: #fff; border-color: var(--purple-accent); }
+
         /* Collapsible section */
         .collapsible-header {
             cursor: pointer;
@@ -279,6 +284,9 @@
             </button>
             <button class="tab-btn" data-tab="audit-log" id="tab-btn-audit-log">
                 <span class="material-symbols-outlined text-sm">history</span> Audit Log
+            </button>
+            <button class="tab-btn" data-tab="extraction-analysis" id="tab-btn-extraction-analysis">
+                <span class="material-symbols-outlined text-sm">analytics</span> Extraction Analysis
             </button>
         </nav>
 
@@ -771,6 +779,194 @@
                 </div>
             </section>
         </div>
+
+        <!-- ============================================================
+             TAB: EXTRACTION ANALYSIS
+             ============================================================ -->
+        <div id="tab-extraction-analysis" class="space-y-6" style="display:none">
+
+            <!-- Sub-view toggle + version selector -->
+            <section class="dashboard-card p-4">
+                <div class="flex flex-wrap items-center gap-3">
+                    <!-- Sub-view buttons -->
+                    <div class="flex gap-2">
+                        <button class="ea-view-btn active px-3 py-1.5 rounded text-xs font-semibold" data-ea-view="report" id="ea-btn-report">
+                            <span class="material-symbols-outlined text-sm align-middle">summarize</span> Report
+                        </button>
+                        <button class="ea-view-btn px-3 py-1.5 rounded text-xs font-semibold" data-ea-view="compare" id="ea-btn-compare">
+                            <span class="material-symbols-outlined text-sm align-middle">compare_arrows</span> Compare
+                        </button>
+                        <button class="ea-view-btn px-3 py-1.5 rounded text-xs font-semibold" data-ea-view="prompt" id="ea-btn-prompt">
+                            <span class="material-symbols-outlined text-sm align-middle">smart_toy</span> Prompt
+                        </button>
+                    </div>
+
+                    <!-- Version selector (report) -->
+                    <div id="ea-report-controls" class="flex items-center gap-2 ml-auto">
+                        <label class="text-[10px] font-bold uppercase tracking-wider t-dim" for="ea-version-select">Version</label>
+                        <select id="ea-version-select" class="text-xs bg-transparent border b-theme rounded px-2 py-1 t-high">
+                            <option value="">— select —</option>
+                        </select>
+                        <span id="ea-source-badge" class="text-[10px] px-2 py-0.5 rounded uppercase font-bold badge-idle" style="display:none">source</span>
+                        <button id="ea-refresh-btn" class="text-xs font-bold uppercase tracking-wider t-dim flex items-center gap-1">
+                            <span class="material-symbols-outlined text-sm">refresh</span> Refresh
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ── Sub-view: Single Version Report ─────────────────── -->
+            <div id="ea-view-report">
+
+                <!-- Pipeline status cards -->
+                <section class="dashboard-card p-6 space-y-4">
+                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-3">
+                        <span class="material-symbols-outlined text-sm t-dim">account_tree</span> Pipeline Status
+                    </h3>
+                    <div id="ea-pipeline-cards" class="flex flex-wrap gap-3">
+                        <p class="text-xs t-muted">Select a version to load the report.</p>
+                    </div>
+                </section>
+
+                <!-- Violation summary cards (per entity type) -->
+                <section class="dashboard-card p-6 space-y-4">
+                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-3">
+                        <span class="material-symbols-outlined text-sm t-dim">warning</span> Violations by Entity
+                    </h3>
+                    <div id="ea-entity-cards" class="flex flex-wrap gap-3">
+                        <p class="text-xs t-muted">No data yet.</p>
+                    </div>
+                </section>
+
+                <!-- Rule breakdown table -->
+                <section class="dashboard-card p-6 space-y-4">
+                    <div class="flex items-center justify-between border-b b-theme pb-3">
+                        <h3 class="text-sm font-semibold flex items-center gap-2">
+                            <span class="material-symbols-outlined text-sm t-dim">rule</span> Rule Breakdown
+                        </h3>
+                        <label class="flex items-center gap-1.5 text-xs t-dim cursor-pointer">
+                            <input type="checkbox" id="ea-select-all" class="rounded" />
+                            Select all for prompt
+                        </label>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead>
+                                <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
+                                    <th class="text-left py-2 px-2 w-6"></th>
+                                    <th class="text-left py-2 px-2">Rule</th>
+                                    <th class="text-left py-2 px-2">Entity Type</th>
+                                    <th class="text-left py-2 px-2">Severity</th>
+                                    <th class="text-right py-2 px-2">Violations</th>
+                                    <th class="text-right py-2 px-2">Parsing Errors</th>
+                                    <th class="text-right py-2 px-2">Sample</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ea-rule-tbody">
+                                <tr><td colspan="7" class="py-6 text-center t-muted">No data.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+            </div><!-- /ea-view-report -->
+
+            <!-- ── Sub-view: Version Comparison ────────────────────── -->
+            <div id="ea-view-compare" style="display:none">
+                <section class="dashboard-card p-6 space-y-4">
+                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-3">
+                        <span class="material-symbols-outlined text-sm t-dim">compare_arrows</span> Version Comparison
+                    </h3>
+                    <div class="flex flex-wrap items-end gap-4">
+                        <div class="space-y-1">
+                            <label class="text-[10px] font-bold uppercase tracking-wider t-dim" for="ea-cmp-version-a">Version A (baseline)</label>
+                            <select id="ea-cmp-version-a" class="text-xs bg-transparent border b-theme rounded px-2 py-1 t-high">
+                                <option value="">— select —</option>
+                            </select>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-[10px] font-bold uppercase tracking-wider t-dim" for="ea-cmp-version-b">Version B (target)</label>
+                            <select id="ea-cmp-version-b" class="text-xs bg-transparent border b-theme rounded px-2 py-1 t-high">
+                                <option value="">— select —</option>
+                            </select>
+                        </div>
+                        <button id="ea-compare-btn" class="btn-purple px-4 py-1.5 rounded text-xs font-semibold flex items-center gap-1">
+                            <span class="material-symbols-outlined text-sm">compare_arrows</span> Compare
+                        </button>
+                    </div>
+                    <p id="ea-cmp-summary" class="text-xs t-dim" style="display:none"></p>
+                    <div class="overflow-x-auto" id="ea-cmp-table-wrap" style="display:none">
+                        <table class="w-full text-xs">
+                            <thead>
+                                <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
+                                    <th class="text-left py-2 px-2">Rule</th>
+                                    <th class="text-left py-2 px-2">Entity Type</th>
+                                    <th class="text-right py-2 px-2">Version A</th>
+                                    <th class="text-right py-2 px-2">Version B</th>
+                                    <th class="text-right py-2 px-2">Delta</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ea-cmp-tbody"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div><!-- /ea-view-compare -->
+
+            <!-- ── Sub-view: Prompt Generator ──────────────────────── -->
+            <div id="ea-view-prompt" style="display:none">
+                <section class="dashboard-card p-6 space-y-4">
+                    <div class="flex items-center justify-between border-b b-theme pb-3">
+                        <h3 class="text-sm font-semibold flex items-center gap-2">
+                            <span class="material-symbols-outlined text-sm t-dim">smart_toy</span> AI Prompt Generator
+                        </h3>
+                        <div class="flex items-center gap-3">
+                            <span id="ea-prompt-count" class="text-xs t-dim">0 rules selected</span>
+                            <button id="ea-generate-btn" class="btn-purple px-4 py-1.5 rounded text-xs font-semibold flex items-center gap-1">
+                                <span class="material-symbols-outlined text-sm">auto_awesome</span> Generate
+                            </button>
+                            <button id="ea-copy-btn" class="text-xs font-bold uppercase tracking-wider t-dim flex items-center gap-1 border b-theme rounded px-3 py-1.5">
+                                <span class="material-symbols-outlined text-sm">content_copy</span> Copy
+                            </button>
+                        </div>
+                    </div>
+                    <p class="text-xs t-muted">Select rules in the Report tab, then click Generate to build a prompt for an AI assistant.</p>
+                    <textarea id="ea-prompt-textarea" class="w-full mono text-xs bg-inner border b-theme rounded p-3 t-high"
+                              rows="20" readonly placeholder="Generated prompt will appear here..."></textarea>
+                </section>
+            </div><!-- /ea-view-prompt -->
+
+        </div><!-- /tab-extraction-analysis -->
+
+        <!-- ============================================================
+             RECORD DETAIL MODAL
+             ============================================================ -->
+        <div id="ea-modal" class="fixed inset-0 z-50 flex items-center justify-center" style="display:none; background:rgba(0,0,0,0.5)">
+            <div class="dashboard-card p-6 w-full max-w-5xl max-h-[90vh] flex flex-col gap-4 overflow-y-auto">
+                <div class="flex items-center justify-between border-b b-theme pb-3">
+                    <h3 class="text-sm font-semibold flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm t-dim">data_object</span>
+                        Record Detail — <span id="ea-modal-record-id" class="mono t-dim text-xs"></span>
+                    </h3>
+                    <button id="ea-modal-close" class="t-dim hover:t-high transition-colors">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="space-y-1">
+                        <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Raw XML</p>
+                        <pre id="ea-modal-xml" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid" style="max-height:350px;white-space:pre-wrap;word-break:break-all"></pre>
+                    </div>
+                    <div class="space-y-1">
+                        <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Parsed JSON</p>
+                        <pre id="ea-modal-json" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid" style="max-height:350px;white-space:pre-wrap;word-break:break-all"></pre>
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Violations</p>
+                    <ul id="ea-modal-violations" class="space-y-1 text-xs"></ul>
+                </div>
+            </div>
+        </div><!-- /ea-modal -->
 
     </div><!-- /admin-view -->
 
