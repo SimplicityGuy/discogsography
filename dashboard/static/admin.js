@@ -18,6 +18,13 @@ const QUEUE_CHART_COLORS = [
 
 // generateSparklineSVG is now a DOM-safe method: AdminDashboard._createSparklineSVGElement
 
+// Helper: HTML-escape a value for safe display (use with textContent, not innerHTML)
+function _esc(str) {
+    const div = document.createElement('div');
+    div.textContent = String(str ?? '');
+    return div.innerHTML;
+}
+
 // Helper: create a table row with a single "no data" cell spanning colSpan columns
 function _emptyRow(colSpan, message) {
     const tr = document.createElement('tr');
@@ -37,6 +44,9 @@ class AdminDashboard {
         this.queueDepthChart = null;
         this.responseTimeChart = null;
         this._auditLogPage = 1;
+        this._eaVersions = [];
+        this._eaSelectedRecords = new Map();
+        this._eaParsingErrors = null;
         this.initTheme();
         this.bindEvents();
         if (this.token) {
@@ -213,6 +223,37 @@ class AdminDashboard {
                 btns.forEach(b => b.classList.toggle('active', b.dataset.range === saved));
             }
         });
+
+        // Extraction Analysis bindings
+        document.querySelectorAll('.ea-view-btn').forEach(btn => {
+            btn.addEventListener('click', () => this._eaSwitchView(btn.dataset.eaView));
+        });
+
+        const eaVersionSelect = document.getElementById('ea-version-select');
+        if (eaVersionSelect) {
+            eaVersionSelect.addEventListener('change', () => this._eaLoadReport());
+        }
+
+        const eaRefreshBtn = document.getElementById('ea-refresh-btn');
+        if (eaRefreshBtn) eaRefreshBtn.addEventListener('click', () => this._eaLoadReport());
+
+        const eaSelectAll = document.getElementById('ea-select-all');
+        if (eaSelectAll) eaSelectAll.addEventListener('change', (e) => this._eaToggleSelectAll(e.target.checked));
+
+        const eaCompareBtn = document.getElementById('ea-compare-btn');
+        if (eaCompareBtn) eaCompareBtn.addEventListener('click', () => this._eaCompare());
+
+        const eaGenerateBtn = document.getElementById('ea-generate-btn');
+        if (eaGenerateBtn) eaGenerateBtn.addEventListener('click', () => this._eaGeneratePrompt());
+
+        const eaCopyBtn = document.getElementById('ea-copy-btn');
+        if (eaCopyBtn) eaCopyBtn.addEventListener('click', () => this._eaCopyPrompt());
+
+        const eaModalClose = document.getElementById('ea-modal-close');
+        if (eaModalClose) eaModalClose.addEventListener('click', () => {
+            const modal = document.getElementById('ea-modal');
+            if (modal) modal.style.display = 'none';
+        });
     }
 
     // ─── Tab switching ───────────────────────────────────────────────────────
@@ -226,7 +267,7 @@ class AdminDashboard {
         });
 
         // Show/hide panels
-        const panels = ['extractions', 'dlq', 'users', 'storage', 'queue-trends', 'system-health', 'audit-log'];
+        const panels = ['extractions', 'dlq', 'users', 'storage', 'queue-trends', 'system-health', 'audit-log', 'extraction-analysis'];
         panels.forEach(name => {
             const el = document.getElementById(`tab-${name}`);
             if (el) el.style.display = name === tabName ? 'block' : 'none';
@@ -244,6 +285,8 @@ class AdminDashboard {
             this.fetchHealthHistory(this._getRange('system-health'));
         } else if (tabName === 'audit-log') {
             this.fetchAuditLog();
+        } else if (tabName === 'extraction-analysis') {
+            this.fetchExtractionAnalysisVersions();
         }
     }
 
@@ -1449,6 +1492,476 @@ class AdminDashboard {
             if (nextBtn) nextBtn.disabled = data.page >= totalPages;
         } else if (pagination) {
             pagination.style.display = 'none';
+        }
+    }
+
+    // ─── Extraction Analysis ─────────────────────────────────────────────────
+
+    _eaSwitchView(viewName) {
+        // Toggle sub-view buttons
+        document.querySelectorAll('.ea-view-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.eaView === viewName);
+        });
+        // Toggle sub-view panels
+        ['report', 'compare', 'prompt'].forEach(name => {
+            const panel = document.getElementById(`ea-view-${name}`);
+            if (panel) panel.style.display = name === viewName ? '' : 'none';
+        });
+        // Show/hide report controls in the header
+        const reportControls = document.getElementById('ea-report-controls');
+        if (reportControls) reportControls.style.display = viewName === 'report' ? '' : 'none';
+
+        if (viewName === 'prompt') this._eaUpdatePromptCount();
+    }
+
+    async fetchExtractionAnalysisVersions() {
+        try {
+            const resp = await this.authFetch('/admin/api/extraction-analysis/versions');
+            if (!resp.ok) return;
+            const data = await resp.json();
+            this._eaVersions = data.versions || [];
+            this._eaPopulateVersionSelects();
+            // Auto-load the first version
+            if (this._eaVersions.length > 0) {
+                const sel = document.getElementById('ea-version-select');
+                if (sel && sel.value === '') {
+                    sel.value = this._eaVersions[0];
+                    this._eaLoadReport();
+                }
+            }
+        } catch {
+            // Silently fail — non-critical
+        }
+    }
+
+    _eaPopulateVersionSelects() {
+        const ids = ['ea-version-select', 'ea-cmp-version-a', 'ea-cmp-version-b'];
+        ids.forEach(id => {
+            const sel = document.getElementById(id);
+            if (!sel) return;
+            const current = sel.value;
+            // Rebuild options
+            while (sel.firstChild) sel.removeChild(sel.firstChild);
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = '— select —';
+            sel.appendChild(placeholder);
+            this._eaVersions.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = v;
+                sel.appendChild(opt);
+            });
+            // Restore previous selection if still valid
+            if (current && this._eaVersions.includes(current)) sel.value = current;
+        });
+    }
+
+    async _eaLoadReport() {
+        const sel = document.getElementById('ea-version-select');
+        const version = sel ? sel.value : '';
+        if (!version) return;
+
+        // Reset parsing errors cache for new version
+        this._eaParsingErrors = null;
+
+        // Fetch summary and parsing errors in parallel
+        try {
+            const [summaryResp, errorsResp] = await Promise.all([
+                this.authFetch(`/admin/api/extraction-analysis/${encodeURIComponent(version)}/summary`),
+                this.authFetch(`/admin/api/extraction-analysis/${encodeURIComponent(version)}/parsing-errors`),
+            ]);
+
+            if (summaryResp.ok) {
+                const summary = await summaryResp.json();
+                // Update source badge
+                const badge = document.getElementById('ea-source-badge');
+                if (badge) {
+                    badge.textContent = summary.source || 'unknown';
+                    badge.style.display = '';
+                    badge.className = `text-[10px] px-2 py-0.5 rounded uppercase font-bold ${summary.source === 'discogs' ? 'badge-completed' : 'badge-running'}`;
+                }
+                this._eaRenderPipelineStatus(summary.pipeline_status || {});
+                this._eaRenderEntityCards(summary);
+                // Store parsing errors for use in rule breakdown
+                if (errorsResp.ok) {
+                    const errData = await errorsResp.json();
+                    this._eaParsingErrors = errData;
+                }
+                this._eaRenderRuleBreakdown(summary.by_rule || []);
+            }
+        } catch {
+            // Silently fail
+        }
+    }
+
+    _eaRenderPipelineStatus(pipelineStatus) {
+        const container = document.getElementById('ea-pipeline-cards');
+        if (!container) return;
+        const phases = Object.entries(pipelineStatus);
+        if (phases.length === 0) {
+            container.replaceChildren();
+            const p = document.createElement('p');
+            p.className = 'text-xs t-muted';
+            p.textContent = 'No pipeline status available.';
+            container.appendChild(p);
+            return;
+        }
+        const cards = phases.map(([phase, status]) => {
+            const card = document.createElement('div');
+            card.className = 'stat-card flex flex-col gap-1';
+            const label = document.createElement('p');
+            label.className = 'text-[10px] font-bold uppercase tracking-wider t-muted';
+            label.textContent = phase;
+            const badgeEl = document.createElement('span');
+            const badgeClass = status === 'completed' ? 'badge-completed' : status === 'running' ? 'badge-running' : status === 'failed' ? 'badge-failed' : 'badge-idle';
+            badgeEl.className = `text-[10px] px-2 py-0.5 rounded uppercase font-bold ${badgeClass}`;
+            badgeEl.textContent = String(status);
+            card.append(label, badgeEl);
+            return card;
+        });
+        container.replaceChildren(...cards);
+    }
+
+    _eaRenderEntityCards(summary) {
+        const container = document.getElementById('ea-entity-cards');
+        if (!container) return;
+        const byEntity = summary.by_entity || {};
+        const entries = Object.entries(byEntity);
+        if (entries.length === 0) {
+            container.replaceChildren();
+            const p = document.createElement('p');
+            p.className = 'text-xs t-muted';
+            p.textContent = 'No violation data.';
+            container.appendChild(p);
+            return;
+        }
+        const cards = entries.map(([entityType, counts]) => {
+            const card = document.createElement('div');
+            card.className = 'stat-card flex flex-col gap-1';
+            const label = document.createElement('p');
+            label.className = 'text-[10px] font-bold uppercase tracking-wider t-muted';
+            label.textContent = entityType;
+            const total = document.createElement('p');
+            total.className = 'text-xl font-bold t-high';
+            total.textContent = (counts.total ?? 0).toLocaleString();
+            const sub = document.createElement('p');
+            sub.className = 'text-[10px] t-muted';
+            sub.textContent = `${(counts.errors ?? 0)} errors · ${(counts.warnings ?? 0)} warnings`;
+            card.append(label, total, sub);
+            return card;
+        });
+        container.replaceChildren(...cards);
+    }
+
+    _eaRenderRuleBreakdown(byRule) {
+        const tbody = document.getElementById('ea-rule-tbody');
+        if (!tbody) return;
+        if (!byRule || byRule.length === 0) {
+            tbody.replaceChildren(_emptyRow(7, 'No violations found.'));
+            return;
+        }
+        // Count parsing errors per entity type for the badge column
+        const parseErrByEntity = {};
+        if (this._eaParsingErrors && this._eaParsingErrors.by_entity) {
+            Object.entries(this._eaParsingErrors.by_entity).forEach(([et, c]) => {
+                parseErrByEntity[et] = c;
+            });
+        }
+        const rows = byRule.map(row => {
+            const tr = document.createElement('tr');
+            tr.className = 'border-b b-row hover:bg-inner cursor-pointer';
+
+            // Checkbox
+            const tdChk = document.createElement('td');
+            tdChk.className = 'py-2 px-2';
+            const chk = document.createElement('input');
+            chk.type = 'checkbox';
+            chk.className = 'rounded ea-rule-chk';
+            chk.dataset.rule = row.rule;
+            chk.dataset.entityType = row.entity_type;
+            chk.addEventListener('change', () => {
+                const key = `${row.rule}::${row.entity_type}`;
+                if (chk.checked) {
+                    this._eaSelectedRecords.set(key, { rule: row.rule, entity_type: row.entity_type });
+                } else {
+                    this._eaSelectedRecords.delete(key);
+                }
+                this._eaUpdatePromptCount();
+            });
+            tdChk.appendChild(chk);
+
+            // Rule name
+            const tdRule = document.createElement('td');
+            tdRule.className = 'py-2 px-2 mono t-mid';
+            tdRule.textContent = row.rule;
+
+            // Entity type
+            const tdEntity = document.createElement('td');
+            tdEntity.className = 'py-2 px-2 t-dim';
+            tdEntity.textContent = row.entity_type || '—';
+
+            // Severity
+            const tdSev = document.createElement('td');
+            tdSev.className = 'py-2 px-2';
+            const sevBadge = document.createElement('span');
+            const sevClass = row.severity === 'error' ? 'badge-error' : row.severity === 'warning' ? 'badge-running' : 'badge-idle';
+            sevBadge.className = `text-[10px] px-1.5 py-0.5 rounded uppercase font-bold ${sevClass}`;
+            sevBadge.textContent = row.severity || 'info';
+            tdSev.appendChild(sevBadge);
+
+            // Violation count
+            const tdCount = document.createElement('td');
+            tdCount.className = 'py-2 px-2 text-right mono t-mid';
+            tdCount.textContent = (row.count ?? 0).toLocaleString();
+
+            // Parsing errors badge
+            const tdParseErr = document.createElement('td');
+            tdParseErr.className = 'py-2 px-2 text-right';
+            const parseCount = parseErrByEntity[row.entity_type] ?? 0;
+            if (parseCount > 0) {
+                const badge = document.createElement('span');
+                badge.className = 'text-[10px] px-1.5 py-0.5 rounded font-bold badge-error';
+                badge.textContent = parseCount.toLocaleString();
+                tdParseErr.appendChild(badge);
+            } else {
+                tdParseErr.textContent = '—';
+                tdParseErr.className += ' t-muted';
+            }
+
+            // Sample button
+            const tdSample = document.createElement('td');
+            tdSample.className = 'py-2 px-2 text-right';
+            const sampleBtn = document.createElement('button');
+            sampleBtn.className = 'text-[10px] px-2 py-0.5 rounded border b-theme t-dim hover:t-high';
+            sampleBtn.textContent = 'View';
+            sampleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._eaShowViolationsForRule(row.rule, row.entity_type);
+            });
+            tdSample.appendChild(sampleBtn);
+
+            tr.append(tdChk, tdRule, tdEntity, tdSev, tdCount, tdParseErr, tdSample);
+            return tr;
+        });
+        tbody.replaceChildren(...rows);
+    }
+
+    async _eaShowViolationsForRule(rule, entityType) {
+        const sel = document.getElementById('ea-version-select');
+        const version = sel ? sel.value : '';
+        if (!version) return;
+        try {
+            const params = new URLSearchParams({ rule, page_size: '1' });
+            if (entityType) params.set('entity_type', entityType);
+            const resp = await this.authFetch(
+                `/admin/api/extraction-analysis/${encodeURIComponent(version)}/violations?${params}`,
+            );
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const violations = data.violations || [];
+            if (violations.length > 0) {
+                const firstRecordId = violations[0].record_id;
+                if (firstRecordId) {
+                    await this._eaShowRecordDetail(version, firstRecordId);
+                }
+            }
+        } catch {
+            // Silently fail
+        }
+    }
+
+    async _eaShowRecordDetail(version, recordId) {
+        const modal = document.getElementById('ea-modal');
+        if (!modal) return;
+        try {
+            const resp = await this.authFetch(
+                `/admin/api/extraction-analysis/${encodeURIComponent(version)}/violations/${encodeURIComponent(recordId)}`,
+            );
+            if (!resp.ok) return;
+            const data = await resp.json();
+
+            const recordIdEl = document.getElementById('ea-modal-record-id');
+            if (recordIdEl) recordIdEl.textContent = recordId;
+
+            const xmlEl = document.getElementById('ea-modal-xml');
+            if (xmlEl) xmlEl.textContent = data.raw_xml || '(none)';
+
+            const jsonEl = document.getElementById('ea-modal-json');
+            if (jsonEl) jsonEl.textContent = data.parsed_json ? JSON.stringify(data.parsed_json, null, 2) : '(none)';
+
+            const violList = document.getElementById('ea-modal-violations');
+            if (violList) {
+                const items = (data.violations || []).map(v => {
+                    const li = document.createElement('li');
+                    li.className = 'flex items-start gap-2';
+                    const dot = document.createElement('span');
+                    dot.className = `material-symbols-outlined text-xs ${v.severity === 'error' ? 'text-red-400' : 'text-amber-400'}`;
+                    dot.textContent = 'circle';
+                    const text = document.createElement('span');
+                    text.className = 'text-xs t-mid';
+                    text.textContent = `[${v.rule}] ${v.message || ''}`;
+                    li.append(dot, text);
+                    return li;
+                });
+                if (items.length === 0) {
+                    const li = document.createElement('li');
+                    li.className = 'text-xs t-muted';
+                    li.textContent = 'No violations.';
+                    violList.replaceChildren(li);
+                } else {
+                    violList.replaceChildren(...items);
+                }
+            }
+
+            modal.style.display = 'flex';
+        } catch {
+            // Silently fail
+        }
+    }
+
+    async _eaCompare() {
+        const vA = document.getElementById('ea-cmp-version-a')?.value;
+        const vB = document.getElementById('ea-cmp-version-b')?.value;
+        if (!vA || !vB) {
+            this.showToast('Select both versions to compare', 'error');
+            return;
+        }
+        try {
+            const resp = await this.authFetch(
+                `/admin/api/extraction-analysis/${encodeURIComponent(vA)}/compare/${encodeURIComponent(vB)}`,
+            );
+            if (!resp.ok) {
+                this.showToast('Comparison failed', 'error');
+                return;
+            }
+            const data = await resp.json();
+            const summary = document.getElementById('ea-cmp-summary');
+            const tableWrap = document.getElementById('ea-cmp-table-wrap');
+            const tbody = document.getElementById('ea-cmp-tbody');
+            if (!summary || !tableWrap || !tbody) return;
+
+            const totalA = data.total_a ?? 0;
+            const totalB = data.total_b ?? 0;
+            const delta = totalB - totalA;
+            const sign = delta > 0 ? '+' : '';
+            summary.textContent = `${vA}: ${totalA.toLocaleString()} violations → ${vB}: ${totalB.toLocaleString()} violations (${sign}${delta.toLocaleString()})`;
+            summary.style.display = '';
+
+            const deltas = data.delta || [];
+            if (deltas.length === 0) {
+                tbody.replaceChildren(_emptyRow(5, 'No differences found.'));
+            } else {
+                const rows = deltas.map(d => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b b-row';
+                    const tdRule = document.createElement('td');
+                    tdRule.className = 'py-2 px-2 mono t-mid';
+                    tdRule.textContent = d.rule;
+                    const tdEt = document.createElement('td');
+                    tdEt.className = 'py-2 px-2 t-dim';
+                    tdEt.textContent = d.entity_type || '—';
+                    const tdA = document.createElement('td');
+                    tdA.className = 'py-2 px-2 text-right mono t-mid';
+                    tdA.textContent = (d.count_a ?? 0).toLocaleString();
+                    const tdB = document.createElement('td');
+                    tdB.className = 'py-2 px-2 text-right mono t-mid';
+                    tdB.textContent = (d.count_b ?? 0).toLocaleString();
+                    const tdDelta = document.createElement('td');
+                    tdDelta.className = 'py-2 px-2 text-right mono font-bold';
+                    const diff = (d.count_b ?? 0) - (d.count_a ?? 0);
+                    tdDelta.textContent = (diff > 0 ? '+' : '') + diff.toLocaleString();
+                    tdDelta.style.color = diff > 0 ? 'var(--text-high)' : diff < 0 ? '#10B981' : 'var(--text-dim)';
+                    tr.append(tdRule, tdEt, tdA, tdB, tdDelta);
+                    return tr;
+                });
+                tbody.replaceChildren(...rows);
+            }
+            tableWrap.style.display = '';
+        } catch {
+            this.showToast('Comparison error', 'error');
+        }
+    }
+
+    _eaToggleSelectAll(checked) {
+        document.querySelectorAll('.ea-rule-chk').forEach(chk => {
+            chk.checked = checked;
+            const key = `${chk.dataset.rule}::${chk.dataset.entityType}`;
+            if (checked) {
+                this._eaSelectedRecords.set(key, { rule: chk.dataset.rule, entity_type: chk.dataset.entityType });
+            } else {
+                this._eaSelectedRecords.delete(key);
+            }
+        });
+        this._eaUpdatePromptCount();
+    }
+
+    _eaUpdatePromptCount() {
+        const el = document.getElementById('ea-prompt-count');
+        if (el) el.textContent = `${this._eaSelectedRecords.size} rule${this._eaSelectedRecords.size === 1 ? '' : 's'} selected`;
+    }
+
+    async _eaGeneratePrompt() {
+        const sel = document.getElementById('ea-version-select');
+        const version = sel ? sel.value : '';
+        if (!version) { this.showToast('Select a version first', 'error'); return; }
+        if (this._eaSelectedRecords.size === 0) { this.showToast('Select at least one rule', 'error'); return; }
+
+        const textarea = document.getElementById('ea-prompt-textarea');
+        if (textarea) textarea.value = 'Generating…';
+
+        try {
+            const rules = Array.from(this._eaSelectedRecords.values());
+            const resp = await this.authFetch(
+                `/admin/api/extraction-analysis/${encodeURIComponent(version)}/prompt-context`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rules }),
+                },
+            );
+            if (!resp.ok) {
+                if (textarea) textarea.value = 'Error generating prompt.';
+                return;
+            }
+            const data = await resp.json();
+            const lines = [
+                `# Extraction Analysis — Version ${version}`,
+                '',
+                `You are reviewing data quality violations from the Discogsography extraction pipeline.`,
+                `The following rules had violations that need investigation:`,
+                '',
+            ];
+            (data.contexts || []).forEach(ctx => {
+                lines.push(`## Rule: ${ctx.rule} (${ctx.entity_type})`);
+                lines.push(`Severity: ${ctx.severity || 'unknown'}`);
+                lines.push(`Total violations: ${ctx.total_violations || 0}`);
+                if (ctx.sample_records && ctx.sample_records.length > 0) {
+                    lines.push('');
+                    lines.push('Sample records:');
+                    ctx.sample_records.forEach((rec, i) => {
+                        lines.push(`### Record ${i + 1}: ${rec.record_id || '?'}`);
+                        if (rec.violations) {
+                            rec.violations.forEach(v => lines.push(`- [${v.rule}] ${v.message || ''}`));
+                        }
+                    });
+                }
+                lines.push('');
+            });
+            if (textarea) textarea.value = lines.join('\n');
+        } catch {
+            if (textarea) textarea.value = 'Error generating prompt.';
+        }
+    }
+
+    async _eaCopyPrompt() {
+        const textarea = document.getElementById('ea-prompt-textarea');
+        if (!textarea || !textarea.value) { this.showToast('Nothing to copy', 'error'); return; }
+        try {
+            await navigator.clipboard.writeText(textarea.value);
+            this.showToast('Prompt copied to clipboard', 'success');
+        } catch {
+            this.showToast('Copy failed — select all text manually', 'error');
         }
     }
 }

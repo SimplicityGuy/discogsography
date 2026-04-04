@@ -246,6 +246,8 @@ services:
       RABBITMQ_USERNAME: discogsography
       REDIS_HOST: redis
       STARTUP_DELAY: "5"
+      DISCOGS_DATA_ROOT: /discogs-data
+      MUSICBRAINZ_DATA_ROOT: /musicbrainz-data
       DB_PROFILING: "${DB_PROFILING:-true}"
       # NLQ (Natural Language Queries) — disabled by default
       NLQ_ENABLED: "${NLQ_ENABLED:-false}"
@@ -262,6 +264,8 @@ services:
       - "8005:8005"      # Health check
     volumes:
       - api_logs:/logs
+      - discogs_data:/discogs-data:ro
+      - musicbrainz_data:/musicbrainz-data:ro
     depends_on:
       schema-init:
         condition: service_completed_successfully

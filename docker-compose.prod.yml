@@ -208,6 +208,10 @@ services:
       - postgres_password
       - rabbitmq_username
       - rabbitmq_password
+    volumes:
+      - api_logs:/logs
+      - discogs_data:/discogs-data:ro
+      - musicbrainz_data:/musicbrainz-data:ro
     deploy:
       restart_policy:
         condition: any

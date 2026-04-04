@@ -198,6 +198,9 @@ def test_client(
     _recommend_router.configure(mock_neo4j, test_api_config.jwt_secret_key, mock_redis)
     _insights_compute_router.configure(mock_neo4j, mock_pool, mock_redis)
     _admin_router.configure(mock_pool, mock_redis, test_api_config, neo4j_driver=mock_neo4j)
+    import api.routers.extraction_analysis as _extraction_analysis_router
+
+    _extraction_analysis_router.configure(discogs_root=None, musicbrainz_root=None)
 
     # Build a dedicated pool for require_admin DB verification that always returns
     # {"is_admin": True} so admin-token tests pass without conflicting with

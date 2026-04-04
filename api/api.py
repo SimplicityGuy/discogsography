@@ -41,6 +41,7 @@ import api.routers.auth as _auth_router
 import api.routers.collection as _collection_router
 import api.routers.credits as _credits_router
 import api.routers.explore as _explore_router
+import api.routers.extraction_analysis as _extraction_analysis_router
 import api.routers.insights as _insights_router
 import api.routers.insights_compute as _insights_compute_router
 import api.routers.label_dna as _label_dna_router
@@ -256,6 +257,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     _search_router.configure(_pool, _redis)
     _insights_compute_router.configure(_neo4j, _pool, _redis)
     _admin_router.configure(_pool, _redis, _config, neo4j_driver=_neo4j)
+    _extraction_analysis_router.configure(
+        discogs_root=os.environ.get("DISCOGS_DATA_ROOT"),
+        musicbrainz_root=os.environ.get("MUSICBRAINZ_DATA_ROOT"),
+    )
     _musicbrainz_router.configure(_pool, _neo4j)
     _network_router.configure(_neo4j, _redis)
     _rarity_router.configure(_neo4j, _pool, _redis)
@@ -397,6 +402,7 @@ app.include_router(_taste_router.router)
 app.include_router(_collection_router.router)
 app.include_router(_recommend_router.router)
 app.include_router(_admin_router.router)
+app.include_router(_extraction_analysis_router.router)
 app.include_router(_nlq_router.router)
 app.include_router(_rarity_router.router)
 app.include_router(_network_router.router)
