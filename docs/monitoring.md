@@ -35,26 +35,26 @@ open http://localhost:8003
 - **Uptime tracking** for each service
 - **Auto-refresh** via WebSocket updates
 
-**Services Monitored**:
+**Pipeline Services Monitored by Dashboard**:
 
 Discogs pipeline:
 
-- Extractor (http://localhost:8000/health)
-- Graphinator (http://localhost:8001/health)
-- Tableinator (http://localhost:8002/health)
+- Extractor (http://extractor-discogs:8000/health)
+- Graphinator (http://graphinator:8001/health)
+- Tableinator (http://tableinator:8002/health)
 
 MusicBrainz pipeline (auto-hidden when not deployed):
 
-- Extractor MusicBrainz (http://localhost:8000/health — separate `extractor-musicbrainz` Docker container, each extractor listens on port 8000 inside its own container)
-- Brainztableinator (http://localhost:8010/health)
-- Brainzgraphinator (http://localhost:8011/health)
+- Extractor MusicBrainz (http://extractor-musicbrainz:8000/health — separate container, each extractor listens on port 8000 inside its own container)
+- Brainzgraphinator (http://brainzgraphinator:8011/health)
+- Brainztableinator (http://brainztableinator:8010/health)
 
-Other services:
+**Other service health endpoints** (not monitored by Dashboard, available for manual checks):
 
 - Dashboard (http://localhost:8003/health)
-- API (http://localhost:8004/health, http://localhost:8005/health)
-- Explore (http://localhost:8007/health — internal only in Docker Compose)
-- Insights (http://localhost:8009/health)
+- API (http://localhost:8004/health or http://localhost:8005/health)
+- Explore (http://localhost:8007/health)
+- Insights (http://localhost:8009/health — internal only in Docker Compose, not exposed to host)
 
 #### Queue Metrics Panel
 
@@ -384,10 +384,11 @@ curl -u discogsography:discogsography \
 
 The Insights service runs scheduled batch analytics and exposes results via the API proxy. Monitor its operation through:
 
-**Health Check**:
+**Health Check** (internal only — port 8009 is not exposed to the host in Docker Compose):
 
 ```bash
-curl http://localhost:8009/health
+# From within the Docker network:
+docker exec discogsography-insights-1 curl -s http://localhost:8009/health
 # Response: {"status": "healthy"}
 ```
 
@@ -470,10 +471,6 @@ curl http://localhost:8005/health
 curl http://localhost:8007/health
 # Response: {"status": "healthy"}
 
-# Insights
-curl http://localhost:8009/health
-# Response: {"status": "healthy"}
-
 # Brainztableinator
 curl http://localhost:8010/health
 # Response: {"status": "healthy"}
@@ -497,7 +494,6 @@ services=(
   "Dashboard:8003"
   "API:8005"
   "Explore:8007"
-  "Insights:8009"
   "Brainztableinator:8010"
   "Brainzgraphinator:8011"
 )
@@ -785,4 +781,4 @@ LIMIT 10;
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-15
+**Last Updated**: 2026-04-03

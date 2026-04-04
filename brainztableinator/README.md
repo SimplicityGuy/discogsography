@@ -7,7 +7,7 @@ Consumes MusicBrainz data from AMQP queues and stores it in PostgreSQL relationa
 The brainztableinator service:
 
 - Consumes parsed MusicBrainz data from RabbitMQ queues
-- Stores artists, labels, and releases in the `musicbrainz` PostgreSQL schema
+- Stores artists, labels, release-groups, and releases in the `musicbrainz` PostgreSQL schema
 - Records relationships and external links for each entity
 - Implements upsert logic with `ON CONFLICT` for idempotent processing
 - Maintains data integrity with MBID-based primary keys
@@ -68,15 +68,24 @@ The brainztableinator writes to the `musicbrainz` schema with the following tabl
 
 ```sql
 CREATE TABLE musicbrainz.artists (
-    mbid          VARCHAR PRIMARY KEY,
-    name          VARCHAR NOT NULL,
-    sort_name     VARCHAR,
-    mb_type       VARCHAR,
-    disambiguation VARCHAR,
-    discogs_artist_id INTEGER,
-    data          JSONB NOT NULL,
-    created_at    TIMESTAMPTZ DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ DEFAULT NOW()
+    mbid               UUID PRIMARY KEY,
+    name               TEXT NOT NULL,
+    sort_name          TEXT,
+    type               TEXT,
+    gender             TEXT,
+    begin_date         TEXT,
+    end_date           TEXT,
+    ended              BOOLEAN DEFAULT FALSE,
+    area               TEXT,
+    begin_area         TEXT,
+    end_area           TEXT,
+    disambiguation     TEXT,
+    discogs_artist_id  INTEGER,
+    aliases            JSONB,
+    tags               JSONB,
+    data               JSONB,
+    created_at         TIMESTAMPTZ DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
@@ -84,14 +93,19 @@ CREATE TABLE musicbrainz.artists (
 
 ```sql
 CREATE TABLE musicbrainz.labels (
-    mbid          VARCHAR PRIMARY KEY,
-    name          VARCHAR NOT NULL,
-    mb_type       VARCHAR,
-    disambiguation VARCHAR,
-    discogs_label_id INTEGER,
-    data          JSONB NOT NULL,
-    created_at    TIMESTAMPTZ DEFAULT NOW(),
-    updated_at    TIMESTAMPTZ DEFAULT NOW()
+    mbid               UUID PRIMARY KEY,
+    name               TEXT NOT NULL,
+    type               TEXT,
+    label_code         INTEGER,
+    begin_date         TEXT,
+    end_date           TEXT,
+    ended              BOOLEAN DEFAULT FALSE,
+    area               TEXT,
+    disambiguation     TEXT,
+    discogs_label_id   INTEGER,
+    data               JSONB,
+    created_at         TIMESTAMPTZ DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
@@ -99,15 +113,32 @@ CREATE TABLE musicbrainz.labels (
 
 ```sql
 CREATE TABLE musicbrainz.releases (
-    mbid              VARCHAR PRIMARY KEY,
-    name              VARCHAR NOT NULL,
-    barcode           VARCHAR,
-    status            VARCHAR,
-    release_group_mbid VARCHAR,
+    mbid               UUID PRIMARY KEY,
+    name               TEXT NOT NULL,
+    barcode            TEXT,
+    status             TEXT,
+    release_group_mbid UUID,
     discogs_release_id INTEGER,
-    data              JSONB NOT NULL,
-    created_at        TIMESTAMPTZ DEFAULT NOW(),
-    updated_at        TIMESTAMPTZ DEFAULT NOW()
+    data               JSONB,
+    created_at         TIMESTAMPTZ DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+### Release Groups
+
+```sql
+CREATE TABLE musicbrainz.release_groups (
+    mbid                UUID PRIMARY KEY,
+    name                TEXT NOT NULL,
+    type                TEXT,
+    secondary_types     JSONB,
+    first_release_date  TEXT,
+    disambiguation      TEXT,
+    discogs_master_id   INTEGER,
+    data                JSONB,
+    created_at          TIMESTAMPTZ DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
@@ -115,23 +146,28 @@ CREATE TABLE musicbrainz.releases (
 
 ```sql
 CREATE TABLE musicbrainz.relationships (
-    id            SERIAL PRIMARY KEY,
-    source_mbid   VARCHAR NOT NULL,
-    source_type   VARCHAR NOT NULL,
-    target_mbid   VARCHAR NOT NULL,
-    rel_type      VARCHAR NOT NULL,
-    direction     VARCHAR,
-    attributes    JSONB,
-    created_at    TIMESTAMPTZ DEFAULT NOW()
+    id                    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    source_mbid           UUID NOT NULL,
+    target_mbid           UUID NOT NULL,
+    source_entity_type    TEXT NOT NULL,
+    target_entity_type    TEXT NOT NULL,
+    relationship_type     TEXT NOT NULL,
+    begin_date            TEXT,
+    end_date              TEXT,
+    ended                 BOOLEAN DEFAULT FALSE,
+    attributes            JSONB,
+    created_at            TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (source_mbid, target_mbid, source_entity_type, target_entity_type, relationship_type)
 );
 
 CREATE TABLE musicbrainz.external_links (
-    id          SERIAL PRIMARY KEY,
-    mbid        VARCHAR NOT NULL,
-    entity_type VARCHAR NOT NULL,
-    url         VARCHAR NOT NULL,
-    link_type   VARCHAR,
-    created_at  TIMESTAMPTZ DEFAULT NOW()
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    mbid          UUID NOT NULL,
+    entity_type   TEXT NOT NULL,
+    service_name  TEXT NOT NULL,
+    url           TEXT NOT NULL,
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (mbid, entity_type, service_name, url)
 );
 ```
 

@@ -581,9 +581,14 @@ LOG_LEVEL=INFO
 
 ### Extractor
 
+The extractor runs as two Docker services: `extractor-discogs` and `extractor-musicbrainz`.
+
 ```bash
-# Required
+# Required (Discogs mode)
 DISCOGS_ROOT="/discogs-data"
+
+# Required (MusicBrainz mode)
+MUSICBRAINZ_ROOT="/musicbrainz-data"
 
 # RabbitMQ
 RABBITMQ_HOST=rabbitmq           # default: rabbitmq
@@ -591,13 +596,14 @@ RABBITMQ_USERNAME=discogsography # default: discogsography
 RABBITMQ_PASSWORD=discogsography # default: discogsography
 
 # Optional
-PERIODIC_CHECK_DAYS=15
-BATCH_SIZE=100
-MAX_WORKERS=4
+PERIODIC_CHECK_DAYS=5            # Days between update checks (code default: 15, docker-compose: 5 Discogs / 3 MusicBrainz)
+BATCH_SIZE=100                   # Records per AMQP publish batch (default: 100)
+MAX_WORKERS=4                    # Concurrent processing workers (default: 4)
+FORCE_REPROCESS=false            # Force reprocess even if already extracted (default: false)
 LOG_LEVEL=INFO
 ```
 
-Health check: http://localhost:8000/health
+Health check: http://localhost:8000/health (each extractor container exposes port 8000 internally)
 
 ### Graphinator
 
@@ -621,6 +627,9 @@ STUCK_CHECK_INTERVAL=30    # Seconds between stuck-state checks
 NEO4J_BATCH_MODE=true
 NEO4J_BATCH_SIZE=500
 NEO4J_BATCH_FLUSH_INTERVAL=2.0
+
+# Optional - Startup
+STARTUP_DELAY=15                 # Seconds to wait before starting (default: 15)
 
 # Optional - Logging
 LOG_LEVEL=INFO
@@ -651,6 +660,9 @@ STUCK_CHECK_INTERVAL=30    # Seconds between stuck-state checks
 POSTGRES_BATCH_MODE=true
 POSTGRES_BATCH_SIZE=500
 POSTGRES_BATCH_FLUSH_INTERVAL=2.0
+
+# Optional - Startup
+STARTUP_DELAY=20                 # Seconds to wait before starting (default: 20)
 
 # Optional - Logging
 LOG_LEVEL=INFO
@@ -1038,4 +1050,4 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-27
+**Last Updated**: 2026-04-03

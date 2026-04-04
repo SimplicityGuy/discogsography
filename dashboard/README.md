@@ -113,7 +113,7 @@ The MusicBrainz pipeline section is **hidden automatically** when the MusicBrain
 ### Queue Prefixes
 
 - **Discogs queues**: use the `discogsography-discogs` exchange prefix (4 entity types: artists, labels, masters, releases)
-- **MusicBrainz queues**: use the `discogsography-musicbrainz` exchange prefix (3 entity types: artists, labels, releases — no masters)
+- **MusicBrainz queues**: use the `discogsography-musicbrainz` exchange prefix (4 entity types: artists, labels, release-groups, releases)
 
 ## WebSocket Updates
 

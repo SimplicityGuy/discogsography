@@ -250,7 +250,6 @@ curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
 curl http://localhost:8005/health  # API
 curl http://localhost:8007/health  # Explore
-curl http://localhost:8009/health  # Insights
 curl http://localhost:8010/health  # Brainztableinator
 curl http://localhost:8011/health  # Brainzgraphinator
 ```
@@ -428,4 +427,4 @@ See [Development Guide](development.md) and [Contributing Guide](contributing.md
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-27
+**Last Updated**: 2026-04-03

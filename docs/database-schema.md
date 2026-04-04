@@ -1039,13 +1039,22 @@ CREATE SCHEMA IF NOT EXISTS musicbrainz;
 
 ```sql
 CREATE TABLE IF NOT EXISTS musicbrainz.artists (
-    mbid               VARCHAR PRIMARY KEY,
-    name               VARCHAR NOT NULL,
-    sort_name          VARCHAR,
-    mb_type            VARCHAR,
-    disambiguation     VARCHAR,
+    mbid               UUID PRIMARY KEY,
+    name               TEXT NOT NULL,
+    sort_name          TEXT,
+    type               TEXT,
+    gender             TEXT,
+    begin_date         TEXT,
+    end_date           TEXT,
+    ended              BOOLEAN DEFAULT FALSE,
+    area               TEXT,
+    begin_area         TEXT,
+    end_area           TEXT,
+    disambiguation     TEXT,
     discogs_artist_id  INTEGER,
-    data               JSONB NOT NULL,
+    aliases            JSONB,
+    tags               JSONB,
+    data               JSONB,
     created_at         TIMESTAMPTZ DEFAULT NOW(),
     updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
@@ -1058,12 +1067,17 @@ CREATE INDEX IF NOT EXISTS idx_mb_artists_name ON musicbrainz.artists (name);
 
 ```sql
 CREATE TABLE IF NOT EXISTS musicbrainz.labels (
-    mbid               VARCHAR PRIMARY KEY,
-    name               VARCHAR NOT NULL,
-    mb_type            VARCHAR,
-    disambiguation     VARCHAR,
+    mbid               UUID PRIMARY KEY,
+    name               TEXT NOT NULL,
+    type               TEXT,
+    label_code         INTEGER,
+    begin_date         TEXT,
+    end_date           TEXT,
+    ended              BOOLEAN DEFAULT FALSE,
+    area               TEXT,
+    disambiguation     TEXT,
     discogs_label_id   INTEGER,
-    data               JSONB NOT NULL,
+    data               JSONB,
     created_at         TIMESTAMPTZ DEFAULT NOW(),
     updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
@@ -1076,13 +1090,13 @@ CREATE INDEX IF NOT EXISTS idx_mb_labels_name ON musicbrainz.labels (name);
 
 ```sql
 CREATE TABLE IF NOT EXISTS musicbrainz.releases (
-    mbid               VARCHAR PRIMARY KEY,
-    name               VARCHAR NOT NULL,
-    barcode            VARCHAR,
-    status             VARCHAR,
-    release_group_mbid VARCHAR,
+    mbid               UUID PRIMARY KEY,
+    name               TEXT NOT NULL,
+    barcode            TEXT,
+    status             TEXT,
+    release_group_mbid UUID,
     discogs_release_id INTEGER,
-    data               JSONB NOT NULL,
+    data               JSONB,
     created_at         TIMESTAMPTZ DEFAULT NOW(),
     updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
@@ -1090,39 +1104,63 @@ CREATE TABLE IF NOT EXISTS musicbrainz.releases (
 CREATE INDEX IF NOT EXISTS idx_mb_releases_discogs_id ON musicbrainz.releases (discogs_release_id) WHERE discogs_release_id IS NOT NULL;
 ```
 
-**musicbrainz.relationships** — Artist-to-artist relationships from MusicBrainz.
+**musicbrainz.release_groups** — MusicBrainz release group entities with Discogs master cross-reference.
+
+```sql
+CREATE TABLE IF NOT EXISTS musicbrainz.release_groups (
+    mbid                UUID PRIMARY KEY,
+    name                TEXT NOT NULL,
+    type                TEXT,
+    secondary_types     JSONB,
+    first_release_date  TEXT,
+    disambiguation      TEXT,
+    discogs_master_id   INTEGER,
+    data                JSONB,
+    created_at          TIMESTAMPTZ DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_mb_release_groups_discogs_id ON musicbrainz.release_groups (discogs_master_id) WHERE discogs_master_id IS NOT NULL;
+```
+
+**musicbrainz.relationships** — Entity-to-entity relationships from MusicBrainz.
 
 ```sql
 CREATE TABLE IF NOT EXISTS musicbrainz.relationships (
-    id            SERIAL PRIMARY KEY,
-    source_mbid   VARCHAR NOT NULL,
-    source_type   VARCHAR NOT NULL,
-    target_mbid   VARCHAR NOT NULL,
-    rel_type      VARCHAR NOT NULL,
-    direction     VARCHAR,
-    attributes    JSONB,
-    created_at    TIMESTAMPTZ DEFAULT NOW()
+    id                    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    source_mbid           UUID NOT NULL,
+    target_mbid           UUID NOT NULL,
+    source_entity_type    TEXT NOT NULL,
+    target_entity_type    TEXT NOT NULL,
+    relationship_type     TEXT NOT NULL,
+    begin_date            TEXT,
+    end_date              TEXT,
+    ended                 BOOLEAN DEFAULT FALSE,
+    attributes            JSONB,
+    created_at            TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (source_mbid, target_mbid, source_entity_type, target_entity_type, relationship_type)
 );
 
 CREATE INDEX IF NOT EXISTS idx_mb_rels_source ON musicbrainz.relationships (source_mbid);
 CREATE INDEX IF NOT EXISTS idx_mb_rels_target ON musicbrainz.relationships (target_mbid);
-CREATE INDEX IF NOT EXISTS idx_mb_rels_type ON musicbrainz.relationships (rel_type);
+CREATE INDEX IF NOT EXISTS idx_mb_rels_type ON musicbrainz.relationships (relationship_type);
 ```
 
 **musicbrainz.external_links** — External URLs (Wikipedia, Wikidata, AllMusic, Last.fm, IMDb) per entity.
 
 ```sql
 CREATE TABLE IF NOT EXISTS musicbrainz.external_links (
-    id          SERIAL PRIMARY KEY,
-    mbid        VARCHAR NOT NULL,
-    entity_type VARCHAR NOT NULL,
-    url         VARCHAR NOT NULL,
-    link_type   VARCHAR,
-    created_at  TIMESTAMPTZ DEFAULT NOW()
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    mbid          UUID NOT NULL,
+    entity_type   TEXT NOT NULL,
+    service_name  TEXT NOT NULL,
+    url           TEXT NOT NULL,
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (mbid, entity_type, service_name, url)
 );
 
 CREATE INDEX IF NOT EXISTS idx_mb_links_mbid ON musicbrainz.external_links (mbid);
-CREATE INDEX IF NOT EXISTS idx_mb_links_service ON musicbrainz.external_links (link_type);
+CREATE INDEX IF NOT EXISTS idx_mb_links_service ON musicbrainz.external_links (service_name);
 ```
 
 #### MusicBrainz Neo4j Enrichment Properties
@@ -1133,14 +1171,17 @@ The brainzgraphinator adds `mb_`-prefixed properties to existing Discogs nodes. 
 graph LR
     A[Artist Node] -->|enriched with| MB_A["mbid, mb_type, mb_gender,<br/>mb_begin_date, mb_end_date,<br/>mb_area, mb_begin_area,<br/>mb_end_area, mb_disambiguation"]
     L[Label Node] -->|enriched with| MB_L["mbid, mb_type, mb_label_code,<br/>mb_begin_date, mb_end_date,<br/>mb_area"]
-    R[Release Node] -->|enriched with| MB_R["mbid, mb_barcode, mb_status"]
+    R[Release Node] -->|enriched with| MB_R["mbid, mb_barcode, mb_status,<br/>mb_release_group_mbid"]
+    M[Master Node] -->|enriched with| MB_M["mbid, mb_type, mb_secondary_types,<br/>mb_first_release_date,<br/>mb_disambiguation"]
 
     style A fill:#e3f2fd
     style L fill:#fff9c4
     style R fill:#f3e5f5
+    style M fill:#ede7f6
     style MB_A fill:#e8f5e9
     style MB_L fill:#e8f5e9
     style MB_R fill:#e8f5e9
+    style MB_M fill:#e8f5e9
 ```
 
 #### MusicBrainz Neo4j Relationship Edges
@@ -1369,4 +1410,4 @@ ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-26
+**Last Updated**: 2026-04-03

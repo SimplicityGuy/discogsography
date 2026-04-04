@@ -290,7 +290,6 @@ def test_client(test_server):
 - **Workers**: Auto-detected based on CPU cores (typically 8-10 workers)
 - **Distribution**: `loadfile` keeps all tests from the same file in the same worker for better isolation
 - **Performance**: Tests complete in ~5 minutes vs ~15+ minutes sequential
-- **Pass rate**: 100% (1,543 passed, 2 skipped)
 
 ```bash
 # Default parallel execution (recommended)
