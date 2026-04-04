@@ -1,11 +1,12 @@
 """Extraction Analysis router — versions, summary, violations, and parsing errors for flagged records."""
 
 import json
+import math
 from pathlib import Path
 import re
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 import structlog
 
@@ -155,6 +156,32 @@ def _build_violation_summary(violations: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
+def _load_record_files(flagged_dir: Path, entity_type: str, record_id: str) -> tuple[str | None, dict[str, Any] | None]:
+    """Load raw XML and parsed JSON for a record from its flagged entity directory.
+
+    Returns (raw_xml, parsed_json) where either may be None if the file is missing or corrupt.
+    """
+    entity_dir = flagged_dir / entity_type
+    xml_path = entity_dir / f"{record_id}.xml"
+    json_path = entity_dir / f"{record_id}.json"
+
+    raw_xml: str | None = None
+    if xml_path.is_file():
+        try:
+            raw_xml = xml_path.read_text(encoding="utf-8")
+        except OSError:
+            logger.warning("⚠️ Could not read XML file", path=str(xml_path))
+
+    parsed_json: dict[str, Any] | None = None
+    if json_path.is_file():
+        try:
+            parsed_json = json.loads(json_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            logger.warning("⚠️ Could not read JSON file", path=str(json_path))
+
+    return raw_xml, parsed_json
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -206,5 +233,92 @@ async def get_summary(
             "source": source,
             "pipeline_status": pipeline_status,
             "violation_summary": summary,
+        }
+    )
+
+
+@router.get("/api/admin/extraction-analysis/{version}/violations")
+async def list_violations(
+    version: str,
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+    entity_type: Annotated[str | None, Query(pattern=r"^[a-z-]+$")] = None,
+    severity: Annotated[str | None, Query(pattern=r"^(error|warning|info)$")] = None,
+    rule: Annotated[str | None, Query(pattern=r"^[a-zA-Z0-9_-]+$")] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> JSONResponse:
+    """Return a paginated list of violations for the given extraction version, with optional filters."""
+    _validate_version(version)
+
+    location = _find_version_root(version)
+    if location is None:
+        raise HTTPException(status_code=404, detail=f"Version not found: {version!r}")
+
+    data_root, _source = location
+    flagged_version_dir = data_root / "flagged" / version
+
+    violations = _read_violations(flagged_version_dir)
+
+    # Apply filters
+    if entity_type is not None:
+        violations = [v for v in violations if v.get("entity_type") == entity_type]
+    if severity is not None:
+        violations = [v for v in violations if v.get("severity") == severity]
+    if rule is not None:
+        violations = [v for v in violations if v.get("rule") == rule]
+
+    total_items = len(violations)
+    total_pages = max(1, math.ceil(total_items / page_size))
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_violations = violations[start:end]
+
+    return JSONResponse(
+        content={
+            "violations": page_violations,
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_items": total_items,
+                "total_pages": total_pages,
+            },
+        }
+    )
+
+
+@router.get("/api/admin/extraction-analysis/{version}/violations/{record_id}")
+async def get_violation_detail(
+    version: str,
+    record_id: str,
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+) -> JSONResponse:
+    """Return all violations for a specific record, plus raw XML and parsed JSON (if available)."""
+    _validate_version(version)
+    _validate_record_id(record_id)
+
+    location = _find_version_root(version)
+    if location is None:
+        raise HTTPException(status_code=404, detail=f"Version not found: {version!r}")
+
+    data_root, _source = location
+    flagged_version_dir = data_root / "flagged" / version
+
+    all_violations = _read_violations(flagged_version_dir)
+    record_violations = [v for v in all_violations if v.get("record_id") == record_id]
+
+    if not record_violations:
+        raise HTTPException(status_code=404, detail=f"No violations found for record_id: {record_id!r}")
+
+    # Determine the entity type (use the first match)
+    found_entity_type: str = record_violations[0].get("entity_type", "unknown")
+    raw_xml, parsed_json = _load_record_files(flagged_version_dir, found_entity_type, record_id)
+
+    return JSONResponse(
+        content={
+            "record_id": record_id,
+            "entity_type": found_entity_type,
+            "violations": record_violations,
+            "raw_xml": raw_xml,
+            "parsed_json": parsed_json,
         }
     )

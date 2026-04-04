@@ -282,3 +282,212 @@ class TestSummaryEndpoint:
 
         assert resp.status_code == 200
         assert resp.json()["violation_summary"]["by_entity_type"]["releases"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Shared helper for Tasks 4-6
+# ---------------------------------------------------------------------------
+
+
+def _make_flagged_version(tmp_path: Path, version: str = "20260101") -> Path:
+    """Create a sample flagged directory with violations and record files for the given version.
+
+    Layout:
+        {tmp_path}/flagged/{version}/artists/violations.jsonl  (3 violations)
+        {tmp_path}/flagged/{version}/artists/{record_id}.xml
+        {tmp_path}/flagged/{version}/artists/{record_id}.json
+    """
+    violations = [
+        {"record_id": "1", "rule": "year-out-of-range", "severity": "warning", "field": "year", "field_value": "1850"},
+        {"record_id": "2", "rule": "year-out-of-range", "severity": "warning", "field": "year", "field_value": "1920"},
+        {"record_id": "3", "rule": "missing-field", "severity": "error", "field": "title", "field_value": ""},
+    ]
+    entity_dir = tmp_path / "flagged" / version / "artists"
+    entity_dir.mkdir(parents=True, exist_ok=True)
+    (entity_dir / "violations.jsonl").write_text("\n".join(json.dumps(v) for v in violations) + "\n")
+
+    # Record 1: XML has year, JSON is missing it → parsing_error
+    (entity_dir / "1.xml").write_text("<artist><year>1850</year><name>Test</name></artist>")
+    (entity_dir / "1.json").write_text(json.dumps({"name": "Test"}))
+
+    # Record 2: XML also missing year → source_issue
+    (entity_dir / "2.xml").write_text("<artist><name>Old Artist</name></artist>")
+    (entity_dir / "2.json").write_text(json.dumps({"name": "Old Artist"}))
+
+    # Record 3: no files at all → indeterminate
+    # (no .xml or .json written)
+
+    return tmp_path / "flagged" / version
+
+
+# ---------------------------------------------------------------------------
+# Task 4: Violations List endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestViolationsListEndpoint:
+    def test_requires_auth(self, test_client: TestClient) -> None:
+        """Returns 401 without a valid token."""
+        resp = test_client.get("/api/admin/extraction-analysis/20260101/violations")
+        assert resp.status_code == 401
+
+    def test_not_found_for_unknown_version(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns 404 for an unknown version."""
+        import api.routers.extraction_analysis as ea
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get("/api/admin/extraction-analysis/99990101/violations", headers=_admin_auth_headers())
+        assert resp.status_code == 404
+
+    def test_paginated_results(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns paginated violations with correct pagination metadata."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations?page=1&page_size=2",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["violations"]) == 2
+        pagination = data["pagination"]
+        assert pagination["page"] == 1
+        assert pagination["page_size"] == 2
+        assert pagination["total_items"] == 3
+        assert pagination["total_pages"] == 2
+
+    def test_filter_by_severity(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Filters violations by severity."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations?severity=error",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["pagination"]["total_items"] == 1
+        assert all(v["severity"] == "error" for v in data["violations"])
+
+    def test_filter_by_rule(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Filters violations by rule."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations?rule=year-out-of-range",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["pagination"]["total_items"] == 2
+        assert all(v["rule"] == "year-out-of-range" for v in data["violations"])
+
+    def test_filter_by_entity_type(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Filters violations by entity_type."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations?entity_type=artists",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["pagination"]["total_items"] == 3
+
+    def test_empty_page_beyond_results(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns empty violations list for a page beyond available results."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations?page=99&page_size=50",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["violations"] == []
+        assert data["pagination"]["total_items"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Task 4: Violation Detail endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestViolationDetailEndpoint:
+    def test_requires_auth(self, test_client: TestClient) -> None:
+        """Returns 401 without a valid token."""
+        resp = test_client.get("/api/admin/extraction-analysis/20260101/violations/1")
+        assert resp.status_code == 401
+
+    def test_not_found_for_unknown_record(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns 404 when record_id has no violations."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations/9999",
+                headers=_admin_auth_headers(),
+            )
+        assert resp.status_code == 404
+
+    def test_record_detail_with_files(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns violation detail with raw XML and parsed JSON when files are present."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations/1",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["record_id"] == "1"
+        assert data["entity_type"] == "artists"
+        assert len(data["violations"]) == 1
+        assert data["raw_xml"] is not None
+        assert "<year>1850</year>" in data["raw_xml"]
+        assert data["parsed_json"] is not None
+        assert data["parsed_json"]["name"] == "Test"
+
+    def test_record_detail_null_for_missing_files(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns null raw_xml and parsed_json when record files are missing."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations/3",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["record_id"] == "3"
+        assert data["raw_xml"] is None
+        assert data["parsed_json"] is None
