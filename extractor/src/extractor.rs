@@ -797,7 +797,7 @@ pub async fn run_extraction_loop(
     Ok(())
 }
 
-pub(crate) const DISCOGS_POLL_INTERVAL: Duration = Duration::from_secs(60);
+pub(crate) const DISCOGS_POLL_INTERVAL: Duration = Duration::from_secs(3600);
 pub(crate) const DISCOGS_HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const DISCOGS_MAX_UNREACHABLE_RETRIES: u32 = 10;
 
