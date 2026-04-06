@@ -15,7 +15,7 @@ Add automatic downloading of MusicBrainz JSON dump files from `https://data.meta
 - **Version format**: `YYYYMMDD-HHMMSS`
 - **Per-version contents**: `.tar.xz` archives per entity, `SHA256SUMS` for integrity
 - **Relevant archives**: `artist.tar.xz` (~2GB), `label.tar.xz` (~159MB), `release.tar.xz` (~20GB)
-- **Tarball structure**: Each `.tar.xz` contains `<entity>/mbdump/<entity>` — a raw JSONL file (not xz-compressed)
+- **Tarball structure**: Each `.tar.xz` contains `<entity>/mbdump/<entity>` — a raw JSONL file (not xz-compressed internally)
 
 ## Architecture
 
@@ -47,9 +47,10 @@ pub async fn download_latest() -> Result<MbDownloadResult>
       - Verify against SHA256SUMS after download completes
       - Retry logic: 3 attempts, exponential backoff (same constants as Discogs downloader)
       - Progress logging every 10 seconds
-   b. Extract mbdump/<entity> from tarball using spawn_blocking
-      -> save as <output_dir>/<version>/<entity>.jsonl
-   c. Delete the .tar.xz.tmp file after successful extraction
+   b. Rename .tar.xz.tmp to .tar.xz (preserve original tarball)
+   c. Extract+compress mbdump/<entity> from tarball in a single streaming pass using spawn_blocking
+      -> stream: tar.xz → XZ decoder → XZ encoder (level 6) → <output_dir>/<version>/<entity>.jsonl.xz
+      -> no intermediate uncompressed file on disk
 5. Return MbDownloadResult::Downloaded(version)
 ```
 
@@ -58,35 +59,39 @@ pub async fn download_latest() -> Result<MbDownloadResult>
 ```
 /musicbrainz-data/
   20260325-001001/
-    artist.jsonl       <- extracted from artist.tar.xz:label/mbdump/artist
-    label.jsonl        <- extracted from label.tar.xz:label/mbdump/label
-    release.jsonl      <- extracted from release.tar.xz:release/mbdump/release
+    artist.tar.xz       <- original tarball (preserved)
+    artist.jsonl.xz      <- streaming extract+compress from artist.tar.xz
+    label.tar.xz
+    label.jsonl.xz
+    release.tar.xz
+    release.jsonl.xz
 ```
 
-### Tar extraction
+### Streaming extract+compress
 
-Uses `tar` and `xz2` crates (synchronous, run via `spawn_blocking`):
+Uses `tar` and `xz2` crates (synchronous, run via `spawn_blocking`). Streams the tar entry
+directly through an XZ encoder to produce `.jsonl.xz` on disk — no intermediate uncompressed file:
 
 ```rust
-let file = File::open(&tmp_path)?;
+let file = File::open(&tarball_path)?;
 let xz = xz2::read::XzDecoder::new(file);
 let mut archive = tar::Archive::new(xz);
 
 for entry in archive.entries()? {
     let mut entry = entry?;
     let path = entry.path()?;
-    // Validate path to prevent traversal, only extract the target entry
     if path.ends_with(format!("mbdump/{}", entity)) {
-        let out_path = version_dir.join(format!("{}.jsonl", entity));
-        let mut out_file = File::create(&out_path)?;
-        io::copy(&mut entry, &mut out_file)?;
+        let out_file = File::create(&out_path)?;  // .jsonl.xz
+        let mut encoder = XzEncoder::new(out_file, 6);
+        io::copy(&mut entry, &mut encoder)?;
+        encoder.finish()?;
         break;
     }
 }
-std::fs::remove_file(&tmp_path)?;
+// Original .tar.xz is preserved for re-extraction if needed
 ```
 
-Security: Only the expected `mbdump/<entity>` entry is extracted. All other tar entries are skipped. Paths are validated to prevent path traversal.
+Security: Only the expected `mbdump/<entity>` entry is extracted. All other tar entries are skipped. Paths are validated to prevent path traversal. Partial output files are cleaned up on failure.
 
 ## Integration with Extraction Pipeline
 
