@@ -62,7 +62,10 @@ pub fn discover_mb_dump_files(root: &Path) -> Result<HashMap<DataType, PathBuf>>
             for entry in &entries {
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy();
-                if name_str.contains(keyword) && !(data_type == &DataType::Releases && name_str.contains("release-group")) && (name_str.ends_with(".jsonl.xz") || name_str.ends_with(".jsonl")) {
+                if name_str.contains(keyword)
+                    && !(data_type == &DataType::Releases && name_str.contains("release-group"))
+                    && (name_str.ends_with(".jsonl.xz") || name_str.ends_with(".jsonl"))
+                {
                     let path = entry.path();
                     info!("📋 Found MusicBrainz {} dump (fuzzy match): {:?}", data_type, path);
                     found.insert(*data_type, path);
@@ -223,23 +226,24 @@ impl MbDownloader {
 
             let download_url = format!("{}{}/{}", self.base_url, version, tarball_name);
             let tmp_path = version_dir.join(format!("{}.tmp", tarball_name)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-            let out_path = version_dir.join(format!("{}.jsonl", entity)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            let tarball_path = version_dir.join(&tarball_name); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            let out_path = version_dir.join(format!("{}.jsonl.xz", entity)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
 
             // Download with retry
             self.download_file(&download_url, &tmp_path, expected_hash, entity).await?;
 
-            // Extract on blocking thread
-            let extract_tmp = tmp_path.clone();
+            // Rename temp file to final tarball path (keep original tarball)
+            fs::rename(&tmp_path, &tarball_path)
+                .await
+                .with_context(|| format!("Failed to rename {:?} to {:?}", tmp_path, tarball_path))?;
+
+            // Extract+compress on blocking thread: tar.xz → .jsonl.xz in a single streaming pass
+            let extract_tar = tarball_path.clone();
             let extract_entity = entity.to_string();
             let extract_out = out_path.clone();
-            tokio::task::spawn_blocking(move || extract_entity_from_tarball(&extract_tmp, &extract_entity, &extract_out))
+            tokio::task::spawn_blocking(move || extract_entity_from_tarball(&extract_tar, &extract_entity, &extract_out))
                 .await
                 .context("Extraction task panicked")??;
-
-            // Clean up temp tarball
-            if let Err(e) = fs::remove_file(&tmp_path).await {
-                warn!("⚠️ Failed to remove temp tarball {:?}: {}", tmp_path, e);
-            }
 
             info!("✅ Successfully downloaded and extracted MusicBrainz {} dump", entity);
         }
@@ -254,9 +258,9 @@ impl MbDownloader {
         if !version_dir.is_dir() {
             return false;
         }
-        MB_ENTITIES.iter().all(|entity| {
-            version_dir.join(format!("{}.jsonl", entity)).exists() || version_dir.join(format!("{}.jsonl.xz", entity)).exists()
-        })
+        MB_ENTITIES
+            .iter()
+            .all(|entity| version_dir.join(format!("{}.jsonl", entity)).exists() || version_dir.join(format!("{}.jsonl.xz", entity)).exists())
     }
 
     /// Download a file with retry logic and SHA256 verification.
@@ -369,9 +373,8 @@ impl MbDownloader {
 /// Returns them sorted descending (most recent first).
 #[allow(dead_code)]
 pub fn parse_version_directories(html: &str) -> Vec<String> {
-    static VERSION_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r#"href="(\d{8}-\d{6})/?"#).expect("hardcoded regex is valid")
-    });
+    static VERSION_PATTERN: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r#"href="(\d{8}-\d{6})/?"#).expect("hardcoded regex is valid"));
     let pattern = &*VERSION_PATTERN;
     let mut versions: Vec<String> = pattern.captures_iter(html).filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string())).collect();
     versions.sort_by(|a, b| b.cmp(a));
@@ -397,95 +400,18 @@ pub fn parse_sha256sums(content: &str) -> HashMap<String, String> {
         .collect()
 }
 
-/// Log compression progress for large files.
-pub fn log_compression_progress(filename: &std::ffi::OsStr, total_read: u64, input_size: u64, elapsed_secs: f64) {
-    let speed = if elapsed_secs > 0.0 { (total_read as f64 / 1_048_576.0) / elapsed_secs } else { 0.0 };
-    let pct = if input_size > 0 { (total_read as f64 / input_size as f64) * 100.0 } else { 0.0 };
-    info!(
-        "🧹 Compressing {:?} — {:.1}% ({:.1} MB read, {:.1} MB/s)",
-        filename,
-        pct,
-        total_read as f64 / 1_048_576.0,
-        speed,
-    );
-}
-
-/// Compress a `.jsonl` file to `.jsonl.xz` and delete the original.
+/// Extract the `mbdump/<entity>` file from a `.tar.xz` archive directly to a compressed
+/// `.jsonl.xz` file in a single streaming pass.
 ///
-/// Uses XZ compression (level 6) to match the original MusicBrainz dump format.
-/// Returns the path of the compressed file on success.
-/// Logs progress every 10 seconds for large files.
-pub fn compress_jsonl_to_xz(jsonl_path: &Path) -> Result<PathBuf> {
-    use xz2::write::XzEncoder;
-
-    let xz_path = jsonl_path.with_extension("jsonl.xz");
-
-    // `jsonl_path` and `xz_path` come from operator-controlled config, not HTTP input.
-    let input = std::fs::File::open(jsonl_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-        .with_context(|| format!("Failed to open file for compression: {:?}", jsonl_path))?;
-    let input_size = input.metadata().map(|m| m.len()).unwrap_or(0);
-    let mut reader = std::io::BufReader::new(input);
-
-    let output = std::fs::File::create(&xz_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-        .with_context(|| format!("Failed to create compressed file: {:?}", xz_path))?;
-    let mut encoder = XzEncoder::new(output, 6);
-
-    let mut buf = [0u8; 256 * 1024]; // 256 KB buffer
-    let mut total_read: u64 = 0;
-    let compress_start = std::time::Instant::now();
-    let mut last_progress_log = compress_start;
-    let filename = jsonl_path.file_name().unwrap_or_default().to_owned();
-
-    let compress_result = (|| -> Result<()> {
-        loop {
-            let n = reader.read(&mut buf).context("Failed to read during compression")?;
-            if n == 0 {
-                break;
-            }
-            encoder.write_all(&buf[..n]).context("Failed to write compressed data")?;
-            total_read += n as u64;
-
-            let now = std::time::Instant::now();
-            if now.duration_since(last_progress_log).as_secs() >= 10 {
-                log_compression_progress(&filename, total_read, input_size, compress_start.elapsed().as_secs_f64());
-                last_progress_log = now;
-            }
-        }
-        encoder.finish().context("Failed to finalize XZ compression")?;
-        Ok(())
-    })();
-
-    // Clean up partial .xz file on any failure to prevent poisoning restarts
-    if let Err(e) = compress_result {
-        let _ = std::fs::remove_file(&xz_path);
-        return Err(e);
-    }
-
-    let compressed_size = std::fs::metadata(&xz_path).map(|m| m.len()).unwrap_or(0);
-    let ratio = if total_read > 0 { (compressed_size as f64 / total_read as f64) * 100.0 } else { 0.0 };
-
-    // Remove the original uncompressed file
-    std::fs::remove_file(jsonl_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-        .with_context(|| format!("Failed to remove original file: {:?}", jsonl_path))?;
-
-    info!(
-        "🧹 Compressed {:?} → {:?} ({:.1} MB → {:.1} MB, {:.1}% of original)",
-        jsonl_path.file_name().unwrap_or_default(),
-        xz_path.file_name().unwrap_or_default(),
-        total_read as f64 / 1_048_576.0,
-        compressed_size as f64 / 1_048_576.0,
-        ratio,
-    );
-
-    Ok(xz_path)
-}
-
-/// Extract the `mbdump/<entity>` file from a `.tar.xz` archive.
+/// Streams: tar.xz → XZ decoder → XZ encoder (level 6) → disk. No intermediate uncompressed
+/// file is written, saving both disk space and a separate re-compression step.
 ///
 /// Only the target entry is extracted; all other entries are skipped.
 /// Returns an error if the target entry is not found.
-#[allow(dead_code)]
+/// Cleans up partial output file on failure to prevent poisoning restarts.
 pub fn extract_entity_from_tarball(tar_path: &Path, entity: &str, out_path: &Path) -> Result<()> {
+    use xz2::write::XzEncoder;
+
     // `tar_path` and `out_path` come from operator-controlled config (CLI/env var), not HTTP input.
     let file = std::fs::File::open(tar_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
         .with_context(|| format!("Failed to open tarball: {:?}", tar_path))?;
@@ -499,40 +425,51 @@ pub fn extract_entity_from_tarball(tar_path: &Path, entity: &str, out_path: &Pat
         let path = entry.path().context("Failed to read entry path")?;
 
         if path.ends_with(&target_suffix) {
-            let mut out_file = std::fs::File::create(out_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            let out_file = std::fs::File::create(out_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
                 .with_context(|| format!("Failed to create output file: {:?}", out_path))?;
+            let mut encoder = XzEncoder::new(out_file, 6);
 
-            // Copy with progress logging — xz decompression of large files can take 30+ minutes
+            // Stream with progress logging — xz decompression of large files can take 30+ minutes
             let mut buf = [0u8; 256 * 1024]; // 256 KB buffer
-            let mut total_written: u64 = 0;
+            let mut total_read: u64 = 0;
             let extract_start = std::time::Instant::now();
             let mut last_progress_log = extract_start;
 
-            loop {
-                let n = entry.read(&mut buf).with_context(|| format!("Failed to read {} from tarball", entity))?;
-                if n == 0 {
-                    break;
-                }
-                out_file.write_all(&buf[..n]).with_context(|| format!("Failed to write {} to {:?}", entity, out_path))?;
-                total_written += n as u64;
+            let extract_result = (|| -> Result<()> {
+                loop {
+                    let n = entry.read(&mut buf).with_context(|| format!("Failed to read {} from tarball", entity))?;
+                    if n == 0 {
+                        break;
+                    }
+                    encoder.write_all(&buf[..n]).with_context(|| format!("Failed to write compressed {} to {:?}", entity, out_path))?;
+                    total_read += n as u64;
 
-                let now = std::time::Instant::now();
-                if now.duration_since(last_progress_log).as_secs() >= 10 {
-                    let elapsed = extract_start.elapsed().as_secs_f64();
-                    let speed = if elapsed > 0.0 { (total_written as f64 / 1_048_576.0) / elapsed } else { 0.0 };
-                    info!(
-                        "📦 {} — extracting: {:.1} MB written ({:.1} MB/s)",
-                        entity,
-                        total_written as f64 / 1_048_576.0,
-                        speed,
-                    );
-                    last_progress_log = now;
+                    let now = std::time::Instant::now();
+                    if now.duration_since(last_progress_log).as_secs() >= 10 {
+                        let elapsed = extract_start.elapsed().as_secs_f64();
+                        let speed = if elapsed > 0.0 { (total_read as f64 / 1_048_576.0) / elapsed } else { 0.0 };
+                        info!("📦 {} — extracting+compressing: {:.1} MB processed ({:.1} MB/s)", entity, total_read as f64 / 1_048_576.0, speed,);
+                        last_progress_log = now;
+                    }
                 }
+                encoder.finish().context("Failed to finalize XZ compression")?;
+                Ok(())
+            })();
+
+            // Clean up partial .xz file on any failure to prevent poisoning restarts
+            if let Err(e) = extract_result {
+                let _ = std::fs::remove_file(out_path);
+                return Err(e);
             }
 
-            out_file.flush().context("Failed to flush extracted file")?;
-            out_file.sync_data().context("Failed to sync extracted file")?;
-            info!("📋 Extracted {} from {} ({} bytes)", entity, tar_path.display(), total_written);
+            let compressed_size = std::fs::metadata(out_path).map(|m| m.len()).unwrap_or(0);
+            info!(
+                "📋 Extracted+compressed {} from {} ({:.1} MB uncompressed → {:.1} MB XZ)",
+                entity,
+                tar_path.display(),
+                total_read as f64 / 1_048_576.0,
+                compressed_size as f64 / 1_048_576.0,
+            );
             return Ok(());
         }
     }

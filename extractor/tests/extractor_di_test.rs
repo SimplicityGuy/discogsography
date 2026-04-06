@@ -1809,21 +1809,24 @@ async fn test_process_discogs_data_download_failure() {
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[tokio::test]
-async fn test_process_musicbrainz_data_compresses_jsonl_after_extraction() {
-    // Process real JSONL content and verify .jsonl files are compressed to .jsonl.xz
+async fn test_process_musicbrainz_data_processes_xz_files() {
+    // Files are already .jsonl.xz (produced by streaming extract) — verify processing works
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
 
     let versioned = temp_dir.path().join("20260322-000000");
     std::fs::create_dir_all(&versioned).unwrap();
 
-    // Write actual JSONL content for all entity types
+    // Write XZ-compressed JSONL files (as produced by streaming extract_entity_from_tarball)
     let artist_jsonl = "{\"id\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"Test Artist\",\"relations\":[]}\n";
     let label_jsonl = "{\"id\":\"b2c3d4e5-0000-0000-0000-000000000001\",\"name\":\"Test Label\",\"relations\":[]}\n";
-    std::fs::write(versioned.join("artist.jsonl"), artist_jsonl).unwrap();
-    std::fs::write(versioned.join("label.jsonl"), label_jsonl).unwrap();
-    std::fs::write(versioned.join("release-group.jsonl"), b"").unwrap();
-    std::fs::write(versioned.join("release.jsonl"), b"").unwrap();
+
+    for (name, content) in &[("artist", artist_jsonl), ("label", label_jsonl), ("release-group", ""), ("release", "")] {
+        let xz_path = versioned.join(format!("{}.jsonl.xz", name));
+        let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 6);
+        encoder.write_all(content.as_bytes()).unwrap();
+        std::fs::write(&xz_path, encoder.finish().unwrap()).unwrap();
+    }
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
@@ -1843,30 +1846,14 @@ async fn test_process_musicbrainz_data_compresses_jsonl_after_extraction() {
     assert!(result.is_ok());
     assert!(result.unwrap());
 
-    // Verify: original .jsonl files should be gone, replaced by .jsonl.xz
-    assert!(!versioned.join("artist.jsonl").exists(), "artist.jsonl should be deleted after compression");
-    assert!(versioned.join("artist.jsonl.xz").exists(), "artist.jsonl.xz should exist after compression");
-    assert!(!versioned.join("label.jsonl").exists(), "label.jsonl should be deleted after compression");
-    assert!(versioned.join("label.jsonl.xz").exists(), "label.jsonl.xz should exist after compression");
-    assert!(!versioned.join("release-group.jsonl").exists(), "release-group.jsonl should be deleted");
-    assert!(versioned.join("release-group.jsonl.xz").exists(), "release-group.jsonl.xz should exist");
-    assert!(!versioned.join("release.jsonl").exists(), "release.jsonl should be deleted");
-    assert!(versioned.join("release.jsonl.xz").exists(), "release.jsonl.xz should exist");
+    // Verify .xz files still present (no post-processing needed)
+    assert!(versioned.join("artist.jsonl.xz").exists(), "artist.jsonl.xz should remain");
+    assert!(versioned.join("label.jsonl.xz").exists(), "label.jsonl.xz should remain");
 
-    // Verify compressed artist.jsonl.xz can be decompressed to original content
-    let file = std::fs::File::open(versioned.join("artist.jsonl.xz")).unwrap();
-    let mut decoder = xz2::read::XzDecoder::new(file);
-    let mut decompressed = String::new();
-    std::io::Read::read_to_string(&mut decoder, &mut decompressed).unwrap();
-    assert_eq!(decompressed, artist_jsonl);
-
-    // Verify state marker was updated with compressed filenames
+    // Verify state marker tracks .jsonl.xz filenames
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     let marker = StateMarker::load(&marker_path).await.unwrap().unwrap();
-    assert!(
-        marker.processing_phase.progress_by_file.contains_key("artist.jsonl.xz"),
-        "State marker should contain compressed filename artist.jsonl.xz"
-    );
+    assert!(marker.processing_phase.progress_by_file.contains_key("artist.jsonl.xz"), "State marker should contain filename artist.jsonl.xz");
 }
 
 #[tokio::test]
@@ -1914,17 +1901,25 @@ async fn test_process_musicbrainz_data_skips_compression_for_xz_files() {
 }
 
 #[tokio::test]
-async fn test_process_musicbrainz_data_compression_state_marker_has_both_names() {
-    // Verify state marker has both original and compressed filenames for resume correctness
+async fn test_process_musicbrainz_data_state_marker_tracks_xz_filenames() {
+    // Verify state marker tracks .jsonl.xz filenames (no separate compression step)
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
 
     let versioned = temp_dir.path().join("20260322-000000");
     std::fs::create_dir_all(&versioned).unwrap();
-    std::fs::write(versioned.join("artist.jsonl"), b"{\"id\":\"a1\",\"name\":\"A\",\"relations\":[]}\n").unwrap();
-    std::fs::write(versioned.join("label.jsonl"), b"{\"id\":\"l1\",\"name\":\"L\",\"relations\":[]}\n").unwrap();
-    std::fs::write(versioned.join("release-group.jsonl"), b"").unwrap();
-    std::fs::write(versioned.join("release.jsonl"), b"").unwrap();
+
+    for (name, content) in &[
+        ("artist", "{\"id\":\"a1\",\"name\":\"A\",\"relations\":[]}\n"),
+        ("label", "{\"id\":\"l1\",\"name\":\"L\",\"relations\":[]}\n"),
+        ("release-group", ""),
+        ("release", ""),
+    ] {
+        let xz_path = versioned.join(format!("{}.jsonl.xz", name));
+        let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 6);
+        encoder.write_all(content.as_bytes()).unwrap();
+        std::fs::write(&xz_path, encoder.finish().unwrap()).unwrap();
+    }
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
@@ -1943,12 +1938,11 @@ async fn test_process_musicbrainz_data_compression_state_marker_has_both_names()
     assert!(result.is_ok());
     assert!(result.unwrap());
 
-    // Load state marker and verify both original and compressed filenames are present
+    // Load state marker and verify .jsonl.xz filenames are tracked
     let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
     let marker = StateMarker::load(&marker_path).await.unwrap().unwrap();
 
-    assert!(marker.processing_phase.progress_by_file.contains_key("artist.jsonl"), "State marker should contain original filename");
-    assert!(marker.processing_phase.progress_by_file.contains_key("artist.jsonl.xz"), "State marker should contain compressed filename");
+    assert!(marker.processing_phase.progress_by_file.contains_key("artist.jsonl.xz"), "State marker should contain filename artist.jsonl.xz");
     assert_eq!(marker.summary.overall_status, extractor::state_marker::PhaseStatus::Completed, "Extraction should be marked complete");
 }
 
@@ -1960,10 +1954,13 @@ async fn test_process_musicbrainz_data_entity_failure_skips_compression() {
 
     let versioned = temp_dir.path().join("20260322-000000");
     std::fs::create_dir_all(&versioned).unwrap();
-    std::fs::write(versioned.join("artist.jsonl"), b"{\"id\":\"a1\",\"name\":\"A\",\"relations\":[]}\n").unwrap();
-    std::fs::write(versioned.join("label.jsonl"), b"").unwrap();
-    std::fs::write(versioned.join("release-group.jsonl"), b"").unwrap();
-    std::fs::write(versioned.join("release.jsonl"), b"").unwrap();
+
+    for (name, content) in &[("artist", "{\"id\":\"a1\",\"name\":\"A\",\"relations\":[]}\n"), ("label", ""), ("release-group", ""), ("release", "")] {
+        let xz_path = versioned.join(format!("{}.jsonl.xz", name));
+        let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 6);
+        encoder.write_all(content.as_bytes()).unwrap();
+        std::fs::write(&xz_path, encoder.finish().unwrap()).unwrap();
+    }
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
@@ -1984,24 +1981,25 @@ async fn test_process_musicbrainz_data_entity_failure_skips_compression() {
     // setup_exchange failure causes process_musicbrainz_data to return an error
     assert!(result.is_err(), "Should fail when exchange setup fails");
 
-    // Verify: .jsonl files should NOT be compressed because pipeline never ran
-    assert!(versioned.join("artist.jsonl").exists(), "artist.jsonl should remain (pipeline failed before compression)");
-    assert!(!versioned.join("artist.jsonl.xz").exists(), "artist.jsonl.xz should NOT exist (pipeline failed)");
+    // Verify: .jsonl.xz files should remain untouched (pipeline failed before processing)
+    assert!(versioned.join("artist.jsonl.xz").exists(), "artist.jsonl.xz should remain (pipeline failed)");
 }
 
 #[tokio::test]
-async fn test_process_musicbrainz_data_send_file_complete_failure_still_compresses() {
-    // When send_file_complete fails, file_success is still true (it was set before send),
-    // so compression should still run. Only overall `success` is set to false.
+async fn test_process_musicbrainz_data_send_file_complete_failure_preserves_xz() {
+    // When send_file_complete fails, overall success=false but .jsonl.xz files remain intact
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
 
     let versioned = temp_dir.path().join("20260322-000000");
     std::fs::create_dir_all(&versioned).unwrap();
-    std::fs::write(versioned.join("artist.jsonl"), b"{\"id\":\"a1\",\"name\":\"A\",\"relations\":[]}\n").unwrap();
-    std::fs::write(versioned.join("label.jsonl"), b"").unwrap();
-    std::fs::write(versioned.join("release-group.jsonl"), b"").unwrap();
-    std::fs::write(versioned.join("release.jsonl"), b"").unwrap();
+
+    for (name, content) in &[("artist", "{\"id\":\"a1\",\"name\":\"A\",\"relations\":[]}\n"), ("label", ""), ("release-group", ""), ("release", "")] {
+        let xz_path = versioned.join(format!("{}.jsonl.xz", name));
+        let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 6);
+        encoder.write_all(content.as_bytes()).unwrap();
+        std::fs::write(&xz_path, encoder.finish().unwrap()).unwrap();
+    }
 
     let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
     let state = Arc::new(RwLock::new(ExtractorState::default()));
@@ -2010,7 +2008,7 @@ async fn test_process_musicbrainz_data_send_file_complete_failure_still_compress
     let mut mock_mq = MockMessagePublisher::new();
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
-    // send_file_complete fails — sets success=false but file_success remains true
+    // send_file_complete fails — sets success=false
     mock_mq.expect_send_file_complete().returning(|_, _, _| Err(anyhow::anyhow!("AMQP send error")));
     mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
     mock_mq.expect_close().returning(|| Ok(()));
@@ -2023,7 +2021,6 @@ async fn test_process_musicbrainz_data_send_file_complete_failure_still_compress
     // Returns false because success=false (send_file_complete failed)
     assert!(!result.unwrap(), "Should return false due to send_file_complete failure");
 
-    // Compression should still have run since file_success was true
-    assert!(!versioned.join("artist.jsonl").exists(), "artist.jsonl should be compressed despite send failure");
-    assert!(versioned.join("artist.jsonl.xz").exists(), "artist.jsonl.xz should exist");
+    // .jsonl.xz files should still be present
+    assert!(versioned.join("artist.jsonl.xz").exists(), "artist.jsonl.xz should remain");
 }

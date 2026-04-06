@@ -962,7 +962,7 @@ pub async fn process_musicbrainz_data(
     _compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<bool> {
     use crate::jsonl_parser::{build_mbid_discogs_map_from_file, parse_mb_jsonl_file};
-    use crate::musicbrainz_downloader::{MbDownloader, compress_jsonl_to_xz, discover_mb_dump_files};
+    use crate::musicbrainz_downloader::{MbDownloader, discover_mb_dump_files};
 
     let extraction_started_at = chrono::Utc::now();
 
@@ -1197,29 +1197,6 @@ pub async fn process_musicbrainz_data(
         if file_success && let Err(e) = mq.send_file_complete(*data_type, file_name, total_count).await {
             error!("❌ Failed to send file_complete for {}: {}", data_type, e);
             success = false;
-        }
-
-        // Compress JSONL to XZ to reclaim disk space (only for successfully processed plain .jsonl files)
-        if file_success && file_path.extension().is_some_and(|e| e == "jsonl") {
-            let compress_path = file_path.clone();
-            if let Ok(Ok(compressed_path)) = tokio::task::spawn_blocking(move || compress_jsonl_to_xz(&compress_path)).await {
-                // Register compressed filename in state marker so resume finds it as completed
-                if let Some(compressed_name) = compressed_path.file_name().and_then(|n| n.to_str()) {
-                    let mut sm = state_marker.lock().await;
-                    // Register compressed filename as completed for resume, but do NOT
-                    // call complete_file_processing which would inflate files_processed.
-                    // Only record the mapping so resume skips this file.
-                    sm.start_file_processing(compressed_name);
-                    if let Some(status) = sm.processing_phase.progress_by_file.get_mut(compressed_name) {
-                        status.status = PhaseStatus::Completed;
-                        status.completed_at = Some(chrono::Utc::now());
-                        status.records_extracted = total_count;
-                    }
-                    sm.save(&marker_path).await?;
-                }
-            } else {
-                warn!("⚠️ Failed to compress {} (continuing without compression)", file_name);
-            }
         }
 
         record_counts.insert(data_type.to_string(), total_count);
