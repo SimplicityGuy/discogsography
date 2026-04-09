@@ -85,11 +85,7 @@ class TestVersionsEndpoint:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data["versions"]) == 1
-        v = data["versions"][0]
-        assert v["version"] == "20260101"
-        assert v["source"] == "discogs"
-        assert set(v["entity_types"]) == {"artists", "releases"}
+        assert data["versions"] == ["20260101"]
 
     def test_both_sources(self, test_client: TestClient, tmp_path: Path) -> None:
         """Returns versions from both discogs and musicbrainz roots."""
@@ -105,11 +101,8 @@ class TestVersionsEndpoint:
 
         assert resp.status_code == 200
         data = resp.json()
-        versions = {v["version"]: v for v in data["versions"]}
-        assert "20260101" in versions
-        assert versions["20260101"]["source"] == "discogs"
-        assert "20260201" in versions
-        assert versions["20260201"]["source"] == "musicbrainz"
+        assert "20260101" in data["versions"]
+        assert "20260201" in data["versions"]
 
     def test_skips_dirs_without_violations(self, test_client: TestClient, tmp_path: Path) -> None:
         """Skips entity directories that have no violations.jsonl file."""
@@ -866,8 +859,7 @@ class TestScanVersionsNonDir:
         assert resp.status_code == 200
         versions = resp.json()["versions"]
         # Only the real version dir should appear; the regular file must be skipped
-        assert len(versions) == 1
-        assert versions[0]["version"] == "20260101"
+        assert versions == ["20260101"]
 
 
 class TestReadViolationsEdgeCases:

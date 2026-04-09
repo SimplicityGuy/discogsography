@@ -303,7 +303,7 @@ async def get_redis_storage(redis: Any) -> dict[str, Any]:
         if cursor == 0 or total_scanned >= max_scan_keys:
             break
 
-    keys_by_prefix = [{"prefix": prefix, "count": count} for prefix, count in sorted(prefix_counts.items(), key=lambda x: -x[1])]
+    keys_by_prefix = dict(sorted(prefix_counts.items(), key=lambda x: -x[1]))
 
     return {
         "status": "ok",
