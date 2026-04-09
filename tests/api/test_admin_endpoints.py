@@ -904,7 +904,7 @@ class TestStorageEndpoint:
         ):
             mock_neo4j.return_value = {"status": "ok", "nodes": [], "relationships": [], "store_sizes": None}
             mock_pg.return_value = {"status": "ok", "tables": [], "total_size": "10 MB"}
-            mock_redis.return_value = {"status": "ok", "memory_used": "1M", "memory_peak": "2M", "total_keys": 5, "keys_by_prefix": []}
+            mock_redis.return_value = {"status": "ok", "memory_used": "1M", "memory_peak": "2M", "total_keys": 5, "keys_by_prefix": {}}
             resp = test_client.get("/api/admin/storage", headers=_admin_auth_headers())
             assert resp.status_code == 200
             data = resp.json()
@@ -920,7 +920,7 @@ class TestStorageEndpoint:
         ):
             mock_neo4j.side_effect = Exception("connection refused")
             mock_pg.return_value = {"status": "ok", "tables": [], "total_size": "10 MB"}
-            mock_redis.return_value = {"status": "ok", "memory_used": "1M", "memory_peak": "2M", "total_keys": 0, "keys_by_prefix": []}
+            mock_redis.return_value = {"status": "ok", "memory_used": "1M", "memory_peak": "2M", "total_keys": 0, "keys_by_prefix": {}}
             resp = test_client.get("/api/admin/storage", headers=_admin_auth_headers())
             assert resp.status_code == 200
             data = resp.json()

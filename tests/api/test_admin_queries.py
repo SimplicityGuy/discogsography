@@ -408,8 +408,8 @@ class TestGetRedisStorage:
         assert result["memory_used"] == "12.5M"
         assert result["memory_peak"] == "15.2M"
         assert result["total_keys"] == 342
-        assert any(entry["prefix"] == "cache:" for entry in result["keys_by_prefix"])
-        assert any(entry["prefix"] == "revoked:" for entry in result["keys_by_prefix"])
+        assert "cache:" in result["keys_by_prefix"]
+        assert "revoked:" in result["keys_by_prefix"]
 
     @pytest.mark.asyncio
     async def test_redis_none(self):
@@ -436,7 +436,7 @@ class TestGetRedisStorage:
 
         assert result["status"] == "ok"
         assert result["total_keys"] == 0
-        assert result["keys_by_prefix"] == []
+        assert result["keys_by_prefix"] == {}
 
 
 class TestGetAuditLog:

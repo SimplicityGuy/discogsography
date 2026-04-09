@@ -676,7 +676,7 @@ class AdminDashboard {
         // Node counts
         const nodesTbody = document.getElementById('neo4j-nodes-body');
         if (nodesTbody) {
-            const nodes = neo4j.node_counts || [];
+            const nodes = neo4j.nodes || neo4j.node_counts || [];
             if (nodes.length === 0) {
                 nodesTbody.replaceChildren(_emptyRow(2, 'No data'));
             } else {
@@ -698,7 +698,7 @@ class AdminDashboard {
         // Relationship counts
         const relsTbody = document.getElementById('neo4j-rels-body');
         if (relsTbody) {
-            const rels = neo4j.relationship_counts || [];
+            const rels = neo4j.relationships || neo4j.relationship_counts || [];
             if (rels.length === 0) {
                 relsTbody.replaceChildren(_emptyRow(2, 'No data'));
             } else {
@@ -777,7 +777,7 @@ class AdminDashboard {
 
                     const tdName = document.createElement('td');
                     tdName.className = 'py-2 pr-4 mono t-mid';
-                    tdName.textContent = t.table_name || '—';
+                    tdName.textContent = t.name || t.table_name || '—';
 
                     const tdRows = document.createElement('td');
                     tdRows.className = 'py-2 pr-4 mono t-mid text-right';
@@ -785,7 +785,7 @@ class AdminDashboard {
 
                     const tdData = document.createElement('td');
                     tdData.className = 'py-2 pr-4 mono t-mid text-right';
-                    tdData.textContent = t.data_size || '—';
+                    tdData.textContent = t.size || t.data_size || '—';
 
                     const tdIndex = document.createElement('td');
                     tdIndex.className = 'py-2 mono t-mid text-right';
@@ -914,9 +914,10 @@ class AdminDashboard {
             }
 
             const data = await response.json();
-            this.renderQueueSummaryTiles(data);
-            this.renderQueueDepthChart(data);
-            this.renderDlqGrid(data);
+            const normalized = this._normalizeQueueData(data);
+            this.renderQueueSummaryTiles(normalized);
+            this.renderQueueDepthChart(normalized);
+            this.renderDlqGrid(normalized);
         } catch {
             this._showInlineError(errorEl, errorMsgEl, 'Failed to load queue history');
         } finally {
@@ -1124,9 +1125,10 @@ class AdminDashboard {
             }
 
             const data = await response.json();
-            this.renderServiceCards(data);
-            this.renderResponseTimeChart(data);
-            this.renderEndpointsTable(data);
+            const normalized = this._normalizeHealthData(data);
+            this.renderServiceCards(normalized);
+            this.renderResponseTimeChart(normalized);
+            this.renderEndpointsTable(normalized);
         } catch {
             this._showInlineError(errorEl, errorMsgEl, 'Failed to load health history');
         } finally {
@@ -1336,6 +1338,79 @@ class AdminDashboard {
         return localStorage.getItem(`admin_range_${tabName}`) || '24h';
     }
 
+    _normalizeHealthData(data) {
+        // API returns {services: {name: {history: [{ts, status, response_time_ms}]}}}
+        // Frontend expects {services: [{service_name, status, uptime_pct, response_time_ms}],
+        //                   response_time_series: [{timestamp, p50, p95, p99}], endpoints: []}
+        if (Array.isArray(data.services)) return data;
+
+        const servicesObj = data.services || {};
+        const services = Object.entries(servicesObj).map(([name, svc]) => {
+            const history = svc.history || [];
+            const healthyCount = history.filter(h => h.status === 'healthy').length;
+            const uptime_pct = history.length > 0 ? (healthyCount / history.length) * 100 : 0;
+            const latest = history.length > 0 ? history[history.length - 1] : {};
+            const avgRt = history.length > 0
+                ? history.reduce((s, h) => s + (h.response_time_ms || 0), 0) / history.length
+                : 0;
+            return {
+                service_name: name,
+                status: latest.status || 'unknown',
+                uptime_pct,
+                response_time_ms: avgRt,
+            };
+        });
+
+        // Build response_time_series from all services' history
+        const allTimestamps = new Map();
+        for (const [, svc] of Object.entries(servicesObj)) {
+            for (const h of (svc.history || [])) {
+                const ts = h.ts;
+                if (!allTimestamps.has(ts)) allTimestamps.set(ts, []);
+                allTimestamps.get(ts).push(h.response_time_ms || 0);
+            }
+        }
+        const response_time_series = [...allTimestamps.entries()]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([ts, times]) => {
+                const sorted = [...times].sort((a, b) => a - b);
+                const p = (pct) => sorted[Math.min(Math.floor(sorted.length * pct), sorted.length - 1)] || 0;
+                return { timestamp: ts, p50: p(0.5), p95: p(0.95), p99: p(0.99) };
+            });
+
+        return { ...data, services, response_time_series, endpoints: data.endpoints || [] };
+    }
+
+    _normalizeQueueData(data) {
+        // API returns {queues: {name: {history: [{ts, ready, unacked, total, publish_rate, deliver_rate}]}}}
+        // Frontend expects {queues: [{queue_name, data_points: [{timestamp, messages_ready, ...}]}],
+        //                   dlq_summary: [{queue_name, data_points: [...]}]}
+        if (Array.isArray(data.queues)) return data;
+
+        const queuesObj = data.queues || {};
+        const queues = [];
+        const dlq_summary = [];
+
+        for (const [name, qData] of Object.entries(queuesObj)) {
+            const data_points = (qData.history || []).map(h => ({
+                timestamp: h.ts,
+                messages_ready: h.ready || 0,
+                messages_unacknowledged: h.unacked || 0,
+                consumers: h.consumers || 0,
+                publish_rate: h.publish_rate || 0,
+                ack_rate: h.deliver_rate || 0,
+            }));
+            const entry = { queue_name: name, data_points };
+            if (name.endsWith('.dlq')) {
+                dlq_summary.push(entry);
+            } else {
+                queues.push(entry);
+            }
+        }
+
+        return { ...data, queues, dlq_summary };
+    }
+
     _aggregateSparkline(queues, field) {
         if (!queues || queues.length === 0) return [];
         // Find the max number of data points across queues
@@ -1525,13 +1600,22 @@ class AdminDashboard {
             if (this._eaVersions.length > 0) {
                 const sel = document.getElementById('ea-version-select');
                 if (sel && sel.value === '') {
-                    sel.value = this._eaVersions[0];
+                    sel.value = this._eaVersionString(this._eaVersions[0]);
                     this._eaLoadReport();
                 }
             }
         } catch {
             // Silently fail — non-critical
         }
+    }
+
+    _eaVersionString(v) {
+        return typeof v === 'string' ? v : v.version;
+    }
+
+    _eaVersionLabel(v) {
+        if (typeof v === 'string') return v;
+        return v.source ? `${v.version} (${v.source})` : v.version;
     }
 
     _eaPopulateVersionSelects() {
@@ -1548,12 +1632,13 @@ class AdminDashboard {
             sel.appendChild(placeholder);
             this._eaVersions.forEach(v => {
                 const opt = document.createElement('option');
-                opt.value = v;
-                opt.textContent = v;
+                opt.value = this._eaVersionString(v);
+                opt.textContent = this._eaVersionLabel(v);
                 sel.appendChild(opt);
             });
             // Restore previous selection if still valid
-            if (current && this._eaVersions.includes(current)) sel.value = current;
+            const versionStrings = this._eaVersions.map(v => this._eaVersionString(v));
+            if (current && versionStrings.includes(current)) sel.value = current;
         });
     }
 
