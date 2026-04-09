@@ -25,6 +25,11 @@ function _esc(str) {
     return div.innerHTML;
 }
 
+// Helper: shorten queue names by stripping the common "discogsography-" prefix
+function _shortQueueName(name) {
+    return name.replace(/^discogsography-/, '');
+}
+
 // Helper: create a table row with a single "no data" cell spanning colSpan columns
 function _emptyRow(colSpan, message) {
     const tr = document.createElement('tr');
@@ -654,7 +659,7 @@ class AdminDashboard {
 
             const data = await response.json();
             this._renderNeo4j(data.neo4j || {});
-            this._renderPostgres(data.postgres || {});
+            this._renderPostgres(data.postgresql || {});
             this._renderRedis(data.redis || {});
         } catch {
             this._showInlineError(errorEl, errorMsgEl, 'Failed to load storage data');
@@ -671,7 +676,13 @@ class AdminDashboard {
             badge.textContent = neo4j.status || '—';
         }
 
-        if (neo4j.status !== 'ok') return;
+        if (neo4j.status !== 'ok') {
+            const nodesTbody = document.getElementById('neo4j-nodes-body');
+            if (nodesTbody) nodesTbody.replaceChildren(_emptyRow(2, neo4j.status === 'error' ? 'Connection error' : 'No data'));
+            const relsTbody = document.getElementById('neo4j-rels-body');
+            if (relsTbody) relsTbody.replaceChildren(_emptyRow(2, neo4j.status === 'error' ? 'Connection error' : 'No data'));
+            return;
+        }
 
         // Node counts
         const nodesTbody = document.getElementById('neo4j-nodes-body');
@@ -758,7 +769,12 @@ class AdminDashboard {
             badge.textContent = postgres.status || '—';
         }
 
-        if (postgres.status !== 'ok') return;
+        if (postgres.status !== 'ok') {
+            // Clear the "Loading..." placeholder when status is not ok
+            const tbody = document.getElementById('postgres-tables-body');
+            if (tbody) tbody.replaceChildren(_emptyRow(4, postgres.status === 'error' ? 'Connection error' : 'No data'));
+            return;
+        }
 
         const dbSizeEl = document.getElementById('postgres-db-size');
         if (dbSizeEl && postgres.total_size) {
@@ -918,8 +934,8 @@ class AdminDashboard {
             this.renderQueueSummaryTiles(normalized);
             this.renderQueueDepthChart(normalized);
             this.renderDlqGrid(normalized);
-        } catch {
-            this._showInlineError(errorEl, errorMsgEl, 'Failed to load queue history');
+        } catch (err) {
+            this._showInlineError(errorEl, errorMsgEl, `Failed to load queue history: ${err.message || err}`);
         } finally {
             if (loadingEl) loadingEl.style.display = 'none';
         }
@@ -1005,7 +1021,7 @@ class AdminDashboard {
         const datasets = queues.map((q, i) => {
             const pts = q.data_points || [];
             return {
-                label: q.queue_name || `Queue ${i + 1}`,
+                label: _shortQueueName(q.queue_name || `Queue ${i + 1}`),
                 data: pts.map(p => ({ x: p.timestamp, y: p.messages_ready || 0 })),
                 borderColor: QUEUE_CHART_COLORS[i % QUEUE_CHART_COLORS.length],
                 backgroundColor: QUEUE_CHART_COLORS[i % QUEUE_CHART_COLORS.length] + '20',
@@ -1080,7 +1096,7 @@ class AdminDashboard {
 
             const name = document.createElement('p');
             name.className = 'text-[10px] font-bold uppercase tracking-wider t-muted mb-1 truncate';
-            name.textContent = q.queue_name || '\u2014';
+            name.textContent = _shortQueueName(q.queue_name || '\u2014');
             name.title = q.queue_name || '';
 
             const row = document.createElement('div');
@@ -1129,8 +1145,8 @@ class AdminDashboard {
             this.renderServiceCards(normalized);
             this.renderResponseTimeChart(normalized);
             this.renderEndpointsTable(normalized);
-        } catch {
-            this._showInlineError(errorEl, errorMsgEl, 'Failed to load health history');
+        } catch (err) {
+            this._showInlineError(errorEl, errorMsgEl, `Failed to load health history: ${err.message || err}`);
         } finally {
             if (loadingEl) loadingEl.style.display = 'none';
         }

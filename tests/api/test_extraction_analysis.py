@@ -190,15 +190,18 @@ class TestSummaryEndpoint:
         data = resp.json()
         assert data["version"] == "20260101"
         assert data["source"] == "discogs"
-        assert data["pipeline_status"] is None  # no state marker
+        assert data["pipeline_status"] == {}  # no state marker
 
-        vs = data["violation_summary"]
-        assert vs["total"] == 3
-        assert vs["by_severity"]["warning"] == 2
-        assert vs["by_severity"]["error"] == 1
-        assert vs["by_entity_type"]["artists"] == 3
-        assert vs["by_rule"]["year-out-of-range"] == 2
-        assert vs["by_rule"]["missing-field"] == 1
+        assert data["total"] == 3
+        assert data["by_severity"]["warning"] == 2
+        assert data["by_severity"]["error"] == 1
+        assert data["by_entity"]["artists"]["total"] == 3
+        assert data["by_entity"]["artists"]["errors"] == 1
+        assert data["by_entity"]["artists"]["warnings"] == 2
+        # by_rule is now an array of {rule, entity_type, severity, count}
+        rules = {(r["rule"], r["severity"]): r["count"] for r in data["by_rule"]}
+        assert rules[("year-out-of-range", "warning")] == 2
+        assert rules[("missing-field", "error")] == 1
 
     def test_summary_with_pipeline_status(self, test_client: TestClient, tmp_path: Path) -> None:
         """Returns pipeline_status when a state marker file exists."""
@@ -216,7 +219,7 @@ class TestSummaryEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["pipeline_status"] is not None
-        assert data["pipeline_status"]["download_phase"]["status"] == "completed"
+        assert data["pipeline_status"]["download_phase"] == "completed"
 
     def test_summary_musicbrainz_version(self, test_client: TestClient, tmp_path: Path) -> None:
         """Returns summary for a musicbrainz version."""
@@ -259,7 +262,7 @@ class TestSummaryEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         # Only 2 valid lines should be counted
-        assert data["violation_summary"]["total"] == 2
+        assert data["total"] == 2
 
     def test_summary_entity_type_injected(self, test_client: TestClient, tmp_path: Path) -> None:
         """Each violation has entity_type added from directory name."""
@@ -281,7 +284,7 @@ class TestSummaryEndpoint:
             )
 
         assert resp.status_code == 200
-        assert resp.json()["violation_summary"]["by_entity_type"]["releases"] == 1
+        assert resp.json()["by_entity"]["releases"]["total"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -887,7 +890,7 @@ class TestReadViolationsEdgeCases:
 
         assert resp.status_code == 200
         # The junk file must not inflate the violation count
-        assert resp.json()["violation_summary"]["total"] == 1
+        assert resp.json()["total"] == 1
 
     def test_skips_entity_dirs_without_violations_jsonl(self, test_client: TestClient, tmp_path: Path) -> None:
         """_read_violations skips entity dirs that have no violations.jsonl (line 122)."""
@@ -907,7 +910,7 @@ class TestReadViolationsEdgeCases:
 
         assert resp.status_code == 200
         # Only the artists violation should be counted
-        assert resp.json()["violation_summary"]["total"] == 1
+        assert resp.json()["total"] == 1
 
     def test_skips_empty_lines_in_jsonl(self, test_client: TestClient, tmp_path: Path) -> None:
         """_read_violations skips blank lines in violations.jsonl (line 127)."""
@@ -930,7 +933,7 @@ class TestReadViolationsEdgeCases:
 
         assert resp.status_code == 200
         # Empty lines must be skipped; only 2 real records
-        assert resp.json()["violation_summary"]["total"] == 2
+        assert resp.json()["total"] == 2
 
 
 class TestLoadStateMarkerCorrupt:
@@ -949,8 +952,8 @@ class TestLoadStateMarkerCorrupt:
             )
 
         assert resp.status_code == 200
-        # pipeline_status must be None when state marker is corrupt
-        assert resp.json()["pipeline_status"] is None
+        # pipeline_status must be empty when state marker is corrupt
+        assert resp.json()["pipeline_status"] == {}
 
 
 class TestLoadRecordFilesErrors:
