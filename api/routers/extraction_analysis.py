@@ -220,7 +220,7 @@ async def list_versions(
             continue
         all_versions.extend(_scan_versions(data_root, source))
 
-    return JSONResponse(content={"versions": [v["version"] for v in all_versions]})
+    return JSONResponse(content={"versions": all_versions})
 
 
 @router.get("/api/admin/extraction-analysis/{version}/summary")

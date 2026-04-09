@@ -1600,13 +1600,22 @@ class AdminDashboard {
             if (this._eaVersions.length > 0) {
                 const sel = document.getElementById('ea-version-select');
                 if (sel && sel.value === '') {
-                    sel.value = this._eaVersions[0];
+                    sel.value = this._eaVersionString(this._eaVersions[0]);
                     this._eaLoadReport();
                 }
             }
         } catch {
             // Silently fail — non-critical
         }
+    }
+
+    _eaVersionString(v) {
+        return typeof v === 'string' ? v : v.version;
+    }
+
+    _eaVersionLabel(v) {
+        if (typeof v === 'string') return v;
+        return v.source ? `${v.version} (${v.source})` : v.version;
     }
 
     _eaPopulateVersionSelects() {
@@ -1623,12 +1632,13 @@ class AdminDashboard {
             sel.appendChild(placeholder);
             this._eaVersions.forEach(v => {
                 const opt = document.createElement('option');
-                opt.value = v;
-                opt.textContent = v;
+                opt.value = this._eaVersionString(v);
+                opt.textContent = this._eaVersionLabel(v);
                 sel.appendChild(opt);
             });
             // Restore previous selection if still valid
-            if (current && this._eaVersions.includes(current)) sel.value = current;
+            const versionStrings = this._eaVersions.map(v => this._eaVersionString(v));
+            if (current && versionStrings.includes(current)) sel.value = current;
         });
     }
 
