@@ -194,30 +194,52 @@ def _build_violation_summary(violations: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
-def _load_record_files(flagged_dir: Path, entity_type: str, record_id: str) -> tuple[str | None, dict[str, Any] | None]:
+# Maximum size (in bytes) for raw XML / JSON files returned in violation detail responses.
+# Files larger than this are truncated to avoid hanging the browser.
+_MAX_RECORD_FILE_BYTES = 512 * 1024  # 512 KiB
+
+
+def _load_record_files(
+    flagged_dir: Path, entity_type: str, record_id: str
+) -> tuple[str | None, dict[str, Any] | None, bool]:
     """Load raw XML and parsed JSON for a record from its flagged entity directory.
 
-    Returns (raw_xml, parsed_json) where either may be None if the file is missing or corrupt.
+    Returns (raw_xml, parsed_json, truncated) where either content value may be None
+    if the file is missing or corrupt, and *truncated* is True when at least one file
+    exceeded ``_MAX_RECORD_FILE_BYTES`` and was clipped.
     """
     entity_dir = flagged_dir / entity_type
     xml_path = entity_dir / f"{record_id}.xml"
     json_path = entity_dir / f"{record_id}.json"
+    truncated = False
 
     raw_xml: str | None = None
     if xml_path.is_file():
         try:
-            raw_xml = xml_path.read_text(encoding="utf-8")
+            size = xml_path.stat().st_size
+            if size > _MAX_RECORD_FILE_BYTES:
+                raw_xml = xml_path.read_bytes()[:_MAX_RECORD_FILE_BYTES].decode("utf-8", errors="replace")
+                raw_xml += f"\n\n... [truncated — file is {size / 1024 / 1024:.1f} MB, showing first {_MAX_RECORD_FILE_BYTES // 1024} KB]"
+                truncated = True
+            else:
+                raw_xml = xml_path.read_text(encoding="utf-8")
         except OSError:
             logger.warning("⚠️ Could not read XML file", path=str(xml_path))
 
     parsed_json: dict[str, Any] | None = None
     if json_path.is_file():
         try:
-            parsed_json = json.loads(json_path.read_text(encoding="utf-8"))
+            size = json_path.stat().st_size
+            if size > _MAX_RECORD_FILE_BYTES:
+                raw_json_text = json_path.read_bytes()[:_MAX_RECORD_FILE_BYTES].decode("utf-8", errors="replace")
+                parsed_json = {"_truncated": True, "_message": f"File is {size / 1024 / 1024:.1f} MB, too large to display", "_preview": raw_json_text[:4096]}
+                truncated = True
+            else:
+                parsed_json = json.loads(json_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             logger.warning("⚠️ Could not read JSON file", path=str(json_path))
 
-    return raw_xml, parsed_json
+    return raw_xml, parsed_json, truncated
 
 
 # ---------------------------------------------------------------------------
@@ -358,7 +380,7 @@ async def get_violation_detail(
 
     # Determine the entity type (use the first match)
     found_entity_type: str = record_violations[0].get("entity_type", "unknown")
-    raw_xml, parsed_json = _load_record_files(flagged_version_dir, found_entity_type, record_id)
+    raw_xml, parsed_json, truncated = _load_record_files(flagged_version_dir, found_entity_type, record_id)
 
     return JSONResponse(
         content={
@@ -367,6 +389,7 @@ async def get_violation_detail(
             "violations": record_violations,
             "raw_xml": raw_xml,
             "parsed_json": parsed_json,
+            "truncated": truncated,
         }
     )
 
@@ -417,13 +440,13 @@ def _classify_violation(
     field: str = violation.get("field", "")
     rule: str = violation.get("rule", "")
 
-    raw_xml, parsed_json = _load_record_files(flagged_dir, entity_type, record_id)
+    raw_xml, parsed_json, truncated = _load_record_files(flagged_dir, entity_type, record_id)
 
     xml_value: str | None = None
     json_value: str | None = None
     classification: str
 
-    if raw_xml is None or parsed_json is None:
+    if raw_xml is None or parsed_json is None or truncated:
         classification = "indeterminate"
     else:
         xml_value = _extract_xml_field_value(raw_xml, field) if field else None
@@ -648,7 +671,7 @@ async def get_prompt_context(
             continue
         violation = matching[0]
         entity_type: str = violation.get("entity_type", "unknown")
-        raw_xml, parsed_json = _load_record_files(flagged_version_dir, entity_type, rid)
+        raw_xml, parsed_json, _truncated = _load_record_files(flagged_version_dir, entity_type, rid)
         records.append(
             {
                 "record_id": rid,
