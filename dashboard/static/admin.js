@@ -1889,7 +1889,13 @@ class AdminDashboard {
             if (xmlEl) xmlEl.textContent = data.raw_xml || '(none)';
 
             const jsonEl = document.getElementById('ea-modal-json');
-            if (jsonEl) jsonEl.textContent = data.parsed_json ? JSON.stringify(data.parsed_json, null, 2) : '(none)';
+            if (jsonEl) {
+                if (data.parsed_json && data.parsed_json._truncated) {
+                    jsonEl.textContent = `${data.parsed_json._message}\n\nPreview:\n${data.parsed_json._preview || ''}`;
+                } else {
+                    jsonEl.textContent = data.parsed_json ? JSON.stringify(data.parsed_json, null, 2) : '(none)';
+                }
+            }
 
             const violList = document.getElementById('ea-modal-violations');
             if (violList) {
