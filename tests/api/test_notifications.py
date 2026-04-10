@@ -59,6 +59,9 @@ class TestBrevoNotificationChannel:
         assert call_kwargs.kwargs["sender"].email == "noreply@test.com"
         assert call_kwargs.kwargs["sender"].name == "Test Sender"
         assert call_kwargs.kwargs["to"][0].email == "user@example.com"
+        # Verify link tracking is disabled for password reset emails
+        assert call_kwargs.kwargs["headers"]["X-Mailin-Track-Links"] == "0"
+        assert call_kwargs.kwargs["headers"]["X-Mailin-Track"] == "0"
 
     @pytest.mark.asyncio
     async def test_send_password_reset_swallows_api_error(self) -> None:

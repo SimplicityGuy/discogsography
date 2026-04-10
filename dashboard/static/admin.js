@@ -25,6 +25,11 @@ function _esc(str) {
     return div.innerHTML;
 }
 
+// Helper: shorten queue names by stripping the common "discogsography-" prefix
+function _shortQueueName(name) {
+    return name.replace(/^discogsography-/, '');
+}
+
 // Helper: create a table row with a single "no data" cell spanning colSpan columns
 function _emptyRow(colSpan, message) {
     const tr = document.createElement('tr');
@@ -47,6 +52,9 @@ class AdminDashboard {
         this._eaVersions = [];
         this._eaSelectedRecords = new Map();
         this._eaParsingErrors = null;
+        this._eaVdRule = '';
+        this._eaVdEntityType = '';
+        this._eaVdPage = 1;
         this.initTheme();
         this.bindEvents();
         if (this.token) {
@@ -253,6 +261,25 @@ class AdminDashboard {
         if (eaModalClose) eaModalClose.addEventListener('click', () => {
             const modal = document.getElementById('ea-modal');
             if (modal) modal.style.display = 'none';
+        });
+
+        // Violations detail pagination
+        const eaVdClose = document.getElementById('ea-vd-close');
+        if (eaVdClose) eaVdClose.addEventListener('click', () => {
+            const section = document.getElementById('ea-violations-detail');
+            if (section) section.style.display = 'none';
+        });
+        const eaVdPrev = document.getElementById('ea-vd-prev');
+        if (eaVdPrev) eaVdPrev.addEventListener('click', () => {
+            if (this._eaVdPage > 1) { this._eaVdPage--; this._eaLoadViolationsPage(); }
+        });
+        const eaVdNext = document.getElementById('ea-vd-next');
+        if (eaVdNext) eaVdNext.addEventListener('click', () => {
+            this._eaVdPage++; this._eaLoadViolationsPage();
+        });
+        const eaVdPageSize = document.getElementById('ea-vd-page-size');
+        if (eaVdPageSize) eaVdPageSize.addEventListener('change', () => {
+            this._eaVdPage = 1; this._eaLoadViolationsPage();
         });
     }
 
@@ -654,7 +681,7 @@ class AdminDashboard {
 
             const data = await response.json();
             this._renderNeo4j(data.neo4j || {});
-            this._renderPostgres(data.postgres || {});
+            this._renderPostgres(data.postgresql || {});
             this._renderRedis(data.redis || {});
         } catch {
             this._showInlineError(errorEl, errorMsgEl, 'Failed to load storage data');
@@ -671,7 +698,13 @@ class AdminDashboard {
             badge.textContent = neo4j.status || '—';
         }
 
-        if (neo4j.status !== 'ok') return;
+        if (neo4j.status !== 'ok') {
+            const nodesTbody = document.getElementById('neo4j-nodes-body');
+            if (nodesTbody) nodesTbody.replaceChildren(_emptyRow(2, neo4j.status === 'error' ? 'Connection error' : 'No data'));
+            const relsTbody = document.getElementById('neo4j-rels-body');
+            if (relsTbody) relsTbody.replaceChildren(_emptyRow(2, neo4j.status === 'error' ? 'Connection error' : 'No data'));
+            return;
+        }
 
         // Node counts
         const nodesTbody = document.getElementById('neo4j-nodes-body');
@@ -758,7 +791,12 @@ class AdminDashboard {
             badge.textContent = postgres.status || '—';
         }
 
-        if (postgres.status !== 'ok') return;
+        if (postgres.status !== 'ok') {
+            // Clear the "Loading..." placeholder when status is not ok
+            const tbody = document.getElementById('postgres-tables-body');
+            if (tbody) tbody.replaceChildren(_emptyRow(4, postgres.status === 'error' ? 'Connection error' : 'No data'));
+            return;
+        }
 
         const dbSizeEl = document.getElementById('postgres-db-size');
         if (dbSizeEl && postgres.total_size) {
@@ -918,8 +956,8 @@ class AdminDashboard {
             this.renderQueueSummaryTiles(normalized);
             this.renderQueueDepthChart(normalized);
             this.renderDlqGrid(normalized);
-        } catch {
-            this._showInlineError(errorEl, errorMsgEl, 'Failed to load queue history');
+        } catch (err) {
+            this._showInlineError(errorEl, errorMsgEl, `Failed to load queue history: ${err.message || err}`);
         } finally {
             if (loadingEl) loadingEl.style.display = 'none';
         }
@@ -1005,7 +1043,7 @@ class AdminDashboard {
         const datasets = queues.map((q, i) => {
             const pts = q.data_points || [];
             return {
-                label: q.queue_name || `Queue ${i + 1}`,
+                label: _shortQueueName(q.queue_name || `Queue ${i + 1}`),
                 data: pts.map(p => ({ x: p.timestamp, y: p.messages_ready || 0 })),
                 borderColor: QUEUE_CHART_COLORS[i % QUEUE_CHART_COLORS.length],
                 backgroundColor: QUEUE_CHART_COLORS[i % QUEUE_CHART_COLORS.length] + '20',
@@ -1080,7 +1118,7 @@ class AdminDashboard {
 
             const name = document.createElement('p');
             name.className = 'text-[10px] font-bold uppercase tracking-wider t-muted mb-1 truncate';
-            name.textContent = q.queue_name || '\u2014';
+            name.textContent = _shortQueueName(q.queue_name || '\u2014');
             name.title = q.queue_name || '';
 
             const row = document.createElement('div');
@@ -1129,8 +1167,8 @@ class AdminDashboard {
             this.renderServiceCards(normalized);
             this.renderResponseTimeChart(normalized);
             this.renderEndpointsTable(normalized);
-        } catch {
-            this._showInlineError(errorEl, errorMsgEl, 'Failed to load health history');
+        } catch (err) {
+            this._showInlineError(errorEl, errorMsgEl, `Failed to load health history: ${err.message || err}`);
         } finally {
             if (loadingEl) loadingEl.style.display = 'none';
         }
@@ -1472,6 +1510,27 @@ class AdminDashboard {
         svg.appendChild(polyline);
 
         return svg;
+    }
+
+    static _prettyPrintXml(xml) {
+        let formatted = '';
+        let indent = 0;
+        const parts = xml.replace(/>\s*</g, '><').split(/(<[^>]+>)/);
+        for (const part of parts) {
+            if (!part.trim()) continue;
+            if (part.startsWith('</')) {
+                indent = Math.max(0, indent - 1);
+                formatted += '  '.repeat(indent) + part + '\n';
+            } else if (part.startsWith('<') && !part.startsWith('<?') && !part.endsWith('/>') && !part.startsWith('<!')) {
+                formatted += '  '.repeat(indent) + part + '\n';
+                indent++;
+            } else if (part.endsWith('/>')) {
+                formatted += '  '.repeat(indent) + part + '\n';
+            } else {
+                formatted += '  '.repeat(indent) + part + '\n';
+            }
+        }
+        return formatted.trim();
     }
 
     // ─── Audit Log ───────────────────────────────────────────────────────────
@@ -1833,26 +1892,114 @@ class AdminDashboard {
     }
 
     async _eaShowViolationsForRule(rule, entityType) {
+        this._eaVdRule = rule;
+        this._eaVdEntityType = entityType;
+        this._eaVdPage = 1;
+        await this._eaLoadViolationsPage();
+    }
+
+    async _eaLoadViolationsPage() {
         const sel = document.getElementById('ea-version-select');
         const version = sel ? sel.value : '';
         if (!version) return;
+
+        const section = document.getElementById('ea-violations-detail');
+        if (!section) return;
+        section.style.display = '';
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        const ruleEl = document.getElementById('ea-vd-rule');
+        if (ruleEl) ruleEl.textContent = this._eaVdRule;
+        const entityEl = document.getElementById('ea-vd-entity');
+        if (entityEl) entityEl.textContent = this._eaVdEntityType ? `(${this._eaVdEntityType})` : '';
+
+        const pageSizeEl = document.getElementById('ea-vd-page-size');
+        const pageSize = pageSizeEl ? parseInt(pageSizeEl.value, 10) : 50;
+
+        const params = new URLSearchParams({
+            rule: this._eaVdRule,
+            page: String(this._eaVdPage),
+            page_size: String(pageSize),
+        });
+        if (this._eaVdEntityType) params.set('entity_type', this._eaVdEntityType);
+
+        const tbody = document.getElementById('ea-vd-tbody');
+        if (tbody) tbody.replaceChildren(_emptyRow(6, 'Loading...'));
+
         try {
-            const params = new URLSearchParams({ rule, page_size: '1' });
-            if (entityType) params.set('entity_type', entityType);
             const resp = await this.authFetch(
                 `/admin/api/extraction-analysis/${encodeURIComponent(version)}/violations?${params}`,
             );
-            if (!resp.ok) return;
+            if (!resp.ok) {
+                if (tbody) tbody.replaceChildren(_emptyRow(6, 'Failed to load violations.'));
+                return;
+            }
             const data = await resp.json();
             const violations = data.violations || [];
-            if (violations.length > 0) {
-                const firstRecordId = violations[0].record_id;
-                if (firstRecordId) {
-                    await this._eaShowRecordDetail(version, firstRecordId);
-                }
+            const pagination = data.pagination || {};
+
+            if (violations.length === 0) {
+                if (tbody) tbody.replaceChildren(_emptyRow(6, 'No violations found.'));
+            } else if (tbody) {
+                const rows = violations.map(v => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b b-row';
+
+                    const tdId = document.createElement('td');
+                    tdId.className = 'py-2 px-2 mono t-mid';
+                    tdId.textContent = v.record_id || '—';
+
+                    const tdRule = document.createElement('td');
+                    tdRule.className = 'py-2 px-2 mono t-dim';
+                    tdRule.textContent = v.rule || '—';
+
+                    const tdSev = document.createElement('td');
+                    tdSev.className = 'py-2 px-2';
+                    const sevBadge = document.createElement('span');
+                    const sevClass = v.severity === 'error' ? 'badge-error' : v.severity === 'warning' ? 'badge-running' : 'badge-idle';
+                    sevBadge.className = `text-[10px] px-1.5 py-0.5 rounded uppercase font-bold ${sevClass}`;
+                    sevBadge.textContent = v.severity || 'info';
+                    tdSev.appendChild(sevBadge);
+
+                    const tdField = document.createElement('td');
+                    tdField.className = 'py-2 px-2 mono t-dim';
+                    tdField.textContent = v.field || '—';
+
+                    const tdValue = document.createElement('td');
+                    tdValue.className = 'py-2 px-2 mono t-dim';
+                    tdValue.textContent = v.field_value || '—';
+
+                    const tdDetail = document.createElement('td');
+                    tdDetail.className = 'py-2 px-2 text-right';
+                    const detailBtn = document.createElement('button');
+                    detailBtn.className = 'text-[10px] px-2 py-0.5 rounded border b-theme t-dim hover:t-high';
+                    detailBtn.textContent = 'View';
+                    detailBtn.addEventListener('click', () => this._eaShowRecordDetail(version, v.record_id));
+                    tdDetail.appendChild(detailBtn);
+
+                    tr.append(tdId, tdRule, tdSev, tdField, tdValue, tdDetail);
+                    return tr;
+                });
+                tbody.replaceChildren(...rows);
             }
+
+            // Update pagination controls
+            const infoEl = document.getElementById('ea-vd-info');
+            if (infoEl) {
+                const start = ((pagination.page || 1) - 1) * (pagination.page_size || pageSize) + 1;
+                const end = Math.min(start + violations.length - 1, pagination.total_items || 0);
+                infoEl.textContent = `${start}–${end} of ${(pagination.total_items || 0).toLocaleString()}`;
+            }
+
+            const labelEl = document.getElementById('ea-vd-page-label');
+            if (labelEl) labelEl.textContent = `${pagination.page || 1} / ${pagination.total_pages || 1}`;
+
+            const prevBtn = document.getElementById('ea-vd-prev');
+            const nextBtn = document.getElementById('ea-vd-next');
+            if (prevBtn) prevBtn.disabled = (pagination.page || 1) <= 1;
+            if (nextBtn) nextBtn.disabled = (pagination.page || 1) >= (pagination.total_pages || 1);
         } catch {
-            // Silently fail
+            if (tbody) tbody.replaceChildren(_emptyRow(6, 'Error loading violations.'));
         }
     }
 
@@ -1870,10 +2017,16 @@ class AdminDashboard {
             if (recordIdEl) recordIdEl.textContent = recordId;
 
             const xmlEl = document.getElementById('ea-modal-xml');
-            if (xmlEl) xmlEl.textContent = data.raw_xml || '(none)';
+            if (xmlEl) xmlEl.textContent = data.raw_xml ? AdminDashboard._prettyPrintXml(data.raw_xml) : '(none)';
 
             const jsonEl = document.getElementById('ea-modal-json');
-            if (jsonEl) jsonEl.textContent = data.parsed_json ? JSON.stringify(data.parsed_json, null, 2) : '(none)';
+            if (jsonEl) {
+                if (data.parsed_json && data.parsed_json._truncated) {
+                    jsonEl.textContent = `${data.parsed_json._message}\n\nPreview:\n${data.parsed_json._preview || ''}`;
+                } else {
+                    jsonEl.textContent = data.parsed_json ? JSON.stringify(data.parsed_json, null, 2) : '(none)';
+                }
+            }
 
             const violList = document.getElementById('ea-modal-violations');
             if (violList) {

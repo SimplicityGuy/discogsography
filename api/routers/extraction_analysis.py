@@ -156,51 +156,95 @@ def _load_state_marker(data_root: Path, version: str, source: str) -> dict[str, 
 
 
 def _build_violation_summary(violations: list[dict[str, Any]]) -> dict[str, Any]:
-    """Aggregate violations by severity, entity type, and rule."""
+    """Aggregate violations by severity, entity type, and rule.
+
+    Returns a dict with:
+    - total: int
+    - by_severity: {severity: count}
+    - by_entity: {entity_type: {total, errors, warnings}}
+    - by_rule: [{rule, entity_type, severity, count}]
+    """
     by_severity: dict[str, int] = {}
-    by_entity_type: dict[str, int] = {}
-    by_rule: dict[str, int] = {}
+    # entity → {total, errors, warnings}
+    by_entity: dict[str, dict[str, int]] = {}
+    # (rule, entity_type, severity) → count
+    rule_key_counts: dict[tuple[str, str, str], int] = {}
 
     for v in violations:
         severity: str = v.get("severity", "unknown")
         entity_type: str = v.get("entity_type", "unknown")
         rule: str = v.get("rule", "unknown")
+
         by_severity[severity] = by_severity.get(severity, 0) + 1
-        by_entity_type[entity_type] = by_entity_type.get(entity_type, 0) + 1
-        by_rule[rule] = by_rule.get(rule, 0) + 1
+
+        entity_entry = by_entity.setdefault(entity_type, {"total": 0, "errors": 0, "warnings": 0})
+        entity_entry["total"] += 1
+        if severity == "error":
+            entity_entry["errors"] += 1
+        elif severity == "warning":
+            entity_entry["warnings"] += 1
+
+        key = (rule, entity_type, severity)
+        rule_key_counts[key] = rule_key_counts.get(key, 0) + 1
+
+    by_rule = [{"rule": rule, "entity_type": et, "severity": sev, "count": count} for (rule, et, sev), count in sorted(rule_key_counts.items())]
 
     return {
         "total": len(violations),
         "by_severity": by_severity,
-        "by_entity_type": by_entity_type,
+        "by_entity": by_entity,
         "by_rule": by_rule,
     }
 
 
-def _load_record_files(flagged_dir: Path, entity_type: str, record_id: str) -> tuple[str | None, dict[str, Any] | None]:
+# Maximum size (in bytes) for raw XML / JSON files returned in violation detail responses.
+# Files larger than this are truncated to avoid hanging the browser.
+_MAX_RECORD_FILE_BYTES = 512 * 1024  # 512 KiB
+
+
+def _load_record_files(flagged_dir: Path, entity_type: str, record_id: str) -> tuple[str | None, dict[str, Any] | None, bool]:
     """Load raw XML and parsed JSON for a record from its flagged entity directory.
 
-    Returns (raw_xml, parsed_json) where either may be None if the file is missing or corrupt.
+    Returns (raw_xml, parsed_json, truncated) where either content value may be None
+    if the file is missing or corrupt, and *truncated* is True when at least one file
+    exceeded ``_MAX_RECORD_FILE_BYTES`` and was clipped.
     """
     entity_dir = flagged_dir / entity_type
     xml_path = entity_dir / f"{record_id}.xml"
     json_path = entity_dir / f"{record_id}.json"
+    truncated = False
 
     raw_xml: str | None = None
     if xml_path.is_file():
         try:
-            raw_xml = xml_path.read_text(encoding="utf-8")
+            size = xml_path.stat().st_size
+            if size > _MAX_RECORD_FILE_BYTES:
+                raw_xml = xml_path.read_bytes()[:_MAX_RECORD_FILE_BYTES].decode("utf-8", errors="replace")
+                raw_xml += f"\n\n... [truncated — file is {size / 1024 / 1024:.1f} MB, showing first {_MAX_RECORD_FILE_BYTES // 1024} KB]"
+                truncated = True
+            else:
+                raw_xml = xml_path.read_text(encoding="utf-8")
         except OSError:
             logger.warning("⚠️ Could not read XML file", path=str(xml_path))
 
     parsed_json: dict[str, Any] | None = None
     if json_path.is_file():
         try:
-            parsed_json = json.loads(json_path.read_text(encoding="utf-8"))
+            size = json_path.stat().st_size
+            if size > _MAX_RECORD_FILE_BYTES:
+                raw_json_text = json_path.read_bytes()[:_MAX_RECORD_FILE_BYTES].decode("utf-8", errors="replace")
+                parsed_json = {
+                    "_truncated": True,
+                    "_message": f"File is {size / 1024 / 1024:.1f} MB, too large to display",
+                    "_preview": raw_json_text[:4096],
+                }
+                truncated = True
+            else:
+                parsed_json = json.loads(json_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             logger.warning("⚠️ Could not read JSON file", path=str(json_path))
 
-    return raw_xml, parsed_json
+    return raw_xml, parsed_json, truncated
 
 
 # ---------------------------------------------------------------------------
@@ -245,15 +289,24 @@ async def get_summary(
     flagged_version_dir = data_root / "flagged" / version
 
     violations = _read_violations(flagged_version_dir)
-    pipeline_status = _load_state_marker(data_root, version, source)
+    raw_state = _load_state_marker(data_root, version, source)
     summary = _build_violation_summary(violations)
+
+    # Extract phase statuses from the state marker for the frontend.
+    # The raw marker has nested objects for each phase; the dashboard
+    # expects {phase_name: status_string}.
+    pipeline_status: dict[str, str] = {}
+    if raw_state:
+        for key, value in raw_state.items():
+            if key.endswith("_phase") and isinstance(value, dict):
+                pipeline_status[key] = value.get("status", "unknown")
 
     return JSONResponse(
         content={
             "version": version,
             "source": source,
             "pipeline_status": pipeline_status,
-            "violation_summary": summary,
+            **summary,
         }
     )
 
@@ -332,7 +385,7 @@ async def get_violation_detail(
 
     # Determine the entity type (use the first match)
     found_entity_type: str = record_violations[0].get("entity_type", "unknown")
-    raw_xml, parsed_json = _load_record_files(flagged_version_dir, found_entity_type, record_id)
+    raw_xml, parsed_json, truncated = _load_record_files(flagged_version_dir, found_entity_type, record_id)
 
     return JSONResponse(
         content={
@@ -341,6 +394,7 @@ async def get_violation_detail(
             "violations": record_violations,
             "raw_xml": raw_xml,
             "parsed_json": parsed_json,
+            "truncated": truncated,
         }
     )
 
@@ -391,13 +445,13 @@ def _classify_violation(
     field: str = violation.get("field", "")
     rule: str = violation.get("rule", "")
 
-    raw_xml, parsed_json = _load_record_files(flagged_dir, entity_type, record_id)
+    raw_xml, parsed_json, truncated = _load_record_files(flagged_dir, entity_type, record_id)
 
     xml_value: str | None = None
     json_value: str | None = None
     classification: str
 
-    if raw_xml is None or parsed_json is None:
+    if raw_xml is None or parsed_json is None or truncated:
         classification = "indeterminate"
     else:
         xml_value = _extract_xml_field_value(raw_xml, field) if field else None
@@ -611,7 +665,7 @@ async def get_prompt_context(
             if rid in seen_ids:
                 continue
             seen_ids.add(rid)
-            raw_xml, parsed_json = _load_record_files(flagged_version_dir, sel.entity_type, rid)
+            raw_xml, parsed_json, _truncated = _load_record_files(flagged_version_dir, sel.entity_type, rid)
             record_violations = [m for m in matching if m.get("record_id") == rid]
             sample_records.append(
                 {
