@@ -78,7 +78,7 @@ function setupAppDOM() {
         'zoomInBtn', 'zoomOutBtn', 'zoomResetBtn', 'fullscreenBtn',
         // Panes
         'explorePane', 'trendsPane', 'searchPane', 'insightsPane',
-        'collectionPane', 'wantlistPane', 'recommendationsPane', 'gapsPane',
+        'collectionPane', 'wantlistPane', 'recommendationsPane', 'gapsPane', 'settingsPane',
         // NLQ
         'nlqPanel', 'nlqInput', 'nlqSubmit', 'nlqStatus', 'nlqResult', 'nlqExamples',
         'searchAskToggle', 'searchModeBtn', 'askModeBtn',
@@ -113,7 +113,7 @@ function setupAppDOM() {
             el.value = '2025';
         }
         if (['explorePane', 'trendsPane', 'searchPane', 'insightsPane',
-             'collectionPane', 'wantlistPane', 'recommendationsPane', 'gapsPane'].includes(id)) {
+             'collectionPane', 'wantlistPane', 'recommendationsPane', 'gapsPane', 'settingsPane'].includes(id)) {
             el.className = 'pane';
         }
         document.body.appendChild(el);
@@ -188,6 +188,21 @@ function setupAppDOM() {
     const twoFactorRecoveryBtn = document.createElement('button');
     twoFactorRecoveryBtn.id = 'twoFactorRecoveryBtn';
     document.body.appendChild(twoFactorRecoveryBtn);
+
+    // Account settings button (inside a dropdown with x-data)
+    const userDropdownWrapper = document.createElement('div');
+    userDropdownWrapper.__x = { $data: { open: true } };
+    userDropdownWrapper.setAttribute('x-data', '');
+    const accountSettingsBtn = document.createElement('a');
+    accountSettingsBtn.id = 'accountSettingsBtn';
+    accountSettingsBtn.href = '#';
+    userDropdownWrapper.appendChild(accountSettingsBtn);
+    document.body.appendChild(userDropdownWrapper);
+
+    // Settings back button
+    const settingsBackBtn = document.createElement('button');
+    settingsBackBtn.id = 'settingsBackBtn';
+    document.body.appendChild(settingsBackBtn);
 }
 
 /**
@@ -305,6 +320,10 @@ function setupGlobalMocks() {
     };
 
     window.searchPane = { focus: vi.fn() };
+
+    window.settingsPane = {
+        init: vi.fn(),
+    };
 
     window.UserPanes = class {
         loadCollection = vi.fn();
@@ -1785,6 +1804,55 @@ describe('ExploreApp helper methods', () => {
             app._switchPane('credits');
 
             expect(window.creditsPanel.load).toHaveBeenCalled();
+        });
+
+        it('should call settingsPane.init when switching to settings', () => {
+            const app = new ExploreApp();
+            app._switchPane('settings');
+
+            expect(window.settingsPane.init).toHaveBeenCalled();
+        });
+    });
+
+    describe('Account settings button', () => {
+        it('should switch to settings pane on click', () => {
+            const app = new ExploreApp();
+            app._switchPane('explore');
+
+            document.getElementById('accountSettingsBtn').click();
+
+            expect(app.activePane).toBe('settings');
+            expect(window.settingsPane.init).toHaveBeenCalled();
+        });
+
+        it('should store previous pane for back navigation', () => {
+            const app = new ExploreApp();
+            app._switchPane('trends');
+
+            document.getElementById('accountSettingsBtn').click();
+
+            expect(app._previousPane).toBe('trends');
+        });
+    });
+
+    describe('Settings back button', () => {
+        it('should return to previous pane on click', () => {
+            const app = new ExploreApp();
+            app._switchPane('trends');
+            document.getElementById('accountSettingsBtn').click();
+
+            document.getElementById('settingsBackBtn').click();
+
+            expect(app.activePane).toBe('trends');
+        });
+
+        it('should default to explore pane when no previous pane', () => {
+            const app = new ExploreApp();
+            app._switchPane('settings');
+
+            document.getElementById('settingsBackBtn').click();
+
+            expect(app.activePane).toBe('explore');
         });
     });
 
