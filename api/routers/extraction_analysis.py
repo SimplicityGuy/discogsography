@@ -12,7 +12,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import structlog
-import yaml
 
 from api.dependencies import require_admin
 
@@ -39,9 +38,13 @@ _PARSING_ERROR_CACHE_TTL: float = 300.0  # 5 minutes
 # ---------------------------------------------------------------------------
 
 
-class PromptContextRequest(BaseModel):
-    record_ids: list[str] = Field(..., min_length=1, max_length=20)
+class _RuleSelection(BaseModel):
     rule: str = Field(..., pattern=r"^[a-zA-Z0-9_-]+$")
+    entity_type: str = Field(..., pattern=r"^[a-z-]+$")
+
+
+class PromptContextRequest(BaseModel):
+    rules: list[_RuleSelection] = Field(..., min_length=1, max_length=20)
 
 
 def configure(discogs_root: str | Path | None = None, musicbrainz_root: str | Path | None = None) -> None:
@@ -637,11 +640,8 @@ async def get_prompt_context(
     body: PromptContextRequest,
     _admin: Annotated[dict[str, Any], Depends(require_admin)],
 ) -> JSONResponse:
-    """Assemble structured context for AI prompts — violations, raw XML, and parsed JSON for a set of records."""
+    """Assemble structured context for AI prompts — violations and sample records grouped by rule+entity_type."""
     _validate_version(version)
-
-    for rid in body.record_ids:
-        _validate_record_id(rid)
 
     location = _find_version_root(version)
     if location is None:
@@ -650,51 +650,42 @@ async def get_prompt_context(
     data_root, _source = location
     flagged_version_dir = data_root / "flagged" / version
 
-    # Load rule definition from extraction-rules.yaml if present
-    rule_definition: dict[str, Any] | None = None
-    rules_yaml_path = data_root / "extraction-rules.yaml"
-    if rules_yaml_path.is_file():
-        try:
-            rules_data = yaml.safe_load(rules_yaml_path.read_text(encoding="utf-8"))
-            if isinstance(rules_data, dict):
-                for rule_entry in rules_data.get("rules", []):
-                    if isinstance(rule_entry, dict) and rule_entry.get("id") == body.rule:
-                        rule_definition = rule_entry
-                        break
-        except Exception:
-            logger.warning("⚠️ Could not load extraction-rules.yaml", path=str(rules_yaml_path))
-
     all_violations = _read_violations(flagged_version_dir)
 
-    records: list[dict[str, Any]] = []
-    for rid in body.record_ids:
-        matching = [v for v in all_violations if v.get("record_id") == rid and v.get("rule") == body.rule]
-        if not matching:
-            continue
-        violation = matching[0]
-        entity_type: str = violation.get("entity_type", "unknown")
-        raw_xml, parsed_json, _truncated = _load_record_files(flagged_version_dir, entity_type, rid)
-        records.append(
+    max_samples = 5
+    contexts: list[dict[str, Any]] = []
+    for sel in body.rules:
+        matching = [v for v in all_violations if v.get("rule") == sel.rule and v.get("entity_type") == sel.entity_type]
+        severity = matching[0].get("severity", "unknown") if matching else "unknown"
+
+        sample_records: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        for v in matching:
+            rid = v.get("record_id", "")
+            if rid in seen_ids:
+                continue
+            seen_ids.add(rid)
+            raw_xml, parsed_json, _truncated = _load_record_files(flagged_version_dir, sel.entity_type, rid)
+            record_violations = [m for m in matching if m.get("record_id") == rid]
+            sample_records.append(
+                {
+                    "record_id": rid,
+                    "violations": [{"rule": m.get("rule", ""), "message": m.get("message", m.get("field", ""))} for m in record_violations],
+                    "raw_xml": raw_xml,
+                    "parsed_json": parsed_json,
+                }
+            )
+            if len(sample_records) >= max_samples:
+                break
+
+        contexts.append(
             {
-                "record_id": rid,
-                "entity_type": entity_type,
-                "violation": {
-                    "field": violation.get("field", ""),
-                    "field_value": violation.get("field_value", ""),
-                },
-                "raw_xml": raw_xml,
-                "parsed_json": parsed_json,
+                "rule": sel.rule,
+                "entity_type": sel.entity_type,
+                "severity": severity,
+                "total_violations": len(matching),
+                "sample_records": sample_records,
             }
         )
 
-    return JSONResponse(
-        content={
-            "rule": body.rule,
-            "rule_definition": rule_definition,
-            "records": records,
-            "extractor_context": {
-                "parser_file": "extractor/src/xml_parser.rs",
-                "rules_file": "extractor/extraction-rules.yaml",
-            },
-        }
-    )
+    return JSONResponse(content={"contexts": contexts})
