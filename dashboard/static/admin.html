@@ -263,7 +263,7 @@
         </header>
 
         <!-- Tab Navigation -->
-        <nav class="flex items-center gap-2 mb-6 dashboard-card p-2" style="width:fit-content">
+        <nav class="flex items-center gap-2 mb-6 dashboard-card p-2 overflow-x-auto">
             <button class="tab-btn active" data-tab="extractions" id="tab-btn-extractions">
                 <span class="material-symbols-outlined text-sm">rocket_launch</span> Extractions
             </button>
@@ -465,7 +465,7 @@
                 </div>
 
                 <!-- Neo4j collapsible -->
-                <div class="mb-4 border b-theme rounded-lg overflow-hidden">
+                <div class="mb-6 border b-theme rounded-lg overflow-hidden">
                     <div class="collapsible-header flex items-center justify-between px-4 py-3 bg-inner" data-target="storage-neo4j-body">
                         <div class="flex items-center gap-3">
                             <span class="material-symbols-outlined text-sm t-dim">graph_3</span>
@@ -476,35 +476,37 @@
                     </div>
                     <div class="collapsible-body" id="storage-neo4j-body">
                         <div class="p-4 space-y-4">
-                            <!-- Node counts -->
-                            <div>
-                                <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-2">Node Counts by Label</p>
-                                <table class="text-xs" style="min-width:280px">
-                                    <thead>
-                                        <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
-                                            <th class="text-left py-1.5 pr-8">Label</th>
-                                            <th class="text-right py-1.5 w-28">Count</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="neo4j-nodes-body">
-                                        <tr><td colspan="2" class="py-3 text-center t-muted">Loading...</td></tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <!-- Relationship counts -->
-                            <div>
-                                <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-2">Relationship Counts by Type</p>
-                                <table class="text-xs" style="min-width:280px">
-                                    <thead>
-                                        <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
-                                            <th class="text-left py-1.5 pr-8">Type</th>
-                                            <th class="text-right py-1.5 w-28">Count</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="neo4j-rels-body">
-                                        <tr><td colspan="2" class="py-3 text-center t-muted">Loading...</td></tr>
-                                    </tbody>
-                                </table>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <!-- Node counts -->
+                                <div>
+                                    <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-2">Node Counts by Label</p>
+                                    <table class="text-xs" style="min-width:280px">
+                                        <thead>
+                                            <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
+                                                <th class="text-left py-1.5 pr-8">Label</th>
+                                                <th class="text-right py-1.5 w-28">Count</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="neo4j-nodes-body">
+                                            <tr><td colspan="2" class="py-3 text-center t-muted">Loading...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <!-- Relationship counts -->
+                                <div>
+                                    <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-2">Relationship Counts by Type</p>
+                                    <table class="text-xs" style="min-width:280px">
+                                        <thead>
+                                            <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
+                                                <th class="text-left py-1.5 pr-8">Type</th>
+                                                <th class="text-right py-1.5 w-28">Count</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="neo4j-rels-body">
+                                            <tr><td colspan="2" class="py-3 text-center t-muted">Loading...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                             <!-- Store sizes -->
                             <div id="neo4j-store-sizes"></div>
@@ -513,7 +515,7 @@
                 </div>
 
                 <!-- PostgreSQL collapsible -->
-                <div class="mb-4 border b-theme rounded-lg overflow-hidden">
+                <div class="mb-6 border b-theme rounded-lg overflow-hidden">
                     <div class="collapsible-header flex items-center justify-between px-4 py-3 bg-inner" data-target="storage-postgres-body">
                         <div class="flex items-center gap-3">
                             <span class="material-symbols-outlined text-sm t-dim">table_chart</span>
@@ -634,8 +636,8 @@
                 <!-- Queue Depth Chart -->
                 <div class="mb-6">
                     <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-3">Queue Depth Over Time</p>
-                    <div class="bg-inner rounded-lg border b-theme p-4">
-                        <div id="queue-chart-legend" class="flex flex-wrap gap-3 mb-3 text-[10px] t-muted"></div>
+                    <div class="bg-inner rounded-lg border b-theme p-4 overflow-hidden">
+                        <div id="queue-chart-legend" class="flex flex-wrap gap-x-3 gap-y-1 mb-3 text-[10px] t-muted max-h-20 overflow-y-auto"></div>
                         <canvas id="queue-depth-chart" height="280"></canvas>
                     </div>
                 </div>
@@ -869,6 +871,56 @@
                     </div>
                 </section>
 
+                <!-- Violations detail table (shown when View is clicked) -->
+                <section id="ea-violations-detail" class="dashboard-card p-6 space-y-4" style="display:none">
+                    <div class="flex items-center justify-between border-b b-theme pb-3">
+                        <h3 class="text-sm font-semibold flex items-center gap-2">
+                            <span class="material-symbols-outlined text-sm t-dim">list_alt</span>
+                            Violations — <span id="ea-vd-rule" class="mono t-dim text-xs"></span>
+                            <span id="ea-vd-entity" class="text-xs t-muted"></span>
+                        </h3>
+                        <div class="flex items-center gap-3">
+                            <label class="text-[10px] t-dim font-bold uppercase tracking-wider">
+                                Page size
+                                <select id="ea-vd-page-size" class="ml-1 text-xs bg-transparent border b-theme rounded px-2 py-0.5 t-high">
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="200">200</option>
+                                </select>
+                            </label>
+                            <button id="ea-vd-close" class="t-dim hover:t-high transition-colors text-xs font-bold uppercase tracking-wider flex items-center gap-1">
+                                <span class="material-symbols-outlined text-sm">close</span> Close
+                            </button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead>
+                                <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
+                                    <th class="text-left py-2 px-2">Record ID</th>
+                                    <th class="text-left py-2 px-2">Rule</th>
+                                    <th class="text-left py-2 px-2">Severity</th>
+                                    <th class="text-left py-2 px-2">Field</th>
+                                    <th class="text-left py-2 px-2">Value</th>
+                                    <th class="text-right py-2 px-2">Detail</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ea-vd-tbody">
+                                <tr><td colspan="6" class="py-6 text-center t-muted">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- Pagination -->
+                    <div class="flex items-center justify-between">
+                        <span id="ea-vd-info" class="text-xs t-muted"></span>
+                        <div class="flex items-center gap-2">
+                            <button id="ea-vd-prev" class="text-xs px-3 py-1 rounded border b-theme t-dim hover:t-high disabled:opacity-40" disabled>Prev</button>
+                            <span id="ea-vd-page-label" class="text-xs mono t-dim"></span>
+                            <button id="ea-vd-next" class="text-xs px-3 py-1 rounded border b-theme t-dim hover:t-high disabled:opacity-40" disabled>Next</button>
+                        </div>
+                    </div>
+                </section>
+
             </div><!-- /ea-view-report -->
 
             <!-- ── Sub-view: Version Comparison ────────────────────── -->
@@ -940,9 +992,9 @@
         <!-- ============================================================
              RECORD DETAIL MODAL
              ============================================================ -->
-        <div id="ea-modal" class="fixed inset-0 z-50 flex items-center justify-center" style="display:none; background:rgba(0,0,0,0.5)">
-            <div class="dashboard-card p-6 w-full max-w-5xl max-h-[90vh] flex flex-col gap-4 overflow-y-auto">
-                <div class="flex items-center justify-between border-b b-theme pb-3">
+        <div id="ea-modal" class="fixed inset-0 z-50 flex items-center justify-center p-6" style="display:none; background:rgba(0,0,0,0.5)">
+            <div class="dashboard-card p-6 w-full max-w-5xl max-h-[90vh] flex flex-col gap-4 overflow-hidden">
+                <div class="flex items-center justify-between border-b b-theme pb-3 flex-shrink-0">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">data_object</span>
                         Record Detail — <span id="ea-modal-record-id" class="mono t-dim text-xs"></span>
@@ -951,19 +1003,21 @@
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="space-y-1">
-                        <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Raw XML</p>
-                        <pre id="ea-modal-xml" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid" style="max-height:350px;white-space:pre-wrap;word-break:break-all"></pre>
+                <div class="flex-1 overflow-y-auto space-y-4 min-h-0">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-1 min-w-0">
+                            <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Raw XML</p>
+                            <pre id="ea-modal-xml" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid" style="max-height:50vh;white-space:pre-wrap;word-break:break-all"></pre>
+                        </div>
+                        <div class="space-y-1 min-w-0">
+                            <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Parsed JSON</p>
+                            <pre id="ea-modal-json" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid" style="max-height:50vh;white-space:pre-wrap;word-break:break-all"></pre>
+                        </div>
                     </div>
-                    <div class="space-y-1">
-                        <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Parsed JSON</p>
-                        <pre id="ea-modal-json" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid" style="max-height:350px;white-space:pre-wrap;word-break:break-all"></pre>
+                    <div class="space-y-2">
+                        <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Violations</p>
+                        <ul id="ea-modal-violations" class="space-y-1 text-xs"></ul>
                     </div>
-                </div>
-                <div class="space-y-2">
-                    <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Violations</p>
-                    <ul id="ea-modal-violations" class="space-y-1 text-xs"></ul>
                 </div>
             </div>
         </div><!-- /ea-modal -->
