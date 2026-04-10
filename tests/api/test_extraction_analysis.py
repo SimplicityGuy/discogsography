@@ -684,7 +684,7 @@ class TestPromptContextEndpoint:
         """Returns 401 without a valid token."""
         resp = test_client.post(
             "/api/admin/extraction-analysis/20260101/prompt-context",
-            json={"record_ids": ["1"], "rule": "year-out-of-range"},
+            json={"rules": [{"rule": "year-out-of-range", "entity_type": "artists"}]},
         )
         assert resp.status_code == 401
 
@@ -695,13 +695,13 @@ class TestPromptContextEndpoint:
         with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
             resp = test_client.post(
                 "/api/admin/extraction-analysis/99990101/prompt-context",
-                json={"record_ids": ["1"], "rule": "year-out-of-range"},
+                json={"rules": [{"rule": "year-out-of-range", "entity_type": "artists"}]},
                 headers=_admin_auth_headers(),
             )
         assert resp.status_code == 404
 
-    def test_validation_rejects_empty_record_ids(self, test_client: TestClient, tmp_path: Path) -> None:
-        """Returns 422 when record_ids is empty."""
+    def test_validation_rejects_empty_rules(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns 422 when rules list is empty."""
         import api.routers.extraction_analysis as ea
 
         _make_flagged_version(tmp_path)
@@ -709,13 +709,13 @@ class TestPromptContextEndpoint:
         with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
             resp = test_client.post(
                 "/api/admin/extraction-analysis/20260101/prompt-context",
-                json={"record_ids": [], "rule": "year-out-of-range"},
+                json={"rules": []},
                 headers=_admin_auth_headers(),
             )
         assert resp.status_code == 422
 
     def test_prompt_context_with_records(self, test_client: TestClient, tmp_path: Path) -> None:
-        """Returns records with violation, raw_xml, and parsed_json."""
+        """Returns contexts grouped by rule with sample records."""
         import api.routers.extraction_analysis as ea
 
         _make_flagged_version(tmp_path)
@@ -723,44 +723,24 @@ class TestPromptContextEndpoint:
         with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
             resp = test_client.post(
                 "/api/admin/extraction-analysis/20260101/prompt-context",
-                json={"record_ids": ["1", "2"], "rule": "year-out-of-range"},
+                json={"rules": [{"rule": "year-out-of-range", "entity_type": "artists"}]},
                 headers=_admin_auth_headers(),
             )
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["rule"] == "year-out-of-range"
-        assert data["extractor_context"]["parser_file"] == "extractor/src/xml_parser.rs"
-        assert data["extractor_context"]["rules_file"] == "extractor/extraction-rules.yaml"
-        assert len(data["records"]) == 2
-        record_ids = {r["record_id"] for r in data["records"]}
+        assert len(data["contexts"]) == 1
+        ctx = data["contexts"][0]
+        assert ctx["rule"] == "year-out-of-range"
+        assert ctx["entity_type"] == "artists"
+        assert ctx["severity"] == "warning"
+        assert ctx["total_violations"] == 2
+        record_ids = {r["record_id"] for r in ctx["sample_records"]}
         assert "1" in record_ids
         assert "2" in record_ids
 
-    def test_prompt_context_rule_definition_loaded(self, test_client: TestClient, tmp_path: Path) -> None:
-        """Loads rule definition from extraction-rules.yaml when present."""
-        import api.routers.extraction_analysis as ea
-
-        _make_flagged_version(tmp_path)
-        (tmp_path / "extraction-rules.yaml").write_text(
-            "rules:\n  - id: year-out-of-range\n    description: Year is out of valid range\n    severity: warning\n"
-        )
-
-        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
-            resp = test_client.post(
-                "/api/admin/extraction-analysis/20260101/prompt-context",
-                json={"record_ids": ["1"], "rule": "year-out-of-range"},
-                headers=_admin_auth_headers(),
-            )
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["rule_definition"] is not None
-        assert data["rule_definition"]["id"] == "year-out-of-range"
-        assert data["rule_definition"]["description"] == "Year is out of valid range"
-
-    def test_prompt_context_rule_definition_null_when_missing(self, test_client: TestClient, tmp_path: Path) -> None:
-        """Returns null rule_definition when extraction-rules.yaml is absent."""
+    def test_prompt_context_multiple_rules(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns separate contexts when multiple rules are selected."""
         import api.routers.extraction_analysis as ea
 
         _make_flagged_version(tmp_path)
@@ -768,16 +748,23 @@ class TestPromptContextEndpoint:
         with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
             resp = test_client.post(
                 "/api/admin/extraction-analysis/20260101/prompt-context",
-                json={"record_ids": ["1"], "rule": "year-out-of-range"},
+                json={
+                    "rules": [
+                        {"rule": "year-out-of-range", "entity_type": "artists"},
+                        {"rule": "missing-field", "entity_type": "artists"},
+                    ]
+                },
                 headers=_admin_auth_headers(),
             )
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["rule_definition"] is None
+        assert len(data["contexts"]) == 2
+        rules = {ctx["rule"] for ctx in data["contexts"]}
+        assert rules == {"year-out-of-range", "missing-field"}
 
-    def test_prompt_context_skips_unmatched_records(self, test_client: TestClient, tmp_path: Path) -> None:
-        """Skips record_ids that have no violations for the given rule."""
+    def test_prompt_context_no_matching_violations(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns empty sample_records when no violations match the rule+entity_type."""
         import api.routers.extraction_analysis as ea
 
         _make_flagged_version(tmp_path)
@@ -785,33 +772,15 @@ class TestPromptContextEndpoint:
         with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
             resp = test_client.post(
                 "/api/admin/extraction-analysis/20260101/prompt-context",
-                json={"record_ids": ["3", "9999"], "rule": "year-out-of-range"},
+                json={"rules": [{"rule": "nonexistent-rule", "entity_type": "artists"}]},
                 headers=_admin_auth_headers(),
             )
 
         assert resp.status_code == 200
         data = resp.json()
-        # Record 3 has missing-field rule, not year-out-of-range; 9999 doesn't exist
-        assert data["records"] == []
-
-    def test_prompt_context_corrupt_yaml_still_returns_200(self, test_client: TestClient, tmp_path: Path) -> None:
-        """Returns 200 with null rule_definition when extraction-rules.yaml is corrupt (line 610-611)."""
-        import api.routers.extraction_analysis as ea
-
-        _make_flagged_version(tmp_path)
-        # Write a corrupt YAML file that will raise an exception during load
-        (tmp_path / "extraction-rules.yaml").write_bytes(b"\x00\xff\xfe invalid yaml \x80\x81")
-
-        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
-            resp = test_client.post(
-                "/api/admin/extraction-analysis/20260101/prompt-context",
-                json={"record_ids": ["1"], "rule": "year-out-of-range"},
-                headers=_admin_auth_headers(),
-            )
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["rule_definition"] is None
+        assert len(data["contexts"]) == 1
+        assert data["contexts"][0]["total_violations"] == 0
+        assert data["contexts"][0]["sample_records"] == []
 
 
 # ---------------------------------------------------------------------------
