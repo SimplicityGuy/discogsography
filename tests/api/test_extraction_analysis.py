@@ -1002,6 +1002,34 @@ class TestLoadRecordFilesErrors:
         assert resp.json()["parsed_json"] is None
 
 
+class TestLoadRecordFilesTruncation:
+    def test_oversized_json_returns_truncation_marker(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Oversized JSON file returns _truncated dict instead of parsed content."""
+        import api.routers.extraction_analysis as ea
+
+        violations = [{"record_id": "77", "rule": "missing-field", "severity": "error", "field": "title"}]
+        entity_dir = tmp_path / "flagged" / "20260101" / "artists"
+        entity_dir.mkdir(parents=True)
+        (entity_dir / "violations.jsonl").write_text(json.dumps(violations[0]) + "\n")
+
+        # Create a JSON file larger than _MAX_RECORD_FILE_BYTES (512 KiB)
+        large_json = json.dumps({"data": "x" * (600 * 1024)})
+        (entity_dir / "77.json").write_text(large_json)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations/77",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["parsed_json"]["_truncated"] is True
+        assert "too large" in data["parsed_json"]["_message"]
+        assert "_preview" in data["parsed_json"]
+        assert data["truncated"] is True
+
+
 class TestViolationDetailNotFound:
     def test_version_not_found_returns_404(self, test_client: TestClient, tmp_path: Path) -> None:
         """violation_detail returns 404 when version directory does not exist (line 319)."""

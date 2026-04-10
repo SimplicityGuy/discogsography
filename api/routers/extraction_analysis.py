@@ -199,9 +199,7 @@ def _build_violation_summary(violations: list[dict[str, Any]]) -> dict[str, Any]
 _MAX_RECORD_FILE_BYTES = 512 * 1024  # 512 KiB
 
 
-def _load_record_files(
-    flagged_dir: Path, entity_type: str, record_id: str
-) -> tuple[str | None, dict[str, Any] | None, bool]:
+def _load_record_files(flagged_dir: Path, entity_type: str, record_id: str) -> tuple[str | None, dict[str, Any] | None, bool]:
     """Load raw XML and parsed JSON for a record from its flagged entity directory.
 
     Returns (raw_xml, parsed_json, truncated) where either content value may be None
@@ -232,7 +230,11 @@ def _load_record_files(
             size = json_path.stat().st_size
             if size > _MAX_RECORD_FILE_BYTES:
                 raw_json_text = json_path.read_bytes()[:_MAX_RECORD_FILE_BYTES].decode("utf-8", errors="replace")
-                parsed_json = {"_truncated": True, "_message": f"File is {size / 1024 / 1024:.1f} MB, too large to display", "_preview": raw_json_text[:4096]}
+                parsed_json = {
+                    "_truncated": True,
+                    "_message": f"File is {size / 1024 / 1024:.1f} MB, too large to display",
+                    "_preview": raw_json_text[:4096],
+                }
                 truncated = True
             else:
                 parsed_json = json.loads(json_path.read_text(encoding="utf-8"))
