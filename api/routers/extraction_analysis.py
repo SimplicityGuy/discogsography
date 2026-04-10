@@ -153,23 +153,43 @@ def _load_state_marker(data_root: Path, version: str, source: str) -> dict[str, 
 
 
 def _build_violation_summary(violations: list[dict[str, Any]]) -> dict[str, Any]:
-    """Aggregate violations by severity, entity type, and rule."""
+    """Aggregate violations by severity, entity type, and rule.
+
+    Returns a dict with:
+    - total: int
+    - by_severity: {severity: count}
+    - by_entity: {entity_type: {total, errors, warnings}}
+    - by_rule: [{rule, entity_type, severity, count}]
+    """
     by_severity: dict[str, int] = {}
-    by_entity_type: dict[str, int] = {}
-    by_rule: dict[str, int] = {}
+    # entity → {total, errors, warnings}
+    by_entity: dict[str, dict[str, int]] = {}
+    # (rule, entity_type, severity) → count
+    rule_key_counts: dict[tuple[str, str, str], int] = {}
 
     for v in violations:
         severity: str = v.get("severity", "unknown")
         entity_type: str = v.get("entity_type", "unknown")
         rule: str = v.get("rule", "unknown")
+
         by_severity[severity] = by_severity.get(severity, 0) + 1
-        by_entity_type[entity_type] = by_entity_type.get(entity_type, 0) + 1
-        by_rule[rule] = by_rule.get(rule, 0) + 1
+
+        entity_entry = by_entity.setdefault(entity_type, {"total": 0, "errors": 0, "warnings": 0})
+        entity_entry["total"] += 1
+        if severity == "error":
+            entity_entry["errors"] += 1
+        elif severity == "warning":
+            entity_entry["warnings"] += 1
+
+        key = (rule, entity_type, severity)
+        rule_key_counts[key] = rule_key_counts.get(key, 0) + 1
+
+    by_rule = [{"rule": rule, "entity_type": et, "severity": sev, "count": count} for (rule, et, sev), count in sorted(rule_key_counts.items())]
 
     return {
         "total": len(violations),
         "by_severity": by_severity,
-        "by_entity_type": by_entity_type,
+        "by_entity": by_entity,
         "by_rule": by_rule,
     }
 
@@ -242,15 +262,24 @@ async def get_summary(
     flagged_version_dir = data_root / "flagged" / version
 
     violations = _read_violations(flagged_version_dir)
-    pipeline_status = _load_state_marker(data_root, version, source)
+    raw_state = _load_state_marker(data_root, version, source)
     summary = _build_violation_summary(violations)
+
+    # Extract phase statuses from the state marker for the frontend.
+    # The raw marker has nested objects for each phase; the dashboard
+    # expects {phase_name: status_string}.
+    pipeline_status: dict[str, str] = {}
+    if raw_state:
+        for key, value in raw_state.items():
+            if key.endswith("_phase") and isinstance(value, dict):
+                pipeline_status[key] = value.get("status", "unknown")
 
     return JSONResponse(
         content={
             "version": version,
             "source": source,
             "pipeline_status": pipeline_status,
-            "violation_summary": summary,
+            **summary,
         }
     )
 

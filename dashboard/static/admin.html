@@ -119,7 +119,7 @@
         }
 
         /* Extraction Analysis sub-view toggle buttons */
-        .ea-view-btn { color: var(--text-dim); background: transparent; border: 1px solid var(--border-color); cursor: pointer; }
+        .ea-view-btn { color: var(--text-dim); background: transparent; border: 1px solid var(--border-color); cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem; }
         .ea-view-btn:hover { color: var(--text-high); }
         .ea-view-btn.active { background: var(--purple-accent); color: #fff; border-color: var(--purple-accent); }
 
@@ -479,11 +479,11 @@
                             <!-- Node counts -->
                             <div>
                                 <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-2">Node Counts by Label</p>
-                                <table class="w-full text-xs">
+                                <table class="text-xs" style="min-width:280px">
                                     <thead>
                                         <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
-                                            <th class="text-left py-1.5 pr-4">Label</th>
-                                            <th class="text-right py-1.5">Count</th>
+                                            <th class="text-left py-1.5 pr-8">Label</th>
+                                            <th class="text-right py-1.5 w-28">Count</th>
                                         </tr>
                                     </thead>
                                     <tbody id="neo4j-nodes-body">
@@ -494,11 +494,11 @@
                             <!-- Relationship counts -->
                             <div>
                                 <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-2">Relationship Counts by Type</p>
-                                <table class="w-full text-xs">
+                                <table class="text-xs" style="min-width:280px">
                                     <thead>
                                         <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
-                                            <th class="text-left py-1.5 pr-4">Type</th>
-                                            <th class="text-right py-1.5">Count</th>
+                                            <th class="text-left py-1.5 pr-8">Type</th>
+                                            <th class="text-right py-1.5 w-28">Count</th>
                                         </tr>
                                     </thead>
                                     <tbody id="neo4j-rels-body">

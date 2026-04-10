@@ -67,6 +67,9 @@ class BrevoNotificationChannel:
                     email=self._sender_email,
                 ),
                 to=[SendTransacEmailRequestToItem(email=email)],
+                # Disable Brevo link tracking so the reset URL is delivered
+                # as-is rather than wrapped in a tracking redirect.
+                headers={"X-Mailin-Track-Links": "0", "X-Mailin-Track": "0"},
             )
             logger.info("📧 Password reset email sent", email=email)
         except Exception:
