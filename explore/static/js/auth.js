@@ -73,6 +73,13 @@ class AuthManager {
         this._listeners.forEach(cb => cb(this.isLoggedIn()));
     }
 
+    /** Update totp_enabled flag without re-fetching from API. */
+    updateTotpEnabled(enabled) {
+        if (this._user) {
+            this._user.totp_enabled = enabled;
+        }
+    }
+
     /**
      * Initialise: if token in storage, validate it by calling /api/auth/me.
      * Returns true if the session is valid.

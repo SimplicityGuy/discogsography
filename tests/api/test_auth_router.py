@@ -1121,3 +1121,84 @@ class TestTwoFactorRecoveryEdgeCases:
             },
         )
         assert response.status_code == 401
+
+
+class TestChangePassword:
+    """Tests for POST /api/auth/change-password."""
+
+    def test_change_password_success(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Happy path: correct current password, valid new password."""
+        mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
+        response = test_client.post(
+            "/api/auth/change-password",
+            json={"current_password": "testpassword", "new_password": "newpassword123"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["message"] == "Password has been changed"
+        assert mock_cur.execute.call_count >= 2
+        mock_redis.setex.assert_called()
+        redis_call_args = mock_redis.setex.call_args
+        assert redis_call_args[0][0].startswith("password_changed:")
+
+    def test_change_password_wrong_current(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Wrong current password returns 401."""
+        mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
+        response = test_client.post(
+            "/api/auth/change-password",
+            json={"current_password": "wrongpassword", "new_password": "newpassword123"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 401
+        assert "Incorrect" in response.json()["detail"]
+
+    def test_change_password_too_short(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """New password shorter than 8 characters returns 422 (validation error)."""
+        response = test_client.post(
+            "/api/auth/change-password",
+            json={"current_password": "testpassword", "new_password": "short"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+
+    def test_change_password_unauthenticated(
+        self,
+        test_client: TestClient,
+    ) -> None:
+        """No auth token returns 401."""
+        response = test_client.post(
+            "/api/auth/change-password",
+            json={"current_password": "testpassword", "new_password": "newpassword123"},
+        )
+        assert response.status_code == 401
+
+    def test_change_password_user_not_found(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """User not in DB returns 404."""
+        mock_cur.fetchone = AsyncMock(return_value=None)
+        response = test_client.post(
+            "/api/auth/change-password",
+            json={"current_password": "testpassword", "new_password": "newpassword123"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "User not found"

@@ -27,6 +27,7 @@ from api.auth import (
 )
 from api.limiter import limiter
 from api.models import (
+    ChangePasswordRequest,
     LoginRequest,
     RegisterRequest,
     ResetConfirmModel,
@@ -326,6 +327,50 @@ async def reset_confirm(request: Request, body: ResetConfirmModel) -> JSONRespon
 
     logger.info("✅ Password reset completed", user_id=user_id)
     return JSONResponse(content={"message": "Password has been reset"})
+
+
+@router.post("/api/auth/change-password")
+@limiter.limit("5/minute")
+async def change_password(
+    request: Request,  # noqa: ARG001
+    current_user: Annotated[dict[str, Any], Depends(_require_user)],
+    body: ChangePasswordRequest,
+) -> JSONResponse:
+    """Change password for the currently authenticated user."""
+    if _pool is None or _redis is None or _config is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
+
+    user_id = current_user.get("sub")
+
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await execute_sql(
+            cur,
+            "SELECT hashed_password FROM users WHERE id = %s::uuid",
+            (user_id,),
+        )
+        user = await cur.fetchone()
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if not _verify_password(body.current_password, user["hashed_password"]):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect current password")
+
+    hashed_password = _hash_password(body.new_password)
+    now_ts = int(datetime.now(UTC).timestamp())
+
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await execute_sql(
+            cur,
+            "UPDATE users SET hashed_password = %s, password_changed_at = NOW(), updated_at = NOW() WHERE id = %s::uuid",
+            (hashed_password, user_id),
+        )
+
+    # Invalidate all existing sessions (same pattern as reset-confirm)
+    await _redis.setex(f"password_changed:{user_id}", _config.jwt_expire_minutes * 60, str(now_ts))
+
+    logger.info("✅ Password changed", user_id=user_id)
+    return JSONResponse(content={"message": "Password has been changed"})
 
 
 # ---------------------------------------------------------------------------
