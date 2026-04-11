@@ -18,17 +18,29 @@ skip_records:
       contains: "DO NOT USE"
       reason: "Upstream junk entry marked DO NOT USE"
 
-# Array field transforms applied before validation and publishing.
-# Matching values are removed from the array in-place.
+# Field transforms applied before validation and publishing.
+# Two types:
+#   remove_matching — strip array elements matching a regex
+#   nullify_when    — set a scalar field to null if it meets a range condition
 filters:
   releases:
     - field: genres.genre
       remove_matching: "^\\d+$"
       reason: "Strip legacy numeric genre IDs from upstream data"
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Treat sentinel and implausible years as unknown"
   masters:
     - field: genres.genre
       remove_matching: "^\\d+$"
       reason: "Strip legacy numeric genre IDs from upstream data"
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Treat sentinel and implausible years as unknown"
 
 rules:
   releases:

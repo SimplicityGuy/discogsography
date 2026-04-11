@@ -1,4 +1,6 @@
-use crate::rules::{CompiledRulesConfig, QualityReport, RulesConfig, Severity, Violation, apply_filters, evaluate_rules, should_skip_record};
+use crate::rules::{
+    CompiledFilterCondition, CompiledRulesConfig, QualityReport, RulesConfig, Severity, Violation, apply_filters, evaluate_rules, should_skip_record,
+};
 use serde_json::json;
 
 // ── Helper ───────────────────────────────────────────────────────────
@@ -1031,9 +1033,14 @@ rules:
     assert_eq!(skip.field, "profile");
     assert_eq!(skip.contains_lower, "do not use");
     let filter = &config.filters_for("releases")[0];
-    assert_eq!(filter.field, "genres.genre");
-    assert!(filter.remove_matching.is_match("123"));
-    assert!(!filter.remove_matching.is_match("Rock"));
+    match filter {
+        CompiledFilterCondition::RemoveMatching { field, remove_matching, .. } => {
+            assert_eq!(field, "genres.genre");
+            assert!(remove_matching.is_match("123"));
+            assert!(!remove_matching.is_match("Rock"));
+        }
+        _ => panic!("Expected RemoveMatching filter"),
+    }
 }
 
 #[test]
@@ -1346,11 +1353,8 @@ fn test_flagged_writer_write_skip() {
     let temp_dir = TempDir::new().unwrap();
     let mut writer = FlaggedRecordWriter::new(temp_dir.path(), "20260401");
 
-    let skip_info = SkipInfo {
-        reason: "Upstream junk entry".to_string(),
-        field: "profile".to_string(),
-        field_value: "[b]DO NOT USE.[/b]".to_string(),
-    };
+    let skip_info =
+        SkipInfo { reason: "Upstream junk entry".to_string(), field: "profile".to_string(), field_value: "[b]DO NOT USE.[/b]".to_string() };
 
     let parsed_json = json!({"id": "66827", "profile": "[b]DO NOT USE.[/b]"});
     let raw_xml = b"<artist id=\"66827\"><profile>[b]DO NOT USE.[/b]</profile></artist>";
@@ -1369,4 +1373,262 @@ fn test_flagged_writer_write_skip() {
     assert!(jsonl.contains("Upstream junk entry"));
     assert!(jsonl.contains("66827"));
     assert!(jsonl.contains("profile"));
+}
+
+// ── Task 13-14: nullify_when Filter ───────────────────────────────────
+
+#[test]
+fn test_yaml_with_nullify_when_filter() {
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Treat sentinel and implausible years as unknown"
+rules: {}
+"#,
+    );
+    let filters = config.filters_for("masters");
+    assert_eq!(filters.len(), 1);
+}
+
+#[test]
+fn test_yaml_with_mixed_filter_types() {
+    let config = compile_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Strip numeric genre IDs"
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Nullify sentinel years"
+rules: {}
+"#,
+    );
+    let filters = config.filters_for("releases");
+    assert_eq!(filters.len(), 2);
+}
+
+#[test]
+fn test_nullify_when_invalid_type_returns_error() {
+    let yaml = r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: exact
+        below: 0
+      reason: "Bad type"
+rules: {}
+"#;
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let result = CompiledRulesConfig::compile(config);
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("exact"), "Expected type name in error: {msg}");
+}
+
+#[test]
+fn test_nullify_when_missing_bounds_returns_error() {
+    let yaml = r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+      reason: "No bounds"
+rules: {}
+"#;
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let result = CompiledRulesConfig::compile(config);
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("below") || msg.contains("above"), "Expected bounds mention in error: {msg}");
+}
+
+#[test]
+fn test_nullify_when_below_threshold() {
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel year"
+rules: {}
+"#,
+    );
+    // year=0 (sentinel) -> null
+    let mut record = json!({"year": "0", "title": "Test"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!(null));
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].reason, "Sentinel year");
+    assert_eq!(actions[0].removed_values, vec!["0"]);
+
+    // year=197 (implausible) -> null
+    let mut record2 = json!({"year": "197", "title": "Test"});
+    let actions2 = apply_filters(&config, "masters", &mut record2);
+    assert_eq!(record2["year"], json!(null));
+    assert_eq!(actions2.len(), 1);
+
+    // year=338 (implausible) -> null
+    let mut record3 = json!({"year": "338", "title": "Test"});
+    let actions3 = apply_filters(&config, "masters", &mut record3);
+    assert_eq!(record3["year"], json!(null));
+    assert_eq!(actions3.len(), 1);
+}
+
+#[test]
+fn test_nullify_when_normal_year_preserved() {
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel year"
+rules: {}
+"#,
+    );
+    let mut record = json!({"year": "1995", "title": "Test"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!("1995"));
+    assert!(actions.is_empty());
+
+    // Boundary: 1860 is exactly at the threshold — should NOT be nullified (below means <, not <=)
+    let mut record2 = json!({"year": "1860", "title": "Test"});
+    let actions2 = apply_filters(&config, "masters", &mut record2);
+    assert_eq!(record2["year"], json!("1860"));
+    assert!(actions2.is_empty());
+
+    // Just below boundary: 1859 -> null
+    let mut record3 = json!({"year": "1859", "title": "Test"});
+    let actions3 = apply_filters(&config, "masters", &mut record3);
+    assert_eq!(record3["year"], json!(null));
+    assert_eq!(actions3.len(), 1);
+}
+
+#[test]
+fn test_nullify_when_above_threshold() {
+    let config = compile_yaml(
+        r#"
+filters:
+  releases:
+    - field: year
+      nullify_when:
+        type: range
+        above: 2027
+      reason: "Future year"
+rules: {}
+"#,
+    );
+    let mut record = json!({"year": "9999"});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(record["year"], json!(null));
+    assert_eq!(actions.len(), 1);
+
+    // Boundary: 2027 should NOT be nullified
+    let mut record2 = json!({"year": "2027"});
+    let actions2 = apply_filters(&config, "releases", &mut record2);
+    assert_eq!(record2["year"], json!("2027"));
+    assert!(actions2.is_empty());
+}
+
+#[test]
+fn test_nullify_when_non_numeric_unchanged() {
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel"
+rules: {}
+"#,
+    );
+    let mut record = json!({"year": "unknown"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!("unknown"));
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn test_nullify_when_field_already_null() {
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel"
+rules: {}
+"#,
+    );
+    let mut record = json!({"year": null});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!(null));
+    assert!(actions.is_empty()); // No action — already null
+}
+
+#[test]
+fn test_nullify_when_missing_field() {
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel"
+rules: {}
+"#,
+    );
+    let mut record = json!({"title": "No Year"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert!(actions.is_empty());
+    assert!(!record.as_object().unwrap().contains_key("year"));
+}
+
+#[test]
+fn test_nullify_when_combined_with_remove_matching() {
+    let config = compile_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Strip numeric genre IDs"
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel year"
+rules: {}
+"#,
+    );
+    let mut record = json!({
+        "genres": {"genre": ["1", "Electronic"]},
+        "year": "0"
+    });
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(record["genres"]["genre"], json!(["Electronic"]));
+    assert_eq!(record["year"], json!(null));
+    assert_eq!(actions.len(), 2);
 }

@@ -33,10 +33,18 @@ pub struct SkipCondition {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct FilterCondition {
-    pub field: String,
-    pub remove_matching: String,
-    pub reason: String,
+pub struct NullifyCondition {
+    #[serde(rename = "type")]
+    pub condition_type: String,
+    pub below: Option<f64>,
+    pub above: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum FilterCondition {
+    RemoveMatching { field: String, remove_matching: String, reason: String },
+    NullifyWhen { field: String, nullify_when: NullifyCondition, reason: String },
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,10 +94,9 @@ pub struct CompiledSkipCondition {
 }
 
 #[derive(Debug)]
-pub struct CompiledFilterCondition {
-    pub field: String,
-    pub remove_matching: Regex,
-    pub reason: String,
+pub enum CompiledFilterCondition {
+    RemoveMatching { field: String, remove_matching: Regex, reason: String },
+    NullifyWhen { field: String, below: Option<f64>, above: Option<f64>, reason: String },
 }
 
 #[derive(Debug)]
@@ -184,13 +191,28 @@ impl CompiledRulesConfig {
             key.parse::<DataType>().map_err(|_| anyhow::anyhow!("Unknown data type in filters config: '{}'", key))?;
             let mut compiled_conditions = Vec::with_capacity(conditions.len());
             for cond in conditions {
-                let regex = Regex::new(&cond.remove_matching)
-                    .with_context(|| format!("Invalid regex in filter for field '{}': {}", cond.field, cond.remove_matching))?;
-                compiled_conditions.push(CompiledFilterCondition {
-                    field: cond.field,
-                    remove_matching: regex,
-                    reason: cond.reason,
-                });
+                let compiled = match cond {
+                    FilterCondition::RemoveMatching { field, remove_matching, reason } => {
+                        let regex = Regex::new(&remove_matching)
+                            .with_context(|| format!("Invalid regex in filter for field '{}': {}", field, remove_matching))?;
+                        CompiledFilterCondition::RemoveMatching { field, remove_matching: regex, reason }
+                    }
+                    FilterCondition::NullifyWhen { field, nullify_when, reason } => {
+                        anyhow::ensure!(
+                            nullify_when.condition_type == "range",
+                            "Unknown nullify_when type '{}' for field '{}' — only 'range' is supported",
+                            nullify_when.condition_type,
+                            field
+                        );
+                        anyhow::ensure!(
+                            nullify_when.below.is_some() || nullify_when.above.is_some(),
+                            "nullify_when for field '{}' must have at least one of 'below' or 'above'",
+                            field
+                        );
+                        CompiledFilterCondition::NullifyWhen { field, below: nullify_when.below, above: nullify_when.above, reason }
+                    }
+                };
+                compiled_conditions.push(compiled);
             }
             compiled_filters.insert(key, compiled_conditions);
         }
@@ -367,48 +389,76 @@ pub fn apply_filters(config: &CompiledRulesConfig, data_type: &str, record: &mut
     let conditions = config.filters_for(data_type);
     let mut actions = Vec::new();
     for cond in conditions {
-        let segments: Vec<&str> = cond.field.split('.').collect();
-        if segments.is_empty() {
-            continue;
-        }
-        let (parent_segments, leaf) = segments.split_at(segments.len() - 1);
-        let leaf = leaf[0];
+        match cond {
+            CompiledFilterCondition::RemoveMatching { field, remove_matching, reason } => {
+                let segments: Vec<&str> = field.split('.').collect();
+                if segments.is_empty() {
+                    continue;
+                }
+                let (parent_segments, leaf) = segments.split_at(segments.len() - 1);
+                let leaf = leaf[0];
 
-        // Build a JSON pointer path to navigate to the parent, then access the leaf array.
-        // We use pointer_mut to avoid borrow checker issues with iterative navigation.
-        let parent: &mut Value = if parent_segments.is_empty() {
-            &mut *record
-        } else {
-            let pointer = format!("/{}", parent_segments.join("/"));
-            match record.pointer_mut(&pointer) {
-                Some(v) => v,
-                None => continue,
+                // Build a JSON pointer path to navigate to the parent, then access the leaf array.
+                let parent: &mut Value = if parent_segments.is_empty() {
+                    &mut *record
+                } else {
+                    let pointer = format!("/{}", parent_segments.join("/"));
+                    match record.pointer_mut(&pointer) {
+                        Some(v) => v,
+                        None => continue,
+                    }
+                };
+
+                // Get the array at the leaf key
+                let arr = match parent {
+                    Value::Object(map) => match map.get_mut(leaf) {
+                        Some(Value::Array(arr)) => arr,
+                        _ => continue,
+                    },
+                    _ => continue,
+                };
+
+                let mut removed_values = Vec::new();
+                let original_len = arr.len();
+                arr.retain(|elem| {
+                    if let Value::String(s) = elem
+                        && remove_matching.is_match(s)
+                    {
+                        removed_values.push(s.clone());
+                        return false;
+                    }
+                    true
+                });
+                let removed_count = original_len - arr.len();
+                if removed_count > 0 {
+                    actions.push(FilterAction { field: field.clone(), removed_count, removed_values, reason: reason.clone() });
+                }
             }
-        };
-
-        // Get the array at the leaf key
-        let arr = match parent {
-            Value::Object(map) => match map.get_mut(leaf) {
-                Some(Value::Array(arr)) => arr,
-                _ => continue,
-            },
-            _ => continue,
-        };
-
-        let mut removed_values = Vec::new();
-        let original_len = arr.len();
-        arr.retain(|elem| {
-            if let Value::String(s) = elem
-                && cond.remove_matching.is_match(s)
-            {
-                removed_values.push(s.clone());
-                return false;
+            CompiledFilterCondition::NullifyWhen { field, below, above, reason } => {
+                let obj = match record.as_object_mut() {
+                    Some(o) => o,
+                    None => continue,
+                };
+                let val = match obj.get(field.as_str()) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                // Extract string representation for numeric comparison
+                let str_val = match val {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Null => continue, // already null — no action
+                    _ => continue,
+                };
+                if let Ok(num) = str_val.parse::<f64>() {
+                    let should_nullify = below.is_some_and(|b| num < b) || above.is_some_and(|a| num > a);
+                    if should_nullify {
+                        obj.insert(field.clone(), Value::Null);
+                        actions.push(FilterAction { field: field.clone(), removed_count: 1, removed_values: vec![str_val], reason: reason.clone() });
+                    }
+                }
+                // Non-numeric string: leave unchanged
             }
-            true
-        });
-        let removed_count = original_len - arr.len();
-        if removed_count > 0 {
-            actions.push(FilterAction { field: cond.field.clone(), removed_count, removed_values, reason: cond.reason.clone() });
         }
     }
     actions
@@ -513,8 +563,7 @@ impl QualityReport {
                         by_reason.entry(&rec.reason).or_default().push(&rec.record_id);
                     }
                     let total_count: usize = records.len();
-                    let details: Vec<String> =
-                        by_reason.iter().map(|(reason, ids)| format!("{}: {}", reason, ids.join(", "))).collect();
+                    let details: Vec<String> = by_reason.iter().map(|(reason, ids)| format!("{}: {}", reason, ids.join(", "))).collect();
                     output.push_str(&format!("    {}: {} ({})\n", dt, total_count, details.join("; ")));
                 }
             }
@@ -652,14 +701,7 @@ impl FlaggedRecordWriter {
     }
 
     /// Write a skipped record to JSONL log, and capture XML/JSON files.
-    pub fn write_skip(
-        &mut self,
-        data_type: &str,
-        record_id: &str,
-        skip_info: &SkipInfo,
-        raw_xml: Option<&[u8]>,
-        parsed_json: &Value,
-    ) {
+    pub fn write_skip(&mut self, data_type: &str, record_id: &str, skip_info: &SkipInfo, raw_xml: Option<&[u8]>, parsed_json: &Value) {
         let type_dir = self.base_dir.join(data_type); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
 
         if let Err(e) = fs::create_dir_all(&type_dir) {
