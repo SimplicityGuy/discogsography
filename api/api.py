@@ -257,10 +257,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     _search_router.configure(_pool, _redis)
     _insights_compute_router.configure(_neo4j, _pool, _redis)
     _admin_router.configure(_pool, _redis, _config, neo4j_driver=_neo4j)
-    _extraction_analysis_router.configure(
-        discogs_root=os.environ.get("DISCOGS_DATA_ROOT"),
-        musicbrainz_root=os.environ.get("MUSICBRAINZ_DATA_ROOT"),
-    )
     _musicbrainz_router.configure(_pool, _neo4j)
     _network_router.configure(_neo4j, _redis)
     _rarity_router.configure(_neo4j, _pool, _redis)
@@ -288,6 +284,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
 
     nlq_config = _NLQConfig.from_env()
     nlq_engine = None
+    anthropic_client = None
     if nlq_config.is_available:
         from anthropic import AsyncAnthropic  # noqa: PLC0415
 
@@ -299,6 +296,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         nlq_engine = NLQEngine(config=nlq_config, client=anthropic_client, tool_runner=tool_runner)
         logger.info("🧠 NLQ engine initialized", model=nlq_config.model)
     _nlq_router.configure(nlq_config, nlq_engine, _redis, jwt_secret=_config.jwt_secret_key)
+    _extraction_analysis_router.configure(
+        discogs_root=os.environ.get("DISCOGS_DATA_ROOT"),
+        musicbrainz_root=os.environ.get("MUSICBRAINZ_DATA_ROOT"),
+        anthropic_client=anthropic_client,
+        anthropic_model=nlq_config.model,
+    )
     logger.info("✅ API service ready", port=API_PORT)
 
     # Pre-warm search cache for common high-cardinality terms in background.

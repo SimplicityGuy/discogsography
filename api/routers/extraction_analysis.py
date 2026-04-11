@@ -23,6 +23,8 @@ router = APIRouter()
 # Module-level state (set via configure())
 _discogs_data_root: Path | None = None
 _musicbrainz_data_root: Path | None = None
+_anthropic_client: Any = None
+_anthropic_model: str = "claude-sonnet-4-20250514"
 
 # Input-validation patterns — only allow safe characters in version / record_id
 _SAFE_VERSION = re.compile(r"^[a-zA-Z0-9._-]+$")
@@ -47,12 +49,24 @@ class PromptContextRequest(BaseModel):
     rules: list[_RuleSelection] = Field(..., min_length=1, max_length=20)
 
 
-def configure(discogs_root: str | Path | None = None, musicbrainz_root: str | Path | None = None) -> None:
+def configure(
+    discogs_root: str | Path | None = None,
+    musicbrainz_root: str | Path | None = None,
+    anthropic_client: Any = None,
+    anthropic_model: str = "claude-sonnet-4-20250514",
+) -> None:
     """Initialise module state — called once during app lifespan startup."""
-    global _discogs_data_root, _musicbrainz_data_root
+    global _discogs_data_root, _musicbrainz_data_root, _anthropic_client, _anthropic_model
     _discogs_data_root = Path(discogs_root) if discogs_root else None
     _musicbrainz_data_root = Path(musicbrainz_root) if musicbrainz_root else None
-    logger.info("🔧 Extraction analysis router configured", discogs_root=discogs_root, musicbrainz_root=musicbrainz_root)
+    _anthropic_client = anthropic_client
+    _anthropic_model = anthropic_model
+    logger.info(
+        "🔧 Extraction analysis router configured",
+        discogs_root=discogs_root,
+        musicbrainz_root=musicbrainz_root,
+        ai_prompt_available=anthropic_client is not None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -689,3 +703,131 @@ async def get_prompt_context(
         )
 
     return JSONResponse(content={"contexts": contexts})
+
+
+# ---------------------------------------------------------------------------
+# AI-powered prompt generation
+# ---------------------------------------------------------------------------
+
+_MAX_XML_CHARS_PER_RECORD = 1500
+_MAX_JSON_CHARS_PER_RECORD = 1500
+_MAX_SAMPLES_FOR_AI = 3
+
+
+@router.post("/api/admin/extraction-analysis/{version}/generate-ai-prompt")
+async def generate_ai_prompt(
+    version: str,
+    body: PromptContextRequest,
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+) -> JSONResponse:
+    """Use Claude to analyze violations and produce a targeted debugging prompt."""
+    if _anthropic_client is None:
+        raise HTTPException(status_code=503, detail="AI prompt generation unavailable — NLQ_API_KEY not configured")
+
+    _validate_version(version)
+    location = _find_version_root(version)
+    if location is None:
+        raise HTTPException(status_code=404, detail=f"Version not found: {version!r}")
+
+    data_root, source = location
+    flagged_version_dir = data_root / "flagged" / version
+    all_violations = _read_violations(flagged_version_dir)
+
+    # Build a compact context payload for Claude
+    rule_sections: list[str] = []
+    for sel in body.rules:
+        matching = [v for v in all_violations if v.get("rule") == sel.rule and v.get("entity_type") == sel.entity_type]
+        if not matching:
+            continue
+
+        severity = matching[0].get("severity", "unknown")
+        total = len(matching)
+
+        # Collect unique field values to show distribution
+        field_values: list[str] = []
+        for v in matching[:50]:
+            val = v.get("value", v.get("field", ""))
+            if val and val not in field_values:
+                field_values.append(str(val))
+            if len(field_values) >= 10:
+                break
+
+        section_lines = [
+            f"### Rule: `{sel.rule}` (entity: {sel.entity_type})",
+            f"- Severity: {severity}",
+            f"- Total violations: {total:,}",
+        ]
+        if field_values:
+            section_lines.append(f"- Affected fields/values: {', '.join(f'`{v}`' for v in field_values)}")
+
+        # Sample records with truncated XML/JSON
+        seen_ids: set[str] = set()
+        sample_count = 0
+        for v in matching:
+            rid = v.get("record_id", "")
+            if rid in seen_ids:
+                continue
+            seen_ids.add(rid)
+            raw_xml, parsed_json, _truncated = _load_record_files(flagged_version_dir, sel.entity_type, rid)
+            record_violations = [m for m in matching if m.get("record_id") == rid]
+
+            section_lines.append(f"\n**Sample record {sample_count + 1} — ID {rid}:**")
+            section_lines.append("Violations:")
+            for rv in record_violations:
+                section_lines.append(
+                    f"  - `{rv.get('rule', '')}` on field `{rv.get('field', rv.get('message', ''))}` — value: `{rv.get('value', '(not captured)')}`"
+                )
+
+            if parsed_json:
+                json_str = json.dumps(parsed_json, indent=2) if isinstance(parsed_json, dict) else str(parsed_json)
+                if len(json_str) > _MAX_JSON_CHARS_PER_RECORD:
+                    json_str = json_str[:_MAX_JSON_CHARS_PER_RECORD] + "\n... (truncated)"
+                section_lines.append(f"```json\n{json_str}\n```")
+
+            if raw_xml:
+                xml_trimmed = raw_xml[:_MAX_XML_CHARS_PER_RECORD]
+                if len(raw_xml) > _MAX_XML_CHARS_PER_RECORD:
+                    xml_trimmed += "\n... (truncated)"
+                section_lines.append(f"```xml\n{xml_trimmed}\n```")
+
+            sample_count += 1
+            if sample_count >= _MAX_SAMPLES_FOR_AI:
+                break
+
+        rule_sections.append("\n".join(section_lines))
+
+    user_content = f"# Extraction Analysis — Version {version} (source: {source})\n\n" + "\n\n---\n\n".join(rule_sections)
+
+    system_prompt = (
+        "You are a data pipeline debugging expert for Discogsography, a system that parses "
+        "Discogs XML database dumps and MusicBrainz JSONL exports into Neo4j and PostgreSQL.\n\n"
+        "The user will show you data quality violations from the extraction pipeline. "
+        "Each violation has a rule name, severity, affected field, the actual value, "
+        "and sample records with raw XML and parsed JSON.\n\n"
+        "Your task is to produce a **debugging prompt** — a self-contained document that someone "
+        "(or another AI assistant) can use in a future session to:\n"
+        "1. Understand the root cause of each violation\n"
+        "2. Determine if it's a data issue (bad upstream data) or a parser/validation bug\n"
+        "3. Propose concrete fixes or workarounds — heuristics, parser changes, or validation rule adjustments\n\n"
+        "Structure your output as a markdown document with:\n"
+        "- A brief summary of all violations and their likely categories\n"
+        "- Per-rule sections with: root cause analysis, evidence from the sample data, "
+        "and specific recommended actions (code changes, heuristic fixes, rule adjustments)\n"
+        "- For high-volume rules (thousands+ violations), focus on whether the rule itself "
+        "needs adjustment rather than individual records\n"
+        "- Reference specific field values, XML elements, and JSON keys from the samples\n\n"
+        "Be concrete and actionable. Include code snippets for proposed fixes when applicable."
+    )
+
+    try:
+        response = await _anthropic_client.messages.create(
+            model=_anthropic_model,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_content}],
+            max_tokens=4096,
+        )
+        prompt_text = "".join(block.text for block in response.content if hasattr(block, "text"))
+        return JSONResponse(content={"prompt": prompt_text, "ai_generated": True})
+    except Exception:
+        logger.exception("❌ AI prompt generation failed")
+        raise HTTPException(status_code=502, detail="AI prompt generation failed") from None

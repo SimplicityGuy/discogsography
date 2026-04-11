@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 if TYPE_CHECKING:
@@ -784,6 +784,157 @@ class TestPromptContextEndpoint:
         assert len(data["contexts"]) == 1
         assert data["contexts"][0]["total_violations"] == 0
         assert data["contexts"][0]["sample_records"] == []
+
+
+class TestGenerateAiPromptEndpoint:
+    def test_requires_auth(self, test_client: TestClient) -> None:
+        """Returns 401 without a valid token."""
+        resp = test_client.post(
+            "/api/admin/extraction-analysis/20260101/generate-ai-prompt",
+            json={"rules": [{"rule": "year-out-of-range", "entity_type": "artists"}]},
+        )
+        assert resp.status_code == 401
+
+    def test_returns_503_when_no_anthropic_client(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns 503 when NLQ_API_KEY is not configured."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with (
+            patch.object(ea, "_discogs_data_root", tmp_path),
+            patch.object(ea, "_musicbrainz_data_root", None),
+            patch.object(ea, "_anthropic_client", None),
+        ):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/20260101/generate-ai-prompt",
+                json={"rules": [{"rule": "year-out-of-range", "entity_type": "artists"}]},
+                headers=_admin_auth_headers(),
+            )
+        assert resp.status_code == 503
+        assert "NLQ_API_KEY" in resp.json()["detail"]
+
+    def test_not_found_for_unknown_version(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns 404 when version is not found."""
+        import api.routers.extraction_analysis as ea
+
+        mock_client = MagicMock()
+        with (
+            patch.object(ea, "_discogs_data_root", tmp_path),
+            patch.object(ea, "_musicbrainz_data_root", None),
+            patch.object(ea, "_anthropic_client", mock_client),
+        ):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/99990101/generate-ai-prompt",
+                json={"rules": [{"rule": "year-out-of-range", "entity_type": "artists"}]},
+                headers=_admin_auth_headers(),
+            )
+        assert resp.status_code == 404
+
+    def test_validation_rejects_empty_rules(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns 422 when rules list is empty."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+        mock_client = MagicMock()
+
+        with (
+            patch.object(ea, "_discogs_data_root", tmp_path),
+            patch.object(ea, "_musicbrainz_data_root", None),
+            patch.object(ea, "_anthropic_client", mock_client),
+        ):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/20260101/generate-ai-prompt",
+                json={"rules": []},
+                headers=_admin_auth_headers(),
+            )
+        assert resp.status_code == 422
+
+    def test_successful_ai_prompt_generation(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns AI-generated prompt when Anthropic client is available."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        # Mock the Anthropic client response
+        mock_text_block = MagicMock()
+        mock_text_block.text = "## Root Cause Analysis\nThe year field is missing."
+        mock_response = MagicMock()
+        mock_response.content = [mock_text_block]
+
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+        with (
+            patch.object(ea, "_discogs_data_root", tmp_path),
+            patch.object(ea, "_musicbrainz_data_root", None),
+            patch.object(ea, "_anthropic_client", mock_client),
+            patch.object(ea, "_anthropic_model", "claude-sonnet-4-20250514"),
+        ):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/20260101/generate-ai-prompt",
+                json={"rules": [{"rule": "year-out-of-range", "entity_type": "artists"}]},
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ai_generated"] is True
+        assert "Root Cause Analysis" in data["prompt"]
+        mock_client.messages.create.assert_called_once()
+        call_kwargs = mock_client.messages.create.call_args[1]
+        assert call_kwargs["model"] == "claude-sonnet-4-20250514"
+        assert "year-out-of-range" in call_kwargs["messages"][0]["content"]
+
+    def test_returns_502_on_anthropic_error(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns 502 when the Anthropic API call fails."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(side_effect=RuntimeError("API unavailable"))
+
+        with (
+            patch.object(ea, "_discogs_data_root", tmp_path),
+            patch.object(ea, "_musicbrainz_data_root", None),
+            patch.object(ea, "_anthropic_client", mock_client),
+        ):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/20260101/generate-ai-prompt",
+                json={"rules": [{"rule": "year-out-of-range", "entity_type": "artists"}]},
+                headers=_admin_auth_headers(),
+            )
+        assert resp.status_code == 502
+
+    def test_no_matching_violations_still_succeeds(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Returns successfully even when no violations match — empty context sent to AI."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        mock_text_block = MagicMock()
+        mock_text_block.text = "No violations found for the selected rules."
+        mock_response = MagicMock()
+        mock_response.content = [mock_text_block]
+
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+        with (
+            patch.object(ea, "_discogs_data_root", tmp_path),
+            patch.object(ea, "_musicbrainz_data_root", None),
+            patch.object(ea, "_anthropic_client", mock_client),
+        ):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/20260101/generate-ai-prompt",
+                json={"rules": [{"rule": "nonexistent-rule", "entity_type": "artists"}]},
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ai_generated"] is True
 
 
 # ---------------------------------------------------------------------------
