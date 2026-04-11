@@ -1,6 +1,8 @@
 use serde_json::{Map, Value};
 
-/// Remove `@` prefixes from all keys in an object and rename `#text` to `name`.
+/// Remove `@` prefixes from top-level keys in an object and rename `#text` to `name`.
+/// Does not recurse into nested objects — callers must explicitly call this on
+/// nested objects they want normalized (e.g., each format dict in a formats array).
 pub fn strip_at_prefixes(value: &mut Value) {
     let Some(map) = value.as_object_mut() else {
         return;

@@ -432,6 +432,42 @@ fn test_release_full_pipeline() {
     );
 }
 
+// ── edge cases from code review ─────────────────────────────────────
+
+#[test]
+fn test_normalize_artist_empty_members_container() {
+    let mut record = json!({
+        "id": "1",
+        "name": "Solo",
+        "members": {"name": []}
+    });
+    normalize_record("artists", &mut record);
+    assert!(record.get("members").is_none(), "empty members should be removed");
+}
+
+#[test]
+fn test_normalize_release_master_id_null() {
+    let mut record = json!({
+        "@id": "1",
+        "title": "Test",
+        "master_id": null
+    });
+    normalize_record("releases", &mut record);
+    // null master_id stays as-is (not an object, no extraction)
+    assert_eq!(record["master_id"], json!(null));
+}
+
+#[test]
+fn test_normalize_release_master_id_integer() {
+    let mut record = json!({
+        "@id": "1",
+        "title": "Test",
+        "master_id": 5000
+    });
+    normalize_record("releases", &mut record);
+    assert_eq!(record["master_id"], json!(5000));
+}
+
 // ── unknown data type -> no-op ──────────────────────────────────────
 
 #[test]
