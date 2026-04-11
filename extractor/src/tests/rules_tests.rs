@@ -1632,3 +1632,284 @@ rules: {}
     assert_eq!(record["year"], json!(null));
     assert_eq!(actions.len(), 2);
 }
+
+// ── Coverage gap: format_summary with skipped records but NO violations ──
+
+#[test]
+fn test_quality_report_format_summary_skipped_only_no_violations() {
+    // Exercises the path where has_violations() is false but has_skipped_records() is true.
+    // The early return at line 548-549 should NOT fire; we should get the skipped section
+    // but no violation summary lines (no increment_total, no record_violation).
+    let mut report = QualityReport::new();
+    report.record_skip("artists", "66827", "Upstream junk entry marked DO NOT USE");
+    report.record_skip("releases", "99999", "Bad release data");
+
+    assert!(!report.has_violations());
+    assert!(report.has_skipped_records());
+
+    let summary = report.format_summary("20260401");
+    assert!(!summary.contains("No data quality violations"), "Should NOT hit early return");
+    assert!(summary.contains("Skipped records:"));
+    assert!(summary.contains("artists: 1"));
+    assert!(summary.contains("66827"));
+    assert!(summary.contains("releases: 1"));
+    assert!(summary.contains("99999"));
+}
+
+// ── Coverage gap: write_skip deduplication path ─────────────────────────
+
+#[test]
+fn test_flagged_writer_write_skip_deduplication() {
+    use crate::rules::{FlaggedRecordWriter, SkipInfo};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut writer = FlaggedRecordWriter::new(temp_dir.path(), "20260401");
+
+    let skip_info =
+        SkipInfo { reason: "Upstream junk entry".to_string(), field: "profile".to_string(), field_value: "[b]DO NOT USE.[/b]".to_string() };
+
+    let parsed_json = json!({"id": "66827", "profile": "[b]DO NOT USE.[/b]"});
+    let raw_xml = b"<artist id=\"66827\"><profile>[b]DO NOT USE.[/b]</profile></artist>";
+
+    // First write — creates XML, JSON, and skipped.jsonl entry
+    writer.write_skip("artists", "66827", &skip_info, Some(raw_xml.as_slice()), &parsed_json);
+    // Second write with same record_id — should hit the dedup path (written_records.contains)
+    writer.write_skip("artists", "66827", &skip_info, Some(raw_xml.as_slice()), &parsed_json);
+    writer.flush();
+
+    let type_dir = temp_dir.path().join("flagged").join("20260401").join("artists");
+    assert!(type_dir.join("66827.xml").exists());
+    assert!(type_dir.join("66827.json").exists());
+
+    // skipped.jsonl should have TWO entries (dedup only affects file writes, not JSONL)
+    let jsonl = std::fs::read_to_string(type_dir.join("skipped.jsonl")).unwrap();
+    let lines: Vec<&str> = jsonl.trim().lines().collect();
+    assert_eq!(lines.len(), 2, "Should have two JSONL entries despite file dedup");
+}
+
+// ── Coverage gap: write_skip without raw_xml ────────────────────────────
+
+#[test]
+fn test_flagged_writer_write_skip_without_raw_xml() {
+    use crate::rules::{FlaggedRecordWriter, SkipInfo};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut writer = FlaggedRecordWriter::new(temp_dir.path(), "20260401");
+
+    let skip_info = SkipInfo { reason: "Bad entry".to_string(), field: "profile".to_string(), field_value: "junk".to_string() };
+
+    let parsed_json = json!({"id": "12345", "profile": "junk"});
+
+    // Pass None for raw_xml — should skip XML file creation but still write JSON
+    writer.write_skip("artists", "12345", &skip_info, None, &parsed_json);
+    writer.flush();
+
+    let type_dir = temp_dir.path().join("flagged").join("20260401").join("artists");
+    assert!(!type_dir.join("12345.xml").exists(), "XML should NOT be created when raw_xml is None");
+    assert!(type_dir.join("12345.json").exists(), "JSON should still be created");
+    assert!(type_dir.join("skipped.jsonl").exists());
+}
+
+// ── Coverage gap: apply_filters NullifyWhen with Value::Number ──────────
+
+#[test]
+fn test_nullify_when_with_json_number_value() {
+    // Existing tests use string years ("0", "2025"). This tests the Value::Number branch
+    // at line 449 in apply_filters.
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel year"
+rules: {}
+"#,
+    );
+    // Year as a JSON number (not string) below threshold -> null
+    let mut record = json!({"year": 0, "title": "Test"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!(null));
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].reason, "Sentinel year");
+
+    // Year as a JSON number within range -> preserved
+    let mut record2 = json!({"year": 1995, "title": "Test"});
+    let actions2 = apply_filters(&config, "masters", &mut record2);
+    assert_eq!(record2["year"], json!(1995));
+    assert!(actions2.is_empty());
+}
+
+// ── Coverage gap: NullifyWhen catch-all (boolean/array) ─────────────────
+
+#[test]
+fn test_nullify_when_with_boolean_value_continues() {
+    // A boolean field value should hit the `_ => continue` catch-all at line 452.
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel year"
+rules: {}
+"#,
+    );
+    let mut record = json!({"year": true});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert!(actions.is_empty());
+    assert_eq!(record["year"], json!(true), "Boolean value should be left unchanged");
+}
+
+#[test]
+fn test_nullify_when_with_array_value_continues() {
+    // An array field value should also hit the `_ => continue` catch-all.
+    let config = compile_yaml(
+        r#"
+filters:
+  releases:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel"
+rules: {}
+"#,
+    );
+    let mut record = json!({"year": [1990, 1991]});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert!(actions.is_empty());
+    assert_eq!(record["year"], json!([1990, 1991]), "Array value should be left unchanged");
+}
+
+// ── Coverage gap: RemoveMatching where parent is not an object ──────────
+
+#[test]
+fn test_remove_matching_parent_not_object() {
+    // When the parent resolves but is not a Value::Object (e.g., it's an array),
+    // should hit the `_ => continue` at line 418.
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    // genres is an array, not an object — pointer resolves to the array but it's not an Object
+    let mut record = json!({"genres": ["Rock", "Pop"]});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert!(actions.is_empty());
+    assert_eq!(record["genres"], json!(["Rock", "Pop"]));
+}
+
+// ── Coverage gap: RemoveMatching with field at root level ───────────────
+
+#[test]
+fn test_remove_matching_at_root_level() {
+    // When segments has only one element, parent_segments is empty and we operate on root.
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: tags
+      remove_matching: "^\\d+$"
+      reason: "Numeric tags"
+"#,
+    );
+    let mut record = json!({"tags": ["1", "Rock", "42"]});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].removed_count, 2);
+    assert_eq!(record["tags"], json!(["Rock"]));
+}
+
+// ── Coverage gap: RemoveMatching deeper nesting (3 levels) ──────────────
+
+#[test]
+fn test_remove_matching_deep_nesting() {
+    // Tests pointer navigation with multiple parent segments (e.g., a.b.c).
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: data.genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Deep numeric genres"
+"#,
+    );
+    let mut record = json!({"data": {"genres": {"genre": ["1", "Rock", "2"]}}});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].removed_count, 2);
+    assert_eq!(record["data"]["genres"]["genre"], json!(["Rock"]));
+}
+
+// ── Coverage gap: RemoveMatching where leaf is not an array ─────────────
+
+#[test]
+fn test_remove_matching_leaf_not_array() {
+    // When the leaf key exists in the parent object but isn't an array,
+    // should hit `_ => continue` at line 416.
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    // genre is null, not an array
+    let mut record = json!({"genres": {"genre": null}});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert!(actions.is_empty());
+}
+
+// ── Coverage gap: NullifyWhen on non-object record ──────────────────────
+
+#[test]
+fn test_nullify_when_record_not_object() {
+    // When the top-level record is not an object (e.g., an array), should hit
+    // `None => continue` at line 439.
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel"
+rules: {}
+"#,
+    );
+    let mut record = json!([{"year": "0"}]);
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert!(actions.is_empty());
+}
+
+// ── Coverage gap: filters validates data type ───────────────────────────
+
+#[test]
+fn test_filters_validates_data_type() {
+    let yaml = r#"
+filters:
+  foobar:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "test"
+"#;
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let result = CompiledRulesConfig::compile(config);
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("foobar"), "Expected unknown type name in error: {msg}");
+}

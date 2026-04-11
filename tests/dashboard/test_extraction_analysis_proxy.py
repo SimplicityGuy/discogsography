@@ -463,8 +463,23 @@ class TestEaSkippedProxy:
 
     @patch("dashboard.admin_proxy.httpx.AsyncClient")
     def test_rejects_invalid_version(self, _mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
-        resp = proxy_client.get("/admin/api/extraction-analysis/../etc/skipped")
-        assert resp.status_code in (400, 404)
+        """Uses '!' which is rejected by _SAFE_PATH_SEGMENT and not URL-normalised (line 418)."""
+        resp = proxy_client.get("/admin/api/extraction-analysis/bad!version/skipped")
+        assert resp.status_code == 400
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_forwards_page_size_param(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        """page_size query param is forwarded to the upstream API (line 426)."""
+        _, mock_instance = _mock_httpx("get", 200, b'{"skipped":[],"total":0,"page":1,"page_size":25}')
+        mock_cls_patch.return_value = mock_instance
+        resp = proxy_client.get(
+            "/admin/api/extraction-analysis/20260401/skipped?entity_type=artists&page=1&page_size=25",
+            headers={"Authorization": "Bearer tok"},
+        )
+        assert resp.status_code == 200
+        call_kwargs = mock_instance.get.call_args
+        params = call_kwargs.kwargs.get("params", {})
+        assert params.get("page_size") == "25"
 
     @patch("dashboard.admin_proxy.httpx.AsyncClient")
     def test_returns_502_on_error(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
