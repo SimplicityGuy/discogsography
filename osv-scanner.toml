@@ -5,9 +5,3 @@
 # re-tests each entry after dependency upgrades and removes resolved ones.
 #
 # Only add entries when no fix is available upstream.
-
-[[IgnoredVulns]]
-# pygments 2.19.2 — ReDoS in AdlLexer (local access only), no fix available
-# Also tracked as CVE-2026-4539 in .pip-audit-ignores
-id = "GHSA-5239-wwwm-4pmq"
-reason = "No fix available upstream — local access only ReDoS in AdlLexer (2026-03-25)"
