@@ -273,11 +273,7 @@ async fn test_get_channel_with_no_channel_triggers_reconnect() {
     let result = mq.get_channel().await;
     assert!(result.is_err(), "Expected error when channel is None and reconnect fails");
     let err_msg = format!("{}", result.err().unwrap());
-    assert!(
-        err_msg.contains("Failed to connect") || err_msg.contains("Failed to get channel"),
-        "Unexpected error: {}",
-        err_msg
-    );
+    assert!(err_msg.contains("Failed to connect") || err_msg.contains("Failed to get channel"), "Unexpected error: {}", err_msg);
 }
 
 #[tokio::test]

@@ -399,6 +399,13 @@ class TwoFactorDisableModel(BaseModel):
     password: str
 
 
+class ChangePasswordRequest(BaseModel):
+    """Request to change password while authenticated."""
+
+    current_password: str
+    new_password: str = Field(min_length=8, description="New password (minimum 8 characters)")
+
+
 class ChallengeResponse(BaseModel):
     """Response when login requires 2FA — contains a challenge token."""
 

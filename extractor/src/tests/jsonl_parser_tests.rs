@@ -223,7 +223,8 @@ fn test_parse_mb_release_line_with_discogs() {
 
 #[test]
 fn test_parse_mb_release_line_no_discogs() {
-    let line = r#"{"id":"release-mbid","title":"Unknown Release","barcode":null,"status":"Bootleg","release-group":{"id":"group-mbid"},"relations":[]}"#;
+    let line =
+        r#"{"id":"release-mbid","title":"Unknown Release","barcode":null,"status":"Bootleg","release-group":{"id":"group-mbid"},"relations":[]}"#;
     let msg = parse_mb_release_line(line).unwrap();
     assert!(msg.data["discogs_release_id"].is_null());
     assert_eq!(msg.data["name"], "Unknown Release");
@@ -599,8 +600,10 @@ fn test_build_mbid_discogs_map_with_malformed_lines() {
     use tempfile::NamedTempFile;
     use xz2::write::XzEncoder;
 
-    let valid_line = r#"{"id":"mbid-good","relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/artist/42"}}]}"#;
-    let no_id_line = r#"{"name":"no id field","relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/artist/99"}}]}"#;
+    let valid_line =
+        r#"{"id":"mbid-good","relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/artist/42"}}]}"#;
+    let no_id_line =
+        r#"{"name":"no id field","relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/artist/99"}}]}"#;
     let invalid_json = "not json at all";
     // Mix: valid, invalid JSON, empty line, line with no id, valid again
     let content = format!("{}\n{}\n\n{}\n{}\n", valid_line, invalid_json, no_id_line, valid_line);

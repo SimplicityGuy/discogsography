@@ -110,10 +110,7 @@ async fn ready_handler(State((state, _)): State<AppState>) -> StatusCode {
     // has active connections or completed files. During initial startup
     // (before first AMQP connection), check extraction_status to avoid
     // returning 503 for the entire download phase.
-    if state.extraction_status != ExtractionStatus::Idle
-        || !state.active_connections.is_empty()
-        || !state.completed_files.is_empty()
-    {
+    if state.extraction_status != ExtractionStatus::Idle || !state.active_connections.is_empty() || !state.completed_files.is_empty() {
         StatusCode::OK
     } else {
         StatusCode::SERVICE_UNAVAILABLE

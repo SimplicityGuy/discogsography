@@ -291,11 +291,7 @@ impl StateMarker {
     pub fn file_downloaded(&mut self, filename: &str, bytes: u64) {
         // Only increment files_downloaded if this file was not already completed
         // (avoids double-counting on retry/resume)
-        let already_completed = self
-            .download_phase
-            .downloads_by_file
-            .get(filename)
-            .is_some_and(|s| s.status == PhaseStatus::Completed);
+        let already_completed = self.download_phase.downloads_by_file.get(filename).is_some_and(|s| s.status == PhaseStatus::Completed);
 
         if let Some(status) = self.download_phase.downloads_by_file.get_mut(filename) {
             status.status = PhaseStatus::Completed;

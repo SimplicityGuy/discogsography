@@ -543,6 +543,31 @@ class ExploreApp {
             this.userPanes.triggerSync();
         });
 
+        // Account Settings button
+        const accountSettingsBtn = document.getElementById('accountSettingsBtn');
+        if (accountSettingsBtn) {
+            accountSettingsBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this._previousPane = this.activePane;
+                this._switchPane('settings');
+                // Close the dropdown
+                const dropdown = accountSettingsBtn.closest('[x-data]');
+                if (dropdown) {
+                    const data = _alpineData(dropdown);
+                    if (data) data.open = false;
+                }
+            });
+        }
+
+        // Settings back button
+        const settingsBackBtn = document.getElementById('settingsBackBtn');
+        if (settingsBackBtn) {
+            settingsBackBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this._switchPane(this._previousPane || 'explore');
+            });
+        }
+
         // Collection / wantlist / recommendations refresh (delegated — buttons are rendered dynamically)
         document.getElementById('collectionPane')?.addEventListener('click', (e) => {
             if (e.target.closest('#collectionRefreshBtn')) {
@@ -886,6 +911,8 @@ class ExploreApp {
             window.genreTreeView.load();
         } else if (pane === 'credits' && window.creditsPanel) {
             window.creditsPanel.load();
+        } else if (pane === 'settings') {
+            window.settingsPane.init();
         }
     }
 

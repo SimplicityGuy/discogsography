@@ -525,3 +525,27 @@ async def proxy_ea_prompt_context(version: str, request: Request) -> Response:
         logger.error("❌ API service unreachable", url=url, error=str(exc))
         return _unavailable_response()
     return _ok_response(resp)
+
+
+@router.post("/admin/api/extraction-analysis/{version}/generate-ai-prompt")
+async def proxy_ea_generate_ai_prompt(version: str, request: Request) -> Response:
+    """Proxy AI-powered prompt generation — may take longer due to Claude API call."""
+    if not _validate_path_segment(version):
+        return Response(content=b'{"detail":"Invalid version"}', status_code=400, media_type="application/json")
+    url = _build_url(f"/api/admin/extraction-analysis/{version}/generate-ai-prompt")
+    headers = _auth_headers(request)
+    try:
+        sanitised_body = await _validated_json_body(request)
+    except json.JSONDecodeError:
+        return JSONResponse(content={"detail": "Malformed JSON in request body"}, status_code=400)
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            if sanitised_body:
+                headers["Content-Type"] = "application/json"
+                resp = await client.post(url, headers=headers, content=sanitised_body)
+            else:
+                resp = await client.post(url, headers=headers)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)

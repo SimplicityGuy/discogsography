@@ -560,6 +560,9 @@ body {
                             <a class="hidden flex items-center px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover cursor-pointer" href="#" id="syncBtn">
                                 <span class="material-symbols-outlined mr-2" style="font-size:18px">sync</span>Sync Collection
                             </a>
+                            <a class="flex items-center px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover cursor-pointer" href="#" id="accountSettingsBtn">
+                                <span class="material-symbols-outlined mr-2" style="font-size:18px">settings</span>Account Settings
+                            </a>
                             <hr class="border-border-color my-1">
                             <a class="flex items-center px-3 py-1.5 text-sm text-accent-red hover:bg-bg-hover cursor-pointer" href="#" id="logoutBtn">
                                 <span class="material-symbols-outlined mr-2" style="font-size:18px">logout</span>Logout
@@ -1128,6 +1131,79 @@ body {
             </div>
         </div>
 
+        <!-- Settings pane — account management (no nav tab, activated from dropdown) -->
+        <div class="pane" id="settingsPane">
+            <div class="settings-page">
+                <div class="settings-header">
+                    <a href="#" class="settings-back-link" id="settingsBackBtn">
+                        <span class="material-symbols-outlined" style="font-size:18px">arrow_back</span>
+                        Back
+                    </a>
+                    <h2 class="settings-title">Account Settings</h2>
+                </div>
+
+                <!-- Profile Card -->
+                <div class="settings-card" id="settingsProfileCard">
+                    <div class="settings-card-header">
+                        <span class="material-symbols-outlined">person</span>
+                        <h3>Profile</h3>
+                    </div>
+                    <div class="settings-card-body">
+                        <div class="settings-field">
+                            <label class="settings-label">Email</label>
+                            <div class="settings-value" id="settingsEmail"></div>
+                        </div>
+                        <div class="settings-field">
+                            <label class="settings-label">Member since</label>
+                            <div class="settings-value" id="settingsCreatedAt"></div>
+                        </div>
+                        <div class="settings-field">
+                            <label class="settings-label">Discogs</label>
+                            <div class="settings-value" id="settingsDiscogsStatus"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Password Card -->
+                <div class="settings-card" id="settingsPasswordCard">
+                    <div class="settings-card-header">
+                        <span class="material-symbols-outlined">lock</span>
+                        <h3>Change Password</h3>
+                    </div>
+                    <div class="settings-card-body">
+                        <div class="mb-3">
+                            <label for="settingsCurrentPassword" class="settings-label">Current Password</label>
+                            <input type="password" class="form-input-dark" id="settingsCurrentPassword" autocomplete="current-password" placeholder="Enter current password">
+                        </div>
+                        <div class="mb-3">
+                            <label for="settingsNewPassword" class="settings-label">New Password</label>
+                            <input type="password" class="form-input-dark" id="settingsNewPassword" autocomplete="new-password" placeholder="Minimum 8 characters">
+                        </div>
+                        <div class="mb-3">
+                            <label for="settingsConfirmPassword" class="settings-label">Confirm New Password</label>
+                            <input type="password" class="form-input-dark" id="settingsConfirmPassword" autocomplete="new-password" placeholder="Repeat new password">
+                        </div>
+                        <div class="mb-2 min-h-[1.2rem] text-sm text-accent-red" id="passwordChangeError"></div>
+                        <div class="mb-2 min-h-[1.2rem] text-sm text-accent-green hidden" id="passwordChangeSuccess"></div>
+                        <button class="btn-primary" id="changePasswordBtn" type="button">
+                            <span class="material-symbols-outlined mr-1" style="font-size:18px">lock_reset</span>Change Password
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Security Card (2FA) -->
+                <div class="settings-card" id="settingsSecurityCard">
+                    <div class="settings-card-header">
+                        <span class="material-symbols-outlined">shield</span>
+                        <h3>Two-Factor Authentication</h3>
+                    </div>
+                    <div class="settings-card-body" id="twoFactorContent">
+                        <!-- Populated dynamically by settings.js -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div><!-- /.main-content -->
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSQX0FslNhTDadL4O5SAGapGt4FodqL8My0mA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -1144,6 +1220,7 @@ body {
     <script src="js/credits.js"></script>
     <script src="js/theme.js"></script>
     <script src="js/nlq.js"></script>
+    <script src="js/settings.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

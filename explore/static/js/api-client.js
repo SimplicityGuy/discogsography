@@ -264,6 +264,15 @@ class ApiClient {
         return response;
     }
 
+    async changePassword(token, currentPassword, newPassword) {
+        const response = await fetch('/api/auth/change-password', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+        });
+        return response;
+    }
+
     async getMe(token) {
         if (!token) return null;
         const response = await fetch('/api/auth/me', {

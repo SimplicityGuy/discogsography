@@ -12,7 +12,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import structlog
-import yaml
 
 from api.dependencies import require_admin
 
@@ -24,6 +23,8 @@ router = APIRouter()
 # Module-level state (set via configure())
 _discogs_data_root: Path | None = None
 _musicbrainz_data_root: Path | None = None
+_anthropic_client: Any = None
+_anthropic_model: str = "claude-sonnet-4-20250514"
 
 # Input-validation patterns — only allow safe characters in version / record_id
 _SAFE_VERSION = re.compile(r"^[a-zA-Z0-9._-]+$")
@@ -39,17 +40,33 @@ _PARSING_ERROR_CACHE_TTL: float = 300.0  # 5 minutes
 # ---------------------------------------------------------------------------
 
 
-class PromptContextRequest(BaseModel):
-    record_ids: list[str] = Field(..., min_length=1, max_length=20)
+class _RuleSelection(BaseModel):
     rule: str = Field(..., pattern=r"^[a-zA-Z0-9_-]+$")
+    entity_type: str = Field(..., pattern=r"^[a-z-]+$")
 
 
-def configure(discogs_root: str | Path | None = None, musicbrainz_root: str | Path | None = None) -> None:
+class PromptContextRequest(BaseModel):
+    rules: list[_RuleSelection] = Field(..., min_length=1, max_length=20)
+
+
+def configure(
+    discogs_root: str | Path | None = None,
+    musicbrainz_root: str | Path | None = None,
+    anthropic_client: Any = None,
+    anthropic_model: str = "claude-sonnet-4-20250514",
+) -> None:
     """Initialise module state — called once during app lifespan startup."""
-    global _discogs_data_root, _musicbrainz_data_root
+    global _discogs_data_root, _musicbrainz_data_root, _anthropic_client, _anthropic_model
     _discogs_data_root = Path(discogs_root) if discogs_root else None
     _musicbrainz_data_root = Path(musicbrainz_root) if musicbrainz_root else None
-    logger.info("🔧 Extraction analysis router configured", discogs_root=discogs_root, musicbrainz_root=musicbrainz_root)
+    _anthropic_client = anthropic_client
+    _anthropic_model = anthropic_model
+    logger.info(
+        "🔧 Extraction analysis router configured",
+        discogs_root=discogs_root,
+        musicbrainz_root=musicbrainz_root,
+        ai_prompt_available=anthropic_client is not None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -231,30 +248,54 @@ def _build_skipped_summary(skipped: list[dict[str, Any]]) -> dict[str, Any]:
     return by_entity
 
 
-def _load_record_files(flagged_dir: Path, entity_type: str, record_id: str) -> tuple[str | None, dict[str, Any] | None]:
+# Maximum size (in bytes) for raw XML / JSON files returned in violation detail responses.
+# Files larger than this are truncated to avoid hanging the browser.
+_MAX_RECORD_FILE_BYTES = 512 * 1024  # 512 KiB
+
+
+def _load_record_files(flagged_dir: Path, entity_type: str, record_id: str) -> tuple[str | None, dict[str, Any] | None, bool]:
     """Load raw XML and parsed JSON for a record from its flagged entity directory.
 
-    Returns (raw_xml, parsed_json) where either may be None if the file is missing or corrupt.
+    Returns (raw_xml, parsed_json, truncated) where either content value may be None
+    if the file is missing or corrupt, and *truncated* is True when at least one file
+    exceeded ``_MAX_RECORD_FILE_BYTES`` and was clipped.
     """
     entity_dir = flagged_dir / entity_type
     xml_path = entity_dir / f"{record_id}.xml"
     json_path = entity_dir / f"{record_id}.json"
+    truncated = False
 
     raw_xml: str | None = None
     if xml_path.is_file():
         try:
-            raw_xml = xml_path.read_text(encoding="utf-8")
+            size = xml_path.stat().st_size
+            if size > _MAX_RECORD_FILE_BYTES:
+                raw_xml = xml_path.read_bytes()[:_MAX_RECORD_FILE_BYTES].decode("utf-8", errors="replace")
+                raw_xml += f"\n\n... [truncated — file is {size / 1024 / 1024:.1f} MB, showing first {_MAX_RECORD_FILE_BYTES // 1024} KB]"
+                truncated = True
+            else:
+                raw_xml = xml_path.read_text(encoding="utf-8")
         except OSError:
             logger.warning("⚠️ Could not read XML file", path=str(xml_path))
 
     parsed_json: dict[str, Any] | None = None
     if json_path.is_file():
         try:
-            parsed_json = json.loads(json_path.read_text(encoding="utf-8"))
+            size = json_path.stat().st_size
+            if size > _MAX_RECORD_FILE_BYTES:
+                raw_json_text = json_path.read_bytes()[:_MAX_RECORD_FILE_BYTES].decode("utf-8", errors="replace")
+                parsed_json = {
+                    "_truncated": True,
+                    "_message": f"File is {size / 1024 / 1024:.1f} MB, too large to display",
+                    "_preview": raw_json_text[:4096],
+                }
+                truncated = True
+            else:
+                parsed_json = json.loads(json_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             logger.warning("⚠️ Could not read JSON file", path=str(json_path))
 
-    return raw_xml, parsed_json
+    return raw_xml, parsed_json, truncated
 
 
 # ---------------------------------------------------------------------------
@@ -436,7 +477,7 @@ async def get_violation_detail(
 
     # Determine the entity type (use the first match)
     found_entity_type: str = record_violations[0].get("entity_type", "unknown")
-    raw_xml, parsed_json = _load_record_files(flagged_version_dir, found_entity_type, record_id)
+    raw_xml, parsed_json, truncated = _load_record_files(flagged_version_dir, found_entity_type, record_id)
 
     return JSONResponse(
         content={
@@ -445,6 +486,7 @@ async def get_violation_detail(
             "violations": record_violations,
             "raw_xml": raw_xml,
             "parsed_json": parsed_json,
+            "truncated": truncated,
         }
     )
 
@@ -495,13 +537,13 @@ def _classify_violation(
     field: str = violation.get("field", "")
     rule: str = violation.get("rule", "")
 
-    raw_xml, parsed_json = _load_record_files(flagged_dir, entity_type, record_id)
+    raw_xml, parsed_json, truncated = _load_record_files(flagged_dir, entity_type, record_id)
 
     xml_value: str | None = None
     json_value: str | None = None
     classification: str
 
-    if raw_xml is None or parsed_json is None:
+    if raw_xml is None or parsed_json is None or truncated:
         classification = "indeterminate"
     else:
         xml_value = _extract_xml_field_value(raw_xml, field) if field else None
@@ -707,11 +749,8 @@ async def get_prompt_context(
     body: PromptContextRequest,
     _admin: Annotated[dict[str, Any], Depends(require_admin)],
 ) -> JSONResponse:
-    """Assemble structured context for AI prompts — violations, raw XML, and parsed JSON for a set of records."""
+    """Assemble structured context for AI prompts — violations and sample records grouped by rule+entity_type."""
     _validate_version(version)
-
-    for rid in body.record_ids:
-        _validate_record_id(rid)
 
     location = _find_version_root(version)
     if location is None:
@@ -720,51 +759,170 @@ async def get_prompt_context(
     data_root, _source = location
     flagged_version_dir = data_root / "flagged" / version
 
-    # Load rule definition from extraction-rules.yaml if present
-    rule_definition: dict[str, Any] | None = None
-    rules_yaml_path = data_root / "extraction-rules.yaml"
-    if rules_yaml_path.is_file():
-        try:
-            rules_data = yaml.safe_load(rules_yaml_path.read_text(encoding="utf-8"))
-            if isinstance(rules_data, dict):
-                for rule_entry in rules_data.get("rules", []):
-                    if isinstance(rule_entry, dict) and rule_entry.get("id") == body.rule:
-                        rule_definition = rule_entry
-                        break
-        except Exception:
-            logger.warning("⚠️ Could not load extraction-rules.yaml", path=str(rules_yaml_path))
-
     all_violations = _read_violations(flagged_version_dir)
 
-    records: list[dict[str, Any]] = []
-    for rid in body.record_ids:
-        matching = [v for v in all_violations if v.get("record_id") == rid and v.get("rule") == body.rule]
-        if not matching:
-            continue
-        violation = matching[0]
-        entity_type: str = violation.get("entity_type", "unknown")
-        raw_xml, parsed_json = _load_record_files(flagged_version_dir, entity_type, rid)
-        records.append(
+    max_samples = 5
+    contexts: list[dict[str, Any]] = []
+    for sel in body.rules:
+        matching = [v for v in all_violations if v.get("rule") == sel.rule and v.get("entity_type") == sel.entity_type]
+        severity = matching[0].get("severity", "unknown") if matching else "unknown"
+
+        sample_records: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        for v in matching:
+            rid = v.get("record_id", "")
+            if rid in seen_ids:
+                continue
+            seen_ids.add(rid)
+            raw_xml, parsed_json, _truncated = _load_record_files(flagged_version_dir, sel.entity_type, rid)
+            record_violations = [m for m in matching if m.get("record_id") == rid]
+            sample_records.append(
+                {
+                    "record_id": rid,
+                    "violations": [{"rule": m.get("rule", ""), "message": m.get("message", m.get("field", ""))} for m in record_violations],
+                    "raw_xml": raw_xml,
+                    "parsed_json": parsed_json,
+                }
+            )
+            if len(sample_records) >= max_samples:
+                break
+
+        contexts.append(
             {
-                "record_id": rid,
-                "entity_type": entity_type,
-                "violation": {
-                    "field": violation.get("field", ""),
-                    "field_value": violation.get("field_value", ""),
-                },
-                "raw_xml": raw_xml,
-                "parsed_json": parsed_json,
+                "rule": sel.rule,
+                "entity_type": sel.entity_type,
+                "severity": severity,
+                "total_violations": len(matching),
+                "sample_records": sample_records,
             }
         )
 
-    return JSONResponse(
-        content={
-            "rule": body.rule,
-            "rule_definition": rule_definition,
-            "records": records,
-            "extractor_context": {
-                "parser_file": "extractor/src/xml_parser.rs",
-                "rules_file": "extractor/extraction-rules.yaml",
-            },
-        }
+    return JSONResponse(content={"contexts": contexts})
+
+
+# ---------------------------------------------------------------------------
+# AI-powered prompt generation
+# ---------------------------------------------------------------------------
+
+_MAX_XML_CHARS_PER_RECORD = 1500
+_MAX_JSON_CHARS_PER_RECORD = 1500
+_MAX_SAMPLES_FOR_AI = 3
+
+
+@router.post("/api/admin/extraction-analysis/{version}/generate-ai-prompt")
+async def generate_ai_prompt(
+    version: str,
+    body: PromptContextRequest,
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+) -> JSONResponse:
+    """Use Claude to analyze violations and produce a targeted debugging prompt."""
+    if _anthropic_client is None:
+        raise HTTPException(status_code=503, detail="AI prompt generation unavailable — NLQ_API_KEY not configured")
+
+    _validate_version(version)
+    location = _find_version_root(version)
+    if location is None:
+        raise HTTPException(status_code=404, detail=f"Version not found: {version!r}")
+
+    data_root, source = location
+    flagged_version_dir = data_root / "flagged" / version
+    all_violations = _read_violations(flagged_version_dir)
+
+    # Build a compact context payload for Claude
+    rule_sections: list[str] = []
+    for sel in body.rules:
+        matching = [v for v in all_violations if v.get("rule") == sel.rule and v.get("entity_type") == sel.entity_type]
+        if not matching:
+            continue
+
+        severity = matching[0].get("severity", "unknown")
+        total = len(matching)
+
+        # Collect unique field values to show distribution
+        field_values: list[str] = []
+        for v in matching[:50]:
+            val = v.get("value", v.get("field", ""))
+            if val and val not in field_values:
+                field_values.append(str(val))
+            if len(field_values) >= 10:
+                break
+
+        section_lines = [
+            f"### Rule: `{sel.rule}` (entity: {sel.entity_type})",
+            f"- Severity: {severity}",
+            f"- Total violations: {total:,}",
+        ]
+        if field_values:
+            section_lines.append(f"- Affected fields/values: {', '.join(f'`{v}`' for v in field_values)}")
+
+        # Sample records with truncated XML/JSON
+        seen_ids: set[str] = set()
+        sample_count = 0
+        for v in matching:
+            rid = v.get("record_id", "")
+            if rid in seen_ids:
+                continue
+            seen_ids.add(rid)
+            raw_xml, parsed_json, _truncated = _load_record_files(flagged_version_dir, sel.entity_type, rid)
+            record_violations = [m for m in matching if m.get("record_id") == rid]
+
+            section_lines.append(f"\n**Sample record {sample_count + 1} — ID {rid}:**")
+            section_lines.append("Violations:")
+            for rv in record_violations:
+                section_lines.append(
+                    f"  - `{rv.get('rule', '')}` on field `{rv.get('field', rv.get('message', ''))}` — value: `{rv.get('value', '(not captured)')}`"
+                )
+
+            if parsed_json:
+                json_str = json.dumps(parsed_json, indent=2) if isinstance(parsed_json, dict) else str(parsed_json)
+                if len(json_str) > _MAX_JSON_CHARS_PER_RECORD:
+                    json_str = json_str[:_MAX_JSON_CHARS_PER_RECORD] + "\n... (truncated)"
+                section_lines.append(f"```json\n{json_str}\n```")
+
+            if raw_xml:
+                xml_trimmed = raw_xml[:_MAX_XML_CHARS_PER_RECORD]
+                if len(raw_xml) > _MAX_XML_CHARS_PER_RECORD:
+                    xml_trimmed += "\n... (truncated)"
+                section_lines.append(f"```xml\n{xml_trimmed}\n```")
+
+            sample_count += 1
+            if sample_count >= _MAX_SAMPLES_FOR_AI:
+                break
+
+        rule_sections.append("\n".join(section_lines))
+
+    user_content = f"# Extraction Analysis — Version {version} (source: {source})\n\n" + "\n\n---\n\n".join(rule_sections)
+
+    system_prompt = (
+        "You are a data pipeline debugging expert for Discogsography, a system that parses "
+        "Discogs XML database dumps and MusicBrainz JSONL exports into Neo4j and PostgreSQL.\n\n"
+        "The user will show you data quality violations from the extraction pipeline. "
+        "Each violation has a rule name, severity, affected field, the actual value, "
+        "and sample records with raw XML and parsed JSON.\n\n"
+        "Your task is to produce a **debugging prompt** — a self-contained document that someone "
+        "(or another AI assistant) can use in a future session to:\n"
+        "1. Understand the root cause of each violation\n"
+        "2. Determine if it's a data issue (bad upstream data) or a parser/validation bug\n"
+        "3. Propose concrete fixes or workarounds — heuristics, parser changes, or validation rule adjustments\n\n"
+        "Structure your output as a markdown document with:\n"
+        "- A brief summary of all violations and their likely categories\n"
+        "- Per-rule sections with: root cause analysis, evidence from the sample data, "
+        "and specific recommended actions (code changes, heuristic fixes, rule adjustments)\n"
+        "- For high-volume rules (thousands+ violations), focus on whether the rule itself "
+        "needs adjustment rather than individual records\n"
+        "- Reference specific field values, XML elements, and JSON keys from the samples\n\n"
+        "Be concrete and actionable. Include code snippets for proposed fixes when applicable."
     )
+
+    try:
+        response = await _anthropic_client.messages.create(
+            model=_anthropic_model,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_content}],
+            max_tokens=4096,
+        )
+        prompt_text = "".join(block.text for block in response.content if hasattr(block, "text"))
+        return JSONResponse(content={"prompt": prompt_text, "ai_generated": True})
+    except Exception:
+        logger.exception("❌ AI prompt generation failed")
+        raise HTTPException(status_code=502, detail="AI prompt generation failed") from None

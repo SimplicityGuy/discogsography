@@ -1286,4 +1286,18 @@ describe('ApiClient', () => {
             expect(response.ok).toBe(false);
         });
     });
+
+    describe('changePassword', () => {
+        it('should send POST with auth header and credentials', async () => {
+            const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ message: 'Password has been changed' }) });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.changePassword('token123', 'old', 'newpass123');
+            expect(result.ok).toBe(true);
+            expect(mockFetch).toHaveBeenCalledWith('/api/auth/change-password', expect.objectContaining({
+                method: 'POST',
+                headers: expect.objectContaining({ 'Authorization': 'Bearer token123' }),
+            }));
+        });
+    });
 });

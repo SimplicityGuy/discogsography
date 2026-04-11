@@ -275,6 +275,40 @@ class TestDashboardAppMetrics:
                 assert app.latest_metrics == mock_metrics
 
     @pytest.mark.asyncio
+    async def test_collect_metrics_loop_logs_summary_every_50_cycles(self) -> None:
+        """Test that a summary is logged every 50 cycles."""
+        mock_config = Mock()
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+
+            mock_metrics = Mock()
+            mock_metrics.pipelines = {"discogs": Mock(), "musicbrainz": Mock()}
+
+            call_count = 0
+
+            async def mock_collect() -> SystemMetrics:
+                nonlocal call_count
+                call_count += 1
+                if call_count > 50:
+                    raise asyncio.CancelledError()
+                return mock_metrics
+
+            with (
+                patch.object(app, "collect_all_metrics", side_effect=mock_collect),
+                patch.object(app, "broadcast_metrics", new_callable=AsyncMock),
+                patch("asyncio.sleep", new_callable=AsyncMock),
+                patch("dashboard.dashboard.logger") as mock_logger,
+            ):
+                await app.collect_metrics_loop()
+
+                # After 50 successful cycles, the summary log should fire once
+                mock_logger.info.assert_called_once()
+                log_args = mock_logger.info.call_args
+                assert "Metrics collection summary" in log_args[0][0]
+                assert log_args[0][1] == 50  # cycle_count
+
+    @pytest.mark.asyncio
     async def test_collect_metrics_loop_error_handling(self) -> None:
         """Test error handling in metrics collection loop."""
         mock_config = Mock()

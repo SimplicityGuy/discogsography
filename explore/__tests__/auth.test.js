@@ -135,6 +135,19 @@ describe('AuthManager', () => {
         });
     });
 
+    describe('updateTotpEnabled', () => {
+        it('should update totp_enabled on user object', () => {
+            window.authManager.setUser({ id: 1, email: 'test@example.com', totp_enabled: false });
+            window.authManager.updateTotpEnabled(true);
+            expect(window.authManager.getUser().totp_enabled).toBe(true);
+        });
+
+        it('should be safe to call when no user is set', () => {
+            window.authManager.updateTotpEnabled(true);
+            expect(window.authManager.getUser()).toBeNull();
+        });
+    });
+
     describe('init', () => {
         it('should return false and stay logged out when no token', async () => {
             const result = await window.authManager.init();

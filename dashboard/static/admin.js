@@ -52,6 +52,9 @@ class AdminDashboard {
         this._eaVersions = [];
         this._eaSelectedRecords = new Map();
         this._eaParsingErrors = null;
+        this._eaVdRule = '';
+        this._eaVdEntityType = '';
+        this._eaVdPage = 1;
         this.initTheme();
         this.bindEvents();
         if (this.token) {
@@ -139,9 +142,14 @@ class AdminDashboard {
             logoutBtn.addEventListener('click', () => this.logout());
         }
 
-        const triggerBtn = document.getElementById('trigger-btn');
-        if (triggerBtn) {
-            triggerBtn.addEventListener('click', () => this.triggerExtraction());
+        const triggerDiscogsBtn = document.getElementById('trigger-discogs-btn');
+        if (triggerDiscogsBtn) {
+            triggerDiscogsBtn.addEventListener('click', () => this.triggerExtraction('discogs'));
+        }
+
+        const triggerMusicbrainzBtn = document.getElementById('trigger-musicbrainz-btn');
+        if (triggerMusicbrainzBtn) {
+            triggerMusicbrainzBtn.addEventListener('click', () => this.triggerExtraction('musicbrainz'));
         }
 
         // Tab navigation
@@ -251,6 +259,9 @@ class AdminDashboard {
         const eaGenerateBtn = document.getElementById('ea-generate-btn');
         if (eaGenerateBtn) eaGenerateBtn.addEventListener('click', () => this._eaGeneratePrompt());
 
+        const eaAiGenerateBtn = document.getElementById('ea-ai-generate-btn');
+        if (eaAiGenerateBtn) eaAiGenerateBtn.addEventListener('click', () => this._eaGenerateAiPrompt());
+
         const eaCopyBtn = document.getElementById('ea-copy-btn');
         if (eaCopyBtn) eaCopyBtn.addEventListener('click', () => this._eaCopyPrompt());
 
@@ -258,6 +269,25 @@ class AdminDashboard {
         if (eaModalClose) eaModalClose.addEventListener('click', () => {
             const modal = document.getElementById('ea-modal');
             if (modal) modal.style.display = 'none';
+        });
+
+        // Violations detail pagination
+        const eaVdClose = document.getElementById('ea-vd-close');
+        if (eaVdClose) eaVdClose.addEventListener('click', () => {
+            const section = document.getElementById('ea-violations-detail');
+            if (section) section.style.display = 'none';
+        });
+        const eaVdPrev = document.getElementById('ea-vd-prev');
+        if (eaVdPrev) eaVdPrev.addEventListener('click', () => {
+            if (this._eaVdPage > 1) { this._eaVdPage--; this._eaLoadViolationsPage(); }
+        });
+        const eaVdNext = document.getElementById('ea-vd-next');
+        if (eaVdNext) eaVdNext.addEventListener('click', () => {
+            this._eaVdPage++; this._eaLoadViolationsPage();
+        });
+        const eaVdPageSize = document.getElementById('ea-vd-page-size');
+        if (eaVdPageSize) eaVdPageSize.addEventListener('change', () => {
+            this._eaVdPage = 1; this._eaLoadViolationsPage();
         });
     }
 
@@ -456,24 +486,30 @@ class AdminDashboard {
         }
     }
 
-    async triggerExtraction() {
-        const triggerBtn = document.getElementById('trigger-btn');
+    async triggerExtraction(source = 'discogs') {
+        const btnId = source === 'musicbrainz' ? 'trigger-musicbrainz-btn' : 'trigger-discogs-btn';
+        const triggerBtn = document.getElementById(btnId);
         const spinner = document.getElementById('trigger-spinner');
 
         triggerBtn.disabled = true;
         spinner.style.display = 'inline-block';
 
+        const endpoint = source === 'musicbrainz'
+            ? '/admin/api/extractions/trigger-musicbrainz'
+            : '/admin/api/extractions/trigger';
+
         try {
-            const response = await this.authFetch('/admin/api/extractions/trigger', {
+            const response = await this.authFetch(endpoint, {
                 method: 'POST',
             });
 
             if (response.ok) {
-                this.showToast('Extraction triggered successfully', 'success');
+                const label = source === 'musicbrainz' ? 'MusicBrainz' : 'Discogs';
+                this.showToast(`${label} extraction triggered successfully`, 'success');
                 await this.loadExtractions();
             } else {
                 const err = await response.json().catch(() => ({}));
-                this.showToast(err.detail || 'Failed to trigger extraction', 'error');
+                this.showToast(err.detail || `Failed to trigger ${source} extraction`, 'error');
             }
         } catch {
             this.showToast('Connection error', 'error');
@@ -495,7 +531,7 @@ class AdminDashboard {
             const type = parts[1];
 
             const row = document.createElement('div');
-            row.className = 'flex items-center justify-between py-2.5 border-b b-row';
+            row.className = 'flex items-center justify-between py-3.5 border-b b-row';
 
             const left = document.createElement('div');
             left.className = 'flex items-center gap-3';
@@ -1490,6 +1526,27 @@ class AdminDashboard {
         return svg;
     }
 
+    static _prettyPrintXml(xml) {
+        let formatted = '';
+        let indent = 0;
+        const parts = xml.replace(/>\s*</g, '><').split(/(<[^>]+>)/);
+        for (const part of parts) {
+            if (!part.trim()) continue;
+            if (part.startsWith('</')) {
+                indent = Math.max(0, indent - 1);
+                formatted += '  '.repeat(indent) + part + '\n';
+            } else if (part.startsWith('<') && !part.startsWith('<?') && !part.endsWith('/>') && !part.startsWith('<!')) {
+                formatted += '  '.repeat(indent) + part + '\n';
+                indent++;
+            } else if (part.endsWith('/>')) {
+                formatted += '  '.repeat(indent) + part + '\n';
+            } else {
+                formatted += '  '.repeat(indent) + part + '\n';
+            }
+        }
+        return formatted.trim();
+    }
+
     // ─── Audit Log ───────────────────────────────────────────────────────────
 
     async fetchAuditLog() {
@@ -1666,6 +1723,9 @@ class AdminDashboard {
         // Reset parsing errors cache for new version
         this._eaParsingErrors = null;
 
+        const spinner = document.getElementById('ea-loading-spinner');
+        if (spinner) spinner.style.display = '';
+
         // Fetch summary and parsing errors in parallel
         try {
             const [summaryResp, errorsResp] = await Promise.all([
@@ -1694,6 +1754,8 @@ class AdminDashboard {
             }
         } catch {
             // Silently fail
+        } finally {
+            if (spinner) spinner.style.display = 'none';
         }
     }
 
@@ -1929,26 +1991,114 @@ class AdminDashboard {
     }
 
     async _eaShowViolationsForRule(rule, entityType) {
+        this._eaVdRule = rule;
+        this._eaVdEntityType = entityType;
+        this._eaVdPage = 1;
+        await this._eaLoadViolationsPage();
+    }
+
+    async _eaLoadViolationsPage() {
         const sel = document.getElementById('ea-version-select');
         const version = sel ? sel.value : '';
         if (!version) return;
+
+        const section = document.getElementById('ea-violations-detail');
+        if (!section) return;
+        section.style.display = '';
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        const ruleEl = document.getElementById('ea-vd-rule');
+        if (ruleEl) ruleEl.textContent = this._eaVdRule;
+        const entityEl = document.getElementById('ea-vd-entity');
+        if (entityEl) entityEl.textContent = this._eaVdEntityType ? `(${this._eaVdEntityType})` : '';
+
+        const pageSizeEl = document.getElementById('ea-vd-page-size');
+        const pageSize = pageSizeEl ? parseInt(pageSizeEl.value, 10) : 50;
+
+        const params = new URLSearchParams({
+            rule: this._eaVdRule,
+            page: String(this._eaVdPage),
+            page_size: String(pageSize),
+        });
+        if (this._eaVdEntityType) params.set('entity_type', this._eaVdEntityType);
+
+        const tbody = document.getElementById('ea-vd-tbody');
+        if (tbody) tbody.replaceChildren(_emptyRow(6, 'Loading...'));
+
         try {
-            const params = new URLSearchParams({ rule, page_size: '1' });
-            if (entityType) params.set('entity_type', entityType);
             const resp = await this.authFetch(
                 `/admin/api/extraction-analysis/${encodeURIComponent(version)}/violations?${params}`,
             );
-            if (!resp.ok) return;
+            if (!resp.ok) {
+                if (tbody) tbody.replaceChildren(_emptyRow(6, 'Failed to load violations.'));
+                return;
+            }
             const data = await resp.json();
             const violations = data.violations || [];
-            if (violations.length > 0) {
-                const firstRecordId = violations[0].record_id;
-                if (firstRecordId) {
-                    await this._eaShowRecordDetail(version, firstRecordId);
-                }
+            const pagination = data.pagination || {};
+
+            if (violations.length === 0) {
+                if (tbody) tbody.replaceChildren(_emptyRow(6, 'No violations found.'));
+            } else if (tbody) {
+                const rows = violations.map(v => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'border-b b-row';
+
+                    const tdId = document.createElement('td');
+                    tdId.className = 'py-2 px-2 mono t-mid';
+                    tdId.textContent = v.record_id || '—';
+
+                    const tdRule = document.createElement('td');
+                    tdRule.className = 'py-2 px-2 mono t-dim';
+                    tdRule.textContent = v.rule || '—';
+
+                    const tdSev = document.createElement('td');
+                    tdSev.className = 'py-2 px-2';
+                    const sevBadge = document.createElement('span');
+                    const sevClass = v.severity === 'error' ? 'badge-error' : v.severity === 'warning' ? 'badge-running' : 'badge-idle';
+                    sevBadge.className = `text-[10px] px-1.5 py-0.5 rounded uppercase font-bold ${sevClass}`;
+                    sevBadge.textContent = v.severity || 'info';
+                    tdSev.appendChild(sevBadge);
+
+                    const tdField = document.createElement('td');
+                    tdField.className = 'py-2 px-2 mono t-dim';
+                    tdField.textContent = v.field || '—';
+
+                    const tdValue = document.createElement('td');
+                    tdValue.className = 'py-2 px-2 mono t-dim';
+                    tdValue.textContent = v.field_value || '—';
+
+                    const tdDetail = document.createElement('td');
+                    tdDetail.className = 'py-2 px-2 text-right';
+                    const detailBtn = document.createElement('button');
+                    detailBtn.className = 'text-[10px] px-2 py-0.5 rounded border b-theme t-dim hover:t-high';
+                    detailBtn.textContent = 'View';
+                    detailBtn.addEventListener('click', () => this._eaShowRecordDetail(version, v.record_id));
+                    tdDetail.appendChild(detailBtn);
+
+                    tr.append(tdId, tdRule, tdSev, tdField, tdValue, tdDetail);
+                    return tr;
+                });
+                tbody.replaceChildren(...rows);
             }
+
+            // Update pagination controls
+            const infoEl = document.getElementById('ea-vd-info');
+            if (infoEl) {
+                const start = ((pagination.page || 1) - 1) * (pagination.page_size || pageSize) + 1;
+                const end = Math.min(start + violations.length - 1, pagination.total_items || 0);
+                infoEl.textContent = `${start}–${end} of ${(pagination.total_items || 0).toLocaleString()}`;
+            }
+
+            const labelEl = document.getElementById('ea-vd-page-label');
+            if (labelEl) labelEl.textContent = `${pagination.page || 1} / ${pagination.total_pages || 1}`;
+
+            const prevBtn = document.getElementById('ea-vd-prev');
+            const nextBtn = document.getElementById('ea-vd-next');
+            if (prevBtn) prevBtn.disabled = (pagination.page || 1) <= 1;
+            if (nextBtn) nextBtn.disabled = (pagination.page || 1) >= (pagination.total_pages || 1);
         } catch {
-            // Silently fail
+            if (tbody) tbody.replaceChildren(_emptyRow(6, 'Error loading violations.'));
         }
     }
 
@@ -1966,10 +2116,16 @@ class AdminDashboard {
             if (recordIdEl) recordIdEl.textContent = recordId;
 
             const xmlEl = document.getElementById('ea-modal-xml');
-            if (xmlEl) xmlEl.textContent = data.raw_xml || '(none)';
+            if (xmlEl) xmlEl.textContent = data.raw_xml ? AdminDashboard._prettyPrintXml(data.raw_xml) : '(none)';
 
             const jsonEl = document.getElementById('ea-modal-json');
-            if (jsonEl) jsonEl.textContent = data.parsed_json ? JSON.stringify(data.parsed_json, null, 2) : '(none)';
+            if (jsonEl) {
+                if (data.parsed_json && data.parsed_json._truncated) {
+                    jsonEl.textContent = `${data.parsed_json._message}\n\nPreview:\n${data.parsed_json._preview || ''}`;
+                } else {
+                    jsonEl.textContent = data.parsed_json ? JSON.stringify(data.parsed_json, null, 2) : '(none)';
+                }
+            }
 
             const violList = document.getElementById('ea-modal-violations');
             if (violList) {
@@ -2139,29 +2295,107 @@ class AdminDashboard {
             const lines = [
                 `# Extraction Analysis — Version ${version}`,
                 '',
-                `You are reviewing data quality violations from the Discogsography extraction pipeline.`,
-                `The following rules had violations that need investigation:`,
+                'You are debugging data quality violations from the Discogsography extraction pipeline.',
+                'For each rule below, analyze the sample records to determine:',
+                '1. Root cause — why did the validation rule fire?',
+                '2. Whether this is a data issue (upstream Discogs data) or a parser bug',
+                '3. Suggested fix or workaround',
+                '',
+                '---',
                 '',
             ];
             (data.contexts || []).forEach(ctx => {
                 lines.push(`## Rule: ${ctx.rule} (${ctx.entity_type})`);
-                lines.push(`Severity: ${ctx.severity || 'unknown'}`);
-                lines.push(`Total violations: ${ctx.total_violations || 0}`);
+                lines.push(`- **Severity:** ${ctx.severity || 'unknown'}`);
+                lines.push(`- **Total violations:** ${(ctx.total_violations || 0).toLocaleString()}`);
                 if (ctx.sample_records && ctx.sample_records.length > 0) {
                     lines.push('');
-                    lines.push('Sample records:');
                     ctx.sample_records.forEach((rec, i) => {
-                        lines.push(`### Record ${i + 1}: ${rec.record_id || '?'}`);
-                        if (rec.violations) {
-                            rec.violations.forEach(v => lines.push(`- [${v.rule}] ${v.message || ''}`));
+                        lines.push(`### Sample ${i + 1} — Record ID: ${rec.record_id || '?'}`);
+                        lines.push('');
+                        if (rec.violations && rec.violations.length > 0) {
+                            lines.push('**Violations:**');
+                            rec.violations.forEach(v => {
+                                lines.push(`- \`${v.rule}\` on field \`${v.message || '(unknown)'}\``);
+                            });
+                            lines.push('');
+                        }
+                        if (rec.parsed_json) {
+                            const jsonStr = typeof rec.parsed_json === 'string'
+                                ? rec.parsed_json
+                                : JSON.stringify(rec.parsed_json, null, 2);
+                            // Limit JSON to ~2000 chars to keep prompt manageable
+                            const trimmed = jsonStr.length > 2000
+                                ? jsonStr.slice(0, 2000) + '\n... (truncated)'
+                                : jsonStr;
+                            lines.push('**Parsed JSON:**');
+                            lines.push('```json');
+                            lines.push(trimmed);
+                            lines.push('```');
+                            lines.push('');
+                        }
+                        if (rec.raw_xml) {
+                            // Limit XML to ~2000 chars
+                            const trimmed = rec.raw_xml.length > 2000
+                                ? rec.raw_xml.slice(0, 2000) + '\n... (truncated)'
+                                : rec.raw_xml;
+                            lines.push('**Raw XML:**');
+                            lines.push('```xml');
+                            lines.push(trimmed);
+                            lines.push('```');
+                            lines.push('');
                         }
                     });
                 }
+                lines.push('---');
                 lines.push('');
             });
             if (textarea) textarea.value = lines.join('\n');
         } catch {
             if (textarea) textarea.value = 'Error generating prompt.';
+        }
+    }
+
+    async _eaGenerateAiPrompt() {
+        const sel = document.getElementById('ea-version-select');
+        const version = sel ? sel.value : '';
+        if (!version) { this.showToast('Select a version first', 'error'); return; }
+        if (this._eaSelectedRecords.size === 0) { this.showToast('Select at least one rule', 'error'); return; }
+
+        const textarea = document.getElementById('ea-prompt-textarea');
+        const aiBtn = document.getElementById('ea-ai-generate-btn');
+        const spinner = document.getElementById('ea-ai-spinner');
+
+        if (textarea) textarea.value = 'Analyzing violations with AI — this may take a moment...';
+        if (aiBtn) aiBtn.disabled = true;
+        if (spinner) spinner.style.display = '';
+
+        try {
+            const rules = Array.from(this._eaSelectedRecords.values());
+            const resp = await this.authFetch(
+                `/admin/api/extraction-analysis/${encodeURIComponent(version)}/generate-ai-prompt`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rules }),
+                },
+            );
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                const detail = err.detail || 'AI prompt generation failed';
+                if (textarea) textarea.value = `Error: ${detail}`;
+                this.showToast(detail, 'error');
+                return;
+            }
+            const data = await resp.json();
+            if (textarea) textarea.value = data.prompt || 'No prompt generated.';
+            this.showToast('AI analysis complete', 'success');
+        } catch {
+            if (textarea) textarea.value = 'Error: connection failed.';
+            this.showToast('Connection error', 'error');
+        } finally {
+            if (aiBtn) aiBtn.disabled = false;
+            if (spinner) spinner.style.display = 'none';
         }
     }
 

@@ -6,6 +6,8 @@
     <title>Discogsography Admin</title>
     <link href="/tailwind.css" rel="stylesheet"/>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8" integrity="sha384-T/4KgSWuZEPozpPz7rnnp/5lDSnpY1VPJCojf1S81uTHS1E38qgLfMgVsAeRCWc4" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.5.0/build/global/luxon.min.js" integrity="sha384-CU0J6nu6GO5gWB5IqOOhPQsG0LKyjpotF5Gw502R+0zbkzKHjDWc6FKSZsNTJfLX" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js" integrity="sha384-7cWzHabR6ZyfMWzZgVssYaOQRTccHUWZ0F09AanlF3RAJ/JNyFnIma2JTYIVKEUP" crossorigin="anonymous"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
     <style>
@@ -51,7 +53,7 @@
             font-family: 'Inter', sans-serif;
             -webkit-font-smoothing: antialiased;
         }
-        .dashboard-card {
+        .dashboard-card, .card {
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
             border-radius: 12px;
@@ -111,6 +113,8 @@
             display: flex;
             align-items: center;
             gap: 0.375rem;
+            flex-shrink: 0;
+            white-space: nowrap;
         }
         .tab-btn:hover { background: var(--inner-bg); color: var(--text-high); }
         .tab-btn.active {
@@ -119,7 +123,7 @@
         }
 
         /* Extraction Analysis sub-view toggle buttons */
-        .ea-view-btn { color: var(--text-dim); background: transparent; border: 1px solid var(--border-color); cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem; }
+        .ea-view-btn { color: var(--text-dim); background: transparent; border: 1px solid var(--border-color); cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem; min-width: 6rem; justify-content: center; }
         .ea-view-btn:hover { color: var(--text-high); }
         .ea-view-btn.active { background: var(--purple-accent); color: #fff; border-color: var(--purple-accent); }
 
@@ -155,6 +159,20 @@
             flex: 1;
             min-width: 0;
         }
+
+        /* Select/dropdown styling for dark mode */
+        select {
+            background-color: var(--card-bg);
+            color: var(--text-high);
+            min-width: 12rem;
+        }
+        select option {
+            background-color: var(--card-bg);
+            color: var(--text-high);
+            padding: 0.25rem 0.5rem;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .animate-spin { animation: spin 1s linear infinite; }
     </style>
     <script>
         // Apply theme before first paint to prevent flash
@@ -167,7 +185,7 @@
     </script>
 </head>
 <body class="p-8">
-<div class="max-w-[1440px] mx-auto space-y-8">
+<div class="max-w-[1440px] mx-auto">
 
     <!-- ================================================================
          LOGIN FORM
@@ -206,10 +224,10 @@
     <!-- ================================================================
          ADMIN PANEL
          ================================================================ -->
-    <div id="admin-view" style="display:none">
+    <div id="admin-view" class="space-y-8" style="display:none">
 
         <!-- Header -->
-        <header class="flex items-center justify-between mb-8">
+        <header class="flex items-center justify-between mb-6">
             <div class="flex items-center space-x-5">
                 <!-- Logo -->
                 <div aria-label="Discogsography logo">
@@ -263,7 +281,7 @@
         </header>
 
         <!-- Tab Navigation -->
-        <nav class="flex items-center gap-2 mb-6 dashboard-card p-2" style="width:fit-content">
+        <nav class="flex items-center gap-2 mb-6 dashboard-card p-2 overflow-x-auto whitespace-nowrap">
             <button class="tab-btn active" data-tab="extractions" id="tab-btn-extractions">
                 <span class="material-symbols-outlined text-sm">rocket_launch</span> Extractions
             </button>
@@ -297,16 +315,20 @@
 
             <!-- Extraction Control -->
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">rocket_launch</span> Extraction Control
                     </h3>
                     <span id="extraction-status" class="text-[10px] px-2 py-0.5 rounded uppercase font-bold badge-idle">Idle</span>
                 </div>
                 <div class="flex items-center gap-4">
-                    <button id="trigger-btn"
+                    <button id="trigger-discogs-btn"
                             class="btn-purple px-6 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2">
-                        <span class="material-symbols-outlined text-sm">play_arrow</span> Trigger Extraction
+                        <span class="material-symbols-outlined text-sm">play_arrow</span> Trigger Discogs
+                    </button>
+                    <button id="trigger-musicbrainz-btn"
+                            class="btn-purple px-6 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm">play_arrow</span> Trigger MusicBrainz
                     </button>
                     <span id="trigger-spinner" class="material-symbols-outlined text-lg animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                 </div>
@@ -314,7 +336,7 @@
 
             <!-- Extraction History -->
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">history</span> Extraction History
                     </h3>
@@ -344,12 +366,12 @@
         <div id="tab-dlq" class="space-y-6" style="display:none">
 
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">delete_sweep</span> Dead Letter Queue Management
                     </h3>
                 </div>
-                <div class="space-y-2" id="dlq-list"></div>
+                <div id="dlq-list"></div>
             </section>
 
         </div><!-- /tab-dlq -->
@@ -360,12 +382,12 @@
         <div id="tab-users" class="space-y-6" style="display:none">
 
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">group</span> User Activity
                     </h3>
                     <div class="flex items-center gap-3">
-                        <span id="users-loading" class="text-xs t-muted" style="display:none">Loading...</span>
+                        <span id="users-loading" class="material-symbols-outlined text-sm animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                         <span id="users-error" class="text-xs text-amber-500 flex items-center gap-1" style="display:none">
                             <span class="material-symbols-outlined text-xs">warning</span> <span id="users-error-msg"></span>
                         </span>
@@ -449,12 +471,12 @@
         <div id="tab-storage" class="space-y-6" style="display:none">
 
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">database</span> Storage Utilization
                     </h3>
                     <div class="flex items-center gap-3">
-                        <span id="storage-loading" class="text-xs t-muted" style="display:none">Loading...</span>
+                        <span id="storage-loading" class="material-symbols-outlined text-sm animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                         <span id="storage-error" class="text-xs text-amber-500 flex items-center gap-1" style="display:none">
                             <span class="material-symbols-outlined text-xs">warning</span> <span id="storage-error-msg"></span>
                         </span>
@@ -465,7 +487,7 @@
                 </div>
 
                 <!-- Neo4j collapsible -->
-                <div class="mb-4 border b-theme rounded-lg overflow-hidden">
+                <div class="mb-6 border b-theme rounded-lg overflow-hidden">
                     <div class="collapsible-header flex items-center justify-between px-4 py-3 bg-inner" data-target="storage-neo4j-body">
                         <div class="flex items-center gap-3">
                             <span class="material-symbols-outlined text-sm t-dim">graph_3</span>
@@ -476,35 +498,37 @@
                     </div>
                     <div class="collapsible-body" id="storage-neo4j-body">
                         <div class="p-4 space-y-4">
-                            <!-- Node counts -->
-                            <div>
-                                <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-2">Node Counts by Label</p>
-                                <table class="text-xs" style="min-width:280px">
-                                    <thead>
-                                        <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
-                                            <th class="text-left py-1.5 pr-8">Label</th>
-                                            <th class="text-right py-1.5 w-28">Count</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="neo4j-nodes-body">
-                                        <tr><td colspan="2" class="py-3 text-center t-muted">Loading...</td></tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <!-- Relationship counts -->
-                            <div>
-                                <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-2">Relationship Counts by Type</p>
-                                <table class="text-xs" style="min-width:280px">
-                                    <thead>
-                                        <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
-                                            <th class="text-left py-1.5 pr-8">Type</th>
-                                            <th class="text-right py-1.5 w-28">Count</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="neo4j-rels-body">
-                                        <tr><td colspan="2" class="py-3 text-center t-muted">Loading...</td></tr>
-                                    </tbody>
-                                </table>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <!-- Node counts -->
+                                <div>
+                                    <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-2">Node Counts by Label</p>
+                                    <table class="text-xs" style="min-width:280px">
+                                        <thead>
+                                            <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
+                                                <th class="text-left py-1.5 pr-8">Label</th>
+                                                <th class="text-right py-1.5 w-28">Count</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="neo4j-nodes-body">
+                                            <tr><td colspan="2" class="py-3 text-center t-muted">Loading...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <!-- Relationship counts -->
+                                <div>
+                                    <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-2">Relationship Counts by Type</p>
+                                    <table class="text-xs" style="min-width:280px">
+                                        <thead>
+                                            <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
+                                                <th class="text-left py-1.5 pr-8">Type</th>
+                                                <th class="text-right py-1.5 w-28">Count</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="neo4j-rels-body">
+                                            <tr><td colspan="2" class="py-3 text-center t-muted">Loading...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                             <!-- Store sizes -->
                             <div id="neo4j-store-sizes"></div>
@@ -513,7 +537,7 @@
                 </div>
 
                 <!-- PostgreSQL collapsible -->
-                <div class="mb-4 border b-theme rounded-lg overflow-hidden">
+                <div class="mb-6 border b-theme rounded-lg overflow-hidden">
                     <div class="collapsible-header flex items-center justify-between px-4 py-3 bg-inner" data-target="storage-postgres-body">
                         <div class="flex items-center gap-3">
                             <span class="material-symbols-outlined text-sm t-dim">table_chart</span>
@@ -598,13 +622,13 @@
         <div id="tab-queue-trends" class="space-y-6" style="display:none">
 
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">show_chart</span> Queue Trends
                     </h3>
                     <div class="flex items-center gap-3">
                         <span class="text-[10px] t-muted">Auto-refresh 60s</span>
-                        <span id="qt-loading" class="text-xs t-muted" style="display:none">Loading...</span>
+                        <span id="qt-loading" class="material-symbols-outlined text-sm animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                         <span id="qt-error" class="text-xs text-amber-500 flex items-center gap-1" style="display:none">
                             <span class="material-symbols-outlined text-xs">warning</span> <span id="qt-error-msg"></span>
                         </span>
@@ -615,7 +639,7 @@
                 </div>
 
                 <!-- Range selector -->
-                <div class="flex items-center gap-2 mb-6">
+                <div class="flex items-center gap-2 mt-2 mb-6">
                     <span class="text-[10px] font-bold uppercase tracking-wider t-muted mr-2">Range</span>
                     <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="1h" data-tab-range="queue-trends">1h</button>
                     <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="6h" data-tab-range="queue-trends">6h</button>
@@ -634,8 +658,8 @@
                 <!-- Queue Depth Chart -->
                 <div class="mb-6">
                     <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-3">Queue Depth Over Time</p>
-                    <div class="bg-inner rounded-lg border b-theme p-4">
-                        <div id="queue-chart-legend" class="flex flex-wrap gap-3 mb-3 text-[10px] t-muted"></div>
+                    <div class="bg-inner rounded-lg border b-theme p-4 overflow-hidden">
+                        <div id="queue-chart-legend" class="flex flex-wrap gap-x-3 gap-y-1 mb-3 text-[10px] t-muted max-h-20 overflow-y-auto"></div>
                         <canvas id="queue-depth-chart" height="280"></canvas>
                     </div>
                 </div>
@@ -656,13 +680,13 @@
         <div id="tab-system-health" class="space-y-6" style="display:none">
 
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">monitor_heart</span> System Health
                     </h3>
                     <div class="flex items-center gap-3">
                         <span class="text-[10px] t-muted">Auto-refresh 60s</span>
-                        <span id="sh-loading" class="text-xs t-muted" style="display:none">Loading...</span>
+                        <span id="sh-loading" class="material-symbols-outlined text-sm animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                         <span id="sh-error" class="text-xs text-amber-500 flex items-center gap-1" style="display:none">
                             <span class="material-symbols-outlined text-xs">warning</span> <span id="sh-error-msg"></span>
                         </span>
@@ -673,7 +697,7 @@
                 </div>
 
                 <!-- Range selector -->
-                <div class="flex items-center gap-2 mb-6">
+                <div class="flex items-center gap-2 mt-2 mb-6">
                     <span class="text-[10px] font-bold uppercase tracking-wider t-muted mr-2">Range</span>
                     <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="1h" data-tab-range="system-health">1h</button>
                     <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="6h" data-tab-range="system-health">6h</button>
@@ -731,12 +755,12 @@
         <!-- Audit Log Tab -->
         <div id="tab-audit-log" class="space-y-6" style="display:none">
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">history</span> Admin Audit Log
                     </h3>
                     <div class="flex items-center gap-3">
-                        <select id="al-action-filter" class="text-xs bg-transparent border b-theme rounded px-2 py-1">
+                        <select id="al-action-filter" class="text-xs border b-theme rounded px-2 py-1"
                             <option value="">All Actions</option>
                             <option value="admin.login">Login</option>
                             <option value="admin.logout">Logout</option>
@@ -744,7 +768,7 @@
                             <option value="dlq.purge">DLQ Purge</option>
                         </select>
                         <span class="text-[10px] t-muted">Auto-refresh 60s</span>
-                        <span id="al-loading" class="text-xs t-muted" style="display:none">Loading...</span>
+                        <span id="al-loading" class="material-symbols-outlined text-sm animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                         <span id="al-error" class="text-xs text-amber-500 flex items-center gap-1" style="display:none">
                             <span class="material-symbols-outlined text-xs">warning</span>
                             <span id="al-error-msg"></span>
@@ -790,13 +814,13 @@
                 <div class="flex flex-wrap items-center gap-3">
                     <!-- Sub-view buttons -->
                     <div class="flex gap-2">
-                        <button class="ea-view-btn active px-3 py-1.5 rounded text-xs font-semibold" data-ea-view="report" id="ea-btn-report">
+                        <button class="ea-view-btn active px-4 py-2 rounded text-sm font-semibold" data-ea-view="report" id="ea-btn-report">
                             <span class="material-symbols-outlined text-sm align-middle">summarize</span> Report
                         </button>
-                        <button class="ea-view-btn px-3 py-1.5 rounded text-xs font-semibold" data-ea-view="compare" id="ea-btn-compare">
+                        <button class="ea-view-btn px-4 py-2 rounded text-sm font-semibold" data-ea-view="compare" id="ea-btn-compare">
                             <span class="material-symbols-outlined text-sm align-middle">compare_arrows</span> Compare
                         </button>
-                        <button class="ea-view-btn px-3 py-1.5 rounded text-xs font-semibold" data-ea-view="prompt" id="ea-btn-prompt">
+                        <button class="ea-view-btn px-4 py-2 rounded text-sm font-semibold" data-ea-view="prompt" id="ea-btn-prompt">
                             <span class="material-symbols-outlined text-sm align-middle">smart_toy</span> Prompt
                         </button>
                     </div>
@@ -804,10 +828,11 @@
                     <!-- Version selector (report) -->
                     <div id="ea-report-controls" class="flex items-center gap-2 ml-auto">
                         <label class="text-[10px] font-bold uppercase tracking-wider t-dim" for="ea-version-select">Version</label>
-                        <select id="ea-version-select" class="text-xs bg-transparent border b-theme rounded px-2 py-1 t-high">
+                        <select id="ea-version-select" class="text-xs border b-theme rounded px-2 py-1 t-high">
                             <option value="">— select —</option>
                         </select>
                         <span id="ea-source-badge" class="text-[10px] px-2 py-0.5 rounded uppercase font-bold badge-idle" style="display:none">source</span>
+                        <span id="ea-loading-spinner" class="material-symbols-outlined text-sm animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                         <button id="ea-refresh-btn" class="text-xs font-bold uppercase tracking-wider t-dim flex items-center gap-1">
                             <span class="material-symbols-outlined text-sm">refresh</span> Refresh
                         </button>
@@ -820,7 +845,7 @@
 
                 <!-- Pipeline status cards -->
                 <section class="dashboard-card p-6 space-y-4">
-                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-3">
+                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-4">
                         <span class="material-symbols-outlined text-sm t-dim">account_tree</span> Pipeline Status
                     </h3>
                     <div id="ea-pipeline-cards" class="flex flex-wrap gap-3">
@@ -839,7 +864,7 @@
 
                 <!-- Violation summary cards (per entity type) -->
                 <section class="dashboard-card p-6 space-y-4">
-                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-3">
+                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-4">
                         <span class="material-symbols-outlined text-sm t-dim">warning</span> Violations by Entity
                     </h3>
                     <div id="ea-entity-cards" class="flex flex-wrap gap-3">
@@ -849,7 +874,7 @@
 
                 <!-- Rule breakdown table -->
                 <section class="dashboard-card p-6 space-y-4">
-                    <div class="flex items-center justify-between border-b b-theme pb-3">
+                    <div class="flex items-center justify-between border-b b-theme pb-4">
                         <h3 class="text-sm font-semibold flex items-center gap-2">
                             <span class="material-symbols-outlined text-sm t-dim">rule</span> Rule Breakdown
                         </h3>
@@ -878,24 +903,74 @@
                     </div>
                 </section>
 
+                <!-- Violations detail table (shown when View is clicked) -->
+                <section id="ea-violations-detail" class="dashboard-card p-6 space-y-4" style="display:none">
+                    <div class="flex items-center justify-between border-b b-theme pb-4">
+                        <h3 class="text-sm font-semibold flex items-center gap-2">
+                            <span class="material-symbols-outlined text-sm t-dim">list_alt</span>
+                            Violations — <span id="ea-vd-rule" class="mono t-dim text-xs"></span>
+                            <span id="ea-vd-entity" class="text-xs t-muted"></span>
+                        </h3>
+                        <div class="flex items-center gap-3">
+                            <label class="text-[10px] t-dim font-bold uppercase tracking-wider">
+                                Page size
+                                <select id="ea-vd-page-size" class="ml-1 text-xs border b-theme rounded px-2 py-0.5 t-high">
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="200">200</option>
+                                </select>
+                            </label>
+                            <button id="ea-vd-close" class="t-dim hover:t-high transition-colors text-xs font-bold uppercase tracking-wider flex items-center gap-1">
+                                <span class="material-symbols-outlined text-sm">close</span> Close
+                            </button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead>
+                                <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
+                                    <th class="text-left py-2 px-2">Record ID</th>
+                                    <th class="text-left py-2 px-2">Rule</th>
+                                    <th class="text-left py-2 px-2">Severity</th>
+                                    <th class="text-left py-2 px-2">Field</th>
+                                    <th class="text-left py-2 px-2">Value</th>
+                                    <th class="text-right py-2 px-2">Detail</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ea-vd-tbody">
+                                <tr><td colspan="6" class="py-6 text-center t-muted">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- Pagination -->
+                    <div class="flex items-center justify-between">
+                        <span id="ea-vd-info" class="text-xs t-muted"></span>
+                        <div class="flex items-center gap-2">
+                            <button id="ea-vd-prev" class="text-xs px-3 py-1 rounded border b-theme t-dim hover:t-high disabled:opacity-40" disabled>Prev</button>
+                            <span id="ea-vd-page-label" class="text-xs mono t-dim"></span>
+                            <button id="ea-vd-next" class="text-xs px-3 py-1 rounded border b-theme t-dim hover:t-high disabled:opacity-40" disabled>Next</button>
+                        </div>
+                    </div>
+                </section>
+
             </div><!-- /ea-view-report -->
 
             <!-- ── Sub-view: Version Comparison ────────────────────── -->
             <div id="ea-view-compare" style="display:none">
                 <section class="dashboard-card p-6 space-y-4">
-                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-3">
+                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-4">
                         <span class="material-symbols-outlined text-sm t-dim">compare_arrows</span> Version Comparison
                     </h3>
                     <div class="flex flex-wrap items-end gap-4">
                         <div class="space-y-1">
                             <label class="text-[10px] font-bold uppercase tracking-wider t-dim" for="ea-cmp-version-a">Version A (baseline)</label>
-                            <select id="ea-cmp-version-a" class="text-xs bg-transparent border b-theme rounded px-2 py-1 t-high">
+                            <select id="ea-cmp-version-a" class="text-xs border b-theme rounded px-2 py-1 t-high">
                                 <option value="">— select —</option>
                             </select>
                         </div>
                         <div class="space-y-1">
                             <label class="text-[10px] font-bold uppercase tracking-wider t-dim" for="ea-cmp-version-b">Version B (target)</label>
-                            <select id="ea-cmp-version-b" class="text-xs bg-transparent border b-theme rounded px-2 py-1 t-high">
+                            <select id="ea-cmp-version-b" class="text-xs border b-theme rounded px-2 py-1 t-high">
                                 <option value="">— select —</option>
                             </select>
                         </div>
@@ -924,7 +999,7 @@
             <!-- ── Sub-view: Prompt Generator ──────────────────────── -->
             <div id="ea-view-prompt" style="display:none">
                 <section class="dashboard-card p-6 space-y-4">
-                    <div class="flex items-center justify-between border-b b-theme pb-3">
+                    <div class="flex items-center justify-between border-b b-theme pb-4">
                         <h3 class="text-sm font-semibold flex items-center gap-2">
                             <span class="material-symbols-outlined text-sm t-dim">smart_toy</span> AI Prompt Generator
                         </h3>
@@ -933,12 +1008,16 @@
                             <button id="ea-generate-btn" class="btn-purple px-4 py-1.5 rounded text-xs font-semibold flex items-center gap-1">
                                 <span class="material-symbols-outlined text-sm">auto_awesome</span> Generate
                             </button>
+                            <button id="ea-ai-generate-btn" class="px-4 py-1.5 rounded text-xs font-semibold flex items-center gap-1" style="background:#10B981;color:#fff;border:none;cursor:pointer;transition:opacity 0.15s" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                                <span class="material-symbols-outlined text-sm">psychology</span> Analyze with AI
+                                <span id="ea-ai-spinner" class="material-symbols-outlined text-sm animate-spin" style="display:none">progress_activity</span>
+                            </button>
                             <button id="ea-copy-btn" class="text-xs font-bold uppercase tracking-wider t-dim flex items-center gap-1 border b-theme rounded px-3 py-1.5">
                                 <span class="material-symbols-outlined text-sm">content_copy</span> Copy
                             </button>
                         </div>
                     </div>
-                    <p class="text-xs t-muted">Select rules in the Report tab, then click Generate to build a prompt for an AI assistant.</p>
+                    <p class="text-xs t-muted">Select rules in the Report tab. <strong>Generate</strong> builds a template prompt. <strong>Analyze with AI</strong> sends data to Claude for a targeted debugging analysis.</p>
                     <textarea id="ea-prompt-textarea" class="w-full mono text-xs bg-inner border b-theme rounded p-3 t-high"
                               rows="20" readonly placeholder="Generated prompt will appear here..."></textarea>
                 </section>
@@ -949,9 +1028,9 @@
         <!-- ============================================================
              RECORD DETAIL MODAL
              ============================================================ -->
-        <div id="ea-modal" class="fixed inset-0 z-50 flex items-center justify-center" style="display:none; background:rgba(0,0,0,0.5)">
-            <div class="dashboard-card p-6 w-full max-w-5xl max-h-[90vh] flex flex-col gap-4 overflow-y-auto">
-                <div class="flex items-center justify-between border-b b-theme pb-3">
+        <div id="ea-modal" class="fixed inset-0 z-50 flex items-center justify-center p-6" style="display:none; background:rgba(0,0,0,0.5)">
+            <div class="dashboard-card p-6 w-full max-w-5xl max-h-[90vh] flex flex-col gap-4 overflow-hidden">
+                <div class="flex items-center justify-between border-b b-theme pb-4 flex-shrink-0">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">data_object</span>
                         Record Detail — <span id="ea-modal-record-id" class="mono t-dim text-xs"></span>
@@ -960,19 +1039,21 @@
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="space-y-1">
-                        <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Raw XML</p>
-                        <pre id="ea-modal-xml" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid" style="max-height:350px;white-space:pre-wrap;word-break:break-all"></pre>
-                    </div>
-                    <div class="space-y-1">
-                        <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Parsed JSON</p>
-                        <pre id="ea-modal-json" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid" style="max-height:350px;white-space:pre-wrap;word-break:break-all"></pre>
-                    </div>
-                </div>
-                <div class="space-y-2">
+                <!-- Violations (always visible, compact) -->
+                <div class="flex-shrink-0 space-y-2 border-b b-theme pb-4">
                     <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Violations</p>
-                    <ul id="ea-modal-violations" class="space-y-1 text-xs"></ul>
+                    <ul id="ea-modal-violations" class="space-y-1 text-xs max-h-32 overflow-y-auto"></ul>
+                </div>
+                <!-- XML / JSON panes (fill remaining space equally) -->
+                <div class="flex-1 grid grid-cols-2 gap-4 min-h-0">
+                    <div class="flex flex-col min-w-0 min-h-0">
+                        <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-1 flex-shrink-0">Raw XML</p>
+                        <pre id="ea-modal-xml" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid flex-1 min-h-0" style="white-space:pre-wrap;word-break:break-all"></pre>
+                    </div>
+                    <div class="flex flex-col min-w-0 min-h-0">
+                        <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-1 flex-shrink-0">Parsed JSON</p>
+                        <pre id="ea-modal-json" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid flex-1 min-h-0" style="white-space:pre-wrap;word-break:break-all"></pre>
+                    </div>
                 </div>
             </div>
         </div><!-- /ea-modal -->

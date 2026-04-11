@@ -90,12 +90,29 @@
 .b-row { border-color: var(--row-border); }
 .bg-inner { background: var(--inner-bg); border-color: var(--inner-border); }
 .mono { font-family: 'JetBrains Mono', monospace; }
-.card {
+.card, .dashboard-card {
     background-color: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     box-shadow: var(--card-shadow);
 }
+
+/* Badges — shared with dashboard */
+.badge-completed, .badge-ok {
+    background: rgba(16,185,129,0.1); color: #10B981; border: 1px solid rgba(16,185,129,0.2);
+}
+.badge-failed, .badge-error {
+    background: rgba(239,68,68,0.1); color: #EF4444; border: 1px solid rgba(239,68,68,0.2);
+}
+.badge-running, .badge-pending {
+    background: rgba(234,179,8,0.1); color: #EAB308; border: 1px solid rgba(234,179,8,0.2);
+}
+.badge-idle {
+    background: rgba(107,114,128,0.1); color: #6B7280; border: 1px solid rgba(107,114,128,0.2);
+}
+
+/* Animated spinner — shared with dashboard */
+.animate-spin { animation: spin 1s linear infinite; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
@@ -424,6 +441,26 @@
     display: flex;
 }
 
+.spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--purple-accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+/* Select/dropdown styling for theme consistency */
+select {
+    background-color: var(--card-bg);
+    color: var(--text-high);
+}
+select option {
+    background-color: var(--card-bg);
+    color: var(--text-high);
+    padding: 0.25rem 0.5rem;
+}
+
 /* Graph controls */
 .graph-controls {
     position: absolute;
@@ -739,10 +776,10 @@
 }
 
 .stat-card {
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 0.5rem;
-    padding: 1rem 1.25rem;
+    background: var(--inner-bg);
+    border: 1px solid var(--inner-border);
+    border-radius: 10px;
+    padding: 1rem;
 }
 
 .stat-card .stat-label {
@@ -2334,4 +2371,169 @@
     .insights-top-row {
         grid-template-columns: 1fr;
     }
+}
+
+/* ── Settings page ──────────────────────────────────────────────────────── */
+
+.settings-page {
+    max-width: 42rem;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+    overflow-y: auto;
+    height: 100%;
+}
+
+.settings-header {
+    margin-bottom: 1.5rem;
+}
+
+.settings-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--text-mid);
+    font-size: 0.875rem;
+    text-decoration: none;
+    margin-bottom: 0.5rem;
+    transition: color 0.15s;
+}
+
+.settings-back-link:hover {
+    color: var(--text-high);
+}
+
+.settings-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-high);
+}
+
+.settings-card {
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--card-bg);
+    margin-bottom: 1rem;
+}
+
+.settings-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-high);
+}
+
+.settings-card-header h3 {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.settings-card-body {
+    padding: 1rem;
+}
+
+.settings-field {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    padding: 0.375rem 0;
+}
+
+.settings-label {
+    font-size: 0.8125rem;
+    color: var(--text-mid);
+    min-width: 6rem;
+    flex-shrink: 0;
+}
+
+.settings-value {
+    font-size: 0.875rem;
+    color: var(--text-high);
+}
+
+/* 2FA status badges */
+.twofa-badge {
+    display: inline-block;
+    padding: 0.125rem 0.625rem;
+    border-radius: 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.twofa-badge-enabled {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+}
+
+.twofa-badge-disabled {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+/* 2FA setup — QR code container */
+.twofa-qr-container {
+    display: flex;
+    justify-content: center;
+    margin: 1rem 0;
+}
+
+.twofa-qr-container img,
+.twofa-qr-container canvas {
+    border-radius: 0.5rem;
+    background: white;
+    padding: 0.5rem;
+}
+
+/* 2FA setup — manual secret display */
+.twofa-manual-secret {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-bottom: 1rem;
+}
+
+.twofa-manual-secret code {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--inner-bg);
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    letter-spacing: 0.1em;
+}
+
+/* 2FA setup — TOTP input group */
+.twofa-code-inputs {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+/* Recovery codes grid */
+.recovery-codes-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.375rem 1.5rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.875rem;
+    padding: 1rem;
+    background: var(--inner-bg);
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+    color: var(--text-high);
+}
+
+/* Recovery codes warning banner */
+.recovery-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+    font-size: 0.8125rem;
+    color: var(--text-high);
 }

@@ -19,7 +19,7 @@ from common.config import get_secret
 def _build_conninfo() -> str:
     """Build a psycopg conninfo string from environment variables."""
     address = os.environ.get("POSTGRES_HOST", "")
-    username = os.environ.get("POSTGRES_USERNAME", "")
+    username = get_secret("POSTGRES_USERNAME") or ""
     password = get_secret("POSTGRES_PASSWORD") or ""
     database = os.environ.get("POSTGRES_DATABASE", "")
 

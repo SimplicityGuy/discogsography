@@ -31,6 +31,9 @@ from common import (
 from dashboard.admin_proxy import configure as configure_admin_proxy, router as admin_router
 
 
+# Suppress per-request httpx INFO logs (health checks every 2s are too noisy)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 # CORS origins configurable via environment variable (comma-separated list)
@@ -218,13 +221,26 @@ class DashboardApp:
 
     async def collect_metrics_loop(self) -> None:
         """Continuously collect metrics in the background."""
+        cycle_count = 0
         while True:
             try:
                 metrics = await self.collect_all_metrics()
                 self.latest_metrics = metrics
+                cycle_count += 1
 
                 # Broadcast to all connected websockets
                 await self.broadcast_metrics(metrics)
+
+                # Log a summary every 50 cycles (~100s) instead of every request
+                if cycle_count % 50 == 0:
+                    pipeline_names = list(metrics.pipelines.keys()) if metrics.pipelines else []
+                    ws_count = len(self.websocket_connections)
+                    logger.info(
+                        "📊 Metrics collection summary: cycles=%d, pipelines=%s, websocket_clients=%d",
+                        cycle_count,
+                        pipeline_names,
+                        ws_count,
+                    )
 
                 await asyncio.sleep(2)  # Update every 2 seconds
 
