@@ -160,7 +160,7 @@ async def _enrich_community_counts(
             ) AS combined
             WHERE release_id NOT IN (
                 SELECT release_id FROM insights.community_counts
-                WHERE fetched_at > NOW() - INTERVAL '%s days'
+                WHERE fetched_at > NOW() - make_interval(days => %s)
             )
             """,
             (_STALENESS_DAYS,),
@@ -208,8 +208,12 @@ async def _enrich_community_counts(
     batch: list[dict[str, Any]] = []
     rate_limit_retries = 0
 
+    exhausted = False
     async with httpx.AsyncClient(timeout=30.0) as client:
         for release_id in release_ids:
+            if exhausted:
+                break
+
             url = f"{DISCOGS_API_BASE}/releases/{release_id}"
             auth = _auth_header(
                 "GET",
@@ -225,18 +229,25 @@ async def _enrich_community_counts(
                 "Accept": "application/json",
             }
 
-            response = await client.get(url, headers=headers)
+            # Retry loop for rate limiting — ensures the same release is retried
+            while True:
+                response = await client.get(url, headers=headers)
 
-            if response.status_code == 429:
-                rate_limit_retries += 1
-                if rate_limit_retries > MAX_RATE_LIMIT_RETRIES:
-                    logger.error("❌ Rate limit retries exhausted during enrichment")
-                    break
-                logger.warning("⚠️ Rate limited, waiting 60s...", retry=rate_limit_retries)
-                await asyncio.sleep(60)
-                continue
+                if response.status_code == 429:
+                    rate_limit_retries += 1
+                    if rate_limit_retries > MAX_RATE_LIMIT_RETRIES:
+                        logger.error("❌ Rate limit retries exhausted during enrichment")
+                        exhausted = True
+                        break
+                    logger.warning("⚠️ Rate limited, waiting 60s...", retry=rate_limit_retries)
+                    await asyncio.sleep(60)
+                    continue
 
-            rate_limit_retries = 0
+                rate_limit_retries = 0
+                break  # Got a non-429 response
+
+            if exhausted:
+                break
 
             if response.status_code != 200:
                 logger.warning("⚠️ Discogs API error for release", release_id=release_id, status=response.status_code)

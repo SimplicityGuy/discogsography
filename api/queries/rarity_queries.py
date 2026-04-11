@@ -1,7 +1,7 @@
 """Rarity scoring queries and computation logic.
 
-Computes a 5-signal rarity index (0-100) for releases using Neo4j graph data,
-and provides PostgreSQL lookup functions for precomputed scores.
+Computes a 6-signal rarity index (0-100) for releases using Neo4j graph data
+and PostgreSQL community counts, and provides lookup functions for precomputed scores.
 
 Graph model:
   (Release)-[:BY]->(Artist)
@@ -286,7 +286,7 @@ async def fetch_all_rarity_signals(driver: Any, pool: Any = None) -> list[dict[s
             community_map = {str(r["release_id"]): (r["have_count"], r["want_count"]) for r in community_rows}
             logger.info("📊 Community counts loaded", count=len(community_map))
         except Exception:
-            logger.warning("⚠️ Failed to load community counts, using neutral fallback")
+            logger.warning("⚠️ Failed to load community counts, using neutral fallback", exc_info=True)
 
     # Build lookup dicts keyed by release_id
     label_map = {r["release_id"]: r["label_catalog_size"] for r in label_rows}
