@@ -330,27 +330,6 @@ fn test_element_context_add_child_to_existing_array() {
     assert_eq!(arr.len(), 3);
 }
 
-#[test]
-fn test_calculate_record_hash() {
-    let record = json!({"id": "123", "name": "Test"});
-    let hash1 = calculate_record_hash(&record);
-    let hash2 = calculate_record_hash(&record);
-
-    assert_eq!(hash1, hash2);
-    assert_eq!(hash1.len(), 64); // SHA256 hex string length
-}
-
-#[test]
-fn test_calculate_record_hash_different_records() {
-    let record1 = json!({"id": "123"});
-    let record2 = json!({"id": "456"});
-
-    let hash1 = calculate_record_hash(&record1);
-    let hash2 = calculate_record_hash(&record2);
-
-    assert_ne!(hash1, hash2);
-}
-
 #[tokio::test]
 async fn test_parse_master_with_artists() {
     let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -590,18 +569,6 @@ async fn test_parse_receiver_dropped() {
     assert!(result.is_ok());
     let count = result.unwrap();
     assert!(count < 100, "Should have stopped early due to dropped receiver, got {}", count);
-}
-
-#[test]
-fn test_calculate_record_hash_empty_value() {
-    let null_hash = calculate_record_hash(&Value::Null);
-    assert_eq!(null_hash.len(), 64);
-
-    let empty_obj_hash = calculate_record_hash(&Value::Object(Map::new()));
-    assert_eq!(empty_obj_hash.len(), 64);
-
-    // Null and empty object should produce different hashes
-    assert_ne!(null_hash, empty_obj_hash);
 }
 
 #[tokio::test]

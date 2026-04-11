@@ -297,7 +297,9 @@ async fn test_parse_with_whitespace() {
 }
 
 #[tokio::test]
-async fn test_parse_hash_calculation() {
+async fn test_parser_emits_empty_hash() {
+    // The parser no longer computes hashes — that happens post-filter in
+    // message_validator.  Verify the parser outputs empty sha256 placeholders.
     let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
 <artists>
     <artist id="1"><name>Artist 1</name></artist>
@@ -317,18 +319,12 @@ async fn test_parse_hash_calculation() {
 
     assert_eq!(count, 2);
 
-    // Collect messages
     let msg1 = receiver.recv().await.unwrap();
     let msg2 = receiver.recv().await.unwrap();
 
-    // Hashes should be different for different content
-    assert_ne!(msg1.sha256, msg2.sha256);
-
-    // Hashes should be non-empty and valid hex
-    assert_eq!(msg1.sha256.len(), 64); // SHA256 produces 64 hex chars
-    assert_eq!(msg2.sha256.len(), 64);
-    assert!(msg1.sha256.chars().all(|c| c.is_ascii_hexdigit()));
-    assert!(msg2.sha256.chars().all(|c| c.is_ascii_hexdigit()));
+    // Parser emits empty sha256; content hash is computed post-filter
+    assert!(msg1.sha256.is_empty());
+    assert!(msg2.sha256.is_empty());
 }
 
 #[tokio::test]
