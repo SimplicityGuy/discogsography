@@ -17,7 +17,7 @@ use crate::message_queue::{MessagePublisher, MessageQueue};
 use crate::parser::XmlParser;
 use crate::rules::{CompiledRulesConfig, FlaggedRecordWriter, QualityReport, Severity, apply_filters, evaluate_rules, should_skip_record};
 use crate::state_marker::{PhaseStatus, ProcessingDecision, StateMarker};
-use crate::types::{DataMessage, DataType, ExtractionProgress};
+use crate::types::{DataMessage, DataType, ExtractionProgress, calculate_content_hash};
 
 /// Factory for creating MessagePublisher instances (enables DI for testing)
 #[cfg_attr(feature = "test-support", mockall::automock)]
@@ -605,6 +605,10 @@ pub async fn message_validator(
                 action.removed_count, action.field, data_type, message.id, action.removed_values, action.reason
             );
         }
+
+        // Compute content hash from post-filter data so consumers detect
+        // changes caused by filter updates, not just upstream XML/JSONL changes.
+        message.sha256 = calculate_content_hash(&message.data);
 
         let violations = evaluate_rules(&rules, data_type, &message.data);
         for violation in &violations {
