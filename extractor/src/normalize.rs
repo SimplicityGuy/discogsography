@@ -157,12 +157,81 @@ fn normalize_master(record: &mut Value) {
     }
 }
 
+/// Normalize a release record.
+fn normalize_release(record: &mut Value) {
+    strip_at_prefixes(record);
+
+    let Some(map) = record.as_object_mut() else {
+        return;
+    };
+
+    // artists
+    if let Some(val) = map.remove("artists") {
+        let normalized = normalize_item_list(&val, "artist");
+        insert_if_nonempty(map, "artists", normalized);
+    }
+
+    // labels
+    if let Some(val) = map.remove("labels") {
+        let normalized = normalize_item_list(&val, "label");
+        insert_if_nonempty(map, "labels", normalized);
+    }
+
+    // master_id: extract from dict if needed
+    if let Some(val) = map.get("master_id") {
+        let new_val = match val {
+            Value::Object(m) => m.get("#text").or_else(|| m.get("id")).cloned(),
+            _ => None,
+        };
+        if let Some(v) = new_val {
+            map.insert("master_id".to_string(), v);
+        }
+    }
+
+    // genres and styles
+    for (field, container_key) in [("genres", "genre"), ("styles", "style")] {
+        if let Some(val) = map.remove(field) {
+            let normalized = normalize_string_list(&val, container_key);
+            insert_if_nonempty(map, field, normalized);
+        }
+    }
+
+    // extraartists
+    if let Some(val) = map.remove("extraartists") {
+        let normalized = normalize_item_list(&val, "artist");
+        insert_if_nonempty(map, "extraartists", normalized);
+    }
+
+    // formats: unwrap_container then strip_at_prefixes on each
+    if let Some(val) = map.remove("formats") {
+        let items = unwrap_container(&val, "format");
+        if let Some(arr) = items.as_array() {
+            let result: Vec<Value> = arr
+                .iter()
+                .map(|item| {
+                    if item.is_object() {
+                        let mut cloned = item.clone();
+                        strip_at_prefixes(&mut cloned);
+                        cloned
+                    } else {
+                        item.clone()
+                    }
+                })
+                .collect();
+            if !result.is_empty() {
+                map.insert("formats".to_string(), Value::Array(result));
+            }
+        }
+    }
+}
+
 /// Public entry point: normalize a record based on its data type.
 pub fn normalize_record(data_type: &str, record: &mut Value) {
     match data_type {
         "artists" => normalize_artist(record),
         "labels" => normalize_label(record),
         "masters" => normalize_master(record),
+        "releases" => normalize_release(record),
         _ => {}
     }
 }

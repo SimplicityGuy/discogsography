@@ -276,3 +276,168 @@ fn test_master_no_genres() {
     normalize_record("masters", &mut record);
     assert!(record.get("genres").is_none());
 }
+
+// ── normalize_record: releases ──────────────────────────────────────
+
+#[test]
+fn test_release_basic() {
+    let mut record = json!({"@id": "999", "title": "Single", "released": "2024", "country": "US"});
+    normalize_record("releases", &mut record);
+    assert_eq!(record["id"], json!("999"));
+    assert_eq!(record["title"], json!("Single"));
+    assert_eq!(record["released"], json!("2024"));
+    assert_eq!(record["country"], json!("US"));
+    assert!(record.get("@id").is_none());
+}
+
+#[test]
+fn test_release_artists() {
+    let mut record = json!({
+        "@id": "999",
+        "artists": {"artist": [{"@id": "1", "#text": "A"}]}
+    });
+    normalize_record("releases", &mut record);
+    assert_eq!(record["artists"], json!([{"id": "1", "name": "A"}]));
+}
+
+#[test]
+fn test_release_labels() {
+    let mut record = json!({
+        "@id": "999",
+        "labels": {"label": [{"@id": "10", "@name": "Lab", "@catno": "CAT01"}]}
+    });
+    normalize_record("releases", &mut record);
+    assert_eq!(
+        record["labels"],
+        json!([{"id": "10", "name": "Lab", "catno": "CAT01"}])
+    );
+}
+
+#[test]
+fn test_release_master_id_dict() {
+    let mut record = json!({
+        "@id": "999",
+        "master_id": {"#text": "5000", "@is_main_release": "true"}
+    });
+    normalize_record("releases", &mut record);
+    assert_eq!(record["master_id"], json!("5000"));
+}
+
+#[test]
+fn test_release_master_id_string() {
+    let mut record = json!({"@id": "999", "master_id": "5000"});
+    normalize_record("releases", &mut record);
+    assert_eq!(record["master_id"], json!("5000"));
+}
+
+#[test]
+fn test_release_genres_styles() {
+    let mut record = json!({
+        "@id": "999",
+        "genres": {"genre": ["Rock", "Pop"]},
+        "styles": {"style": "Indie"}
+    });
+    normalize_record("releases", &mut record);
+    assert_eq!(record["genres"], json!(["Rock", "Pop"]));
+    assert_eq!(record["styles"], json!(["Indie"]));
+}
+
+#[test]
+fn test_release_extraartists() {
+    let mut record = json!({
+        "@id": "999",
+        "extraartists": {"artist": [{"@id": "5", "#text": "Producer"}]}
+    });
+    normalize_record("releases", &mut record);
+    assert_eq!(
+        record["extraartists"],
+        json!([{"id": "5", "name": "Producer"}])
+    );
+}
+
+#[test]
+fn test_release_formats() {
+    let mut record = json!({
+        "@id": "999",
+        "formats": {"format": [{"@name": "Vinyl", "@qty": "1"}]}
+    });
+    normalize_record("releases", &mut record);
+    assert_eq!(record["formats"], json!([{"name": "Vinyl", "qty": "1"}]));
+}
+
+#[test]
+fn test_release_single_format() {
+    let mut record = json!({
+        "@id": "999",
+        "formats": {"format": {"@name": "CD", "@qty": "1"}}
+    });
+    normalize_record("releases", &mut record);
+    assert_eq!(record["formats"], json!([{"name": "CD", "qty": "1"}]));
+}
+
+#[test]
+fn test_release_format_with_descriptions() {
+    let mut record = json!({
+        "@id": "999",
+        "formats": {"format": {"@name": "Vinyl", "@qty": "1", "descriptions": {"description": ["LP", "Album"]}}}
+    });
+    normalize_record("releases", &mut record);
+    let fmt = &record["formats"][0];
+    assert_eq!(fmt["name"], json!("Vinyl"));
+    assert_eq!(fmt["qty"], json!("1"));
+    // descriptions stay as-is (child object); strip_at_prefixes only touches top-level keys
+    assert!(fmt.get("descriptions").is_some());
+}
+
+#[test]
+fn test_release_full_pipeline() {
+    let mut record = json!({
+        "@id": "12345",
+        "title": "Full Album",
+        "released": "2024-01-01",
+        "country": "UK",
+        "artists": {"artist": [{"@id": "1", "#text": "Band"}, {"@id": "2", "#text": "Featured"}]},
+        "labels": {"label": [{"@id": "10", "@name": "BigLabel", "@catno": "BIG001"}]},
+        "master_id": {"#text": "5000", "@is_main_release": "true"},
+        "genres": {"genre": ["Electronic", "Rock"]},
+        "styles": {"style": "Synth-pop"},
+        "extraartists": {"artist": {"@id": "99", "#text": "Mixer"}},
+        "formats": {"format": [{"@name": "CD", "@qty": "1"}, {"@name": "Vinyl", "@qty": "2"}]}
+    });
+    normalize_record("releases", &mut record);
+
+    assert_eq!(record["id"], json!("12345"));
+    assert!(record.get("@id").is_none());
+    assert_eq!(record["title"], json!("Full Album"));
+    assert_eq!(record["released"], json!("2024-01-01"));
+    assert_eq!(record["country"], json!("UK"));
+    assert_eq!(
+        record["artists"],
+        json!([{"id": "1", "name": "Band"}, {"id": "2", "name": "Featured"}])
+    );
+    assert_eq!(
+        record["labels"],
+        json!([{"id": "10", "name": "BigLabel", "catno": "BIG001"}])
+    );
+    assert_eq!(record["master_id"], json!("5000"));
+    assert_eq!(record["genres"], json!(["Electronic", "Rock"]));
+    assert_eq!(record["styles"], json!(["Synth-pop"]));
+    assert_eq!(
+        record["extraartists"],
+        json!([{"id": "99", "name": "Mixer"}])
+    );
+    assert_eq!(
+        record["formats"],
+        json!([{"name": "CD", "qty": "1"}, {"name": "Vinyl", "qty": "2"}])
+    );
+}
+
+// ── unknown data type -> no-op ──────────────────────────────────────
+
+#[test]
+fn test_unknown_type_noop() {
+    let mut record = json!({"@id": "1", "name": "Test"});
+    let original = record.clone();
+    normalize_record("unknown", &mut record);
+    assert_eq!(record, original);
+}
