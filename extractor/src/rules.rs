@@ -17,7 +17,26 @@ use crate::types::DataType;
 
 #[derive(Debug, Deserialize)]
 pub struct RulesConfig {
+    #[serde(default)]
+    pub skip_records: HashMap<String, Vec<SkipCondition>>,
+    #[serde(default)]
+    pub filters: HashMap<String, Vec<FilterCondition>>,
+    #[serde(default)]
     pub rules: HashMap<String, Vec<Rule>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SkipCondition {
+    pub field: String,
+    pub contains: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FilterCondition {
+    pub field: String,
+    pub remove_matching: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,8 +79,24 @@ pub enum RuleCondition {
 // ── Compiled types (used at evaluation time) ────────────────────────
 
 #[derive(Debug)]
+pub struct CompiledSkipCondition {
+    pub field: String,
+    pub contains_lower: String,
+    pub reason: String,
+}
+
+#[derive(Debug)]
+pub struct CompiledFilterCondition {
+    pub field: String,
+    pub remove_matching: Regex,
+    pub reason: String,
+}
+
+#[derive(Debug)]
 pub struct CompiledRulesConfig {
     rules: HashMap<String, Vec<CompiledRule>>,
+    skip_conditions: HashMap<String, Vec<CompiledSkipCondition>>,
+    filters: HashMap<String, Vec<CompiledFilterCondition>>,
 }
 
 #[derive(Debug)]
@@ -127,11 +162,52 @@ impl CompiledRulesConfig {
             }
             compiled.insert(key, compiled_rules);
         }
-        Ok(Self { rules: compiled })
+
+        // Compile skip_records
+        let mut compiled_skip = HashMap::new();
+        for (key, conditions) in config.skip_records {
+            key.parse::<DataType>().map_err(|_| anyhow::anyhow!("Unknown data type in skip_records config: '{}'", key))?;
+            let mut compiled_conditions = Vec::with_capacity(conditions.len());
+            for cond in conditions {
+                compiled_conditions.push(CompiledSkipCondition {
+                    field: cond.field,
+                    contains_lower: cond.contains.to_lowercase(),
+                    reason: cond.reason,
+                });
+            }
+            compiled_skip.insert(key, compiled_conditions);
+        }
+
+        // Compile filters
+        let mut compiled_filters = HashMap::new();
+        for (key, conditions) in config.filters {
+            key.parse::<DataType>().map_err(|_| anyhow::anyhow!("Unknown data type in filters config: '{}'", key))?;
+            let mut compiled_conditions = Vec::with_capacity(conditions.len());
+            for cond in conditions {
+                let regex = Regex::new(&cond.remove_matching)
+                    .with_context(|| format!("Invalid regex in filter for field '{}': {}", cond.field, cond.remove_matching))?;
+                compiled_conditions.push(CompiledFilterCondition {
+                    field: cond.field,
+                    remove_matching: regex,
+                    reason: cond.reason,
+                });
+            }
+            compiled_filters.insert(key, compiled_conditions);
+        }
+
+        Ok(Self { rules: compiled, skip_conditions: compiled_skip, filters: compiled_filters })
     }
 
     pub fn rules_for(&self, data_type: &str) -> &[CompiledRule] {
         self.rules.get(data_type).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    pub fn skip_conditions_for(&self, data_type: &str) -> &[CompiledSkipCondition] {
+        self.skip_conditions.get(data_type).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    pub fn filters_for(&self, data_type: &str) -> &[CompiledFilterCondition] {
+        self.filters.get(data_type).map(|v| v.as_slice()).unwrap_or(&[])
     }
 }
 
@@ -255,6 +331,89 @@ fn check_condition(condition: &CompiledCondition, value: &str) -> bool {
     }
 }
 
+// ── Skip Record Evaluation ─────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct SkipInfo {
+    pub reason: String,
+    pub field: String,
+    pub field_value: String,
+}
+
+pub fn should_skip_record(config: &CompiledRulesConfig, data_type: &str, record: &Value) -> Option<SkipInfo> {
+    let conditions = config.skip_conditions_for(data_type);
+    for cond in conditions {
+        let field_values = resolve_field(record, &cond.field);
+        for val in &field_values {
+            if val.to_lowercase().contains(&cond.contains_lower) {
+                return Some(SkipInfo { reason: cond.reason.clone(), field: cond.field.clone(), field_value: val.clone() });
+            }
+        }
+    }
+    None
+}
+
+// ── Filter Evaluation ──────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct FilterAction {
+    pub field: String,
+    pub removed_count: usize,
+    pub removed_values: Vec<String>,
+    pub reason: String,
+}
+
+pub fn apply_filters(config: &CompiledRulesConfig, data_type: &str, record: &mut Value) -> Vec<FilterAction> {
+    let conditions = config.filters_for(data_type);
+    let mut actions = Vec::new();
+    for cond in conditions {
+        let segments: Vec<&str> = cond.field.split('.').collect();
+        if segments.is_empty() {
+            continue;
+        }
+        let (parent_segments, leaf) = segments.split_at(segments.len() - 1);
+        let leaf = leaf[0];
+
+        // Build a JSON pointer path to navigate to the parent, then access the leaf array.
+        // We use pointer_mut to avoid borrow checker issues with iterative navigation.
+        let parent: &mut Value = if parent_segments.is_empty() {
+            &mut *record
+        } else {
+            let pointer = format!("/{}", parent_segments.join("/"));
+            match record.pointer_mut(&pointer) {
+                Some(v) => v,
+                None => continue,
+            }
+        };
+
+        // Get the array at the leaf key
+        let arr = match parent {
+            Value::Object(map) => match map.get_mut(leaf) {
+                Some(Value::Array(arr)) => arr,
+                _ => continue,
+            },
+            _ => continue,
+        };
+
+        let mut removed_values = Vec::new();
+        let original_len = arr.len();
+        arr.retain(|elem| {
+            if let Value::String(s) = elem
+                && cond.remove_matching.is_match(s)
+            {
+                removed_values.push(s.clone());
+                return false;
+            }
+            true
+        });
+        let removed_count = original_len - arr.len();
+        if removed_count > 0 {
+            actions.push(FilterAction { field: cond.field.clone(), removed_count, removed_values, reason: cond.reason.clone() });
+        }
+    }
+    actions
+}
+
 // ── Quality Report ──────────────────────────────────────────────────
 
 #[derive(Debug, Default)]
@@ -264,12 +423,20 @@ pub struct RuleCounts {
     pub info: u64,
 }
 
+#[derive(Debug, Clone)]
+pub struct SkippedRecord {
+    pub record_id: String,
+    pub reason: String,
+}
+
 #[derive(Debug, Default)]
 pub struct QualityReport {
     /// data_type -> rule_name -> counts (BTreeMap for deterministic output ordering)
     pub counts: HashMap<String, BTreeMap<String, RuleCounts>>,
     /// data_type -> total records evaluated
     pub total_records: HashMap<String, u64>,
+    /// data_type -> list of skipped records
+    pub skipped: HashMap<String, Vec<SkippedRecord>>,
 }
 
 impl QualityReport {
@@ -290,6 +457,21 @@ impl QualityReport {
         *self.total_records.entry(data_type.to_string()).or_default() += 1;
     }
 
+    pub fn record_skip(&mut self, data_type: &str, record_id: &str, reason: &str) {
+        self.skipped
+            .entry(data_type.to_string())
+            .or_default()
+            .push(SkippedRecord { record_id: record_id.to_string(), reason: reason.to_string() });
+    }
+
+    pub fn skipped_records(&self) -> &HashMap<String, Vec<SkippedRecord>> {
+        &self.skipped
+    }
+
+    pub fn has_skipped_records(&self) -> bool {
+        self.skipped.values().any(|v| !v.is_empty())
+    }
+
     pub fn merge(&mut self, other: QualityReport) {
         for (dt, rules) in other.counts {
             let entry = self.counts.entry(dt).or_default();
@@ -303,6 +485,9 @@ impl QualityReport {
         for (dt, count) in other.total_records {
             *self.total_records.entry(dt).or_default() += count;
         }
+        for (dt, records) in other.skipped {
+            self.skipped.entry(dt).or_default().extend(records);
+        }
     }
 
     pub fn has_violations(&self) -> bool {
@@ -310,10 +495,31 @@ impl QualityReport {
     }
 
     pub fn format_summary(&self, version: &str) -> String {
-        if !self.has_violations() {
+        if !self.has_violations() && !self.has_skipped_records() {
             return format!("📊 Data Quality Report for discogs_{}: No data quality violations found.\n", version);
         }
         let mut output = format!("📊 Data Quality Report for discogs_{}:\n", version);
+
+        // Skipped records section
+        if self.has_skipped_records() {
+            output.push_str("  \u{23ed}\u{fe0f} Skipped records:\n");
+            for dt in &["releases", "artists", "labels", "masters"] {
+                if let Some(records) = self.skipped.get(*dt)
+                    && !records.is_empty()
+                {
+                    // Group by reason
+                    let mut by_reason: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+                    for rec in records {
+                        by_reason.entry(&rec.reason).or_default().push(&rec.record_id);
+                    }
+                    let total_count: usize = records.len();
+                    let details: Vec<String> =
+                        by_reason.iter().map(|(reason, ids)| format!("{}: {}", reason, ids.join(", "))).collect();
+                    output.push_str(&format!("    {}: {} ({})\n", dt, total_count, details.join("; ")));
+                }
+            }
+        }
+
         for dt in &["releases", "artists", "labels", "masters"] {
             let total = self.total_records.get(*dt).copied().unwrap_or(0);
             if let Some(rules) = self.counts.get(*dt) {
@@ -347,6 +553,7 @@ pub struct FlaggedRecordWriter {
     base_dir: PathBuf,
     written_records: HashSet<String>,
     jsonl_writers: HashMap<String, BufWriter<std::fs::File>>,
+    skip_jsonl_writers: HashMap<String, BufWriter<std::fs::File>>,
 }
 
 /// Sanitize a value from parsed data for use as a filename component.
@@ -367,6 +574,7 @@ impl FlaggedRecordWriter {
             base_dir: discogs_root.join("flagged").join(version), // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
             written_records: HashSet::new(),
             jsonl_writers: HashMap::new(),
+            skip_jsonl_writers: HashMap::new(),
         }
     }
 
@@ -443,8 +651,74 @@ impl FlaggedRecordWriter {
         }
     }
 
+    /// Write a skipped record to JSONL log, and capture XML/JSON files.
+    pub fn write_skip(
+        &mut self,
+        data_type: &str,
+        record_id: &str,
+        skip_info: &SkipInfo,
+        raw_xml: Option<&[u8]>,
+        parsed_json: &Value,
+    ) {
+        let type_dir = self.base_dir.join(data_type); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+
+        if let Err(e) = fs::create_dir_all(&type_dir) {
+            tracing::warn!("\u{26a0}\u{fe0f} Failed to create flagged directory {:?}: {}", type_dir, e);
+            return;
+        }
+
+        let safe_id = sanitize_filename(record_id);
+
+        // Write XML and JSON files once per record (same dedup logic as write_violation)
+        let record_key = format!("{}:{}", data_type, safe_id);
+        if !self.written_records.contains(&record_key) {
+            if let Some(xml_bytes) = raw_xml {
+                let xml_path = type_dir.join(format!("{}.xml", safe_id));
+                if let Err(e) = fs::write(&xml_path, xml_bytes) {
+                    tracing::warn!("\u{26a0}\u{fe0f} Failed to write flagged XML {:?}: {}", xml_path, e);
+                }
+            }
+            let json_path = type_dir.join(format!("{}.json", safe_id));
+            if let Err(e) = fs::write(&json_path, serde_json::to_string_pretty(parsed_json).unwrap_or_default()) {
+                tracing::warn!("\u{26a0}\u{fe0f} Failed to write flagged JSON {:?}: {}", json_path, e);
+            }
+            self.written_records.insert(record_key);
+        }
+
+        // Append to skipped.jsonl (NOT violations.jsonl)
+        if !self.skip_jsonl_writers.contains_key(data_type) {
+            let jsonl_path = type_dir.join("skipped.jsonl");
+            match fs::OpenOptions::new().create(true).append(true).open(&jsonl_path) {
+                Ok(file) => {
+                    self.skip_jsonl_writers.insert(data_type.to_string(), BufWriter::new(file));
+                }
+                Err(e) => {
+                    tracing::warn!("\u{26a0}\u{fe0f} Failed to open skipped.jsonl {:?}: {}", jsonl_path, e);
+                    return;
+                }
+            }
+        }
+        let writer = self.skip_jsonl_writers.get_mut(data_type).unwrap();
+
+        let entry = serde_json::json!({
+            "record_id": record_id,
+            "reason": skip_info.reason,
+            "field": skip_info.field,
+            "field_value": skip_info.field_value,
+            "xml_file": format!("{}.xml", safe_id),
+            "json_file": format!("{}.json", safe_id),
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+        });
+        if let Err(e) = writeln!(writer, "{}", serde_json::to_string(&entry).unwrap_or_default()) {
+            tracing::warn!("\u{26a0}\u{fe0f} Failed to write skip entry: {}", e);
+        }
+    }
+
     pub fn flush(&mut self) {
         for writer in self.jsonl_writers.values_mut() {
+            let _ = writer.flush();
+        }
+        for writer in self.skip_jsonl_writers.values_mut() {
             let _ = writer.flush();
         }
     }

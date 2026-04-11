@@ -1,4 +1,4 @@
-use crate::rules::{CompiledRulesConfig, QualityReport, RulesConfig, Severity, Violation, evaluate_rules};
+use crate::rules::{CompiledRulesConfig, QualityReport, RulesConfig, Severity, Violation, apply_filters, evaluate_rules, should_skip_record};
 use serde_json::json;
 
 // ── Helper ───────────────────────────────────────────────────────────
@@ -996,4 +996,377 @@ fn test_default_rules_file() {
         assert!(!compiled.rules_for("labels").is_empty());
         assert!(!compiled.rules_for("masters").is_empty());
     }
+}
+
+// ── Task 1: YAML Schema — skip_records & filters ────────────────────
+
+#[test]
+fn test_yaml_with_skip_records_and_filters() {
+    let yaml = r#"
+skip_records:
+  artists:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry marked DO NOT USE"
+
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres are parsing artifacts"
+
+rules:
+  artists:
+    - name: name_required
+      field: name
+      condition: {type: required}
+      severity: error
+"#;
+    let config = compile_yaml(yaml);
+    assert_eq!(config.rules_for("artists").len(), 1);
+    assert_eq!(config.skip_conditions_for("artists").len(), 1);
+    assert_eq!(config.filters_for("releases").len(), 1);
+    // Check compiled values
+    let skip = &config.skip_conditions_for("artists")[0];
+    assert_eq!(skip.field, "profile");
+    assert_eq!(skip.contains_lower, "do not use");
+    let filter = &config.filters_for("releases")[0];
+    assert_eq!(filter.field, "genres.genre");
+    assert!(filter.remove_matching.is_match("123"));
+    assert!(!filter.remove_matching.is_match("Rock"));
+}
+
+#[test]
+fn test_yaml_without_skip_records_and_filters() {
+    // Backward compat: existing configs with only `rules` still work
+    let yaml = r#"
+rules:
+  artists:
+    - name: name_required
+      field: name
+      condition: {type: required}
+      severity: error
+"#;
+    let config = compile_yaml(yaml);
+    assert_eq!(config.rules_for("artists").len(), 1);
+    assert_eq!(config.skip_conditions_for("artists").len(), 0);
+    assert_eq!(config.filters_for("artists").len(), 0);
+}
+
+#[test]
+fn test_invalid_filter_regex_returns_error() {
+    let yaml = r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "[invalid("
+      reason: "bad regex"
+"#;
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let result = CompiledRulesConfig::compile(config);
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("genres.genre"), "Expected field name in error: {msg}");
+}
+
+#[test]
+fn test_skip_records_validates_data_type() {
+    let yaml = r#"
+skip_records:
+  foobar:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "test"
+"#;
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let result = CompiledRulesConfig::compile(config);
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("foobar"), "Expected unknown type name in error: {msg}");
+}
+
+// ── Task 2: Skip Record Evaluation Logic ────────────────────────────
+
+fn compile_skip_yaml(yaml: &str) -> CompiledRulesConfig {
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    CompiledRulesConfig::compile(config).unwrap()
+}
+
+#[test]
+fn test_skip_record_contains_match() {
+    let config = compile_skip_yaml(
+        r#"
+skip_records:
+  artists:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry"
+"#,
+    );
+    let record = json!({"profile": "[b]DO NOT USE.[/b] This is a junk entry."});
+    let result = should_skip_record(&config, "artists", &record);
+    assert!(result.is_some());
+    let info = result.unwrap();
+    assert_eq!(info.reason, "Upstream junk entry");
+    assert_eq!(info.field, "profile");
+    assert!(info.field_value.contains("DO NOT USE"));
+}
+
+#[test]
+fn test_skip_record_case_insensitive() {
+    let config = compile_skip_yaml(
+        r#"
+skip_records:
+  artists:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry"
+"#,
+    );
+    let record = json!({"profile": "do not use this entry"});
+    let result = should_skip_record(&config, "artists", &record);
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_skip_record_no_match() {
+    let config = compile_skip_yaml(
+        r#"
+skip_records:
+  artists:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry"
+"#,
+    );
+    let record = json!({"profile": "This is a real artist with a valid profile."});
+    let result = should_skip_record(&config, "artists", &record);
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_skip_record_missing_field() {
+    let config = compile_skip_yaml(
+        r#"
+skip_records:
+  artists:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry"
+"#,
+    );
+    let record = json!({"name": "Some Artist"});
+    let result = should_skip_record(&config, "artists", &record);
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_skip_record_no_conditions_for_data_type() {
+    let config = compile_skip_yaml(
+        r#"
+skip_records:
+  artists:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry"
+"#,
+    );
+    let record = json!({"profile": "DO NOT USE"});
+    let result = should_skip_record(&config, "releases", &record);
+    assert!(result.is_none());
+}
+
+// ── Task 3: Filter Evaluation Logic ─────────────────────────────────
+
+fn compile_filter_yaml(yaml: &str) -> CompiledRulesConfig {
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    CompiledRulesConfig::compile(config).unwrap()
+}
+
+#[test]
+fn test_filter_removes_numeric_genres() {
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres are parsing artifacts"
+"#,
+    );
+    let mut record = json!({"genres": {"genre": ["1", "1", "Electronic"]}});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].removed_count, 2);
+    assert_eq!(actions[0].removed_values, vec!["1", "1"]);
+    assert_eq!(record["genres"]["genre"], json!(["Electronic"]));
+}
+
+#[test]
+fn test_filter_preserves_non_matching() {
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    let mut record = json!({"genres": {"genre": ["Rock", "Pop"]}});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert!(actions.is_empty());
+    assert_eq!(record["genres"]["genre"], json!(["Rock", "Pop"]));
+}
+
+#[test]
+fn test_filter_empty_after_removal() {
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    let mut record = json!({"genres": {"genre": ["1", "2", "3"]}});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].removed_count, 3);
+    assert_eq!(record["genres"]["genre"], json!([]));
+}
+
+#[test]
+fn test_filter_no_match_field_missing() {
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    let mut record = json!({"title": "Some Album"});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn test_filter_no_conditions_for_data_type() {
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    let mut record = json!({"genres": {"genre": ["1", "2"]}});
+    let actions = apply_filters(&config, "artists", &mut record);
+    assert!(actions.is_empty());
+    // Record should be unchanged
+    assert_eq!(record["genres"]["genre"], json!(["1", "2"]));
+}
+
+#[test]
+fn test_filter_single_string_genre_not_array() {
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    // genre is a single string, not an array — should be left untouched
+    let mut record = json!({"genres": {"genre": "123"}});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert!(actions.is_empty());
+    assert_eq!(record["genres"]["genre"], json!("123"));
+}
+
+// ── Task 4: QualityReport — Skipped Records Tracking ────────────────
+
+#[test]
+fn test_quality_report_skipped_records() {
+    let mut report = QualityReport::new();
+    report.record_skip("artists", "66827", "Upstream junk entry marked DO NOT USE");
+    report.increment_total("artists");
+
+    assert!(report.has_skipped_records());
+    let skipped = report.skipped_records();
+    assert_eq!(skipped["artists"].len(), 1);
+    assert_eq!(skipped["artists"][0].record_id, "66827");
+
+    let summary = report.format_summary("20260401");
+    assert!(summary.contains("Skipped records:"));
+    assert!(summary.contains("artists: 1"));
+    assert!(summary.contains("66827"));
+    assert!(summary.contains("Upstream junk entry marked DO NOT USE"));
+}
+
+#[test]
+fn test_quality_report_merge_with_skips() {
+    let mut report1 = QualityReport::new();
+    report1.record_skip("artists", "100", "junk");
+
+    let mut report2 = QualityReport::new();
+    report2.record_skip("artists", "200", "junk");
+    report2.record_skip("releases", "300", "bad release");
+
+    report1.merge(report2);
+
+    assert_eq!(report1.skipped["artists"].len(), 2);
+    assert_eq!(report1.skipped["releases"].len(), 1);
+}
+
+#[test]
+fn test_quality_report_no_skips_no_section() {
+    let mut report = QualityReport::new();
+    report.record_violation("releases", "test-rule", &Severity::Error);
+    report.increment_total("releases");
+
+    assert!(!report.has_skipped_records());
+    let summary = report.format_summary("20260401");
+    assert!(!summary.contains("Skipped records:"));
+    assert!(summary.contains("releases:"));
+}
+
+// ── Task 5: FlaggedRecordWriter — write_skip Method ─────────────────
+
+#[test]
+fn test_flagged_writer_write_skip() {
+    use crate::rules::{FlaggedRecordWriter, SkipInfo};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut writer = FlaggedRecordWriter::new(temp_dir.path(), "20260401");
+
+    let skip_info = SkipInfo {
+        reason: "Upstream junk entry".to_string(),
+        field: "profile".to_string(),
+        field_value: "[b]DO NOT USE.[/b]".to_string(),
+    };
+
+    let parsed_json = json!({"id": "66827", "profile": "[b]DO NOT USE.[/b]"});
+    let raw_xml = b"<artist id=\"66827\"><profile>[b]DO NOT USE.[/b]</profile></artist>";
+
+    writer.write_skip("artists", "66827", &skip_info, Some(raw_xml.as_slice()), &parsed_json);
+    writer.flush();
+
+    let type_dir = temp_dir.path().join("flagged").join("20260401").join("artists");
+    assert!(type_dir.join("66827.xml").exists(), "XML file should be created");
+    assert!(type_dir.join("66827.json").exists(), "JSON file should be created");
+    assert!(type_dir.join("skipped.jsonl").exists(), "skipped.jsonl should be created");
+    assert!(!type_dir.join("violations.jsonl").exists(), "violations.jsonl should NOT be created");
+
+    // Verify skipped.jsonl content
+    let jsonl = std::fs::read_to_string(type_dir.join("skipped.jsonl")).unwrap();
+    assert!(jsonl.contains("Upstream junk entry"));
+    assert!(jsonl.contains("66827"));
+    assert!(jsonl.contains("profile"));
 }
