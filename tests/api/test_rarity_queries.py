@@ -696,6 +696,40 @@ class TestFetchAllRaritySignals:
         assert results[0]["collection_prevalence"] == 50.0  # neutral fallback
 
     @pytest.mark.asyncio
+    async def test_community_counts_exception_uses_fallback(self) -> None:
+        """When pool.connection raises, community counts fall back to neutral 50.0."""
+        mock_driver = MagicMock()
+
+        pressing_data = [{"release_id": "1", "pressing_count": 1, "title": "R1", "artist_name": "A1", "year": 1970}]
+        label_data = [{"release_id": "1", "label_catalog_size": 20}]
+        format_data = [{"release_id": "1", "formats": ["LP"]}]
+        temporal_data = [{"release_id": "1", "year": 1970, "latest_sibling_year": None}]
+        degree_data = [{"release_id": "1", "degree": 3}]
+        artist_degree_data = [{"release_id": "1", "artist_max_degree": 500}]
+        label_size_data = [{"release_id": "1", "label_max_catalog": 2000}]
+        genre_count_data = [{"release_id": "1", "genre_max_release_count": 50000}]
+
+        # Pool connection raises an exception
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(side_effect=RuntimeError("db connection failed"))
+
+        with patch("api.queries.rarity_queries.run_query") as mock_run:
+            mock_run.side_effect = [
+                pressing_data,
+                label_data,
+                format_data,
+                temporal_data,
+                degree_data,
+                artist_degree_data,
+                label_size_data,
+                genre_count_data,
+            ]
+            results = await fetch_all_rarity_signals(mock_driver, mock_pool)
+
+        assert len(results) == 1
+        assert results[0]["collection_prevalence"] == 50.0
+
+    @pytest.mark.asyncio
     async def test_fallback_when_no_pool(self) -> None:
         """Test that passing pool=None uses neutral fallback for all releases."""
         mock_driver = MagicMock()
