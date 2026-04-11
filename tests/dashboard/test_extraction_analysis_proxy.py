@@ -428,3 +428,92 @@ class TestEaViolationDetailInvalidSegments:
         """proxy_ea_violation_detail rejects invalid record_id with 400 (line 396)."""
         resp = proxy_client.get("/admin/api/extraction-analysis/20240101/violations/bad!record")
         assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/api/extraction-analysis/{version}/generate-ai-prompt
+# ---------------------------------------------------------------------------
+
+
+class TestEaGenerateAiPromptProxy:
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_forwards_body_correctly(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("post", 200, b'{"prompt":"analysis","ai_generated":true}')
+        mock_cls_patch.return_value = mock_instance
+
+        resp = proxy_client.post(
+            "/admin/api/extraction-analysis/20240101/generate-ai-prompt",
+            json={"rules": [{"rule": "year-out-of-range", "entity_type": "artists"}]},
+            headers={"Authorization": "Bearer tok"},
+        )
+        assert resp.status_code == 200
+        mock_instance.post.assert_called_once()
+        call_url = mock_instance.post.call_args[0][0]
+        assert "/api/admin/extraction-analysis/20240101/generate-ai-prompt" in call_url
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_uses_120s_timeout(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        """AI prompt proxy uses 120s timeout for Claude API latency."""
+        _, mock_instance = _mock_httpx("post", 200, b'{"prompt":""}')
+        mock_cls_patch.return_value = mock_instance
+
+        proxy_client.post(
+            "/admin/api/extraction-analysis/20240101/generate-ai-prompt",
+            json={"rules": [{"rule": "r1", "entity_type": "artists"}]},
+            headers={"Authorization": "Bearer tok"},
+        )
+        call_kwargs = mock_cls_patch.call_args
+        assert call_kwargs[1]["timeout"] == 120.0
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_sanitises_body(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("post", 200, b'{"prompt":""}')
+        mock_cls_patch.return_value = mock_instance
+
+        proxy_client.post(
+            "/admin/api/extraction-analysis/20240101/generate-ai-prompt",
+            json={"rules": [{"rule": "r1", "entity_type": "artists"}]},
+            headers={"Authorization": "Bearer tok"},
+        )
+        call_kwargs = mock_instance.post.call_args
+        body_bytes = call_kwargs[1].get("content", b"")
+        parsed = json.loads(body_bytes)
+        assert parsed["rules"] == [{"rule": "r1", "entity_type": "artists"}]
+
+    def test_rejects_malformed_json(self, proxy_client: TestClient) -> None:
+        resp = proxy_client.post(
+            "/admin/api/extraction-analysis/20240101/generate-ai-prompt",
+            content=b"{bad json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 400
+        assert "Malformed JSON" in resp.json()["detail"]
+
+    def test_rejects_invalid_version(self, proxy_client: TestClient) -> None:
+        resp = proxy_client.post("/admin/api/extraction-analysis/bad!version/generate-ai-prompt", json={})
+        assert resp.status_code == 400
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_returns_502_on_error(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx_error("post")
+        mock_cls_patch.return_value = mock_instance
+
+        resp = proxy_client.post(
+            "/admin/api/extraction-analysis/20240101/generate-ai-prompt",
+            json={"rules": [{"rule": "r1", "entity_type": "artists"}]},
+        )
+        assert resp.status_code == 502
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_no_body_posts_without_content_type(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        """Empty/missing body goes through the else branch."""
+        _, mock_instance = _mock_httpx("post", 200, b'{"prompt":""}')
+        mock_cls_patch.return_value = mock_instance
+
+        resp = proxy_client.post(
+            "/admin/api/extraction-analysis/20240101/generate-ai-prompt",
+            headers={"Authorization": "Bearer tok"},
+        )
+        assert resp.status_code == 200
+        call_kwargs = mock_instance.post.call_args
+        assert call_kwargs[1].get("content") is None
