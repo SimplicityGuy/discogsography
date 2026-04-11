@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::{Map, json};
 
 #[test]
 fn test_data_type_conversion() {
@@ -236,4 +237,37 @@ fn test_musicbrainz_types() {
     assert!(mb_types.contains(&DataType::Releases));
     // MusicBrainz does not have Masters
     assert!(!mb_types.contains(&DataType::Masters));
+}
+
+#[test]
+fn test_calculate_content_hash_deterministic() {
+    let record = json!({"id": "123", "name": "Test"});
+    let hash1 = calculate_content_hash(&record);
+    let hash2 = calculate_content_hash(&record);
+
+    assert_eq!(hash1, hash2);
+    assert_eq!(hash1.len(), 64); // SHA256 hex string length
+}
+
+#[test]
+fn test_calculate_content_hash_different_records() {
+    let record1 = json!({"id": "123"});
+    let record2 = json!({"id": "456"});
+
+    let hash1 = calculate_content_hash(&record1);
+    let hash2 = calculate_content_hash(&record2);
+
+    assert_ne!(hash1, hash2);
+}
+
+#[test]
+fn test_calculate_content_hash_empty_value() {
+    let null_hash = calculate_content_hash(&serde_json::Value::Null);
+    assert_eq!(null_hash.len(), 64);
+
+    let empty_obj_hash = calculate_content_hash(&serde_json::Value::Object(Map::new()));
+    assert_eq!(empty_obj_hash.len(), 64);
+
+    // Null and empty object should produce different hashes
+    assert_ne!(null_hash, empty_obj_hash);
 }

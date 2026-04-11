@@ -141,7 +141,7 @@ fn test_parse_mb_artist_line_with_discogs() {
     assert_eq!(msg.data["area"], "London");
     assert_eq!(msg.data["begin_area"], "Liverpool");
     // sha256 should be non-empty
-    assert!(!msg.sha256.is_empty());
+    assert!(msg.sha256.is_empty(), "Parser should emit empty sha256; content hash is computed post-filter");
     // Check external links include wikipedia but not discogs
     let links = msg.data["external_links"].as_array().unwrap();
     assert_eq!(links.len(), 1);
@@ -258,7 +258,7 @@ fn test_parse_mb_release_group_line_with_discogs() {
     assert_eq!(msg.data["mb_type"], "Album");
     assert_eq!(msg.data["secondary_types"], serde_json::json!(["Compilation"]));
     assert_eq!(msg.data["first_release_date"], "1969-09-26");
-    assert!(!msg.sha256.is_empty());
+    assert!(msg.sha256.is_empty(), "Parser should emit empty sha256; content hash is computed post-filter");
     let links = msg.data["external_links"].as_array().unwrap();
     assert_eq!(links.len(), 1);
     assert_eq!(links[0]["service"], "wikipedia");

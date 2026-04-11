@@ -3,7 +3,6 @@ use flate2::read::GzDecoder;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
@@ -171,13 +170,12 @@ impl XmlParser {
                         let record = ElementContext::with_attributes(&e).into_value();
                         if let Value::Object(ref obj) = record {
                             let id = obj.get("@id").or_else(|| obj.get("id")).and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
-                            let sha256 = calculate_record_hash(&record);
                             let raw_xml = if self.capture_raw_xml {
                                 Some(reconstruct_xml(target_element, &record))
                             } else {
                                 None
                             };
-                            let message = DataMessage { id, sha256, data: record.clone(), raw_xml };
+                            let message = DataMessage { id, sha256: String::new(), data: record.clone(), raw_xml };
 
                             if self.sender.send(message).await.is_err() {
                                 warn!("⚠️ Receiver dropped, stopping parsing");
@@ -224,13 +222,12 @@ impl XmlParser {
                                 }
 
                                 let final_value = Value::Object(final_obj);
-                                let sha256 = calculate_record_hash(&final_value);
                                 let raw_xml = if self.capture_raw_xml {
                                     Some(reconstruct_xml(target_element, &final_value))
                                 } else {
                                     None
                                 };
-                                let message = DataMessage { id: id.clone(), sha256, data: final_value, raw_xml };
+                                let message = DataMessage { id: id.clone(), sha256: String::new(), data: final_value, raw_xml };
 
                                 if self.sender.send(message).await.is_err() {
                                     warn!("⚠️ Receiver dropped, stopping parsing");
@@ -384,13 +381,6 @@ fn write_element<W: std::io::Write>(writer: &mut quick_xml::Writer<W>, name: &st
         _ => {}
     }
     Ok(())
-}
-
-fn calculate_record_hash(record: &Value) -> String {
-    let json_str = serde_json::to_string(record).unwrap_or_default();
-    let mut hasher = Sha256::new();
-    hasher.update(json_str.as_bytes());
-    hex::encode(hasher.finalize())
 }
 
 #[cfg(test)]

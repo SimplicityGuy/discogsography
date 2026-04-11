@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
@@ -98,13 +97,6 @@ pub fn extract_external_links(url_rels: &[Value]) -> Vec<Value> {
         .collect()
 }
 
-/// Compute SHA-256 of the raw line string.
-fn hash_line(line: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(line.as_bytes());
-    hex::encode(hasher.finalize())
-}
-
 /// Find and return the Discogs numeric ID from a slice of url-rel objects.
 ///
 /// Scans `url_rels` for an entry with `"type": "discogs"` and extracts the
@@ -129,7 +121,7 @@ pub fn parse_mb_artist_line(line: &str) -> Result<DataMessage> {
     let v: Value = serde_json::from_str(line).context("Failed to parse artist JSONL line")?;
 
     let mbid = v["id"].as_str().unwrap_or("unknown").to_string();
-    let sha256 = hash_line(line);
+    let sha256 = String::new();
 
     let all_rels = v["relations"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
     let url_rels = extract_url_rels(all_rels);
@@ -171,7 +163,7 @@ pub fn parse_mb_label_line(line: &str) -> Result<DataMessage> {
     let v: Value = serde_json::from_str(line).context("Failed to parse label JSONL line")?;
 
     let mbid = v["id"].as_str().unwrap_or("unknown").to_string();
-    let sha256 = hash_line(line);
+    let sha256 = String::new();
 
     let all_rels = v["relations"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
     let url_rels = extract_url_rels(all_rels);
@@ -207,7 +199,7 @@ pub fn parse_mb_release_line(line: &str) -> Result<DataMessage> {
     let v: Value = serde_json::from_str(line).context("Failed to parse release JSONL line")?;
 
     let mbid = v["id"].as_str().unwrap_or("unknown").to_string();
-    let sha256 = hash_line(line);
+    let sha256 = String::new();
 
     let all_rels = v["relations"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
     let url_rels = extract_url_rels(all_rels);
@@ -238,7 +230,7 @@ pub fn parse_mb_release_group_line(line: &str) -> Result<DataMessage> {
     let v: Value = serde_json::from_str(line).context("Failed to parse release-group JSONL line")?;
 
     let mbid = v["id"].as_str().unwrap_or("unknown").to_string();
-    let sha256 = hash_line(line);
+    let sha256 = String::new();
 
     let all_rels = v["relations"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
     let url_rels = extract_url_rels(all_rels);

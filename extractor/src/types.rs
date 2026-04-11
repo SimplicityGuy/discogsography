@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fmt;
 use std::str::FromStr;
 
@@ -138,6 +139,18 @@ pub enum Message {
     FileComplete(FileCompleteMessage),
     #[serde(rename = "extraction_complete")]
     ExtractionComplete(ExtractionCompleteMessage),
+}
+
+/// Compute SHA-256 hash of a JSON value's serialized form.
+///
+/// Used to produce a content hash from the post-filter data so that
+/// consumers can detect when the *consumer-facing* payload has changed,
+/// even if the upstream source (XML/JSONL) is identical.
+pub fn calculate_content_hash(data: &serde_json::Value) -> String {
+    let json_str = serde_json::to_string(data).unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(json_str.as_bytes());
+    hex::encode(hasher.finalize())
 }
 
 /// Data message containing a parsed record
