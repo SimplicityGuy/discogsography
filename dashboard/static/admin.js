@@ -1723,6 +1723,9 @@ class AdminDashboard {
         // Reset parsing errors cache for new version
         this._eaParsingErrors = null;
 
+        const spinner = document.getElementById('ea-loading-spinner');
+        if (spinner) spinner.style.display = '';
+
         // Fetch summary and parsing errors in parallel
         try {
             const [summaryResp, errorsResp] = await Promise.all([
@@ -1750,6 +1753,8 @@ class AdminDashboard {
             }
         } catch {
             // Silently fail
+        } finally {
+            if (spinner) spinner.style.display = 'none';
         }
     }
 

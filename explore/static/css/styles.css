@@ -90,12 +90,29 @@
 .b-row { border-color: var(--row-border); }
 .bg-inner { background: var(--inner-bg); border-color: var(--inner-border); }
 .mono { font-family: 'JetBrains Mono', monospace; }
-.card {
+.card, .dashboard-card {
     background-color: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     box-shadow: var(--card-shadow);
 }
+
+/* Badges — shared with dashboard */
+.badge-completed, .badge-ok {
+    background: rgba(16,185,129,0.1); color: #10B981; border: 1px solid rgba(16,185,129,0.2);
+}
+.badge-failed, .badge-error {
+    background: rgba(239,68,68,0.1); color: #EF4444; border: 1px solid rgba(239,68,68,0.2);
+}
+.badge-running, .badge-pending {
+    background: rgba(234,179,8,0.1); color: #EAB308; border: 1px solid rgba(234,179,8,0.2);
+}
+.badge-idle {
+    background: rgba(107,114,128,0.1); color: #6B7280; border: 1px solid rgba(107,114,128,0.2);
+}
+
+/* Animated spinner — shared with dashboard */
+.animate-spin { animation: spin 1s linear infinite; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
@@ -424,6 +441,26 @@
     display: flex;
 }
 
+.spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--purple-accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+/* Select/dropdown styling for theme consistency */
+select {
+    background-color: var(--card-bg);
+    color: var(--text-high);
+}
+select option {
+    background-color: var(--card-bg);
+    color: var(--text-high);
+    padding: 0.25rem 0.5rem;
+}
+
 /* Graph controls */
 .graph-controls {
     position: absolute;
@@ -739,10 +776,10 @@
 }
 
 .stat-card {
-    background: var(--card-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 0.5rem;
-    padding: 1rem 1.25rem;
+    background: var(--inner-bg);
+    border: 1px solid var(--inner-border);
+    border-radius: 10px;
+    padding: 1rem;
 }
 
 .stat-card .stat-label {
