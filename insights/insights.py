@@ -310,7 +310,8 @@ async def release_rarity(limit: int = Query(50, ge=1, le=500)) -> JSONResponse:
         await cursor.execute(
             "SELECT release_id, title, artist_name, year, rarity_score, tier, "
             "hidden_gem_score, pressing_scarcity, label_catalog, "
-            "format_rarity, temporal_scarcity, graph_isolation "
+            "format_rarity, temporal_scarcity, graph_isolation, "
+            "collection_prevalence "
             "FROM insights.release_rarity ORDER BY rarity_score DESC LIMIT %s",
             (limit,),
         )
@@ -330,6 +331,7 @@ async def release_rarity(limit: int = Query(50, ge=1, le=500)) -> JSONResponse:
             "format_rarity": r[9],
             "temporal_scarcity": r[10],
             "graph_isolation": r[11],
+            "collection_prevalence": r[12],
         }
         for r in rows
     ]
@@ -426,7 +428,15 @@ async def computation_status() -> JSONResponse:
     if not _pool:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
-    insight_types = ["artist_centrality", "genre_trends", "label_longevity", "anniversaries", "data_completeness", "release_rarity"]
+    insight_types = [
+        "artist_centrality",
+        "genre_trends",
+        "label_longevity",
+        "anniversaries",
+        "data_completeness",
+        "community_enrichment",
+        "release_rarity",
+    ]
     statuses: list[dict[str, Any]] = []
 
     async with _pool.connection() as conn, conn.cursor() as cursor:

@@ -42,6 +42,7 @@ _MOCK_RARITY_ITEMS = [
         "format_rarity": 95.0,
         "temporal_scarcity": 80.0,
         "graph_isolation": 70.0,
+        "collection_prevalence": 85.0,
     }
 ]
 

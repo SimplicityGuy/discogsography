@@ -323,8 +323,9 @@ async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
                             INSERT INTO insights.release_rarity
                                 (release_id, title, artist_name, year, rarity_score, tier,
                                  hidden_gem_score, pressing_scarcity, label_catalog,
-                                 format_rarity, temporal_scarcity, graph_isolation)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                 format_rarity, temporal_scarcity, graph_isolation,
+                                 collection_prevalence)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
                         (
                             row["release_id"],
@@ -339,6 +340,7 @@ async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
                             row.get("format_rarity"),
                             row.get("temporal_scarcity"),
                             row.get("graph_isolation"),
+                            row.get("collection_prevalence"),
                         ),
                     )
         logger.info("💾 Release rarity scores stored", count=len(results))
