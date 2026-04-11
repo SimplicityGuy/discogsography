@@ -1684,6 +1684,7 @@ class AdminDashboard {
                 }
                 this._eaRenderPipelineStatus(summary.pipeline_status || {});
                 this._eaRenderEntityCards(summary);
+                this._eaRenderSkippedCards(summary.skipped || {});
                 // Store parsing errors for use in rule breakdown
                 if (errorsResp.ok) {
                     const errData = await errorsResp.json();
@@ -1753,6 +1754,85 @@ class AdminDashboard {
             return card;
         });
         container.replaceChildren(...cards);
+    }
+
+    _eaRenderSkippedCards(skippedSummary) {
+        const section = document.getElementById('ea-skipped-section');
+        const container = document.getElementById('ea-skipped-cards');
+        const detail = document.getElementById('ea-skipped-detail');
+        if (!section || !container) return;
+
+        const entries = Object.entries(skippedSummary || {});
+        if (entries.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = '';
+        const cards = entries.map(([entityType, info]) => {
+            const card = document.createElement('div');
+            card.className = 'stat-card flex flex-col gap-1 cursor-pointer hover:ring-1 ring-current rounded';
+            card.title = 'Click to view skipped records';
+            const label = document.createElement('p');
+            label.className = 'text-[10px] font-bold uppercase tracking-wider t-muted';
+            label.textContent = entityType;
+            const count = document.createElement('p');
+            count.className = 'text-xl font-bold t-high';
+            count.textContent = (info.count ?? 0).toLocaleString();
+            const reason = document.createElement('p');
+            reason.className = 'text-[10px] t-muted truncate';
+            reason.style.maxWidth = '200px';
+            reason.textContent = (info.reasons || []).join(', ') || 'Unknown reason';
+            card.append(label, count, reason);
+
+            card.addEventListener('click', () => this._eaLoadSkippedDetail(entityType));
+            return card;
+        });
+        container.replaceChildren(...cards);
+        if (detail) detail.style.display = 'none';
+    }
+
+    async _eaLoadSkippedDetail(entityType) {
+        const sel = document.getElementById('ea-version-select');
+        const version = sel ? sel.value : '';
+        if (!version) return;
+        const detail = document.getElementById('ea-skipped-detail');
+        if (!detail) return;
+
+        try {
+            const resp = await this.authFetch(
+                `/admin/api/extraction-analysis/${encodeURIComponent(version)}/skipped?entity_type=${encodeURIComponent(entityType)}`
+            );
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const items = data.skipped || [];
+
+            if (items.length === 0) {
+                detail.style.display = 'none';
+                return;
+            }
+
+            const heading = document.createElement('p');
+            heading.className = 'text-xs font-bold t-dim uppercase tracking-wider';
+            heading.textContent = `Skipped ${entityType} (${items.length})`;
+
+            const list = document.createElement('div');
+            list.className = 'flex flex-wrap gap-2';
+
+            for (const item of items) {
+                const chip = document.createElement('button');
+                chip.className = 'text-xs px-2 py-1 rounded border b-theme t-mid hover:t-high mono';
+                chip.textContent = item.record_id;
+                chip.title = item.reason || '';
+                chip.addEventListener('click', () => this._eaShowRecordDetail(version, item.record_id));
+                list.appendChild(chip);
+            }
+
+            detail.replaceChildren(heading, list);
+            detail.style.display = '';
+        } catch {
+            // Silently fail
+        }
     }
 
     _eaRenderRuleBreakdown(byRule) {
@@ -1978,6 +2058,36 @@ class AdminDashboard {
                 });
                 tbody.replaceChildren(...rows);
             }
+
+            // Add skipped records delta below the table
+            const skippedData = data.skipped || {};
+            const skA = skippedData.version_a || {};
+            const skB = skippedData.version_b || {};
+            const allSkipEntities = new Set([...Object.keys(skA), ...Object.keys(skB)]);
+            if (allSkipEntities.size > 0) {
+                const skipRow = document.createElement('tr');
+                skipRow.className = 'border-b b-row bg-inner';
+                const tdLabel = document.createElement('td');
+                tdLabel.className = 'py-2 px-2 t-dim italic';
+                tdLabel.colSpan = 2;
+                tdLabel.textContent = '⏭️ Skipped records';
+                const totalSkA = Object.values(skA).reduce((a, b) => a + b, 0);
+                const totalSkB = Object.values(skB).reduce((a, b) => a + b, 0);
+                const tdA = document.createElement('td');
+                tdA.className = 'py-2 px-2 text-right mono t-mid';
+                tdA.textContent = totalSkA.toLocaleString();
+                const tdB = document.createElement('td');
+                tdB.className = 'py-2 px-2 text-right mono t-mid';
+                tdB.textContent = totalSkB.toLocaleString();
+                const tdD = document.createElement('td');
+                tdD.className = 'py-2 px-2 text-right mono font-bold';
+                const skipDiff = totalSkB - totalSkA;
+                tdD.textContent = (skipDiff > 0 ? '+' : '') + skipDiff.toLocaleString();
+                tdD.style.color = skipDiff > 0 ? 'var(--text-high)' : skipDiff < 0 ? '#10B981' : 'var(--text-dim)';
+                skipRow.append(tdLabel, tdA, tdB, tdD);
+                tbody.appendChild(skipRow);
+            }
+
             tableWrap.style.display = '';
         } catch {
             this.showToast('Comparison error', 'error');
