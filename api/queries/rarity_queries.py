@@ -170,11 +170,12 @@ def compute_rarity_tier(score: float) -> str:
 # ── Neo4j batch signal queries ──────────────────────────────────────
 
 
-async def fetch_all_rarity_signals(driver: Any) -> list[dict[str, Any]]:
+async def fetch_all_rarity_signals(driver: Any, pool: Any = None) -> list[dict[str, Any]]:
     """Fetch all rarity signals from Neo4j and compute scores.
 
     Executes 8 batch Cypher queries (5 signal queries + 3 quality queries),
     joins by release_id, and computes composite rarity + hidden gem scores.
+    Optionally fetches community counts (have/want) from PostgreSQL when pool is provided.
 
     Returns a list of dicts ready for PostgreSQL insertion.
     """
@@ -275,6 +276,18 @@ async def fetch_all_rarity_signals(driver: Any) -> list[dict[str, Any]]:
         formats=len(format_rows),
     )
 
+    # 9. Community counts from PostgreSQL (if pool available)
+    community_map: dict[str, tuple[int, int]] = {}
+    if pool is not None:
+        try:
+            async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute("SELECT release_id, have_count, want_count FROM insights.community_counts")
+                community_rows = await cur.fetchall()
+            community_map = {str(r["release_id"]): (r["have_count"], r["want_count"]) for r in community_rows}
+            logger.info("📊 Community counts loaded", count=len(community_map))
+        except Exception:
+            logger.warning("⚠️ Failed to load community counts, using neutral fallback")
+
     # Build lookup dicts keyed by release_id
     label_map = {r["release_id"]: r["label_catalog_size"] for r in label_rows}
     format_map = {r["release_id"]: r["formats"] for r in format_rows}
@@ -313,12 +326,16 @@ async def fetch_all_rarity_signals(driver: Any) -> list[dict[str, Any]]:
 
         isolation_score = compute_graph_isolation_score(degree_map.get(rid, 0))
 
+        have, want = community_map.get(rid, (None, None))
+        prevalence_score = compute_collection_prevalence_score(have, want or 0) if have is not None else 50.0  # neutral fallback
+
         rarity_score = (
             SIGNAL_WEIGHTS["pressing_scarcity"] * pressing_score
             + SIGNAL_WEIGHTS["label_catalog"] * label_score
             + SIGNAL_WEIGHTS["format_rarity"] * fmt_score
             + SIGNAL_WEIGHTS["temporal_scarcity"] * temporal_score
             + SIGNAL_WEIGHTS["graph_isolation"] * isolation_score
+            + SIGNAL_WEIGHTS["collection_prevalence"] * prevalence_score
         )
 
         tier = compute_rarity_tier(rarity_score)
@@ -350,6 +367,7 @@ async def fetch_all_rarity_signals(driver: Any) -> list[dict[str, Any]]:
                 "format_rarity": fmt_score,
                 "temporal_scarcity": temporal_score,
                 "graph_isolation": isolation_score,
+                "collection_prevalence": prevalence_score,
             }
         )
 
