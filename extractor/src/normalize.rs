@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 /// Remove `@` prefixes from all keys in an object and rename `#text` to `name`.
 pub fn strip_at_prefixes(value: &mut Value) {
@@ -60,13 +60,63 @@ pub fn ensure_list(value: &Value) -> Value {
     }
 }
 
+/// Insert `value` into `map` under `key` only if it is a non-empty array.
+fn insert_if_nonempty(map: &mut Map<String, Value>, key: &str, value: Value) {
+    if let Some(arr) = value.as_array()
+        && !arr.is_empty()
+    {
+        map.insert(key.to_string(), value);
+    }
+}
+
+/// Normalize a list of items from a container.
+///
+/// Uses `unwrap_container` to extract items, then for each:
+/// - objects get `strip_at_prefixes` applied
+/// - strings get wrapped as `{"id": value}`
+fn normalize_item_list(value: &Value, container_key: &str) -> Value {
+    let items = unwrap_container(value, container_key);
+    let Some(arr) = items.as_array() else {
+        return Value::Array(vec![]);
+    };
+
+    let result: Vec<Value> = arr
+        .iter()
+        .map(|item| match item {
+            Value::Object(_) => {
+                let mut cloned = item.clone();
+                strip_at_prefixes(&mut cloned);
+                cloned
+            }
+            Value::String(_) => {
+                serde_json::json!({"id": item})
+            }
+            _ => item.clone(),
+        })
+        .collect();
+
+    Value::Array(result)
+}
+
+/// Normalize an artist record.
+fn normalize_artist(record: &mut Value) {
+    let Some(map) = record.as_object_mut() else {
+        return;
+    };
+
+    for field in &["members", "groups", "aliases"] {
+        if let Some(val) = map.remove(*field) {
+            let normalized = normalize_item_list(&val, "name");
+            insert_if_nonempty(map, field, normalized);
+        }
+    }
+}
+
 /// Public entry point: normalize a record based on its data type.
 pub fn normalize_record(data_type: &str, record: &mut Value) {
     match data_type {
-        _ => {
-            // Suppress unused variable warnings until type-specific normalizers are added
-            let _ = (data_type, record);
-        }
+        "artists" => normalize_artist(record),
+        _ => {}
     }
 }
 
