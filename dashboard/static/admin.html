@@ -53,7 +53,7 @@
             font-family: 'Inter', sans-serif;
             -webkit-font-smoothing: antialiased;
         }
-        .dashboard-card {
+        .dashboard-card, .card {
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
             border-radius: 12px;
@@ -171,6 +171,8 @@
             color: var(--text-high);
             padding: 0.25rem 0.5rem;
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .animate-spin { animation: spin 1s linear infinite; }
     </style>
     <script>
         // Apply theme before first paint to prevent flash
@@ -183,7 +185,7 @@
     </script>
 </head>
 <body class="p-8">
-<div class="max-w-[1440px] mx-auto space-y-8">
+<div class="max-w-[1440px] mx-auto">
 
     <!-- ================================================================
          LOGIN FORM
@@ -222,10 +224,10 @@
     <!-- ================================================================
          ADMIN PANEL
          ================================================================ -->
-    <div id="admin-view" style="display:none">
+    <div id="admin-view" class="space-y-8" style="display:none">
 
         <!-- Header -->
-        <header class="flex items-center justify-between mb-12">
+        <header class="flex items-center justify-between mb-6">
             <div class="flex items-center space-x-5">
                 <!-- Logo -->
                 <div aria-label="Discogsography logo">
@@ -313,7 +315,7 @@
 
             <!-- Extraction Control -->
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">rocket_launch</span> Extraction Control
                     </h3>
@@ -334,7 +336,7 @@
 
             <!-- Extraction History -->
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">history</span> Extraction History
                     </h3>
@@ -364,12 +366,12 @@
         <div id="tab-dlq" class="space-y-6" style="display:none">
 
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">delete_sweep</span> Dead Letter Queue Management
                     </h3>
                 </div>
-                <div class="space-y-3" id="dlq-list"></div>
+                <div id="dlq-list"></div>
             </section>
 
         </div><!-- /tab-dlq -->
@@ -380,12 +382,12 @@
         <div id="tab-users" class="space-y-6" style="display:none">
 
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">group</span> User Activity
                     </h3>
                     <div class="flex items-center gap-3">
-                        <span id="users-loading" class="text-xs t-muted" style="display:none">Loading...</span>
+                        <span id="users-loading" class="material-symbols-outlined text-sm animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                         <span id="users-error" class="text-xs text-amber-500 flex items-center gap-1" style="display:none">
                             <span class="material-symbols-outlined text-xs">warning</span> <span id="users-error-msg"></span>
                         </span>
@@ -469,12 +471,12 @@
         <div id="tab-storage" class="space-y-6" style="display:none">
 
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">database</span> Storage Utilization
                     </h3>
                     <div class="flex items-center gap-3">
-                        <span id="storage-loading" class="text-xs t-muted" style="display:none">Loading...</span>
+                        <span id="storage-loading" class="material-symbols-outlined text-sm animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                         <span id="storage-error" class="text-xs text-amber-500 flex items-center gap-1" style="display:none">
                             <span class="material-symbols-outlined text-xs">warning</span> <span id="storage-error-msg"></span>
                         </span>
@@ -620,13 +622,13 @@
         <div id="tab-queue-trends" class="space-y-6" style="display:none">
 
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">show_chart</span> Queue Trends
                     </h3>
                     <div class="flex items-center gap-3">
                         <span class="text-[10px] t-muted">Auto-refresh 60s</span>
-                        <span id="qt-loading" class="text-xs t-muted" style="display:none">Loading...</span>
+                        <span id="qt-loading" class="material-symbols-outlined text-sm animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                         <span id="qt-error" class="text-xs text-amber-500 flex items-center gap-1" style="display:none">
                             <span class="material-symbols-outlined text-xs">warning</span> <span id="qt-error-msg"></span>
                         </span>
@@ -637,7 +639,7 @@
                 </div>
 
                 <!-- Range selector -->
-                <div class="flex items-center gap-2 mb-6">
+                <div class="flex items-center gap-2 mt-2 mb-6">
                     <span class="text-[10px] font-bold uppercase tracking-wider t-muted mr-2">Range</span>
                     <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="1h" data-tab-range="queue-trends">1h</button>
                     <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="6h" data-tab-range="queue-trends">6h</button>
@@ -678,13 +680,13 @@
         <div id="tab-system-health" class="space-y-6" style="display:none">
 
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">monitor_heart</span> System Health
                     </h3>
                     <div class="flex items-center gap-3">
                         <span class="text-[10px] t-muted">Auto-refresh 60s</span>
-                        <span id="sh-loading" class="text-xs t-muted" style="display:none">Loading...</span>
+                        <span id="sh-loading" class="material-symbols-outlined text-sm animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                         <span id="sh-error" class="text-xs text-amber-500 flex items-center gap-1" style="display:none">
                             <span class="material-symbols-outlined text-xs">warning</span> <span id="sh-error-msg"></span>
                         </span>
@@ -695,7 +697,7 @@
                 </div>
 
                 <!-- Range selector -->
-                <div class="flex items-center gap-2 mb-6">
+                <div class="flex items-center gap-2 mt-2 mb-6">
                     <span class="text-[10px] font-bold uppercase tracking-wider t-muted mr-2">Range</span>
                     <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="1h" data-tab-range="system-health">1h</button>
                     <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="6h" data-tab-range="system-health">6h</button>
@@ -753,7 +755,7 @@
         <!-- Audit Log Tab -->
         <div id="tab-audit-log" class="space-y-6" style="display:none">
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">history</span> Admin Audit Log
                     </h3>
@@ -766,7 +768,7 @@
                             <option value="dlq.purge">DLQ Purge</option>
                         </select>
                         <span class="text-[10px] t-muted">Auto-refresh 60s</span>
-                        <span id="al-loading" class="text-xs t-muted" style="display:none">Loading...</span>
+                        <span id="al-loading" class="material-symbols-outlined text-sm animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                         <span id="al-error" class="text-xs text-amber-500 flex items-center gap-1" style="display:none">
                             <span class="material-symbols-outlined text-xs">warning</span>
                             <span id="al-error-msg"></span>
@@ -830,6 +832,7 @@
                             <option value="">— select —</option>
                         </select>
                         <span id="ea-source-badge" class="text-[10px] px-2 py-0.5 rounded uppercase font-bold badge-idle" style="display:none">source</span>
+                        <span id="ea-loading-spinner" class="material-symbols-outlined text-sm animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                         <button id="ea-refresh-btn" class="text-xs font-bold uppercase tracking-wider t-dim flex items-center gap-1">
                             <span class="material-symbols-outlined text-sm">refresh</span> Refresh
                         </button>
@@ -842,7 +845,7 @@
 
                 <!-- Pipeline status cards -->
                 <section class="dashboard-card p-6 space-y-4">
-                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-3">
+                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-4">
                         <span class="material-symbols-outlined text-sm t-dim">account_tree</span> Pipeline Status
                     </h3>
                     <div id="ea-pipeline-cards" class="flex flex-wrap gap-3">
@@ -852,7 +855,7 @@
 
                 <!-- Violation summary cards (per entity type) -->
                 <section class="dashboard-card p-6 space-y-4">
-                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-3">
+                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-4">
                         <span class="material-symbols-outlined text-sm t-dim">warning</span> Violations by Entity
                     </h3>
                     <div id="ea-entity-cards" class="flex flex-wrap gap-3">
@@ -862,7 +865,7 @@
 
                 <!-- Rule breakdown table -->
                 <section class="dashboard-card p-6 space-y-4">
-                    <div class="flex items-center justify-between border-b b-theme pb-3">
+                    <div class="flex items-center justify-between border-b b-theme pb-4">
                         <h3 class="text-sm font-semibold flex items-center gap-2">
                             <span class="material-symbols-outlined text-sm t-dim">rule</span> Rule Breakdown
                         </h3>
@@ -893,7 +896,7 @@
 
                 <!-- Violations detail table (shown when View is clicked) -->
                 <section id="ea-violations-detail" class="dashboard-card p-6 space-y-4" style="display:none">
-                    <div class="flex items-center justify-between border-b b-theme pb-3">
+                    <div class="flex items-center justify-between border-b b-theme pb-4">
                         <h3 class="text-sm font-semibold flex items-center gap-2">
                             <span class="material-symbols-outlined text-sm t-dim">list_alt</span>
                             Violations — <span id="ea-vd-rule" class="mono t-dim text-xs"></span>
@@ -946,7 +949,7 @@
             <!-- ── Sub-view: Version Comparison ────────────────────── -->
             <div id="ea-view-compare" style="display:none">
                 <section class="dashboard-card p-6 space-y-4">
-                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-3">
+                    <h3 class="text-sm font-semibold flex items-center gap-2 border-b b-theme pb-4">
                         <span class="material-symbols-outlined text-sm t-dim">compare_arrows</span> Version Comparison
                     </h3>
                     <div class="flex flex-wrap items-end gap-4">
@@ -987,7 +990,7 @@
             <!-- ── Sub-view: Prompt Generator ──────────────────────── -->
             <div id="ea-view-prompt" style="display:none">
                 <section class="dashboard-card p-6 space-y-4">
-                    <div class="flex items-center justify-between border-b b-theme pb-3">
+                    <div class="flex items-center justify-between border-b b-theme pb-4">
                         <h3 class="text-sm font-semibold flex items-center gap-2">
                             <span class="material-symbols-outlined text-sm t-dim">smart_toy</span> AI Prompt Generator
                         </h3>
@@ -1018,7 +1021,7 @@
              ============================================================ -->
         <div id="ea-modal" class="fixed inset-0 z-50 flex items-center justify-center p-6" style="display:none; background:rgba(0,0,0,0.5)">
             <div class="dashboard-card p-6 w-full max-w-5xl max-h-[90vh] flex flex-col gap-4 overflow-hidden">
-                <div class="flex items-center justify-between border-b b-theme pb-3 flex-shrink-0">
+                <div class="flex items-center justify-between border-b b-theme pb-4 flex-shrink-0">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">data_object</span>
                         Record Detail — <span id="ea-modal-record-id" class="mono t-dim text-xs"></span>
@@ -1028,7 +1031,7 @@
                     </button>
                 </div>
                 <!-- Violations (always visible, compact) -->
-                <div class="flex-shrink-0 space-y-2 border-b b-theme pb-3">
+                <div class="flex-shrink-0 space-y-2 border-b b-theme pb-4">
                     <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Violations</p>
                     <ul id="ea-modal-violations" class="space-y-1 text-xs max-h-32 overflow-y-auto"></ul>
                 </div>
