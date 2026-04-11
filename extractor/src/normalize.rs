@@ -132,11 +132,37 @@ fn normalize_label(record: &mut Value) {
     }
 }
 
+/// Normalize a simple string list from a container.
+fn normalize_string_list(value: &Value, container_key: &str) -> Value {
+    unwrap_container(value, container_key)
+}
+
+/// Normalize a master record.
+fn normalize_master(record: &mut Value) {
+    strip_at_prefixes(record);
+
+    let Some(map) = record.as_object_mut() else {
+        return;
+    };
+
+    for (field, container_key, normalizer) in [
+        ("artists", "artist", normalize_item_list as fn(&Value, &str) -> Value),
+        ("genres", "genre", normalize_string_list as fn(&Value, &str) -> Value),
+        ("styles", "style", normalize_string_list as fn(&Value, &str) -> Value),
+    ] {
+        if let Some(val) = map.remove(field) {
+            let normalized = normalizer(&val, container_key);
+            insert_if_nonempty(map, field, normalized);
+        }
+    }
+}
+
 /// Public entry point: normalize a record based on its data type.
 pub fn normalize_record(data_type: &str, record: &mut Value) {
     match data_type {
         "artists" => normalize_artist(record),
         "labels" => normalize_label(record),
+        "masters" => normalize_master(record),
         _ => {}
     }
 }

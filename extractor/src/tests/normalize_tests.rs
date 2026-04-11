@@ -214,3 +214,65 @@ fn test_label_no_parent() {
     normalize_record("labels", &mut record);
     assert!(record.get("parentLabel").is_none());
 }
+
+// ── normalize_record: masters ───────────────────────────────────────
+
+#[test]
+fn test_master_basic() {
+    let mut record = json!({"@id": "5000", "title": "Album"});
+    normalize_record("masters", &mut record);
+    assert_eq!(record["id"], json!("5000"));
+    assert_eq!(record["title"], json!("Album"));
+    assert!(record.get("@id").is_none());
+}
+
+#[test]
+fn test_master_artists_container() {
+    let mut record = json!({
+        "@id": "5000",
+        "title": "Album",
+        "artists": {"artist": [{"@id": "1", "#text": "Artist A"}]}
+    });
+    normalize_record("masters", &mut record);
+    assert_eq!(record["artists"], json!([{"id": "1", "name": "Artist A"}]));
+}
+
+#[test]
+fn test_master_genres_container() {
+    let mut record = json!({
+        "@id": "5000",
+        "title": "Album",
+        "genres": {"genre": ["Rock", "Pop"]}
+    });
+    normalize_record("masters", &mut record);
+    assert_eq!(record["genres"], json!(["Rock", "Pop"]));
+}
+
+#[test]
+fn test_master_styles_single() {
+    let mut record = json!({
+        "@id": "5000",
+        "title": "Album",
+        "styles": {"style": "Ambient"}
+    });
+    normalize_record("masters", &mut record);
+    assert_eq!(record["styles"], json!(["Ambient"]));
+}
+
+#[test]
+fn test_master_single_artist() {
+    let mut record = json!({
+        "@id": "5000",
+        "title": "Album",
+        "artists": {"artist": {"@id": "1", "#text": "Solo"}}
+    });
+    normalize_record("masters", &mut record);
+    assert_eq!(record["artists"], json!([{"id": "1", "name": "Solo"}]));
+}
+
+#[test]
+fn test_master_no_genres() {
+    let mut record = json!({"@id": "5000", "title": "Album"});
+    normalize_record("masters", &mut record);
+    assert!(record.get("genres").is_none());
+}
