@@ -142,9 +142,14 @@ class AdminDashboard {
             logoutBtn.addEventListener('click', () => this.logout());
         }
 
-        const triggerBtn = document.getElementById('trigger-btn');
-        if (triggerBtn) {
-            triggerBtn.addEventListener('click', () => this.triggerExtraction());
+        const triggerDiscogsBtn = document.getElementById('trigger-discogs-btn');
+        if (triggerDiscogsBtn) {
+            triggerDiscogsBtn.addEventListener('click', () => this.triggerExtraction('discogs'));
+        }
+
+        const triggerMusicbrainzBtn = document.getElementById('trigger-musicbrainz-btn');
+        if (triggerMusicbrainzBtn) {
+            triggerMusicbrainzBtn.addEventListener('click', () => this.triggerExtraction('musicbrainz'));
         }
 
         // Tab navigation
@@ -253,6 +258,9 @@ class AdminDashboard {
 
         const eaGenerateBtn = document.getElementById('ea-generate-btn');
         if (eaGenerateBtn) eaGenerateBtn.addEventListener('click', () => this._eaGeneratePrompt());
+
+        const eaAiGenerateBtn = document.getElementById('ea-ai-generate-btn');
+        if (eaAiGenerateBtn) eaAiGenerateBtn.addEventListener('click', () => this._eaGenerateAiPrompt());
 
         const eaCopyBtn = document.getElementById('ea-copy-btn');
         if (eaCopyBtn) eaCopyBtn.addEventListener('click', () => this._eaCopyPrompt());
@@ -478,24 +486,30 @@ class AdminDashboard {
         }
     }
 
-    async triggerExtraction() {
-        const triggerBtn = document.getElementById('trigger-btn');
+    async triggerExtraction(source = 'discogs') {
+        const btnId = source === 'musicbrainz' ? 'trigger-musicbrainz-btn' : 'trigger-discogs-btn';
+        const triggerBtn = document.getElementById(btnId);
         const spinner = document.getElementById('trigger-spinner');
 
         triggerBtn.disabled = true;
         spinner.style.display = 'inline-block';
 
+        const endpoint = source === 'musicbrainz'
+            ? '/admin/api/extractions/trigger-musicbrainz'
+            : '/admin/api/extractions/trigger';
+
         try {
-            const response = await this.authFetch('/admin/api/extractions/trigger', {
+            const response = await this.authFetch(endpoint, {
                 method: 'POST',
             });
 
             if (response.ok) {
-                this.showToast('Extraction triggered successfully', 'success');
+                const label = source === 'musicbrainz' ? 'MusicBrainz' : 'Discogs';
+                this.showToast(`${label} extraction triggered successfully`, 'success');
                 await this.loadExtractions();
             } else {
                 const err = await response.json().catch(() => ({}));
-                this.showToast(err.detail || 'Failed to trigger extraction', 'error');
+                this.showToast(err.detail || `Failed to trigger ${source} extraction`, 'error');
             }
         } catch {
             this.showToast('Connection error', 'error');
@@ -517,7 +531,7 @@ class AdminDashboard {
             const type = parts[1];
 
             const row = document.createElement('div');
-            row.className = 'flex items-center justify-between py-2.5 border-b b-row';
+            row.className = 'flex items-center justify-between py-3.5 border-b b-row';
 
             const left = document.createElement('div');
             left.className = 'flex items-center gap-3';
@@ -2166,29 +2180,107 @@ class AdminDashboard {
             const lines = [
                 `# Extraction Analysis — Version ${version}`,
                 '',
-                `You are reviewing data quality violations from the Discogsography extraction pipeline.`,
-                `The following rules had violations that need investigation:`,
+                'You are debugging data quality violations from the Discogsography extraction pipeline.',
+                'For each rule below, analyze the sample records to determine:',
+                '1. Root cause — why did the validation rule fire?',
+                '2. Whether this is a data issue (upstream Discogs data) or a parser bug',
+                '3. Suggested fix or workaround',
+                '',
+                '---',
                 '',
             ];
             (data.contexts || []).forEach(ctx => {
                 lines.push(`## Rule: ${ctx.rule} (${ctx.entity_type})`);
-                lines.push(`Severity: ${ctx.severity || 'unknown'}`);
-                lines.push(`Total violations: ${ctx.total_violations || 0}`);
+                lines.push(`- **Severity:** ${ctx.severity || 'unknown'}`);
+                lines.push(`- **Total violations:** ${(ctx.total_violations || 0).toLocaleString()}`);
                 if (ctx.sample_records && ctx.sample_records.length > 0) {
                     lines.push('');
-                    lines.push('Sample records:');
                     ctx.sample_records.forEach((rec, i) => {
-                        lines.push(`### Record ${i + 1}: ${rec.record_id || '?'}`);
-                        if (rec.violations) {
-                            rec.violations.forEach(v => lines.push(`- [${v.rule}] ${v.message || ''}`));
+                        lines.push(`### Sample ${i + 1} — Record ID: ${rec.record_id || '?'}`);
+                        lines.push('');
+                        if (rec.violations && rec.violations.length > 0) {
+                            lines.push('**Violations:**');
+                            rec.violations.forEach(v => {
+                                lines.push(`- \`${v.rule}\` on field \`${v.message || '(unknown)'}\``);
+                            });
+                            lines.push('');
+                        }
+                        if (rec.parsed_json) {
+                            const jsonStr = typeof rec.parsed_json === 'string'
+                                ? rec.parsed_json
+                                : JSON.stringify(rec.parsed_json, null, 2);
+                            // Limit JSON to ~2000 chars to keep prompt manageable
+                            const trimmed = jsonStr.length > 2000
+                                ? jsonStr.slice(0, 2000) + '\n... (truncated)'
+                                : jsonStr;
+                            lines.push('**Parsed JSON:**');
+                            lines.push('```json');
+                            lines.push(trimmed);
+                            lines.push('```');
+                            lines.push('');
+                        }
+                        if (rec.raw_xml) {
+                            // Limit XML to ~2000 chars
+                            const trimmed = rec.raw_xml.length > 2000
+                                ? rec.raw_xml.slice(0, 2000) + '\n... (truncated)'
+                                : rec.raw_xml;
+                            lines.push('**Raw XML:**');
+                            lines.push('```xml');
+                            lines.push(trimmed);
+                            lines.push('```');
+                            lines.push('');
                         }
                     });
                 }
+                lines.push('---');
                 lines.push('');
             });
             if (textarea) textarea.value = lines.join('\n');
         } catch {
             if (textarea) textarea.value = 'Error generating prompt.';
+        }
+    }
+
+    async _eaGenerateAiPrompt() {
+        const sel = document.getElementById('ea-version-select');
+        const version = sel ? sel.value : '';
+        if (!version) { this.showToast('Select a version first', 'error'); return; }
+        if (this._eaSelectedRecords.size === 0) { this.showToast('Select at least one rule', 'error'); return; }
+
+        const textarea = document.getElementById('ea-prompt-textarea');
+        const aiBtn = document.getElementById('ea-ai-generate-btn');
+        const spinner = document.getElementById('ea-ai-spinner');
+
+        if (textarea) textarea.value = 'Analyzing violations with AI — this may take a moment...';
+        if (aiBtn) aiBtn.disabled = true;
+        if (spinner) spinner.style.display = '';
+
+        try {
+            const rules = Array.from(this._eaSelectedRecords.values());
+            const resp = await this.authFetch(
+                `/admin/api/extraction-analysis/${encodeURIComponent(version)}/generate-ai-prompt`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rules }),
+                },
+            );
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                const detail = err.detail || 'AI prompt generation failed';
+                if (textarea) textarea.value = `Error: ${detail}`;
+                this.showToast(detail, 'error');
+                return;
+            }
+            const data = await resp.json();
+            if (textarea) textarea.value = data.prompt || 'No prompt generated.';
+            this.showToast('AI analysis complete', 'success');
+        } catch {
+            if (textarea) textarea.value = 'Error: connection failed.';
+            this.showToast('Connection error', 'error');
+        } finally {
+            if (aiBtn) aiBtn.disabled = false;
+            if (spinner) spinner.style.display = 'none';
         }
     }
 

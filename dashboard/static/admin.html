@@ -6,6 +6,8 @@
     <title>Discogsography Admin</title>
     <link href="/tailwind.css" rel="stylesheet"/>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8" integrity="sha384-T/4KgSWuZEPozpPz7rnnp/5lDSnpY1VPJCojf1S81uTHS1E38qgLfMgVsAeRCWc4" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.5.0/build/global/luxon.min.js" integrity="sha384-CU0J6nu6GO5gWB5IqOOhPQsG0LKyjpotF5Gw502R+0zbkzKHjDWc6FKSZsNTJfLX" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js" integrity="sha384-7cWzHabR6ZyfMWzZgVssYaOQRTccHUWZ0F09AanlF3RAJ/JNyFnIma2JTYIVKEUP" crossorigin="anonymous"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
     <style>
@@ -111,6 +113,8 @@
             display: flex;
             align-items: center;
             gap: 0.375rem;
+            flex-shrink: 0;
+            white-space: nowrap;
         }
         .tab-btn:hover { background: var(--inner-bg); color: var(--text-high); }
         .tab-btn.active {
@@ -119,7 +123,7 @@
         }
 
         /* Extraction Analysis sub-view toggle buttons */
-        .ea-view-btn { color: var(--text-dim); background: transparent; border: 1px solid var(--border-color); cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem; }
+        .ea-view-btn { color: var(--text-dim); background: transparent; border: 1px solid var(--border-color); cursor: pointer; display: inline-flex; align-items: center; gap: 0.25rem; min-width: 6rem; justify-content: center; }
         .ea-view-btn:hover { color: var(--text-high); }
         .ea-view-btn.active { background: var(--purple-accent); color: #fff; border-color: var(--purple-accent); }
 
@@ -154,6 +158,18 @@
             padding: 1rem;
             flex: 1;
             min-width: 0;
+        }
+
+        /* Select/dropdown styling for dark mode */
+        select {
+            background-color: var(--card-bg);
+            color: var(--text-high);
+            min-width: 12rem;
+        }
+        select option {
+            background-color: var(--card-bg);
+            color: var(--text-high);
+            padding: 0.25rem 0.5rem;
         }
     </style>
     <script>
@@ -209,7 +225,7 @@
     <div id="admin-view" style="display:none">
 
         <!-- Header -->
-        <header class="flex items-center justify-between mb-8">
+        <header class="flex items-center justify-between mb-12">
             <div class="flex items-center space-x-5">
                 <!-- Logo -->
                 <div aria-label="Discogsography logo">
@@ -263,7 +279,7 @@
         </header>
 
         <!-- Tab Navigation -->
-        <nav class="flex items-center gap-2 mb-6 dashboard-card p-2 overflow-x-auto">
+        <nav class="flex items-center gap-2 mb-6 dashboard-card p-2 overflow-x-auto whitespace-nowrap">
             <button class="tab-btn active" data-tab="extractions" id="tab-btn-extractions">
                 <span class="material-symbols-outlined text-sm">rocket_launch</span> Extractions
             </button>
@@ -297,16 +313,20 @@
 
             <!-- Extraction Control -->
             <section class="dashboard-card p-6">
-                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <div class="flex items-center justify-between mb-4">
                     <h3 class="text-sm font-semibold flex items-center gap-2">
                         <span class="material-symbols-outlined text-sm t-dim">rocket_launch</span> Extraction Control
                     </h3>
                     <span id="extraction-status" class="text-[10px] px-2 py-0.5 rounded uppercase font-bold badge-idle">Idle</span>
                 </div>
                 <div class="flex items-center gap-4">
-                    <button id="trigger-btn"
+                    <button id="trigger-discogs-btn"
                             class="btn-purple px-6 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2">
-                        <span class="material-symbols-outlined text-sm">play_arrow</span> Trigger Extraction
+                        <span class="material-symbols-outlined text-sm">play_arrow</span> Trigger Discogs
+                    </button>
+                    <button id="trigger-musicbrainz-btn"
+                            class="btn-purple px-6 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm">play_arrow</span> Trigger MusicBrainz
                     </button>
                     <span id="trigger-spinner" class="material-symbols-outlined text-lg animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
                 </div>
@@ -349,7 +369,7 @@
                         <span class="material-symbols-outlined text-sm t-dim">delete_sweep</span> Dead Letter Queue Management
                     </h3>
                 </div>
-                <div class="space-y-2" id="dlq-list"></div>
+                <div class="space-y-3" id="dlq-list"></div>
             </section>
 
         </div><!-- /tab-dlq -->
@@ -738,7 +758,7 @@
                         <span class="material-symbols-outlined text-sm t-dim">history</span> Admin Audit Log
                     </h3>
                     <div class="flex items-center gap-3">
-                        <select id="al-action-filter" class="text-xs bg-transparent border b-theme rounded px-2 py-1">
+                        <select id="al-action-filter" class="text-xs border b-theme rounded px-2 py-1"
                             <option value="">All Actions</option>
                             <option value="admin.login">Login</option>
                             <option value="admin.logout">Logout</option>
@@ -792,13 +812,13 @@
                 <div class="flex flex-wrap items-center gap-3">
                     <!-- Sub-view buttons -->
                     <div class="flex gap-2">
-                        <button class="ea-view-btn active px-3 py-1.5 rounded text-xs font-semibold" data-ea-view="report" id="ea-btn-report">
+                        <button class="ea-view-btn active px-4 py-2 rounded text-sm font-semibold" data-ea-view="report" id="ea-btn-report">
                             <span class="material-symbols-outlined text-sm align-middle">summarize</span> Report
                         </button>
-                        <button class="ea-view-btn px-3 py-1.5 rounded text-xs font-semibold" data-ea-view="compare" id="ea-btn-compare">
+                        <button class="ea-view-btn px-4 py-2 rounded text-sm font-semibold" data-ea-view="compare" id="ea-btn-compare">
                             <span class="material-symbols-outlined text-sm align-middle">compare_arrows</span> Compare
                         </button>
-                        <button class="ea-view-btn px-3 py-1.5 rounded text-xs font-semibold" data-ea-view="prompt" id="ea-btn-prompt">
+                        <button class="ea-view-btn px-4 py-2 rounded text-sm font-semibold" data-ea-view="prompt" id="ea-btn-prompt">
                             <span class="material-symbols-outlined text-sm align-middle">smart_toy</span> Prompt
                         </button>
                     </div>
@@ -806,7 +826,7 @@
                     <!-- Version selector (report) -->
                     <div id="ea-report-controls" class="flex items-center gap-2 ml-auto">
                         <label class="text-[10px] font-bold uppercase tracking-wider t-dim" for="ea-version-select">Version</label>
-                        <select id="ea-version-select" class="text-xs bg-transparent border b-theme rounded px-2 py-1 t-high">
+                        <select id="ea-version-select" class="text-xs border b-theme rounded px-2 py-1 t-high">
                             <option value="">— select —</option>
                         </select>
                         <span id="ea-source-badge" class="text-[10px] px-2 py-0.5 rounded uppercase font-bold badge-idle" style="display:none">source</span>
@@ -882,7 +902,7 @@
                         <div class="flex items-center gap-3">
                             <label class="text-[10px] t-dim font-bold uppercase tracking-wider">
                                 Page size
-                                <select id="ea-vd-page-size" class="ml-1 text-xs bg-transparent border b-theme rounded px-2 py-0.5 t-high">
+                                <select id="ea-vd-page-size" class="ml-1 text-xs border b-theme rounded px-2 py-0.5 t-high">
                                     <option value="50">50</option>
                                     <option value="100">100</option>
                                     <option value="200">200</option>
@@ -932,13 +952,13 @@
                     <div class="flex flex-wrap items-end gap-4">
                         <div class="space-y-1">
                             <label class="text-[10px] font-bold uppercase tracking-wider t-dim" for="ea-cmp-version-a">Version A (baseline)</label>
-                            <select id="ea-cmp-version-a" class="text-xs bg-transparent border b-theme rounded px-2 py-1 t-high">
+                            <select id="ea-cmp-version-a" class="text-xs border b-theme rounded px-2 py-1 t-high">
                                 <option value="">— select —</option>
                             </select>
                         </div>
                         <div class="space-y-1">
                             <label class="text-[10px] font-bold uppercase tracking-wider t-dim" for="ea-cmp-version-b">Version B (target)</label>
-                            <select id="ea-cmp-version-b" class="text-xs bg-transparent border b-theme rounded px-2 py-1 t-high">
+                            <select id="ea-cmp-version-b" class="text-xs border b-theme rounded px-2 py-1 t-high">
                                 <option value="">— select —</option>
                             </select>
                         </div>
@@ -976,12 +996,16 @@
                             <button id="ea-generate-btn" class="btn-purple px-4 py-1.5 rounded text-xs font-semibold flex items-center gap-1">
                                 <span class="material-symbols-outlined text-sm">auto_awesome</span> Generate
                             </button>
+                            <button id="ea-ai-generate-btn" class="px-4 py-1.5 rounded text-xs font-semibold flex items-center gap-1" style="background:#10B981;color:#fff;border:none;cursor:pointer;transition:opacity 0.15s" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                                <span class="material-symbols-outlined text-sm">psychology</span> Analyze with AI
+                                <span id="ea-ai-spinner" class="material-symbols-outlined text-sm animate-spin" style="display:none">progress_activity</span>
+                            </button>
                             <button id="ea-copy-btn" class="text-xs font-bold uppercase tracking-wider t-dim flex items-center gap-1 border b-theme rounded px-3 py-1.5">
                                 <span class="material-symbols-outlined text-sm">content_copy</span> Copy
                             </button>
                         </div>
                     </div>
-                    <p class="text-xs t-muted">Select rules in the Report tab, then click Generate to build a prompt for an AI assistant.</p>
+                    <p class="text-xs t-muted">Select rules in the Report tab. <strong>Generate</strong> builds a template prompt. <strong>Analyze with AI</strong> sends data to Claude for a targeted debugging analysis.</p>
                     <textarea id="ea-prompt-textarea" class="w-full mono text-xs bg-inner border b-theme rounded p-3 t-high"
                               rows="20" readonly placeholder="Generated prompt will appear here..."></textarea>
                 </section>
@@ -1003,20 +1027,20 @@
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>
-                <div class="flex-1 overflow-y-auto space-y-4 min-h-0">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="space-y-1 min-w-0">
-                            <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Raw XML</p>
-                            <pre id="ea-modal-xml" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid" style="max-height:50vh;white-space:pre-wrap;word-break:break-all"></pre>
-                        </div>
-                        <div class="space-y-1 min-w-0">
-                            <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Parsed JSON</p>
-                            <pre id="ea-modal-json" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid" style="max-height:50vh;white-space:pre-wrap;word-break:break-all"></pre>
-                        </div>
+                <!-- Violations (always visible, compact) -->
+                <div class="flex-shrink-0 space-y-2 border-b b-theme pb-3">
+                    <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Violations</p>
+                    <ul id="ea-modal-violations" class="space-y-1 text-xs max-h-32 overflow-y-auto"></ul>
+                </div>
+                <!-- XML / JSON panes (fill remaining space equally) -->
+                <div class="flex-1 grid grid-cols-2 gap-4 min-h-0">
+                    <div class="flex flex-col min-w-0 min-h-0">
+                        <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-1 flex-shrink-0">Raw XML</p>
+                        <pre id="ea-modal-xml" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid flex-1 min-h-0" style="white-space:pre-wrap;word-break:break-all"></pre>
                     </div>
-                    <div class="space-y-2">
-                        <p class="text-[10px] font-bold uppercase tracking-wider t-muted">Violations</p>
-                        <ul id="ea-modal-violations" class="space-y-1 text-xs"></ul>
+                    <div class="flex flex-col min-w-0 min-h-0">
+                        <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-1 flex-shrink-0">Parsed JSON</p>
+                        <pre id="ea-modal-json" class="mono text-xs bg-inner border b-theme rounded p-3 overflow-auto t-mid flex-1 min-h-0" style="white-space:pre-wrap;word-break:break-all"></pre>
                     </div>
                 </div>
             </div>
