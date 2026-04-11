@@ -112,10 +112,31 @@ fn normalize_artist(record: &mut Value) {
     }
 }
 
+/// Normalize a label record.
+fn normalize_label(record: &mut Value) {
+    let Some(map) = record.as_object_mut() else {
+        return;
+    };
+
+    // parentLabel: if present and object, strip_at_prefixes
+    if let Some(parent) = map.get_mut("parentLabel")
+        && parent.is_object()
+    {
+        strip_at_prefixes(parent);
+    }
+
+    // sublabels: normalize_item_list with key "label"
+    if let Some(val) = map.remove("sublabels") {
+        let normalized = normalize_item_list(&val, "label");
+        insert_if_nonempty(map, "sublabels", normalized);
+    }
+}
+
 /// Public entry point: normalize a record based on its data type.
 pub fn normalize_record(data_type: &str, record: &mut Value) {
     match data_type {
         "artists" => normalize_artist(record),
+        "labels" => normalize_label(record),
         _ => {}
     }
 }

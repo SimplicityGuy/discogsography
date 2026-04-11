@@ -161,3 +161,56 @@ fn test_artist_no_members() {
     normalize_record("artists", &mut record);
     assert!(record.get("members").is_none());
 }
+
+// ── normalize_record: labels ────────────────────────────────────────
+
+#[test]
+fn test_label_basic() {
+    let mut record = json!({"id": "1", "name": "Warp Records"});
+    normalize_record("labels", &mut record);
+    assert_eq!(record["id"], json!("1"));
+    assert_eq!(record["name"], json!("Warp Records"));
+}
+
+#[test]
+fn test_label_parent_label() {
+    let mut record = json!({
+        "id": "1",
+        "name": "Sub Label",
+        "parentLabel": {"@id": "100", "#text": "Parent"}
+    });
+    normalize_record("labels", &mut record);
+    assert_eq!(record["parentLabel"], json!({"id": "100", "name": "Parent"}));
+}
+
+#[test]
+fn test_label_sublabels_container() {
+    let mut record = json!({
+        "id": "1",
+        "name": "Parent",
+        "sublabels": {"label": [{"@id": "10", "#text": "Sub A"}, {"@id": "20", "#text": "Sub B"}]}
+    });
+    normalize_record("labels", &mut record);
+    assert_eq!(
+        record["sublabels"],
+        json!([{"id": "10", "name": "Sub A"}, {"id": "20", "name": "Sub B"}])
+    );
+}
+
+#[test]
+fn test_label_single_sublabel() {
+    let mut record = json!({
+        "id": "1",
+        "name": "Parent",
+        "sublabels": {"label": {"@id": "10", "#text": "Sub A"}}
+    });
+    normalize_record("labels", &mut record);
+    assert_eq!(record["sublabels"], json!([{"id": "10", "name": "Sub A"}]));
+}
+
+#[test]
+fn test_label_no_parent() {
+    let mut record = json!({"id": "1", "name": "Label"});
+    normalize_record("labels", &mut record);
+    assert!(record.get("parentLabel").is_none());
+}
