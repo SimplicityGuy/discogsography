@@ -52,7 +52,7 @@ def _build_amqp_url() -> str:
     Reads the password via the standard _FILE secret convention (Docker secrets),
     falling back to plain environment variables, then to defaults.
     """
-    user = getenv("RABBITMQ_USERNAME", "discogsography")
+    user = get_secret("RABBITMQ_USERNAME", "discogsography")
     password = get_secret("RABBITMQ_PASSWORD", "discogsography")
     host = getenv("RABBITMQ_HOST", "rabbitmq")
     port = getenv("RABBITMQ_PORT", "5672")
@@ -128,7 +128,7 @@ class GraphinatorConfig:
     def from_env(cls) -> "GraphinatorConfig":
         """Create configuration from environment variables."""
         amqp_connection = _build_amqp_url()
-        neo4j_username = getenv("NEO4J_USERNAME")
+        neo4j_username = get_secret("NEO4J_USERNAME")
         neo4j_password = get_secret("NEO4J_PASSWORD")
 
         missing_vars = []
@@ -163,7 +163,7 @@ class BrainzgraphinatorConfig:
     def from_env(cls) -> "BrainzgraphinatorConfig":
         """Create configuration from environment variables."""
         amqp_connection = _build_amqp_url()
-        neo4j_username = getenv("NEO4J_USERNAME")
+        neo4j_username = get_secret("NEO4J_USERNAME")
         neo4j_password = get_secret("NEO4J_PASSWORD")
 
         missing_vars = []
@@ -455,7 +455,7 @@ class DashboardConfig:
         redis_host = _build_redis_url()
 
         # Get RabbitMQ credentials
-        rabbitmq_username = getenv("RABBITMQ_USERNAME", "discogsography")
+        rabbitmq_username = get_secret("RABBITMQ_USERNAME", "discogsography")
         rabbitmq_password = get_secret("RABBITMQ_PASSWORD", "discogsography")
 
         # CORS configuration
@@ -537,7 +537,7 @@ class ApiConfig:
         postgres_database = getenv("POSTGRES_DATABASE")
         jwt_secret_key = get_secret("JWT_SECRET_KEY")
 
-        neo4j_username = getenv("NEO4J_USERNAME")
+        neo4j_username = get_secret("NEO4J_USERNAME")
         neo4j_password = get_secret("NEO4J_PASSWORD")
 
         missing_vars = []
@@ -631,7 +631,7 @@ class ApiConfig:
             extractor_health_port=int(getenv("EXTRACTOR_HEALTH_PORT", "8000")),
             rabbitmq_management_host=getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),
             rabbitmq_management_port=int(getenv("RABBITMQ_MANAGEMENT_PORT", "15672")),
-            rabbitmq_username=getenv("RABBITMQ_USERNAME", "guest"),
+            rabbitmq_username=get_secret("RABBITMQ_USERNAME", "guest"),
             rabbitmq_password=get_secret("RABBITMQ_PASSWORD") or "guest",
             metrics_retention_days=metrics_retention_days,
             metrics_collection_interval=metrics_collection_interval,
