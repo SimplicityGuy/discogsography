@@ -129,5 +129,5 @@ async def rarity_scores(request: Request) -> JSONResponse:  # noqa: ARG001
     """Return computed rarity scores for all releases from Neo4j."""
     if not _neo4j:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
-    results = await fetch_all_rarity_signals(_neo4j)
+    results = await fetch_all_rarity_signals(_neo4j, _pool)
     return JSONResponse(content={"items": results})

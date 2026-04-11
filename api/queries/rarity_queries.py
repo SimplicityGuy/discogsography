@@ -385,7 +385,8 @@ async def get_rarity_for_release(pool: Any, release_id: int) -> dict[str, Any] |
             """
             SELECT release_id, title, artist_name, year, rarity_score, tier,
                    hidden_gem_score, pressing_scarcity, label_catalog,
-                   format_rarity, temporal_scarcity, graph_isolation
+                   format_rarity, temporal_scarcity, graph_isolation,
+                   collection_prevalence
             FROM insights.release_rarity
             WHERE release_id = %s
             """,
