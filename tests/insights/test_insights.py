@@ -66,8 +66,8 @@ class TestComputationStatusEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "statuses" in data
-        # All 6 insight types should show 'never_run' since fetchone returns None
-        assert len(data["statuses"]) == 6
+        # All 7 insight types should show 'never_run' since fetchone returns None (includes community_enrichment)
+        assert len(data["statuses"]) == 7
         for status in data["statuses"]:
             assert status["status"] == "never_run"
 
@@ -288,7 +288,7 @@ class TestReleaseRarityCacheIntegration:
 
         # Return non-empty rows so caching is triggered
         mock_cursor = mock_pg_pool.connection.return_value.__aenter__.return_value.cursor.return_value.__aenter__.return_value
-        mock_cursor.fetchall = AsyncMock(return_value=[(1, "Title", "Artist", 1990, 95.0, "ultra-rare", 80.0, 90.0, 85.0, 70.0, 60.0, 50.0)])
+        mock_cursor.fetchall = AsyncMock(return_value=[(1, "Title", "Artist", 1990, 95.0, "ultra-rare", 80.0, 90.0, 85.0, 70.0, 60.0, 50.0, 40.0)])
 
         mock_cache.get.return_value = None
 
