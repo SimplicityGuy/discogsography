@@ -606,6 +606,11 @@ pub async fn message_validator(
             );
         }
 
+        // Normalize XML-shaped JSON into flat, consumer-ready format.
+        // Runs after filters (which operate on XML shape) and before hash
+        // calculation (so hash reflects the normalized shape consumers see).
+        crate::normalize::normalize_record(data_type, &mut message.data);
+
         // Compute content hash from post-filter data so consumers detect
         // changes caused by filter updates, not just upstream XML/JSONL changes.
         message.sha256 = calculate_content_hash(&message.data);
