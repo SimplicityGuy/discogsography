@@ -626,6 +626,19 @@ async def compare_versions(
     counts_a = _count_violations(loc_a[0], version)
     counts_b = _count_violations(loc_b[0], other_version)
 
+    skipped_a = _read_skipped(loc_a[0] / "flagged" / version)
+    skipped_b = _read_skipped(loc_b[0] / "flagged" / other_version)
+
+    def _count_by_entity(skipped: list[dict[str, Any]]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for s in skipped:
+            et = s.get("entity_type", "unknown")
+            counts[et] = counts.get(et, 0) + 1
+        return counts
+
+    skipped_counts_a = _count_by_entity(skipped_a)
+    skipped_counts_b = _count_by_entity(skipped_b)
+
     all_keys = set(counts_a) | set(counts_b)
 
     improved = 0
@@ -680,6 +693,10 @@ async def compare_versions(
                 "removed_rules": removed_rules,
             },
             "details": details,
+            "skipped": {
+                "version_a": skipped_counts_a,
+                "version_b": skipped_counts_b,
+            },
         }
     )
 
