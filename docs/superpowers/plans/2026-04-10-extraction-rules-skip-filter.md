@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Extend the Rust extraction rules engine with `skip_records` and `filters` YAML config sections so known-bad upstream records are skipped and numeric genre artifacts are stripped before validation and publishing.
+**Goal:** Extend the Rust extraction rules engine with `skip_records` and `filters` YAML config sections so known-bad upstream records are skipped, numeric genre artifacts are stripped, and sentinel/implausible years are nullified before validation and publishing. Also migrate hardcoded year normalization from the Python consumers into configurable extraction rules, and create a standalone rules usage guide.
 
-**Architecture:** Two new pipeline stages (`should_skip_record` → `apply_filters`) are inserted into `message_validator` before the existing `evaluate_rules` call. New YAML sections are deserialized alongside existing `rules`, compiled at startup (substring lowercased, regex pre-compiled), and stored in `CompiledRulesConfig`. The quality report gains a skipped-records section. A new API endpoint and admin UI card surface skipped records.
+**Architecture:** Two new pipeline stages (`should_skip_record` → `apply_filters`) are inserted into `message_validator` before the existing `evaluate_rules` call. New YAML sections are deserialized alongside existing `rules`, compiled at startup (substring lowercased, regex pre-compiled), and stored in `CompiledRulesConfig`. Filters support two operations: `remove_matching` (array element removal by regex) and `nullify_when` (scalar nullification by range condition). The quality report gains a skipped-records section. A new API endpoint and admin UI card surface skipped records.
 
 **Tech Stack:** Rust (serde, regex, serde_json, serde_yaml_ng), Python (FastAPI, httpx), vanilla JS (admin dashboard)
 
@@ -1745,6 +1745,497 @@ If any formatting or lint issues were found and fixed:
 
 ```bash
 cd /home/datum/Code/discogsography
+git add -u
+git commit -m "style: fix formatting and lint issues"
+```
+
+---
+
+## Task 13: `nullify_when` Filter — YAML Schema & Types
+
+**Files:**
+- Modify: `extractor/src/rules.rs` (FilterCondition, CompiledFilterCondition)
+- Test: `extractor/src/tests/rules_tests.rs`
+
+- [ ] **Step 1: Write failing tests for nullify_when YAML parsing**
+
+Add to `extractor/src/tests/rules_tests.rs`:
+
+```rust
+#[test]
+fn test_yaml_with_nullify_when_filter() {
+    let config = compile_yaml(r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Treat sentinel and implausible years as unknown"
+rules: {}
+"#);
+    let filters = config.filters_for("masters");
+    assert_eq!(filters.len(), 1);
+}
+
+#[test]
+fn test_yaml_with_mixed_filter_types() {
+    let config = compile_yaml(r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Strip numeric genre IDs"
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Nullify sentinel years"
+rules: {}
+"#);
+    let filters = config.filters_for("releases");
+    assert_eq!(filters.len(), 2);
+}
+```
+
+- [ ] **Step 2: Update FilterCondition to be an enum supporting both types**
+
+Change `FilterCondition` from a struct to a serde-untagged enum (or use a flattened approach) so the YAML can have either `remove_matching` or `nullify_when`:
+
+```rust
+#[derive(Debug, Deserialize)]
+pub struct NullifyCondition {
+    #[serde(rename = "type")]
+    pub condition_type: String,  // "range"
+    pub below: Option<f64>,
+    pub above: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum FilterCondition {
+    RemoveMatching {
+        field: String,
+        remove_matching: String,
+        reason: String,
+    },
+    NullifyWhen {
+        field: String,
+        nullify_when: NullifyCondition,
+        reason: String,
+    },
+}
+```
+
+Update `CompiledFilterCondition` similarly:
+
+```rust
+#[derive(Debug)]
+pub enum CompiledFilterCondition {
+    RemoveMatching {
+        field: String,
+        remove_matching: Regex,
+        reason: String,
+    },
+    NullifyWhen {
+        field: String,
+        below: Option<f64>,
+        above: Option<f64>,
+        reason: String,
+    },
+}
+```
+
+- [ ] **Step 3: Update compile() to handle both filter variants**
+
+```rust
+// In the filters compilation loop:
+for condition in conditions {
+    let compiled = match condition {
+        FilterCondition::RemoveMatching { field, remove_matching, reason } => {
+            let regex = Regex::new(&remove_matching)
+                .with_context(|| format!("Invalid regex in filter for field '{}': {}", field, remove_matching))?;
+            CompiledFilterCondition::RemoveMatching { field, remove_matching: regex, reason }
+        }
+        FilterCondition::NullifyWhen { field, nullify_when, reason } => {
+            anyhow::ensure!(
+                nullify_when.condition_type == "range",
+                "Unknown nullify_when type '{}' for field '{}' — only 'range' is supported",
+                nullify_when.condition_type, field
+            );
+            anyhow::ensure!(
+                nullify_when.below.is_some() || nullify_when.above.is_some(),
+                "nullify_when for field '{}' must have at least one of 'below' or 'above'",
+                field
+            );
+            CompiledFilterCondition::NullifyWhen {
+                field, below: nullify_when.below, above: nullify_when.above, reason,
+            }
+        }
+    };
+    compiled_conditions.push(compiled);
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `cd /home/datum/Code/discogsography/.worktrees/feat-skip-filter/extractor && cargo test test_yaml_with_nullify test_yaml_with_mixed -- --nocapture 2>&1 | tail -10`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add extractor/src/rules.rs extractor/src/tests/rules_tests.rs
+git commit -m "feat(extractor): add nullify_when filter type to YAML schema and types"
+```
+
+---
+
+## Task 14: `nullify_when` Filter — Evaluation Logic in `apply_filters`
+
+**Files:**
+- Modify: `extractor/src/rules.rs` (apply_filters function)
+- Test: `extractor/src/tests/rules_tests.rs`
+
+- [ ] **Step 1: Write failing tests for nullify_when evaluation**
+
+```rust
+#[test]
+fn test_nullify_when_below_threshold() {
+    let config = compile_yaml(r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel year"
+rules: {}
+"#);
+    let mut record = json!({"year": "0", "title": "Test"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!(null));
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].reason, "Sentinel year");
+
+    // Also catches implausible years like 197, 338
+    let mut record2 = json!({"year": "197", "title": "Test"});
+    let _ = apply_filters(&config, "masters", &mut record2);
+    assert_eq!(record2["year"], json!(null));
+}
+
+#[test]
+fn test_nullify_when_normal_year_preserved() {
+    let config = compile_yaml(r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel year"
+rules: {}
+"#);
+    let mut record = json!({"year": "1995", "title": "Test"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!("1995"));
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn test_nullify_when_above_threshold() {
+    let config = compile_yaml(r#"
+filters:
+  releases:
+    - field: year
+      nullify_when:
+        type: range
+        above: 2027
+      reason: "Future year"
+rules: {}
+"#);
+    let mut record = json!({"year": "9999"});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(record["year"], json!(null));
+    assert_eq!(actions.len(), 1);
+}
+
+#[test]
+fn test_nullify_when_non_numeric_unchanged() {
+    let config = compile_yaml(r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel"
+rules: {}
+"#);
+    let mut record = json!({"year": "unknown"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!("unknown"));
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn test_nullify_when_field_already_null() {
+    let config = compile_yaml(r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel"
+rules: {}
+"#);
+    let mut record = json!({"year": null});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!(null));
+    assert!(actions.is_empty()); // No action — already null
+}
+
+#[test]
+fn test_nullify_when_missing_field() {
+    let config = compile_yaml(r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel"
+rules: {}
+"#);
+    let mut record = json!({"title": "No Year"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert!(actions.is_empty());
+    assert!(!record.as_object().unwrap().contains_key("year")); // Field not added
+}
+```
+
+- [ ] **Step 2: Update apply_filters to handle NullifyWhen variant**
+
+Extend the `apply_filters` function to match on `CompiledFilterCondition`:
+
+```rust
+pub fn apply_filters(config: &CompiledRulesConfig, data_type: &str, record: &mut Value) -> Vec<FilterAction> {
+    let conditions = config.filters_for(data_type);
+    let mut actions = Vec::new();
+
+    for condition in conditions {
+        match condition {
+            CompiledFilterCondition::RemoveMatching { field, remove_matching, reason } => {
+                // ... existing remove_matching logic (unchanged) ...
+            }
+            CompiledFilterCondition::NullifyWhen { field, below, above, reason } => {
+                // Navigate to the field value
+                if let Some(obj) = record.as_object_mut() {
+                    if let Some(val) = obj.get(field.as_str()) {
+                        // Get the string representation
+                        let str_val = match val {
+                            Value::String(s) => s.clone(),
+                            Value::Number(n) => n.to_string(),
+                            Value::Null => continue,  // already null
+                            _ => continue,
+                        };
+                        // Parse as f64
+                        if let Ok(num) = str_val.parse::<f64>() {
+                            let should_nullify =
+                                below.map_or(false, |b| num < b) ||
+                                above.map_or(false, |a| num > a);
+                            if should_nullify {
+                                obj.insert(field.clone(), Value::Null);
+                                actions.push(FilterAction {
+                                    field: field.clone(),
+                                    removed_count: 1,
+                                    removed_values: vec![str_val],
+                                    reason: reason.clone(),
+                                });
+                            }
+                        }
+                        // Non-numeric: leave unchanged
+                    }
+                }
+            }
+        }
+    }
+
+    actions
+}
+```
+
+Note: For `nullify_when`, the field path is a simple top-level key (e.g., `year`), not a dot-separated nested path. If dot-path support is needed later, it can be added.
+
+- [ ] **Step 3: Run tests**
+
+Run: `cd /home/datum/Code/discogsography/.worktrees/feat-skip-filter/extractor && cargo test test_nullify_when -- --nocapture 2>&1 | tail -15`
+Expected: All 6 nullify_when tests pass.
+
+- [ ] **Step 4: Run full test suite for regressions**
+
+Run: `cd /home/datum/Code/discogsography/.worktrees/feat-skip-filter/extractor && cargo test 2>&1 | tail -5`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add extractor/src/rules.rs extractor/src/tests/rules_tests.rs
+git commit -m "feat(extractor): implement nullify_when evaluation in apply_filters"
+```
+
+---
+
+## Task 15: Update `extraction-rules.yaml` with `nullify_when` Year Filters
+
+**Files:**
+- Modify: `extractor/extraction-rules.yaml`
+
+- [ ] **Step 1: Add nullify_when filters for year fields**
+
+In the `filters` section of `extraction-rules.yaml`, add year nullification rules for both releases and masters:
+
+```yaml
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Strip legacy numeric genre IDs from upstream data"
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Treat sentinel and implausible years as unknown"
+  masters:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Strip legacy numeric genre IDs from upstream data"
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Treat sentinel and implausible years as unknown"
+```
+
+- [ ] **Step 2: Verify the default rules file test passes**
+
+Run: `cd /home/datum/Code/discogsography/.worktrees/feat-skip-filter/extractor && cargo test test_default_rules_file -- --nocapture 2>&1 | tail -5`
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add extractor/extraction-rules.yaml
+git commit -m "feat(extractor): add nullify_when year filters to extraction-rules.yaml"
+```
+
+---
+
+## Task 16: Remove Hardcoded Year Normalization from Python Consumers
+
+**Files:**
+- Modify: `common/data_normalizer.py`
+- Modify: `tests/common/test_data_normalizer.py`
+
+- [ ] **Step 1: Update `_parse_year_int` to remove year<=0 sentinel handling**
+
+In `common/data_normalizer.py`, update `_parse_year_int` (lines 340-358). The function should still parse year strings to integers, but no longer treat `year <= 0` as `None`. The extraction rules now handle sentinel years:
+
+```python
+def _parse_year_int(value: Any) -> int | None:
+    """Parse a Discogs year value into an integer.
+
+    Handles both plain year strings ("1969", as used in Master.<year>) and
+    full/partial date strings ("1969-09-26", "1969-00-00", as used in
+    Release.<released>).  Returns None when no valid year is found or when
+    the value is null (already nullified by extraction rules for sentinel years).
+    """
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value if value != 0 else None
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        year = int(s[:4])
+        return year if year != 0 else None
+    except ValueError:
+        return None
+```
+
+Note: We keep the `year == 0 → None` check as a defensive fallback for cases where the extractor is run without updated rules. The check for `year > 0` (which also catches negative years) is narrowed to `year != 0` since negative years are not a real concern and the extraction rules handle the sentinel case.
+
+- [ ] **Step 2: Update normalizer tests**
+
+In `tests/common/test_data_normalizer.py`, update any tests that relied on the old behavior. The key change: year=0 should still return None (defensive), but the docstring/comments should note this is a fallback.
+
+- [ ] **Step 3: Run tests**
+
+Run: `cd /home/datum/Code/discogsography/.worktrees/feat-skip-filter && uv run pytest tests/common/test_data_normalizer.py -v 2>&1 | tail -15`
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add common/data_normalizer.py tests/common/test_data_normalizer.py
+git commit -m "refactor(common): simplify _parse_year_int now that extraction rules handle sentinel years"
+```
+
+---
+
+## Task 17: Create Standalone Extraction Rules Usage Guide
+
+**Files:**
+- Create: `docs/extraction-rules-guide.md`
+
+- [ ] **Step 1: Write the guide**
+
+Create `docs/extraction-rules-guide.md` covering:
+
+1. **Overview** — what extraction rules are, observation-only vs transform
+2. **Configuration** — how to specify the YAML file (CLI arg, env var)
+3. **Rules section** — all condition types (range, required, regex, length, enum) with examples
+4. **Skip records section** — contains condition with examples
+5. **Filters section** — both filter types:
+   - `remove_matching` — array element removal with regex examples
+   - `nullify_when` — scalar nullification with range examples (year sentinel use case)
+6. **Pipeline position** — diagram showing skip → filter → validate → publish flow
+7. **Quality report** — what the output looks like
+8. **Flagged records** — directory structure, JSONL format, XML/JSON capture
+9. **Default rules reference** — link to `extractor/extraction-rules.yaml`
+
+Use Mermaid for diagrams per CLAUDE.md conventions.
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add docs/extraction-rules-guide.md
+git commit -m "docs: add standalone extraction rules usage guide"
+```
+
+---
+
+## Task 18: Final Test Suite & Lint (Extended)
+
+**Files:** (no new files)
+
+- [ ] **Step 1: Run full Rust test suite**
+
+Run: `cd /home/datum/Code/discogsography/.worktrees/feat-skip-filter/extractor && cargo test 2>&1 | tail -10`
+
+- [ ] **Step 2: Run Rust lints and formatting**
+
+Run: `cd /home/datum/Code/discogsography/.worktrees/feat-skip-filter && just extractor-lint 2>&1 | tail -10 && just extractor-fmt-check 2>&1 | tail -5`
+
+- [ ] **Step 3: Run full Python test suite**
+
+Run: `cd /home/datum/Code/discogsography/.worktrees/feat-skip-filter && just test 2>&1 | tail -10`
+
+- [ ] **Step 4: Run Python lints**
+
+Run: `cd /home/datum/Code/discogsography/.worktrees/feat-skip-filter && just lint-python 2>&1 | tail -10`
+
+- [ ] **Step 5: Commit any fixes**
+
+```bash
 git add -u
 git commit -m "style: fix formatting and lint issues"
 ```
