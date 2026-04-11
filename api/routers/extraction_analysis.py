@@ -152,6 +152,30 @@ def _read_violations(flagged_version_dir: Path) -> list[dict[str, Any]]:
     return violations
 
 
+def _read_skipped(flagged_version_dir: Path) -> list[dict[str, Any]]:
+    """Read all skipped.jsonl files under *flagged_version_dir*, injecting entity_type from the directory name."""
+    skipped: list[dict[str, Any]] = []
+    for entity_dir in sorted(flagged_version_dir.iterdir()):
+        if not entity_dir.is_dir():
+            continue
+        jsonl_file = entity_dir / "skipped.jsonl"
+        if not jsonl_file.is_file():
+            continue
+        entity_type = entity_dir.name
+        for lineno, raw_line in enumerate(jsonl_file.read_text(encoding="utf-8").splitlines(), start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                logger.warning("⚠️ Skipping corrupt skipped JSONL line", file=str(jsonl_file), lineno=lineno)
+                continue
+            record["entity_type"] = entity_type
+            skipped.append(record)
+    return skipped
+
+
 def _load_state_marker(data_root: Path, version: str, source: str) -> dict[str, Any] | None:
     """Load the extraction state marker for *version* from *data_root*, or None if absent/corrupt."""
     if source == "discogs":
@@ -209,6 +233,19 @@ def _build_violation_summary(violations: list[dict[str, Any]]) -> dict[str, Any]
         "by_entity": by_entity,
         "by_rule": by_rule,
     }
+
+
+def _build_skipped_summary(skipped: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate skipped records by entity type."""
+    by_entity: dict[str, dict[str, Any]] = {}
+    for s in skipped:
+        entity_type = s.get("entity_type", "unknown")
+        entry = by_entity.setdefault(entity_type, {"count": 0, "reasons": []})
+        entry["count"] += 1
+        reason = s.get("reason", "Unknown reason")
+        if reason not in entry["reasons"]:
+            entry["reasons"].append(reason)
+    return by_entity
 
 
 # Maximum size (in bytes) for raw XML / JSON files returned in violation detail responses.
@@ -306,6 +343,9 @@ async def get_summary(
     raw_state = _load_state_marker(data_root, version, source)
     summary = _build_violation_summary(violations)
 
+    skipped = _read_skipped(flagged_version_dir)
+    skipped_summary = _build_skipped_summary(skipped)
+
     # Extract phase statuses from the state marker for the frontend.
     # The raw marker has nested objects for each phase; the dashboard
     # expects {phase_name: status_string}.
@@ -320,7 +360,45 @@ async def get_summary(
             "version": version,
             "source": source,
             "pipeline_status": pipeline_status,
+            "skipped": skipped_summary,
             **summary,
+        }
+    )
+
+
+@router.get("/api/admin/extraction-analysis/{version}/skipped")
+async def list_skipped(
+    version: str,
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+    entity_type: Annotated[str | None, Query(pattern=r"^[a-z-]+$")] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> JSONResponse:
+    """Return a paginated list of skipped records for the given extraction version."""
+    _validate_version(version)
+
+    location = _find_version_root(version)
+    if location is None:
+        raise HTTPException(status_code=404, detail=f"Version not found: {version!r}")
+
+    data_root, _source = location
+    flagged_version_dir = data_root / "flagged" / version
+
+    skipped = _read_skipped(flagged_version_dir)
+
+    if entity_type:
+        skipped = [s for s in skipped if s.get("entity_type") == entity_type]
+
+    total = len(skipped)
+    start = (page - 1) * page_size
+    page_items = skipped[start : start + page_size]
+
+    return JSONResponse(
+        content={
+            "skipped": page_items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
         }
     )
 
@@ -590,6 +668,19 @@ async def compare_versions(
     counts_a = _count_violations(loc_a[0], version)
     counts_b = _count_violations(loc_b[0], other_version)
 
+    skipped_a = _read_skipped(loc_a[0] / "flagged" / version)
+    skipped_b = _read_skipped(loc_b[0] / "flagged" / other_version)
+
+    def _count_by_entity(skipped: list[dict[str, Any]]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for s in skipped:
+            et = s.get("entity_type", "unknown")
+            counts[et] = counts.get(et, 0) + 1
+        return counts
+
+    skipped_counts_a = _count_by_entity(skipped_a)
+    skipped_counts_b = _count_by_entity(skipped_b)
+
     all_keys = set(counts_a) | set(counts_b)
 
     improved = 0
@@ -644,6 +735,10 @@ async def compare_versions(
                 "removed_rules": removed_rules,
             },
             "details": details,
+            "skipped": {
+                "version_a": skipped_counts_a,
+                "version_b": skipped_counts_b,
+            },
         }
     )
 

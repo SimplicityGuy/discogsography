@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio::signal;
+use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
@@ -172,7 +172,8 @@ async fn main() -> Result<()> {
 
 fn print_ascii_art(source: Option<&Source>) {
     let banner = match source {
-        Some(Source::MusicBrainz) => r#"
+        Some(Source::MusicBrainz) => {
+            r#"
 ██████╗ ██████╗  █████╗ ██╗███╗   ██╗███████╗
 ██╔══██╗██╔══██╗██╔══██╗██║████╗  ██║╚══███╔╝
 ██████╔╝██████╔╝███████║██║██╔██╗ ██║  ███╔╝
@@ -186,8 +187,10 @@ fn print_ascii_art(source: Option<&Source>) {
 ██╔══╝   ██╔██╗    ██║   ██╔══██╗██╔══██║██║        ██║   ██║   ██║██╔══██╗
 ███████╗██╔╝ ██╗   ██║   ██║  ██║██║  ██║╚██████╗   ██║   ╚██████╔╝██║  ██║
 ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
-"#,
-        _ => r#"
+"#
+        }
+        _ => {
+            r#"
 ██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗
 ██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██╔════╝ ██╔════╝
 ██║  ██║██║███████╗██║     ██║   ██║██║  ███╗███████╗
@@ -201,7 +204,8 @@ fn print_ascii_art(source: Option<&Source>) {
 ██╔══╝   ██╔██╗    ██║   ██╔══██╗██╔══██║██║        ██║   ██║   ██║██╔══██╗
 ███████╗██╔╝ ██╗   ██║   ██║  ██║██║  ██║╚██████╗   ██║   ╚██████╔╝██║  ██║
 ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
-"#,
+"#
+        }
     };
     println!("{banner}");
 }
@@ -213,8 +217,7 @@ fn setup_shutdown_handler() -> Arc<tokio::sync::Notify> {
     tokio::spawn(async move {
         #[cfg(unix)]
         {
-            let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate())
-                .expect("failed to install SIGTERM handler");
+            let mut sigterm = signal::unix::signal(signal::unix::SignalKind::terminate()).expect("failed to install SIGTERM handler");
             tokio::select! {
                 _ = signal::ctrl_c() => {
                     info!("🛑 Received SIGINT (Ctrl+C)");

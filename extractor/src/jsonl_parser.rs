@@ -328,11 +328,7 @@ pub fn build_mbid_discogs_map_from_file(path: &Path, entity_type: &str) -> Resul
 ///
 /// Expects relations already normalized by [`extract_entity_rels`] with
 /// `target_mbid` and `target_type` fields.
-pub fn enrich_relations(
-    relations: Vec<Value>,
-    discogs_map: &HashMap<String, i64>,
-    entity_type: &str,
-) -> Vec<Value> {
+pub fn enrich_relations(relations: Vec<Value>, discogs_map: &HashMap<String, i64>, entity_type: &str) -> Vec<Value> {
     // entity_type is plural ("artists"), target_type in relations is singular ("artist")
     let singular = match entity_type {
         "artists" => "artist",

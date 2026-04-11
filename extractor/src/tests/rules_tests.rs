@@ -1,4 +1,6 @@
-use crate::rules::{CompiledRulesConfig, QualityReport, RulesConfig, Severity, Violation, evaluate_rules};
+use crate::rules::{
+    CompiledFilterCondition, CompiledRulesConfig, QualityReport, RulesConfig, Severity, Violation, apply_filters, evaluate_rules, should_skip_record,
+};
 use serde_json::json;
 
 // ── Helper ───────────────────────────────────────────────────────────
@@ -996,4 +998,918 @@ fn test_default_rules_file() {
         assert!(!compiled.rules_for("labels").is_empty());
         assert!(!compiled.rules_for("masters").is_empty());
     }
+}
+
+// ── Task 1: YAML Schema — skip_records & filters ────────────────────
+
+#[test]
+fn test_yaml_with_skip_records_and_filters() {
+    let yaml = r#"
+skip_records:
+  artists:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry marked DO NOT USE"
+
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres are parsing artifacts"
+
+rules:
+  artists:
+    - name: name_required
+      field: name
+      condition: {type: required}
+      severity: error
+"#;
+    let config = compile_yaml(yaml);
+    assert_eq!(config.rules_for("artists").len(), 1);
+    assert_eq!(config.skip_conditions_for("artists").len(), 1);
+    assert_eq!(config.filters_for("releases").len(), 1);
+    // Check compiled values
+    let skip = &config.skip_conditions_for("artists")[0];
+    assert_eq!(skip.field, "profile");
+    assert_eq!(skip.contains_lower, "do not use");
+    let filter = &config.filters_for("releases")[0];
+    match filter {
+        CompiledFilterCondition::RemoveMatching { field, remove_matching, .. } => {
+            assert_eq!(field, "genres.genre");
+            assert!(remove_matching.is_match("123"));
+            assert!(!remove_matching.is_match("Rock"));
+        }
+        _ => panic!("Expected RemoveMatching filter"),
+    }
+}
+
+#[test]
+fn test_yaml_without_skip_records_and_filters() {
+    // Backward compat: existing configs with only `rules` still work
+    let yaml = r#"
+rules:
+  artists:
+    - name: name_required
+      field: name
+      condition: {type: required}
+      severity: error
+"#;
+    let config = compile_yaml(yaml);
+    assert_eq!(config.rules_for("artists").len(), 1);
+    assert_eq!(config.skip_conditions_for("artists").len(), 0);
+    assert_eq!(config.filters_for("artists").len(), 0);
+}
+
+#[test]
+fn test_invalid_filter_regex_returns_error() {
+    let yaml = r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "[invalid("
+      reason: "bad regex"
+"#;
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let result = CompiledRulesConfig::compile(config);
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("genres.genre"), "Expected field name in error: {msg}");
+}
+
+#[test]
+fn test_skip_records_validates_data_type() {
+    let yaml = r#"
+skip_records:
+  foobar:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "test"
+"#;
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let result = CompiledRulesConfig::compile(config);
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("foobar"), "Expected unknown type name in error: {msg}");
+}
+
+// ── Task 2: Skip Record Evaluation Logic ────────────────────────────
+
+fn compile_skip_yaml(yaml: &str) -> CompiledRulesConfig {
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    CompiledRulesConfig::compile(config).unwrap()
+}
+
+#[test]
+fn test_skip_record_contains_match() {
+    let config = compile_skip_yaml(
+        r#"
+skip_records:
+  artists:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry"
+"#,
+    );
+    let record = json!({"profile": "[b]DO NOT USE.[/b] This is a junk entry."});
+    let result = should_skip_record(&config, "artists", &record);
+    assert!(result.is_some());
+    let info = result.unwrap();
+    assert_eq!(info.reason, "Upstream junk entry");
+    assert_eq!(info.field, "profile");
+    assert!(info.field_value.contains("DO NOT USE"));
+}
+
+#[test]
+fn test_skip_record_case_insensitive() {
+    let config = compile_skip_yaml(
+        r#"
+skip_records:
+  artists:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry"
+"#,
+    );
+    let record = json!({"profile": "do not use this entry"});
+    let result = should_skip_record(&config, "artists", &record);
+    assert!(result.is_some());
+}
+
+#[test]
+fn test_skip_record_no_match() {
+    let config = compile_skip_yaml(
+        r#"
+skip_records:
+  artists:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry"
+"#,
+    );
+    let record = json!({"profile": "This is a real artist with a valid profile."});
+    let result = should_skip_record(&config, "artists", &record);
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_skip_record_missing_field() {
+    let config = compile_skip_yaml(
+        r#"
+skip_records:
+  artists:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry"
+"#,
+    );
+    let record = json!({"name": "Some Artist"});
+    let result = should_skip_record(&config, "artists", &record);
+    assert!(result.is_none());
+}
+
+#[test]
+fn test_skip_record_no_conditions_for_data_type() {
+    let config = compile_skip_yaml(
+        r#"
+skip_records:
+  artists:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry"
+"#,
+    );
+    let record = json!({"profile": "DO NOT USE"});
+    let result = should_skip_record(&config, "releases", &record);
+    assert!(result.is_none());
+}
+
+// ── Task 3: Filter Evaluation Logic ─────────────────────────────────
+
+fn compile_filter_yaml(yaml: &str) -> CompiledRulesConfig {
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    CompiledRulesConfig::compile(config).unwrap()
+}
+
+#[test]
+fn test_filter_removes_numeric_genres() {
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres are parsing artifacts"
+"#,
+    );
+    let mut record = json!({"genres": {"genre": ["1", "1", "Electronic"]}});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].removed_count, 2);
+    assert_eq!(actions[0].removed_values, vec!["1", "1"]);
+    assert_eq!(record["genres"]["genre"], json!(["Electronic"]));
+}
+
+#[test]
+fn test_filter_preserves_non_matching() {
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    let mut record = json!({"genres": {"genre": ["Rock", "Pop"]}});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert!(actions.is_empty());
+    assert_eq!(record["genres"]["genre"], json!(["Rock", "Pop"]));
+}
+
+#[test]
+fn test_filter_empty_after_removal() {
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    let mut record = json!({"genres": {"genre": ["1", "2", "3"]}});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].removed_count, 3);
+    assert_eq!(record["genres"]["genre"], json!([]));
+}
+
+#[test]
+fn test_filter_no_match_field_missing() {
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    let mut record = json!({"title": "Some Album"});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn test_filter_no_conditions_for_data_type() {
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    let mut record = json!({"genres": {"genre": ["1", "2"]}});
+    let actions = apply_filters(&config, "artists", &mut record);
+    assert!(actions.is_empty());
+    // Record should be unchanged
+    assert_eq!(record["genres"]["genre"], json!(["1", "2"]));
+}
+
+#[test]
+fn test_filter_single_string_genre_not_array() {
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    // genre is a single string, not an array — should be left untouched
+    let mut record = json!({"genres": {"genre": "123"}});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert!(actions.is_empty());
+    assert_eq!(record["genres"]["genre"], json!("123"));
+}
+
+// ── Task 4: QualityReport — Skipped Records Tracking ────────────────
+
+#[test]
+fn test_quality_report_skipped_records() {
+    let mut report = QualityReport::new();
+    report.record_skip("artists", "66827", "Upstream junk entry marked DO NOT USE");
+    report.increment_total("artists");
+
+    assert!(report.has_skipped_records());
+    let skipped = report.skipped_records();
+    assert_eq!(skipped["artists"].len(), 1);
+    assert_eq!(skipped["artists"][0].record_id, "66827");
+
+    let summary = report.format_summary("20260401");
+    assert!(summary.contains("Skipped records:"));
+    assert!(summary.contains("artists: 1"));
+    assert!(summary.contains("66827"));
+    assert!(summary.contains("Upstream junk entry marked DO NOT USE"));
+}
+
+#[test]
+fn test_quality_report_merge_with_skips() {
+    let mut report1 = QualityReport::new();
+    report1.record_skip("artists", "100", "junk");
+
+    let mut report2 = QualityReport::new();
+    report2.record_skip("artists", "200", "junk");
+    report2.record_skip("releases", "300", "bad release");
+
+    report1.merge(report2);
+
+    assert_eq!(report1.skipped["artists"].len(), 2);
+    assert_eq!(report1.skipped["releases"].len(), 1);
+}
+
+#[test]
+fn test_quality_report_no_skips_no_section() {
+    let mut report = QualityReport::new();
+    report.record_violation("releases", "test-rule", &Severity::Error);
+    report.increment_total("releases");
+
+    assert!(!report.has_skipped_records());
+    let summary = report.format_summary("20260401");
+    assert!(!summary.contains("Skipped records:"));
+    assert!(summary.contains("releases:"));
+}
+
+// ── Task 5: FlaggedRecordWriter — write_skip Method ─────────────────
+
+#[test]
+fn test_flagged_writer_write_skip() {
+    use crate::rules::{FlaggedRecordWriter, SkipInfo};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut writer = FlaggedRecordWriter::new(temp_dir.path(), "20260401");
+
+    let skip_info =
+        SkipInfo { reason: "Upstream junk entry".to_string(), field: "profile".to_string(), field_value: "[b]DO NOT USE.[/b]".to_string() };
+
+    let parsed_json = json!({"id": "66827", "profile": "[b]DO NOT USE.[/b]"});
+    let raw_xml = b"<artist id=\"66827\"><profile>[b]DO NOT USE.[/b]</profile></artist>";
+
+    writer.write_skip("artists", "66827", &skip_info, Some(raw_xml.as_slice()), &parsed_json);
+    writer.flush();
+
+    let type_dir = temp_dir.path().join("flagged").join("20260401").join("artists");
+    assert!(type_dir.join("66827.xml").exists(), "XML file should be created");
+    assert!(type_dir.join("66827.json").exists(), "JSON file should be created");
+    assert!(type_dir.join("skipped.jsonl").exists(), "skipped.jsonl should be created");
+    assert!(!type_dir.join("violations.jsonl").exists(), "violations.jsonl should NOT be created");
+
+    // Verify skipped.jsonl content
+    let jsonl = std::fs::read_to_string(type_dir.join("skipped.jsonl")).unwrap();
+    assert!(jsonl.contains("Upstream junk entry"));
+    assert!(jsonl.contains("66827"));
+    assert!(jsonl.contains("profile"));
+}
+
+// ── Task 13-14: nullify_when Filter ───────────────────────────────────
+
+#[test]
+fn test_yaml_with_nullify_when_filter() {
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Treat sentinel and implausible years as unknown"
+rules: {}
+"#,
+    );
+    let filters = config.filters_for("masters");
+    assert_eq!(filters.len(), 1);
+}
+
+#[test]
+fn test_yaml_with_mixed_filter_types() {
+    let config = compile_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Strip numeric genre IDs"
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Nullify sentinel years"
+rules: {}
+"#,
+    );
+    let filters = config.filters_for("releases");
+    assert_eq!(filters.len(), 2);
+}
+
+#[test]
+fn test_nullify_when_invalid_type_returns_error() {
+    let yaml = r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: exact
+        below: 0
+      reason: "Bad type"
+rules: {}
+"#;
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let result = CompiledRulesConfig::compile(config);
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("exact"), "Expected type name in error: {msg}");
+}
+
+#[test]
+fn test_nullify_when_missing_bounds_returns_error() {
+    let yaml = r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+      reason: "No bounds"
+rules: {}
+"#;
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let result = CompiledRulesConfig::compile(config);
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("below") || msg.contains("above"), "Expected bounds mention in error: {msg}");
+}
+
+#[test]
+fn test_nullify_when_below_threshold() {
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel year"
+rules: {}
+"#,
+    );
+    // year=0 (sentinel) -> null
+    let mut record = json!({"year": "0", "title": "Test"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!(null));
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].reason, "Sentinel year");
+    assert_eq!(actions[0].removed_values, vec!["0"]);
+
+    // year=197 (implausible) -> null
+    let mut record2 = json!({"year": "197", "title": "Test"});
+    let actions2 = apply_filters(&config, "masters", &mut record2);
+    assert_eq!(record2["year"], json!(null));
+    assert_eq!(actions2.len(), 1);
+
+    // year=338 (implausible) -> null
+    let mut record3 = json!({"year": "338", "title": "Test"});
+    let actions3 = apply_filters(&config, "masters", &mut record3);
+    assert_eq!(record3["year"], json!(null));
+    assert_eq!(actions3.len(), 1);
+}
+
+#[test]
+fn test_nullify_when_normal_year_preserved() {
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel year"
+rules: {}
+"#,
+    );
+    let mut record = json!({"year": "1995", "title": "Test"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!("1995"));
+    assert!(actions.is_empty());
+
+    // Boundary: 1860 is exactly at the threshold — should NOT be nullified (below means <, not <=)
+    let mut record2 = json!({"year": "1860", "title": "Test"});
+    let actions2 = apply_filters(&config, "masters", &mut record2);
+    assert_eq!(record2["year"], json!("1860"));
+    assert!(actions2.is_empty());
+
+    // Just below boundary: 1859 -> null
+    let mut record3 = json!({"year": "1859", "title": "Test"});
+    let actions3 = apply_filters(&config, "masters", &mut record3);
+    assert_eq!(record3["year"], json!(null));
+    assert_eq!(actions3.len(), 1);
+}
+
+#[test]
+fn test_nullify_when_above_threshold() {
+    let config = compile_yaml(
+        r#"
+filters:
+  releases:
+    - field: year
+      nullify_when:
+        type: range
+        above: 2027
+      reason: "Future year"
+rules: {}
+"#,
+    );
+    let mut record = json!({"year": "9999"});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(record["year"], json!(null));
+    assert_eq!(actions.len(), 1);
+
+    // Boundary: 2027 should NOT be nullified
+    let mut record2 = json!({"year": "2027"});
+    let actions2 = apply_filters(&config, "releases", &mut record2);
+    assert_eq!(record2["year"], json!("2027"));
+    assert!(actions2.is_empty());
+}
+
+#[test]
+fn test_nullify_when_non_numeric_unchanged() {
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel"
+rules: {}
+"#,
+    );
+    let mut record = json!({"year": "unknown"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!("unknown"));
+    assert!(actions.is_empty());
+}
+
+#[test]
+fn test_nullify_when_field_already_null() {
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel"
+rules: {}
+"#,
+    );
+    let mut record = json!({"year": null});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!(null));
+    assert!(actions.is_empty()); // No action — already null
+}
+
+#[test]
+fn test_nullify_when_missing_field() {
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel"
+rules: {}
+"#,
+    );
+    let mut record = json!({"title": "No Year"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert!(actions.is_empty());
+    assert!(!record.as_object().unwrap().contains_key("year"));
+}
+
+#[test]
+fn test_nullify_when_combined_with_remove_matching() {
+    let config = compile_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Strip numeric genre IDs"
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel year"
+rules: {}
+"#,
+    );
+    let mut record = json!({
+        "genres": {"genre": ["1", "Electronic"]},
+        "year": "0"
+    });
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(record["genres"]["genre"], json!(["Electronic"]));
+    assert_eq!(record["year"], json!(null));
+    assert_eq!(actions.len(), 2);
+}
+
+// ── Coverage gap: format_summary with skipped records but NO violations ──
+
+#[test]
+fn test_quality_report_format_summary_skipped_only_no_violations() {
+    // Exercises the path where has_violations() is false but has_skipped_records() is true.
+    // The early return at line 548-549 should NOT fire; we should get the skipped section
+    // but no violation summary lines (no increment_total, no record_violation).
+    let mut report = QualityReport::new();
+    report.record_skip("artists", "66827", "Upstream junk entry marked DO NOT USE");
+    report.record_skip("releases", "99999", "Bad release data");
+
+    assert!(!report.has_violations());
+    assert!(report.has_skipped_records());
+
+    let summary = report.format_summary("20260401");
+    assert!(!summary.contains("No data quality violations"), "Should NOT hit early return");
+    assert!(summary.contains("Skipped records:"));
+    assert!(summary.contains("artists: 1"));
+    assert!(summary.contains("66827"));
+    assert!(summary.contains("releases: 1"));
+    assert!(summary.contains("99999"));
+}
+
+// ── Coverage gap: write_skip deduplication path ─────────────────────────
+
+#[test]
+fn test_flagged_writer_write_skip_deduplication() {
+    use crate::rules::{FlaggedRecordWriter, SkipInfo};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut writer = FlaggedRecordWriter::new(temp_dir.path(), "20260401");
+
+    let skip_info =
+        SkipInfo { reason: "Upstream junk entry".to_string(), field: "profile".to_string(), field_value: "[b]DO NOT USE.[/b]".to_string() };
+
+    let parsed_json = json!({"id": "66827", "profile": "[b]DO NOT USE.[/b]"});
+    let raw_xml = b"<artist id=\"66827\"><profile>[b]DO NOT USE.[/b]</profile></artist>";
+
+    // First write — creates XML, JSON, and skipped.jsonl entry
+    writer.write_skip("artists", "66827", &skip_info, Some(raw_xml.as_slice()), &parsed_json);
+    // Second write with same record_id — should hit the dedup path (written_records.contains)
+    writer.write_skip("artists", "66827", &skip_info, Some(raw_xml.as_slice()), &parsed_json);
+    writer.flush();
+
+    let type_dir = temp_dir.path().join("flagged").join("20260401").join("artists");
+    assert!(type_dir.join("66827.xml").exists());
+    assert!(type_dir.join("66827.json").exists());
+
+    // skipped.jsonl should have TWO entries (dedup only affects file writes, not JSONL)
+    let jsonl = std::fs::read_to_string(type_dir.join("skipped.jsonl")).unwrap();
+    let lines: Vec<&str> = jsonl.trim().lines().collect();
+    assert_eq!(lines.len(), 2, "Should have two JSONL entries despite file dedup");
+}
+
+// ── Coverage gap: write_skip without raw_xml ────────────────────────────
+
+#[test]
+fn test_flagged_writer_write_skip_without_raw_xml() {
+    use crate::rules::{FlaggedRecordWriter, SkipInfo};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut writer = FlaggedRecordWriter::new(temp_dir.path(), "20260401");
+
+    let skip_info = SkipInfo { reason: "Bad entry".to_string(), field: "profile".to_string(), field_value: "junk".to_string() };
+
+    let parsed_json = json!({"id": "12345", "profile": "junk"});
+
+    // Pass None for raw_xml — should skip XML file creation but still write JSON
+    writer.write_skip("artists", "12345", &skip_info, None, &parsed_json);
+    writer.flush();
+
+    let type_dir = temp_dir.path().join("flagged").join("20260401").join("artists");
+    assert!(!type_dir.join("12345.xml").exists(), "XML should NOT be created when raw_xml is None");
+    assert!(type_dir.join("12345.json").exists(), "JSON should still be created");
+    assert!(type_dir.join("skipped.jsonl").exists());
+}
+
+// ── Coverage gap: apply_filters NullifyWhen with Value::Number ──────────
+
+#[test]
+fn test_nullify_when_with_json_number_value() {
+    // Existing tests use string years ("0", "2025"). This tests the Value::Number branch
+    // at line 449 in apply_filters.
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel year"
+rules: {}
+"#,
+    );
+    // Year as a JSON number (not string) below threshold -> null
+    let mut record = json!({"year": 0, "title": "Test"});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert_eq!(record["year"], json!(null));
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].reason, "Sentinel year");
+
+    // Year as a JSON number within range -> preserved
+    let mut record2 = json!({"year": 1995, "title": "Test"});
+    let actions2 = apply_filters(&config, "masters", &mut record2);
+    assert_eq!(record2["year"], json!(1995));
+    assert!(actions2.is_empty());
+}
+
+// ── Coverage gap: NullifyWhen catch-all (boolean/array) ─────────────────
+
+#[test]
+fn test_nullify_when_with_boolean_value_continues() {
+    // A boolean field value should hit the `_ => continue` catch-all at line 452.
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel year"
+rules: {}
+"#,
+    );
+    let mut record = json!({"year": true});
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert!(actions.is_empty());
+    assert_eq!(record["year"], json!(true), "Boolean value should be left unchanged");
+}
+
+#[test]
+fn test_nullify_when_with_array_value_continues() {
+    // An array field value should also hit the `_ => continue` catch-all.
+    let config = compile_yaml(
+        r#"
+filters:
+  releases:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel"
+rules: {}
+"#,
+    );
+    let mut record = json!({"year": [1990, 1991]});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert!(actions.is_empty());
+    assert_eq!(record["year"], json!([1990, 1991]), "Array value should be left unchanged");
+}
+
+// ── Coverage gap: RemoveMatching where parent is not an object ──────────
+
+#[test]
+fn test_remove_matching_parent_not_object() {
+    // When the parent resolves but is not a Value::Object (e.g., it's an array),
+    // should hit the `_ => continue` at line 418.
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    // genres is an array, not an object — pointer resolves to the array but it's not an Object
+    let mut record = json!({"genres": ["Rock", "Pop"]});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert!(actions.is_empty());
+    assert_eq!(record["genres"], json!(["Rock", "Pop"]));
+}
+
+// ── Coverage gap: RemoveMatching with field at root level ───────────────
+
+#[test]
+fn test_remove_matching_at_root_level() {
+    // When segments has only one element, parent_segments is empty and we operate on root.
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: tags
+      remove_matching: "^\\d+$"
+      reason: "Numeric tags"
+"#,
+    );
+    let mut record = json!({"tags": ["1", "Rock", "42"]});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].removed_count, 2);
+    assert_eq!(record["tags"], json!(["Rock"]));
+}
+
+// ── Coverage gap: RemoveMatching deeper nesting (3 levels) ──────────────
+
+#[test]
+fn test_remove_matching_deep_nesting() {
+    // Tests pointer navigation with multiple parent segments (e.g., a.b.c).
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: data.genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Deep numeric genres"
+"#,
+    );
+    let mut record = json!({"data": {"genres": {"genre": ["1", "Rock", "2"]}}});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].removed_count, 2);
+    assert_eq!(record["data"]["genres"]["genre"], json!(["Rock"]));
+}
+
+// ── Coverage gap: RemoveMatching where leaf is not an array ─────────────
+
+#[test]
+fn test_remove_matching_leaf_not_array() {
+    // When the leaf key exists in the parent object but isn't an array,
+    // should hit `_ => continue` at line 416.
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    // genre is null, not an array
+    let mut record = json!({"genres": {"genre": null}});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert!(actions.is_empty());
+}
+
+// ── Coverage gap: NullifyWhen on non-object record ──────────────────────
+
+#[test]
+fn test_nullify_when_record_not_object() {
+    // When the top-level record is not an object (e.g., an array), should hit
+    // `None => continue` at line 439.
+    let config = compile_yaml(
+        r#"
+filters:
+  masters:
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Sentinel"
+rules: {}
+"#,
+    );
+    let mut record = json!([{"year": "0"}]);
+    let actions = apply_filters(&config, "masters", &mut record);
+    assert!(actions.is_empty());
+}
+
+// ── Coverage gap: filters validates data type ───────────────────────────
+
+#[test]
+fn test_filters_validates_data_type() {
+    let yaml = r#"
+filters:
+  foobar:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "test"
+"#;
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let result = CompiledRulesConfig::compile(config);
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("foobar"), "Expected unknown type name in error: {msg}");
 }

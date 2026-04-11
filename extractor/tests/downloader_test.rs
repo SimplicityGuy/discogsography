@@ -3,9 +3,9 @@
 
 use extractor::discogs_downloader::Downloader;
 use extractor::types::{LocalFileInfo, S3FileInfo};
+use hex;
 use std::collections::HashMap;
 use tempfile::TempDir;
-use hex;
 
 use tokio::fs;
 
@@ -426,12 +426,7 @@ async fn test_list_s3_files_scraping_with_valid_data() {
         <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
         <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">CHECKSUM</a>
     </body></html>"#;
-    let _year_mock = server
-        .mock("GET", "/?prefix=data%2F2026%2F")
-        .with_status(200)
-        .with_body(year_html)
-        .create_async()
-        .await;
+    let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(year_html).create_async().await;
 
     // 2025 year page — empty (no files)
     let _year2025_mock = server
@@ -520,13 +515,7 @@ async fn test_list_s3_files_caching() {
         <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">file</a>
         <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">file</a>
     </body></html>"#;
-    let _year_mock = server
-        .mock("GET", "/?prefix=data%2F2026%2F")
-        .with_status(200)
-        .with_body(year_html)
-        .expect(1)
-        .create_async()
-        .await;
+    let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(year_html).expect(1).create_async().await;
 
     let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
 
@@ -560,12 +549,7 @@ async fn test_download_discogs_data_with_mockito() {
         <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">file</a>
         <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">file</a>
     </body></html>"#;
-    let _year_mock = server
-        .mock("GET", "/?prefix=data%2F2026%2F")
-        .with_status(200)
-        .with_body(year_html)
-        .create_async()
-        .await;
+    let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(year_html).create_async().await;
 
     // Create compressed gzipped files for download
     use flate2::Compression;

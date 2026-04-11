@@ -15,7 +15,7 @@ use crate::config::ExtractorConfig;
 use crate::discogs_downloader::{DataSource, Downloader};
 use crate::message_queue::{MessagePublisher, MessageQueue};
 use crate::parser::XmlParser;
-use crate::rules::{CompiledRulesConfig, FlaggedRecordWriter, QualityReport, Severity, evaluate_rules};
+use crate::rules::{CompiledRulesConfig, FlaggedRecordWriter, QualityReport, Severity, apply_filters, evaluate_rules, should_skip_record};
 use crate::state_marker::{PhaseStatus, ProcessingDecision, StateMarker};
 use crate::types::{DataMessage, DataType, ExtractionProgress};
 
@@ -586,8 +586,26 @@ pub async fn message_validator(
     let mut report = QualityReport::new();
     let mut writer = FlaggedRecordWriter::new(discogs_root, version);
 
-    while let Some(message) = receiver.recv().await {
+    while let Some(mut message) = receiver.recv().await {
         report.increment_total(data_type);
+
+        // Skip check — records matching skip conditions are not forwarded
+        if let Some(skip_info) = should_skip_record(&rules, data_type, &message.data) {
+            info!("⏭️ Skipping record {} ({}): {}", message.id, data_type, skip_info.reason);
+            report.record_skip(data_type, &message.id, &skip_info.reason);
+            writer.write_skip(data_type, &message.id, &skip_info, message.raw_xml.as_deref(), &message.data);
+            continue;
+        }
+
+        // Apply filters — mutate message data in-place before validation
+        let filter_actions = apply_filters(&rules, data_type, &mut message.data);
+        for action in &filter_actions {
+            info!(
+                "🔧 Filtered {} value(s) from {} in {} {}: removed {:?}, reason: {}",
+                action.removed_count, action.field, data_type, message.id, action.removed_values, action.reason
+            );
+        }
+
         let violations = evaluate_rules(&rules, data_type, &message.data);
         for violation in &violations {
             report.record_violation(data_type, &violation.rule_name, &violation.severity);

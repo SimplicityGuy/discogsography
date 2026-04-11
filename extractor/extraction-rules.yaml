@@ -5,6 +5,43 @@
 # NOTE: The 'max' value in year-range rules is static and should be updated
 # periodically (e.g., bump to current_year + 1 at the start of each year).
 
+# Records matching ANY condition are skipped entirely —
+# not validated, not published to consumers.
+# Logged in the quality report and skipped.jsonl with reason.
+skip_records:
+  artists:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry marked DO NOT USE"
+  labels:
+    - field: profile
+      contains: "DO NOT USE"
+      reason: "Upstream junk entry marked DO NOT USE"
+
+# Field transforms applied before validation and publishing.
+# Two types:
+#   remove_matching — strip array elements matching a regex
+#   nullify_when    — set a scalar field to null if it meets a range condition
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Strip legacy numeric genre IDs from upstream data"
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Treat sentinel and implausible years as unknown"
+  masters:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Strip legacy numeric genre IDs from upstream data"
+    - field: year
+      nullify_when:
+        type: range
+        below: 1860
+      reason: "Treat sentinel and implausible years as unknown"
+
 rules:
   releases:
     - name: year-out-of-range

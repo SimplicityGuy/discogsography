@@ -281,9 +281,7 @@ impl Downloader {
             let data_files: Vec<_> = files_for_id
                 .iter()
                 .filter(|f| f.name.ends_with(".xml.gz"))
-                .map(|f| {
-                    S3FileInfo { name: f.name.clone(), size: f.size }
-                })
+                .map(|f| S3FileInfo { name: f.name.clone(), size: f.size })
                 .collect();
 
             debug!("Version {} has {} data files", id, data_files.len());

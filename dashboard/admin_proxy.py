@@ -405,6 +405,35 @@ async def proxy_ea_violation_detail(version: str, record_id: str, request: Reque
     return _ok_response(resp)
 
 
+@router.get("/admin/api/extraction-analysis/{version}/skipped")
+async def proxy_ea_skipped(
+    version: str,
+    request: Request,
+    entity_type: str | None = Query(default=None, pattern=r"^[a-z-]+$"),
+    page: int | None = Query(default=None, ge=1),
+    page_size: int | None = Query(default=None, ge=1, le=200),
+) -> Response:
+    """Proxy extraction analysis skipped records list with optional query param filtering."""
+    if not _validate_path_segment(version):
+        return Response(content=b'{"detail":"Invalid version"}', status_code=400, media_type="application/json")
+    url = _build_url(f"/api/admin/extraction-analysis/{version}/skipped")
+    params: dict[str, str] = {}
+    if entity_type is not None:
+        params["entity_type"] = entity_type
+    if page is not None:
+        params["page"] = str(page)
+    if page_size is not None:
+        params["page_size"] = str(page_size)
+    headers = _auth_headers(request)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=headers, params=params)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
 @router.get("/admin/api/extraction-analysis/{version}/violations")
 async def proxy_ea_violations(
     version: str,

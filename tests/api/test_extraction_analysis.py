@@ -1249,3 +1249,156 @@ class TestCompareVersionsEdgeCases:
         # Must NOT be counted as a new rule
         assert data["summary"]["new_rules"] == 0
         assert data["summary"]["worsened"] == 1
+
+    def test_compare_includes_skipped_counts(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Compare response includes skipped counts per entity type (lines 677-678)."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_dir(tmp_path, "20260101", "artists")
+        _make_flagged_dir(tmp_path, "20260201", "artists")
+        _make_skipped_file(tmp_path, "20260101", "artists")
+        _make_skipped_file(
+            tmp_path,
+            "20260201",
+            "artists",
+            [
+                {"record_id": "100", "reason": "junk", "field": "name", "field_value": "X"},
+                {"record_id": "101", "reason": "junk", "field": "name", "field_value": "Y"},
+            ],
+        )
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/compare/20260201",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "skipped" in data
+        assert data["skipped"]["version_a"]["artists"] == 1
+        assert data["skipped"]["version_b"]["artists"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Task 8: Skipped records helpers & endpoints
+# ---------------------------------------------------------------------------
+
+
+def _make_skipped_file(base: Path, version: str, entity_type: str, skipped: list[dict] | None = None) -> None:
+    """Create a flagged directory with a skipped.jsonl file."""
+    entity_dir = base / "flagged" / version / entity_type
+    entity_dir.mkdir(parents=True, exist_ok=True)
+    entries = skipped or [
+        {"record_id": "66827", "reason": "Upstream junk entry marked DO NOT USE", "field": "profile", "field_value": "[b]DO NOT USE.[/b]"}
+    ]
+    (entity_dir / "skipped.jsonl").write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+
+class TestSkippedEndpoint:
+    def test_requires_auth(self, test_client: TestClient) -> None:
+        resp = test_client.get("/api/admin/extraction-analysis/20260401/skipped")
+        assert resp.status_code == 401
+
+    def test_returns_skipped_records(self, test_client: TestClient, tmp_path: Path) -> None:
+        import api.routers.extraction_analysis as ea
+
+        _make_skipped_file(tmp_path, "20260401", "artists")
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get("/api/admin/extraction-analysis/20260401/skipped", headers=_admin_auth_headers())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["skipped"][0]["record_id"] == "66827"
+        assert data["skipped"][0]["entity_type"] == "artists"
+
+    def test_filters_by_entity_type(self, test_client: TestClient, tmp_path: Path) -> None:
+        import api.routers.extraction_analysis as ea
+
+        _make_skipped_file(tmp_path, "20260401", "artists")
+        _make_skipped_file(tmp_path, "20260401", "labels", [{"record_id": "212", "reason": "Junk", "field": "profile", "field_value": "DO NOT USE"}])
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get("/api/admin/extraction-analysis/20260401/skipped?entity_type=labels", headers=_admin_auth_headers())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["skipped"][0]["record_id"] == "212"
+
+    def test_empty_when_no_skipped(self, test_client: TestClient, tmp_path: Path) -> None:
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_dir(tmp_path, "20260401", "artists")
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get("/api/admin/extraction-analysis/20260401/skipped", headers=_admin_auth_headers())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 0
+        assert data["skipped"] == []
+
+    def test_version_not_found(self, test_client: TestClient, tmp_path: Path) -> None:
+        import api.routers.extraction_analysis as ea
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get("/api/admin/extraction-analysis/99999999/skipped", headers=_admin_auth_headers())
+        assert resp.status_code == 404
+
+    def test_skips_empty_and_blank_lines(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Empty and blank lines in skipped.jsonl are silently skipped (line 168)."""
+        import api.routers.extraction_analysis as ea
+
+        entity_dir = tmp_path / "flagged" / "20260401" / "artists"
+        entity_dir.mkdir(parents=True, exist_ok=True)
+        content = '{"record_id":"66827","reason":"junk"}\n\n   \n{"record_id":"212","reason":"also junk"}\n'
+        (entity_dir / "skipped.jsonl").write_text(content)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get("/api/admin/extraction-analysis/20260401/skipped", headers=_admin_auth_headers())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 2
+        ids = [s["record_id"] for s in data["skipped"]]
+        assert ids == ["66827", "212"]
+
+    def test_skips_corrupt_json_lines(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Corrupt JSON lines in skipped.jsonl are skipped with a warning (lines 171-173)."""
+        import api.routers.extraction_analysis as ea
+
+        entity_dir = tmp_path / "flagged" / "20260401" / "artists"
+        entity_dir.mkdir(parents=True, exist_ok=True)
+        content = '{"record_id":"66827","reason":"junk"}\n{bad json}\n{"record_id":"212","reason":"also junk"}\n'
+        (entity_dir / "skipped.jsonl").write_text(content)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get("/api/admin/extraction-analysis/20260401/skipped", headers=_admin_auth_headers())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 2
+        ids = [s["record_id"] for s in data["skipped"]]
+        assert ids == ["66827", "212"]
+
+
+class TestSummarySkippedField:
+    def test_summary_includes_skipped(self, test_client: TestClient, tmp_path: Path) -> None:
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_dir(tmp_path, "20260401", "artists")
+        _make_skipped_file(tmp_path, "20260401", "artists")
+        _make_state_marker(tmp_path, "20260401", "discogs")
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get("/api/admin/extraction-analysis/20260401/summary", headers=_admin_auth_headers())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "skipped" in data
+        assert data["skipped"]["artists"]["count"] == 1
+        assert "Upstream junk" in data["skipped"]["artists"]["reasons"][0]
+
+    def test_summary_skipped_empty_when_none(self, test_client: TestClient, tmp_path: Path) -> None:
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_dir(tmp_path, "20260401", "artists")
+        _make_state_marker(tmp_path, "20260401", "discogs")
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get("/api/admin/extraction-analysis/20260401/summary", headers=_admin_auth_headers())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["skipped"] == {}
