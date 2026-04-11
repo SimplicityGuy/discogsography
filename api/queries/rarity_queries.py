@@ -27,11 +27,12 @@ logger = structlog.get_logger(__name__)
 # ── Signal weights (must sum to 1.0) ────────────────────────────────
 
 SIGNAL_WEIGHTS: dict[str, float] = {
-    "pressing_scarcity": 0.30,
-    "label_catalog": 0.15,
-    "format_rarity": 0.15,
+    "pressing_scarcity": 0.25,
+    "label_catalog": 0.10,
+    "format_rarity": 0.10,
     "temporal_scarcity": 0.20,
-    "graph_isolation": 0.20,
+    "graph_isolation": 0.15,
+    "collection_prevalence": 0.20,
 }
 
 # ── Format rarity lookup ────────────────────────────────────────────
@@ -131,6 +132,31 @@ def compute_graph_isolation_score(degree: int) -> float:
     if degree <= 12:
         return 30.0
     return 10.0
+
+
+def compute_collection_prevalence_score(have_count: int, want_count: int) -> float:
+    """Score based on community ownership rarity (inverse of prevalence).
+
+    Uses log-scale thresholds since community counts follow power-law distribution.
+    Want > have adds a +5 bonus (capped at 100) indicating scarcity pressure.
+    """
+    if have_count <= 0:
+        base = 95.0
+    elif have_count <= 10:
+        base = 85.0
+    elif have_count <= 100:
+        base = 70.0
+    elif have_count <= 1000:
+        base = 50.0
+    elif have_count <= 10000:
+        base = 25.0
+    else:
+        base = 10.0
+
+    if want_count > have_count:
+        base = min(100.0, base + 5.0)
+
+    return base
 
 
 def compute_rarity_tier(score: float) -> str:

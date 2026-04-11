@@ -7,6 +7,7 @@ import pytest
 
 from api.queries.rarity_queries import (
     SIGNAL_WEIGHTS,
+    compute_collection_prevalence_score,
     compute_format_rarity_score,
     compute_graph_isolation_score,
     compute_label_catalog_score,
@@ -131,6 +132,63 @@ class TestGraphIsolationScore:
 
     def test_zero_rels(self) -> None:
         assert compute_graph_isolation_score(0) == 90.0
+
+
+class TestCollectionPrevalenceScore:
+    def test_zero_have(self) -> None:
+        assert compute_collection_prevalence_score(0, 0) == 95.0
+
+    def test_very_few_have(self) -> None:
+        assert compute_collection_prevalence_score(5, 0) == 85.0
+
+    def test_few_have(self) -> None:
+        assert compute_collection_prevalence_score(50, 0) == 70.0
+
+    def test_moderate_have(self) -> None:
+        assert compute_collection_prevalence_score(500, 0) == 50.0
+
+    def test_many_have(self) -> None:
+        assert compute_collection_prevalence_score(5000, 0) == 25.0
+
+    def test_mass_market(self) -> None:
+        assert compute_collection_prevalence_score(50000, 0) == 10.0
+
+    def test_boundary_1_inclusive(self) -> None:
+        assert compute_collection_prevalence_score(1, 0) == 85.0
+
+    def test_boundary_10_inclusive(self) -> None:
+        assert compute_collection_prevalence_score(10, 0) == 85.0
+
+    def test_boundary_11(self) -> None:
+        assert compute_collection_prevalence_score(11, 0) == 70.0
+
+    def test_boundary_100_inclusive(self) -> None:
+        assert compute_collection_prevalence_score(100, 0) == 70.0
+
+    def test_boundary_101(self) -> None:
+        assert compute_collection_prevalence_score(101, 0) == 50.0
+
+    def test_boundary_1000_inclusive(self) -> None:
+        assert compute_collection_prevalence_score(1000, 0) == 50.0
+
+    def test_boundary_1001(self) -> None:
+        assert compute_collection_prevalence_score(1001, 0) == 25.0
+
+    def test_boundary_10000_inclusive(self) -> None:
+        assert compute_collection_prevalence_score(10000, 0) == 25.0
+
+    def test_boundary_10001(self) -> None:
+        assert compute_collection_prevalence_score(10001, 0) == 10.0
+
+    def test_want_bonus_applied(self) -> None:
+        assert compute_collection_prevalence_score(50, 100) == 75.0
+
+    def test_want_bonus_not_applied_when_want_lte_have(self) -> None:
+        assert compute_collection_prevalence_score(50, 50) == 70.0
+        assert compute_collection_prevalence_score(50, 30) == 70.0
+
+    def test_want_bonus_capped_at_100(self) -> None:
+        assert compute_collection_prevalence_score(0, 10) == 100.0
 
 
 class TestRarityTier:
