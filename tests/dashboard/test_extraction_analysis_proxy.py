@@ -428,3 +428,47 @@ class TestEaViolationDetailInvalidSegments:
         """proxy_ea_violation_detail rejects invalid record_id with 400 (line 396)."""
         resp = proxy_client.get("/admin/api/extraction-analysis/20240101/violations/bad!record")
         assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/api/extraction-analysis/{version}/skipped
+# ---------------------------------------------------------------------------
+
+
+class TestEaSkippedProxy:
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_forwards_correctly(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("get", 200, b'{"skipped":[],"total":0,"page":1,"page_size":50}')
+        mock_cls_patch.return_value = mock_instance
+        resp = proxy_client.get("/admin/api/extraction-analysis/20260401/skipped", headers={"Authorization": "Bearer tok"})
+        assert resp.status_code == 200
+        assert "skipped" in resp.json()
+        mock_instance.get.assert_called_once()
+        call_url = mock_instance.get.call_args[0][0]
+        assert "/api/admin/extraction-analysis/20260401/skipped" in call_url
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_passes_query_params(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("get", 200, b'{"skipped":[],"total":0,"page":1,"page_size":50}')
+        mock_cls_patch.return_value = mock_instance
+        resp = proxy_client.get(
+            "/admin/api/extraction-analysis/20260401/skipped?entity_type=artists&page=2",
+            headers={"Authorization": "Bearer tok"},
+        )
+        assert resp.status_code == 200
+        call_kwargs = mock_instance.get.call_args
+        params = call_kwargs.kwargs.get("params", {})
+        assert params.get("entity_type") == "artists"
+        assert params.get("page") == "2"
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_rejects_invalid_version(self, _mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        resp = proxy_client.get("/admin/api/extraction-analysis/../etc/skipped")
+        assert resp.status_code in (400, 404)
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_returns_502_on_error(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx_error("get")
+        mock_cls_patch.return_value = mock_instance
+        resp = proxy_client.get("/admin/api/extraction-analysis/20260401/skipped")
+        assert resp.status_code == 502
