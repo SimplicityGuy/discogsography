@@ -23,7 +23,7 @@ from common import (
 )
 from common import normalize_record
 from common.credit_roles import categorize_role
-from common.data_normalizer import extract_format_names
+
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from orjson import loads
 
@@ -908,7 +908,11 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
     if existing_record and existing_record["hash"] == record["sha256"]:
         return False  # No update needed
 
-    formats = extract_format_names(record.get("formats"))
+    formats = [
+        f["name"]
+        for f in record.get("formats", [])
+        if isinstance(f, dict) and "name" in f
+    ]
     tx.run(
         "MERGE (r:Release {id: $id}) "
         "ON CREATE SET r.title = $title, r.year = $year, r.formats = $formats, r.sha256 = $sha256 "

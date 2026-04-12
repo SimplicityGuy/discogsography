@@ -14,7 +14,7 @@ from typing import Any, Callable
 import structlog
 from common import normalize_record
 from common.credit_roles import categorize_role
-from common.data_normalizer import extract_format_names
+
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 
 logger = structlog.get_logger(__name__)
@@ -830,9 +830,11 @@ class Neo4jBatchProcessor:
                     # Build a copy to avoid mutating the PendingMessage in case
                     # of re-enqueue on Neo4j failure
                     release_data = dict(msg.data)
-                    release_data["format_names"] = extract_format_names(
-                        msg.data.get("formats")
-                    )
+                    release_data["format_names"] = [
+                        f["name"]
+                        for f in msg.data.get("formats", [])
+                        if isinstance(f, dict) and "name" in f
+                    ]
                     releases_to_process.append(release_data)
 
             if not releases_to_process:

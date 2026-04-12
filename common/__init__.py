@@ -23,14 +23,7 @@ from common.config import (
     setup_logging,
 )
 from common.data_normalizer import (
-    normalize_artist,
-    normalize_id,
-    normalize_item_with_id,
-    normalize_label,
-    normalize_master,
-    normalize_nested_list,
     normalize_record,
-    normalize_release,
 )
 
 # Database resilience utilities
@@ -132,14 +125,7 @@ __all__ = [
     "is_debug",
     "log_cypher_query",
     "log_sql_query",
-    "normalize_artist",
-    "normalize_id",
-    "normalize_item_with_id",
-    "normalize_label",
-    "normalize_master",
-    "normalize_nested_list",
     "normalize_record",
-    "normalize_release",
     "process_message_with_retry",
     "resilient_connection",
     "setup_logging",
