@@ -27,9 +27,9 @@ class TestDashboardUI:
         # Page title is set in <title> tag
         expect(page).to_have_title("Discogsography Dashboard")
 
-        # New design: main heading reads "Discogsography Infrastructure"
+        # Deep Space rebrand: heading contains brand name and tagline
         heading = page.locator("h1")
-        expect(heading).to_have_text("Discogsography Infrastructure")
+        expect(heading).to_contain_text("discogsography")
 
     def test_service_cards_display(self, page: Page) -> None:
         """Test that service cards are displayed."""

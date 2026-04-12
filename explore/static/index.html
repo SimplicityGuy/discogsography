@@ -1,12 +1,20 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Discogsography Explore</title>
     <link href="tailwind.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <link rel="icon" type="image/x-icon" href="/static/brand/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/brand/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/brand/favicon-16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/brand/apple-touch-icon.png">
+    <link rel="manifest" href="/static/brand/site.webmanifest">
+    <meta property="og:image" content="/static/brand/og_image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
     <script src="https://d3js.org/d3.v7.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" integrity="sha384-Hl48Kq2HifOWdXEjMsKo6qxqvRLTYqIGbvlENBmkHAxZKIGCXv43H6W1jA671RzC" crossorigin="anonymous"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.8/dist/cdn.min.js" integrity="sha384-LXWjKwDZz29o7TduNe+r/UxaolHh5FsSvy2W7bDHSZ8jJeGgDeuNnsDNHoxpSgDi" crossorigin="anonymous"></script>
@@ -215,15 +223,6 @@ body {
 }
     </style>
     <script>
-        // Apply theme before first paint to prevent flash
-        (function() {
-            const saved = localStorage.getItem('theme');
-            if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                document.documentElement.classList.add('dark');
-            }
-        })();
-    </script>
-    <script>
         document.addEventListener('alpine:init', () => {
             Alpine.store('modals', {
                 authOpen: false,
@@ -232,7 +231,7 @@ body {
         });
     </script>
 </head>
-<body class="bg-bg-deep text-text-high overflow-hidden h-screen">
+<body class="bg-bg-deep text-text-high overflow-hidden h-screen" style="background:#060a12;">
 
     <!-- ============================================================
          Auth modal (login / register tabs)
@@ -434,36 +433,12 @@ body {
             <!-- Brand -->
             <div class="navbar-brand">
                 <div id="app-logo" class="flex-shrink-0" aria-label="Discogsography logo">
-                    <div style="
-                        position: relative;
-                        width: 32px; height: 32px;
-                        border-radius: 50%; overflow: hidden;
-                        border: 2px solid var(--border-color);
-                        box-sizing: border-box;
-                    ">
-                        <div style="
-                            position: absolute; inset: 0;
-                            display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
-                        ">
-                            <div style="background:#AA7272;"></div>
-                            <div style="background:#4A70A3;"></div>
-                            <div style="background:#3C7068;"></div>
-                            <div style="background:#7B8E57;"></div>
-                        </div>
-                        <div style="
-                            position: absolute; inset: 0;
-                            background: radial-gradient(circle at center, rgba(15,25,45,0.5) 18%, transparent 52%);
-                        "></div>
-                        <div style="
-                            position: absolute;
-                            top: 50%; left: 50%;
-                            width: 44%; height: 44%;
-                            background: #F0F1F3;
-                            transform: translate(-50%, -50%) rotate(45deg);
-                        "></div>
-                    </div>
+                    <img src="/static/brand/icon_dark.png" alt="Discogsography" style="width:32px;height:32px;border-radius:50%;">
                 </div>
-                <a class="navbar-title" href="#">Discogsography</a>
+                <a class="navbar-title" href="#">
+                    <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.95rem;letter-spacing:-0.03em;" class="t-high">discogsography</span>
+                    <span style="font-family:'Space Grotesk',sans-serif;font-size:0.6rem;letter-spacing:0.02em;" class="t-muted ml-1">the choon network</span>
+                </a>
             </div>
 
             <!-- Search bar — centered -->
@@ -520,12 +495,6 @@ body {
 
             <!-- Utilities: theme + auth -->
             <div class="navbar-utils">
-                <button id="theme-toggle" class="navbar-icon-btn" title="Toggle theme">
-                    <span id="theme-icon-auto" class="material-symbols-outlined hidden">brightness_auto</span>
-                    <span id="theme-icon-sun" class="material-symbols-outlined hidden">light_mode</span>
-                    <span id="theme-icon-moon" class="material-symbols-outlined hidden">dark_mode</span>
-                </button>
-
                 <div class="navbar-auth">
                     <div id="authButtons">
                         <button class="btn-outline-secondary btn-sm" id="navLoginBtn"

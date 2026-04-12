@@ -13,64 +13,11 @@ class Dashboard {
 
         this.initializeWebSocket();
         this.fetchInitialData();
-        this.initializeThemeToggle();
 
         const dlqToggle = document.getElementById('dlq-toggle');
         if (dlqToggle) {
             dlqToggle.addEventListener('change', () => this._onDlqToggle());
         }
-    }
-
-    // ─── Theme toggle ────────────────────────────────────────────────────────
-
-    initializeThemeToggle() {
-        const btn = document.getElementById('theme-toggle');
-        const autoIcon = document.getElementById('theme-icon-auto');
-        const sunIcon = document.getElementById('theme-icon-sun');
-        const moonIcon = document.getElementById('theme-icon-moon');
-        if (!btn || !autoIcon || !sunIcon || !moonIcon) return;
-
-        const getMode = () => localStorage.getItem('theme') || 'auto';
-
-        const applyMode = (mode) => {
-            if (mode === 'auto') {
-                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                document.documentElement.classList.toggle('dark', prefersDark);
-            } else {
-                document.documentElement.classList.toggle('dark', mode === 'dark');
-            }
-        };
-
-        const updateIcons = () => {
-            const mode = getMode();
-            autoIcon.style.display = mode === 'auto' ? '' : 'none';
-            sunIcon.style.display = mode === 'light' ? '' : 'none';
-            moonIcon.style.display = mode === 'dark' ? '' : 'none';
-        };
-
-        applyMode(getMode());
-        updateIcons();
-
-        const cycle = { auto: 'light', light: 'dark', dark: 'auto' };
-
-        btn.addEventListener('click', () => {
-            const next = cycle[getMode()];
-            if (next === 'auto') {
-                localStorage.removeItem('theme');
-            } else {
-                localStorage.setItem('theme', next);
-            }
-            applyMode(next);
-            updateIcons();
-        });
-
-        // Listen for OS-level theme changes — only applies when in auto mode
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-            if (getMode() === 'auto') {
-                document.documentElement.classList.toggle('dark', e.matches);
-                updateIcons();
-            }
-        });
     }
 
     // ─── WebSocket ────────────────────────────────────────────────────────────

@@ -1,81 +1,65 @@
 /* ============================================================
-   Design System — matches dashboard design tokens
-   Light theme (default) + Dark theme (.dark class on <html>)
+   Design System — Deep Space + Purple single dark theme
    ============================================================ */
 
 :root {
-    /* Backgrounds */
-    --bg-deep: #F5F6F8;
-    --card-bg: #FFFFFF;
-    --inner-bg: #F7FAFC;
-    --bg-hover: #EDF2F7;
-    --inner-border: #E2E8F0;
+    /* Background scale */
+    --bg-void: #060a12;
+    --bg-deep: #0a1018;
+    --card-bg: #0f1a2e;
+    --inner-bg: #162540;
+    --border-color: #1e3050;
+    --inner-border: #1e3050;
+    --bg-hover: #2a3d58;
 
-    /* Text */
-    --text-high: #1A202C;
-    --text-mid: #4A5568;
-    --text-dim: #718096;
-    --text-muted: #A0AEC0;
+    /* Text scale */
+    --text-high: #f0f4f8;
+    --text-mid: #b0bec5;
+    --text-dim: #7a8ba3;
+    --text-muted: #4a5e78;
 
-    /* Borders */
-    --border-color: #E2E8F0;
-    --row-border: rgba(0,0,0,0.06);
+    /* Cyan — primary accent */
+    --cyan-900: #004d5a;
+    --cyan-700: #00838f;
+    --cyan-500: #00bcd4;
+    --cyan-glow: #00e5ff;
+    --cyan-bright: #80f0ff;
 
-    /* Accents */
-    --purple-accent: #7C3AED;
-    --blue-accent: #3B82F6;
-    --accent-green: #10B981;
-    --accent-yellow: #F59E0B;
-    --accent-red: #EF4444;
+    /* Purple — secondary accent */
+    --purple-900: #311b92;
+    --purple-700: #5e35b1;
+    --purple-500: #7c4dff;
+    --purple-300: #b388ff;
+    --purple-bright: #d4b8ff;
 
-    /* UI */
-    --card-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
-    --scrollbar-thumb: #CBD5E0;
-    --overlay-bg: rgba(0,0,0,0.5);
-    --glass-bg: rgba(255,255,255,0.9);
-    --label-bg: rgba(245,246,248,0.7);
+    /* Legacy aliases (used by Tailwind classes and existing markup) */
+    --blue-accent: #00bcd4;
+    --purple-accent: #7c4dff;
 
-    /* Node colors (domain-specific — same in both themes) */
-    --node-artist: #1DB954;
-    --node-release: #FF6B6B;
-    --node-label: #6c757d;
-    --node-genre: #ffc107;
-    --node-category: #4A90D9;
-    --node-load-more: #CBD5E0;
-    --node-load-more-border: #A0AEC0;
-    --node-load-more-text: #4A5568;
-}
+    /* Semantic status */
+    --accent-green: #00e676;
+    --accent-yellow: #ffab00;
+    --accent-red: #ff5252;
 
-.dark {
-    --bg-deep: #121212;
-    --card-bg: #1E1E1E;
-    --inner-bg: rgba(24,24,27,0.5);
-    --bg-hover: #2D2D2D;
-    --inner-border: #2D2D2D;
-
-    --text-high: #F5F5F5;
-    --text-mid: #B0B0B0;
-    --text-dim: #A0A0A0;
-    --text-muted: #6B7280;
-
-    --border-color: #2D2D2D;
+    /* UI tokens */
+    --card-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+    --scrollbar-thumb: #2a3d58;
+    --glass-bg: rgba(15,26,46,0.9);
+    --label-bg: rgba(10,16,24,0.7);
+    --overlay-bg: rgba(0,0,0,0.85);
+    --gauge-track: #1e3050;
+    --log-msg: #b0bec5;
     --row-border: rgba(255,255,255,0.05);
 
-    --purple-accent: #A78BFA;
-    --blue-accent: #60A5FA;
-    --accent-green: #34D399;
-    --accent-yellow: #FBBF24;
-    --accent-red: #F87171;
-
-    --card-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
-    --scrollbar-thumb: #333;
-    --overlay-bg: rgba(0,0,0,0.85);
-    --glass-bg: rgba(30,30,30,0.9);
-    --label-bg: rgba(18,18,18,0.7);
-
-    --node-load-more: #2D2D2D;
-    --node-load-more-border: #6c8ebf;
-    --node-load-more-text: #a8c4e8;
+    /* Graph node colors (harmonized) */
+    --node-artist: #00e676;
+    --node-release: #ff5c8a;
+    --node-label: #78909c;
+    --node-genre: #ffd54f;
+    --node-category: #40c4ff;
+    --node-load-more: #162540;
+    --node-load-more-border: #1e3050;
+    --node-load-more-text: #7a8ba3;
 }
 
 /* ============================================================
