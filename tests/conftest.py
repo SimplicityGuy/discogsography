@@ -84,8 +84,8 @@ def sample_artist_data() -> dict[str, Any]:
         "id": "123456",
         "name": "Test Artist",
         "sha256": "abc123def456",
-        "members": {"name": [{"@id": "234567", "#text": "Member 1"}, {"@id": "345678", "#text": "Member 2"}]},
-        "aliases": {"name": [{"@id": "456789", "#text": "Alias 1"}]},
+        "members": [{"id": "234567", "name": "Member 1"}, {"id": "345678", "name": "Member 2"}],
+        "aliases": [{"id": "456789", "name": "Alias 1"}],
     }
 
 
@@ -96,8 +96,8 @@ def sample_label_data() -> dict[str, Any]:
         "id": "987654",
         "name": "Test Label",
         "sha256": "fed321cba654",
-        "parentLabel": {"@id": "876543"},
-        "sublabels": {"label": [{"@id": "765432"}]},
+        "parentLabel": {"id": "876543"},
+        "sublabels": [{"id": "765432"}],
     }
 
 
@@ -108,11 +108,11 @@ def sample_release_data() -> dict[str, Any]:
         "id": "112233",
         "title": "Test Release",
         "sha256": "112233445566",
-        "artists": {"artist": [{"id": "123456", "name": "Test Artist"}]},
-        "labels": {"label": [{"@id": "987654", "#text": "Test Label"}]},
-        "genres": {"genre": ["Rock", "Pop"]},
-        "styles": {"style": ["Alternative Rock", "Indie Pop"]},
-        "master_id": {"#text": "998877"},
+        "artists": [{"id": "123456", "name": "Test Artist"}],
+        "labels": [{"id": "987654", "name": "Test Label"}],
+        "genres": ["Rock", "Pop"],
+        "styles": ["Alternative Rock", "Indie Pop"],
+        "master_id": "998877",
     }
 
 
@@ -124,9 +124,9 @@ def sample_master_data() -> dict[str, Any]:
         "title": "Test Master",
         "year": 2023,
         "sha256": "998877665544",
-        "artists": {"artist": [{"id": "123456", "name": "Test Artist"}]},
-        "genres": {"genre": ["Rock"]},
-        "styles": {"style": ["Alternative Rock"]},
+        "artists": [{"id": "123456", "name": "Test Artist"}],
+        "genres": ["Rock"],
+        "styles": ["Alternative Rock"],
     }
 
 

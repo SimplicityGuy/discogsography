@@ -15,6 +15,7 @@ mod health;
 mod jsonl_parser;
 mod message_queue;
 mod musicbrainz_downloader;
+mod normalize;
 mod parser;
 mod rules;
 mod state_marker;

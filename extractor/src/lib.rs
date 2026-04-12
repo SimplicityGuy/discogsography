@@ -7,6 +7,7 @@ pub mod health;
 pub mod jsonl_parser;
 pub mod message_queue;
 pub mod musicbrainz_downloader;
+pub mod normalize;
 pub mod parser;
 pub mod rules;
 pub mod state_marker;
