@@ -468,6 +468,79 @@ fn test_normalize_release_master_id_integer() {
     assert_eq!(record["master_id"], json!(5000));
 }
 
+// ── coverage: defensive branches ────────────────────────────────────
+
+#[test]
+fn test_unwrap_container_bare_string() {
+    // Line 48: non-null/non-array/non-object value wraps in array
+    let input = json!("hello");
+    let result = unwrap_container(&input, "key");
+    assert_eq!(result, json!(["hello"]));
+}
+
+#[test]
+fn test_normalize_item_list_with_string_items() {
+    // Line 94: string items become {"id": value}
+    let input = json!({"name": ["123", "456"]});
+    let result = crate::normalize::normalize_item_list(&input, "name");
+    assert_eq!(result, json!([{"id": "123"}, {"id": "456"}]));
+}
+
+#[test]
+fn test_normalize_item_list_with_number_items() {
+    // Line 96: non-object/non-string items pass through
+    let input = json!({"name": [42, true]});
+    let result = crate::normalize::normalize_item_list(&input, "name");
+    assert_eq!(result, json!([42, true]));
+}
+
+#[test]
+fn test_normalize_artist_non_object() {
+    // Line 106: non-object record is a no-op
+    let mut record = json!("not an object");
+    normalize_record("artists", &mut record);
+    assert_eq!(record, json!("not an object"));
+}
+
+#[test]
+fn test_normalize_label_non_object() {
+    // Line 120: non-object record is a no-op
+    let mut record = json!(null);
+    normalize_record("labels", &mut record);
+    assert_eq!(record, json!(null));
+}
+
+#[test]
+fn test_normalize_master_non_object() {
+    // Line 147: non-object record (after strip_at_prefixes) is a no-op
+    let mut record = json!(42);
+    normalize_record("masters", &mut record);
+    assert_eq!(record, json!(42));
+}
+
+#[test]
+fn test_normalize_release_non_object() {
+    // Line 167: non-object record is a no-op
+    let mut record = json!([1, 2, 3]);
+    normalize_record("releases", &mut record);
+    assert_eq!(record, json!([1, 2, 3]));
+}
+
+#[test]
+fn test_normalize_release_format_non_object_item() {
+    // Line 219: non-object format items pass through
+    let mut record = json!({
+        "@id": "1",
+        "title": "Test",
+        "formats": {"format": ["StringFormat", 42]}
+    });
+    normalize_record("releases", &mut record);
+    let formats = record["formats"].as_array().unwrap();
+    assert_eq!(formats.len(), 2);
+    assert_eq!(formats[0], json!("StringFormat"));
+    assert_eq!(formats[1], json!(42));
+}
+
 // ── unknown data type -> no-op ──────────────────────────────────────
 
 #[test]

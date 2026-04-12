@@ -76,7 +76,8 @@ fn insert_if_nonempty(map: &mut Map<String, Value>, key: &str, value: Value) {
 /// Uses `unwrap_container` to extract items, then for each:
 /// - objects get `strip_at_prefixes` applied
 /// - strings get wrapped as `{"id": value}`
-fn normalize_item_list(value: &Value, container_key: &str) -> Value {
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn normalize_item_list(value: &Value, container_key: &str) -> Value {
     let items = unwrap_container(value, container_key);
     let Some(arr) = items.as_array() else {
         return Value::Array(vec![]);
