@@ -302,6 +302,26 @@ async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: A
         raise
 
 
+async def compute_and_store_community_enrichment(client: httpx.AsyncClient, pool: Any) -> int:
+    """Trigger community enrichment via the API internal endpoint."""
+    started_at = datetime.now(UTC)
+    try:
+        response = await client.get("/api/internal/insights/community-enrichment", timeout=3600.0)
+        response.raise_for_status()
+        data: dict[str, Any] = response.json()
+        enriched = int(data.get("enriched", 0))
+        logger.info("📊 Community enrichment complete", enriched=enriched)
+        await _log_computation(pool, "community_enrichment", "completed", started_at, enriched)
+        return enriched
+    except Exception as e:
+        logger.error("❌ Community enrichment failed", error=str(e))
+        try:
+            await _log_computation(pool, "community_enrichment", "failed", started_at, error_message=str(e))
+        except Exception as log_err:
+            logger.warning("⚠️ Failed to log computation error", error=str(log_err))
+        raise
+
+
 async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
     """Compute release rarity scores and store results."""
     started_at = datetime.now(UTC)
@@ -323,8 +343,9 @@ async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
                             INSERT INTO insights.release_rarity
                                 (release_id, title, artist_name, year, rarity_score, tier,
                                  hidden_gem_score, pressing_scarcity, label_catalog,
-                                 format_rarity, temporal_scarcity, graph_isolation)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                 format_rarity, temporal_scarcity, graph_isolation,
+                                 collection_prevalence)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
                         (
                             row["release_id"],
@@ -339,6 +360,7 @@ async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
                             row.get("format_rarity"),
                             row.get("temporal_scarcity"),
                             row.get("graph_isolation"),
+                            row.get("collection_prevalence"),
                         ),
                     )
         logger.info("💾 Release rarity scores stored", count=len(results))
@@ -373,6 +395,7 @@ async def run_all_computations(
             lambda: compute_and_store_anniversaries(client, pool, milestone_years=milestone_years),
         ),
         ("data_completeness", lambda: compute_and_store_data_completeness(client, pool)),
+        ("community_enrichment", lambda: compute_and_store_community_enrichment(client, pool)),
         ("release_rarity", lambda: compute_and_store_rarity(client, pool)),
     ]
 

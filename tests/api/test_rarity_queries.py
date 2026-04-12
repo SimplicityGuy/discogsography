@@ -7,6 +7,7 @@ import pytest
 
 from api.queries.rarity_queries import (
     SIGNAL_WEIGHTS,
+    compute_collection_prevalence_score,
     compute_format_rarity_score,
     compute_graph_isolation_score,
     compute_label_catalog_score,
@@ -131,6 +132,63 @@ class TestGraphIsolationScore:
 
     def test_zero_rels(self) -> None:
         assert compute_graph_isolation_score(0) == 90.0
+
+
+class TestCollectionPrevalenceScore:
+    def test_zero_have(self) -> None:
+        assert compute_collection_prevalence_score(0, 0) == 95.0
+
+    def test_very_few_have(self) -> None:
+        assert compute_collection_prevalence_score(5, 0) == 85.0
+
+    def test_few_have(self) -> None:
+        assert compute_collection_prevalence_score(50, 0) == 70.0
+
+    def test_moderate_have(self) -> None:
+        assert compute_collection_prevalence_score(500, 0) == 50.0
+
+    def test_many_have(self) -> None:
+        assert compute_collection_prevalence_score(5000, 0) == 25.0
+
+    def test_mass_market(self) -> None:
+        assert compute_collection_prevalence_score(50000, 0) == 10.0
+
+    def test_boundary_1_inclusive(self) -> None:
+        assert compute_collection_prevalence_score(1, 0) == 85.0
+
+    def test_boundary_10_inclusive(self) -> None:
+        assert compute_collection_prevalence_score(10, 0) == 85.0
+
+    def test_boundary_11(self) -> None:
+        assert compute_collection_prevalence_score(11, 0) == 70.0
+
+    def test_boundary_100_inclusive(self) -> None:
+        assert compute_collection_prevalence_score(100, 0) == 70.0
+
+    def test_boundary_101(self) -> None:
+        assert compute_collection_prevalence_score(101, 0) == 50.0
+
+    def test_boundary_1000_inclusive(self) -> None:
+        assert compute_collection_prevalence_score(1000, 0) == 50.0
+
+    def test_boundary_1001(self) -> None:
+        assert compute_collection_prevalence_score(1001, 0) == 25.0
+
+    def test_boundary_10000_inclusive(self) -> None:
+        assert compute_collection_prevalence_score(10000, 0) == 25.0
+
+    def test_boundary_10001(self) -> None:
+        assert compute_collection_prevalence_score(10001, 0) == 10.0
+
+    def test_want_bonus_applied(self) -> None:
+        assert compute_collection_prevalence_score(50, 100) == 75.0
+
+    def test_want_bonus_not_applied_when_want_lte_have(self) -> None:
+        assert compute_collection_prevalence_score(50, 50) == 70.0
+        assert compute_collection_prevalence_score(50, 30) == 70.0
+
+    def test_want_bonus_capped_at_100(self) -> None:
+        assert compute_collection_prevalence_score(0, 10) == 100.0
 
 
 class TestRarityTier:
@@ -555,6 +613,22 @@ class TestFetchAllRaritySignals:
         label_size_data = [{"release_id": "1", "label_max_catalog": 2000}]
         genre_count_data = [{"release_id": "1", "genre_max_release_count": 50000}]
 
+        # Mock PostgreSQL pool for community counts
+        mock_cur = AsyncMock()
+        mock_cur.fetchall = AsyncMock(
+            return_value=[
+                {"release_id": 1, "have_count": 50, "want_count": 10},
+            ]
+        )
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
         with patch("api.queries.rarity_queries.run_query") as mock_run:
             mock_run.side_effect = [
                 pressing_data,
@@ -566,16 +640,16 @@ class TestFetchAllRaritySignals:
                 label_size_data,
                 genre_count_data,
             ]
-
-            results = await fetch_all_rarity_signals(mock_driver)
+            results = await fetch_all_rarity_signals(mock_driver, mock_pool)
 
         assert len(results) == 1
         r = results[0]
         assert r["release_id"] == "1"
         assert 0 <= r["rarity_score"] <= 100
         assert r["tier"] in ("common", "uncommon", "scarce", "rare", "ultra-rare")
-        assert r["pressing_scarcity"] == 100.0  # 1 pressing
+        assert r["pressing_scarcity"] == 100.0
         assert r["format_rarity"] == 95.0  # Flexi-disc max
+        assert r["collection_prevalence"] == 70.0  # have=50 -> 70.0, want<have -> no bonus
         assert "hidden_gem_score" in r
 
     @pytest.mark.asyncio
@@ -592,6 +666,18 @@ class TestFetchAllRaritySignals:
         label_size_data = [{"release_id": "1", "label_max_catalog": 0}]
         genre_count_data = [{"release_id": "1", "genre_max_release_count": 0}]
 
+        # Mock pool with no community data
+        mock_cur = AsyncMock()
+        mock_cur.fetchall = AsyncMock(return_value=[])
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
         with patch("api.queries.rarity_queries.run_query") as mock_run:
             mock_run.side_effect = [
                 pressing_data,
@@ -603,7 +689,72 @@ class TestFetchAllRaritySignals:
                 label_size_data,
                 genre_count_data,
             ]
-            results = await fetch_all_rarity_signals(mock_driver)
+            results = await fetch_all_rarity_signals(mock_driver, mock_pool)
 
         assert len(results) == 1
         assert results[0]["hidden_gem_score"] == 0.0
+        assert results[0]["collection_prevalence"] == 50.0  # neutral fallback
+
+    @pytest.mark.asyncio
+    async def test_community_counts_exception_uses_fallback(self) -> None:
+        """When pool.connection raises, community counts fall back to neutral 50.0."""
+        mock_driver = MagicMock()
+
+        pressing_data = [{"release_id": "1", "pressing_count": 1, "title": "R1", "artist_name": "A1", "year": 1970}]
+        label_data = [{"release_id": "1", "label_catalog_size": 20}]
+        format_data = [{"release_id": "1", "formats": ["LP"]}]
+        temporal_data = [{"release_id": "1", "year": 1970, "latest_sibling_year": None}]
+        degree_data = [{"release_id": "1", "degree": 3}]
+        artist_degree_data = [{"release_id": "1", "artist_max_degree": 500}]
+        label_size_data = [{"release_id": "1", "label_max_catalog": 2000}]
+        genre_count_data = [{"release_id": "1", "genre_max_release_count": 50000}]
+
+        # Pool connection raises an exception
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(side_effect=RuntimeError("db connection failed"))
+
+        with patch("api.queries.rarity_queries.run_query") as mock_run:
+            mock_run.side_effect = [
+                pressing_data,
+                label_data,
+                format_data,
+                temporal_data,
+                degree_data,
+                artist_degree_data,
+                label_size_data,
+                genre_count_data,
+            ]
+            results = await fetch_all_rarity_signals(mock_driver, mock_pool)
+
+        assert len(results) == 1
+        assert results[0]["collection_prevalence"] == 50.0
+
+    @pytest.mark.asyncio
+    async def test_fallback_when_no_pool(self) -> None:
+        """Test that passing pool=None uses neutral fallback for all releases."""
+        mock_driver = MagicMock()
+
+        pressing_data = [{"release_id": "1", "pressing_count": 1, "title": "R1", "artist_name": "A1", "year": 1970}]
+        label_data = [{"release_id": "1", "label_catalog_size": 20}]
+        format_data = [{"release_id": "1", "formats": ["LP"]}]
+        temporal_data = [{"release_id": "1", "year": 1970, "latest_sibling_year": None}]
+        degree_data = [{"release_id": "1", "degree": 3}]
+        artist_degree_data = [{"release_id": "1", "artist_max_degree": 500}]
+        label_size_data = [{"release_id": "1", "label_max_catalog": 2000}]
+        genre_count_data = [{"release_id": "1", "genre_max_release_count": 50000}]
+
+        with patch("api.queries.rarity_queries.run_query") as mock_run:
+            mock_run.side_effect = [
+                pressing_data,
+                label_data,
+                format_data,
+                temporal_data,
+                degree_data,
+                artist_degree_data,
+                label_size_data,
+                genre_count_data,
+            ]
+            results = await fetch_all_rarity_signals(mock_driver, None)
+
+        assert len(results) == 1
+        assert results[0]["collection_prevalence"] == 50.0

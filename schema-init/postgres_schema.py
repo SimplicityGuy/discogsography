@@ -425,6 +425,7 @@ _INSIGHTS_TABLES: list[tuple[str, str]] = [
             format_rarity   REAL,
             temporal_scarcity REAL,
             graph_isolation REAL,
+            collection_prevalence REAL,
             computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """,
@@ -440,6 +441,21 @@ _INSIGHTS_TABLES: list[tuple[str, str]] = [
     (
         "idx_release_rarity_gem",
         "CREATE INDEX IF NOT EXISTS idx_release_rarity_gem ON insights.release_rarity (hidden_gem_score DESC NULLS LAST)",
+    ),
+    (
+        "insights.community_counts table",
+        """
+        CREATE TABLE IF NOT EXISTS insights.community_counts (
+            release_id      BIGINT PRIMARY KEY,
+            have_count      INTEGER NOT NULL DEFAULT 0,
+            want_count      INTEGER NOT NULL DEFAULT 0,
+            fetched_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+    ),
+    (
+        "idx_community_counts_fetched",
+        "CREATE INDEX IF NOT EXISTS idx_community_counts_fetched ON insights.community_counts (fetched_at)",
     ),
     (
         "insights.computation_log table",
@@ -467,6 +483,10 @@ _INSIGHTS_TABLES: list[tuple[str, str]] = [
     (
         "idx_genre_trends_genre",
         "CREATE INDEX IF NOT EXISTS idx_genre_trends_genre ON insights.genre_trends (genre)",
+    ),
+    (
+        "insights.release_rarity add collection_prevalence",
+        "ALTER TABLE insights.release_rarity ADD COLUMN IF NOT EXISTS collection_prevalence REAL",
     ),
 ]
 

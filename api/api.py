@@ -255,7 +255,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     _label_dna_router.configure(_neo4j, _redis)
     _recommend_router.configure(_neo4j, jwt_secret_for_neo4j, _redis)
     _search_router.configure(_pool, _redis)
-    _insights_compute_router.configure(_neo4j, _pool, _redis)
+    _insights_compute_router.configure(_neo4j, _pool, _redis, _config)
     _admin_router.configure(_pool, _redis, _config, neo4j_driver=_neo4j)
     _musicbrainz_router.configure(_pool, _neo4j)
     _network_router.configure(_neo4j, _redis)

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from insights.computations import compute_and_store_rarity
+from insights.computations import compute_and_store_community_enrichment, compute_and_store_rarity
 
 
 def _make_mock_pool() -> MagicMock:
@@ -42,6 +42,7 @@ _MOCK_RARITY_ITEMS = [
         "format_rarity": 95.0,
         "temporal_scarcity": 80.0,
         "graph_isolation": 70.0,
+        "collection_prevalence": 85.0,
     }
 ]
 
@@ -105,4 +106,44 @@ class TestComputeAndStoreRarity:
 
         mock_log.assert_called_once()
         args = mock_log.call_args
+        assert args[0][2] == "failed"
+
+
+class TestComputeAndStoreCommunityEnrichment:
+    @pytest.mark.asyncio
+    async def test_community_enrichment_success(self) -> None:
+        mock_client = AsyncMock()
+        mock_pool = _make_mock_pool()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"enriched": 5}
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("insights.computations._log_computation") as mock_log:
+            result = await compute_and_store_community_enrichment(mock_client, mock_pool)
+
+        assert result == 5
+        mock_client.get.assert_called_once_with("/api/internal/insights/community-enrichment", timeout=3600.0)
+        mock_log.assert_called_once()
+        args = mock_log.call_args
+        assert args[0][1] == "community_enrichment"
+        assert args[0][2] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_community_enrichment_failure(self) -> None:
+        mock_client = AsyncMock()
+        mock_pool = _make_mock_pool()
+
+        mock_client.get = AsyncMock(side_effect=RuntimeError("connection error"))
+
+        with (
+            patch("insights.computations._log_computation") as mock_log,
+            pytest.raises(RuntimeError, match="connection error"),
+        ):
+            await compute_and_store_community_enrichment(mock_client, mock_pool)
+
+        mock_log.assert_called_once()
+        args = mock_log.call_args
+        assert args[0][1] == "community_enrichment"
         assert args[0][2] == "failed"

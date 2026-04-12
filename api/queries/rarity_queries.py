@@ -1,7 +1,7 @@
 """Rarity scoring queries and computation logic.
 
-Computes a 5-signal rarity index (0-100) for releases using Neo4j graph data,
-and provides PostgreSQL lookup functions for precomputed scores.
+Computes a 6-signal rarity index (0-100) for releases using Neo4j graph data
+and PostgreSQL community counts, and provides lookup functions for precomputed scores.
 
 Graph model:
   (Release)-[:BY]->(Artist)
@@ -27,11 +27,12 @@ logger = structlog.get_logger(__name__)
 # ── Signal weights (must sum to 1.0) ────────────────────────────────
 
 SIGNAL_WEIGHTS: dict[str, float] = {
-    "pressing_scarcity": 0.30,
-    "label_catalog": 0.15,
-    "format_rarity": 0.15,
+    "pressing_scarcity": 0.25,
+    "label_catalog": 0.10,
+    "format_rarity": 0.10,
     "temporal_scarcity": 0.20,
-    "graph_isolation": 0.20,
+    "graph_isolation": 0.15,
+    "collection_prevalence": 0.20,
 }
 
 # ── Format rarity lookup ────────────────────────────────────────────
@@ -133,6 +134,31 @@ def compute_graph_isolation_score(degree: int) -> float:
     return 10.0
 
 
+def compute_collection_prevalence_score(have_count: int, want_count: int) -> float:
+    """Score based on community ownership rarity (inverse of prevalence).
+
+    Uses log-scale thresholds since community counts follow power-law distribution.
+    Want > have adds a +5 bonus (capped at 100) indicating scarcity pressure.
+    """
+    if have_count <= 0:
+        base = 95.0
+    elif have_count <= 10:
+        base = 85.0
+    elif have_count <= 100:
+        base = 70.0
+    elif have_count <= 1000:
+        base = 50.0
+    elif have_count <= 10000:
+        base = 25.0
+    else:
+        base = 10.0
+
+    if want_count > have_count:
+        base = min(100.0, base + 5.0)
+
+    return base
+
+
 def compute_rarity_tier(score: float) -> str:
     """Map composite score to rarity tier label."""
     for threshold, tier in RARITY_TIERS:
@@ -144,11 +170,12 @@ def compute_rarity_tier(score: float) -> str:
 # ── Neo4j batch signal queries ──────────────────────────────────────
 
 
-async def fetch_all_rarity_signals(driver: Any) -> list[dict[str, Any]]:
+async def fetch_all_rarity_signals(driver: Any, pool: Any = None) -> list[dict[str, Any]]:
     """Fetch all rarity signals from Neo4j and compute scores.
 
     Executes 8 batch Cypher queries (5 signal queries + 3 quality queries),
     joins by release_id, and computes composite rarity + hidden gem scores.
+    Optionally fetches community counts (have/want) from PostgreSQL when pool is provided.
 
     Returns a list of dicts ready for PostgreSQL insertion.
     """
@@ -249,6 +276,18 @@ async def fetch_all_rarity_signals(driver: Any) -> list[dict[str, Any]]:
         formats=len(format_rows),
     )
 
+    # 9. Community counts from PostgreSQL (if pool available)
+    community_map: dict[str, tuple[int, int]] = {}
+    if pool is not None:
+        try:
+            async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute("SELECT release_id, have_count, want_count FROM insights.community_counts")
+                community_rows = await cur.fetchall()
+            community_map = {str(r["release_id"]): (r["have_count"], r["want_count"]) for r in community_rows}
+            logger.info("📊 Community counts loaded", count=len(community_map))
+        except Exception:
+            logger.warning("⚠️ Failed to load community counts, using neutral fallback", exc_info=True)
+
     # Build lookup dicts keyed by release_id
     label_map = {r["release_id"]: r["label_catalog_size"] for r in label_rows}
     format_map = {r["release_id"]: r["formats"] for r in format_rows}
@@ -287,12 +326,16 @@ async def fetch_all_rarity_signals(driver: Any) -> list[dict[str, Any]]:
 
         isolation_score = compute_graph_isolation_score(degree_map.get(rid, 0))
 
+        have, want = community_map.get(rid, (None, None))
+        prevalence_score = compute_collection_prevalence_score(have, want or 0) if have is not None else 50.0  # neutral fallback
+
         rarity_score = (
             SIGNAL_WEIGHTS["pressing_scarcity"] * pressing_score
             + SIGNAL_WEIGHTS["label_catalog"] * label_score
             + SIGNAL_WEIGHTS["format_rarity"] * fmt_score
             + SIGNAL_WEIGHTS["temporal_scarcity"] * temporal_score
             + SIGNAL_WEIGHTS["graph_isolation"] * isolation_score
+            + SIGNAL_WEIGHTS["collection_prevalence"] * prevalence_score
         )
 
         tier = compute_rarity_tier(rarity_score)
@@ -324,6 +367,7 @@ async def fetch_all_rarity_signals(driver: Any) -> list[dict[str, Any]]:
                 "format_rarity": fmt_score,
                 "temporal_scarcity": temporal_score,
                 "graph_isolation": isolation_score,
+                "collection_prevalence": prevalence_score,
             }
         )
 
@@ -341,7 +385,8 @@ async def get_rarity_for_release(pool: Any, release_id: int) -> dict[str, Any] |
             """
             SELECT release_id, title, artist_name, year, rarity_score, tier,
                    hidden_gem_score, pressing_scarcity, label_catalog,
-                   format_rarity, temporal_scarcity, graph_isolation
+                   format_rarity, temporal_scarcity, graph_isolation,
+                   collection_prevalence
             FROM insights.release_rarity
             WHERE release_id = %s
             """,
