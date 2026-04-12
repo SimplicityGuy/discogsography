@@ -271,6 +271,7 @@ dev = [
     # "mdformat-tables>=1.0.0",  # Disabled: requires mdformat<0.8.0
     "pytest-xdist>=3.8.0",
     "fakeredis>=2.0.0",
+    "pillow>=12.2.0",
 ]
 
 [tool.mdformat]
