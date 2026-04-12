@@ -1,10 +1,10 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-    darkMode: "class",
     content: ["./static/index.html", "./static/js/**/*.js"],
     theme: {
         extend: {
             colors: {
+                "bg-void": "var(--bg-void)",
                 "bg-deep": "var(--bg-deep)",
                 "card-bg": "var(--card-bg)",
                 "inner-bg": "var(--inner-bg)",
@@ -13,6 +13,10 @@ module.exports = {
                 "text-mid": "var(--text-mid)",
                 "text-dim": "var(--text-dim)",
                 "text-muted": "var(--text-muted)",
+                "cyan-500": "var(--cyan-500)",
+                "cyan-glow": "var(--cyan-glow)",
+                "purple-500": "var(--purple-500)",
+                "purple-300": "var(--purple-300)",
                 "blue-accent": "var(--blue-accent)",
                 "purple-accent": "var(--purple-accent)",
                 "accent-green": "var(--accent-green)",

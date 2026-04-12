@@ -10,7 +10,7 @@
 
     /* Button variants */
     .btn-primary {
-        @apply btn-base bg-blue-accent text-white hover:bg-blue-700 focus:ring-blue-accent;
+        @apply btn-base bg-cyan-500 text-white hover:bg-cyan-glow focus:ring-cyan-500;
     }
 
     .btn-success {
@@ -22,7 +22,7 @@
     }
 
     .btn-secondary {
-        @apply btn-base bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500;
+        @apply btn-base bg-purple-500 text-white hover:bg-purple-300 focus:ring-purple-500;
     }
 
     .btn-outline-secondary {
@@ -30,7 +30,7 @@
     }
 
     .btn-outline-primary {
-        @apply btn-base border border-blue-accent text-blue-accent hover:bg-blue-accent hover:text-white focus:ring-blue-accent;
+        @apply btn-base border border-cyan-500 text-cyan-500 hover:bg-cyan-500 hover:text-white focus:ring-cyan-500;
     }
 
     .btn-outline-danger {
@@ -47,7 +47,7 @@
 
     /* Form input */
     .form-input-dark {
-        @apply w-full rounded border border-border-color bg-bg-deep text-text-high placeholder-text-mid px-3 py-2 text-sm focus:border-blue-accent focus:ring-1 focus:ring-blue-accent focus:outline-none;
+        @apply w-full rounded border border-border-color bg-bg-deep text-text-high placeholder-text-mid px-3 py-2 text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none;
     }
 
     /* Badge */
@@ -57,6 +57,6 @@
 
     /* Spinner */
     .spinner {
-        @apply inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-accent border-r-transparent;
+        @apply inline-block h-8 w-8 animate-spin rounded-full border-4 border-cyan-500 border-r-transparent;
     }
 }
