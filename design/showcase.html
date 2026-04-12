@@ -1,0 +1,1506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Discogsography — Design System Showcase</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ─────────────────────────────────────────────
+       DESIGN TOKENS — Deep Space + Purple
+    ───────────────────────────────────────────── */
+    :root {
+      /* Background scale */
+      --bg-void:     #060a12;
+      --bg-deep:     #0a1018;
+      --bg-card:     #0f1a2e;
+      --bg-elevated: #162540;
+      --bg-border:   #1e3050;
+      --bg-hover:    #2a3d58;
+
+      /* Cyan primary */
+      --cyan-900: #004d5a;
+      --cyan-700: #00838f;
+      --cyan-500: #00bcd4;
+      --cyan-400: #00e5ff;
+      --cyan-200: #80f0ff;
+
+      /* Purple secondary */
+      --purple-900: #311b92;
+      --purple-700: #5e35b1;
+      --purple-500: #7c4dff;
+      --purple-300: #b388ff;
+      --purple-100: #d4b8ff;
+
+      /* Text */
+      --text-primary:  #f0f4f8;
+      --text-secondary: #b0bec5;
+      --text-muted:    #7a8ba3;
+      --text-faint:    #4a5e78;
+
+      /* Status */
+      --status-success: #00e676;
+      --status-error:   #ff5252;
+      --status-warning: #ffab00;
+      --status-cyan:    #00e5ff;
+      --status-purple:  #7c4dff;
+      --status-idle:    #7a8ba3;
+
+      /* Graph node colors */
+      --node-artist:   #00e676;
+      --node-release:  #ff5c8a;
+      --node-label:    #78909c;
+      --node-genre:    #ffd54f;
+      --node-category: #40c4ff;
+
+      /* Spacing */
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 20px;
+      --space-6: 24px;
+      --space-8: 32px;
+      --space-10: 40px;
+      --space-12: 48px;
+      --space-16: 64px;
+
+      /* Radii */
+      --radius-sm:  4px;
+      --radius-md:  8px;
+      --radius-lg:  12px;
+      --radius-xl:  16px;
+      --radius-full: 9999px;
+
+      /* Shadows */
+      --shadow-card: 0 4px 24px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.3);
+      --shadow-elevated: 0 8px 40px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.4);
+      --shadow-glow-cyan: 0 0 16px rgba(0,229,255,0.35);
+      --shadow-glow-purple: 0 0 16px rgba(124,77,255,0.4);
+    }
+
+    /* ─────────────────────────────────────────────
+       RESET & BASE
+    ───────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      font-size: 16px;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background-color: var(--bg-void);
+      color: var(--text-primary);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-weight: 400;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ─────────────────────────────────────────────
+       LAYOUT
+    ───────────────────────────────────────────── */
+    .page-wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: var(--space-8) var(--space-6);
+    }
+
+    .section {
+      margin-top: var(--space-16);
+    }
+
+    .section-label {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      margin-bottom: var(--space-5);
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+    }
+
+    .section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--bg-border);
+    }
+
+    /* ─────────────────────────────────────────────
+       HEADER
+    ───────────────────────────────────────────── */
+    .site-header {
+      display: flex;
+      align-items: center;
+      gap: var(--space-5);
+      padding: var(--space-10) 0 var(--space-8);
+      border-bottom: 1px solid var(--bg-border);
+    }
+
+    .site-header__logo {
+      width: 56px;
+      height: 56px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+
+    .site-header__text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .site-header__wordmark {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 2rem;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      background: linear-gradient(135deg, var(--cyan-400) 0%, var(--purple-300) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .site-header__tagline {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 400;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+    }
+
+    .site-header__meta {
+      margin-left: auto;
+      text-align: right;
+    }
+
+    .site-header__meta-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+    }
+
+    .site-header__meta-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--cyan-400);
+      margin-top: 2px;
+    }
+
+    /* ─────────────────────────────────────────────
+       COLOR PALETTE
+    ───────────────────────────────────────────── */
+    .palette-group {
+      margin-bottom: var(--space-6);
+    }
+
+    .palette-group__name {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: var(--space-3);
+      letter-spacing: 0.05em;
+    }
+
+    .palette-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-3);
+    }
+
+    .swatch {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-2);
+      min-width: 80px;
+    }
+
+    .swatch__color {
+      width: 80px;
+      height: 56px;
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(255,255,255,0.06);
+      flex-shrink: 0;
+    }
+
+    .swatch__hex {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+    }
+
+    .swatch__token {
+      font-size: 0.6rem;
+      color: var(--text-faint);
+      text-align: center;
+      line-height: 1.3;
+    }
+
+    /* ─────────────────────────────────────────────
+       TYPOGRAPHY
+    ───────────────────────────────────────────── */
+    .type-specimen {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-5);
+    }
+
+    .type-row {
+      display: flex;
+      align-items: baseline;
+      gap: var(--space-6);
+      padding: var(--space-4) 0;
+      border-bottom: 1px solid var(--bg-border);
+    }
+
+    .type-row:last-child {
+      border-bottom: none;
+    }
+
+    .type-meta {
+      min-width: 160px;
+      flex-shrink: 0;
+    }
+
+    .type-meta__name {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-faint);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .type-meta__spec {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--text-faint);
+      margin-top: 2px;
+      opacity: 0.7;
+    }
+
+    .type-sample { flex: 1; }
+
+    /* Typography specimens */
+    .t-wordmark     { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 2rem; letter-spacing: -0.03em; color: var(--text-primary); }
+    .t-tagline      { font-family: 'Space Grotesk', sans-serif; font-weight: 400; font-size: 0.9rem; color: var(--text-secondary); letter-spacing: 0.04em; }
+    .t-page-title   { font-family: 'Inter', sans-serif; font-weight: 700; font-size: 1.5rem; color: var(--text-primary); }
+    .t-section-head { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 1.1rem; color: var(--text-primary); }
+    .t-card-title   { font-family: 'Inter', sans-serif; font-weight: 500; font-size: 0.95rem; color: var(--text-primary); }
+    .t-body         { font-family: 'Inter', sans-serif; font-weight: 400; font-size: 0.875rem; color: var(--text-secondary); }
+    .t-caption      { font-family: 'Inter', sans-serif; font-weight: 400; font-size: 0.75rem; color: var(--text-muted); }
+    .t-label        { font-family: 'Inter', sans-serif; font-weight: 500; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-faint); }
+    .t-metric       { font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 1.4rem; color: var(--cyan-400); letter-spacing: -0.02em; }
+    .t-queue        { font-family: 'JetBrains Mono', monospace; font-weight: 400; font-size: 0.8rem; color: var(--purple-300); }
+    .t-timestamp    { font-family: 'JetBrains Mono', monospace; font-weight: 400; font-size: 0.7rem; color: var(--text-muted); }
+
+    /* ─────────────────────────────────────────────
+       BUTTONS
+    ───────────────────────────────────────────── */
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-3);
+      align-items: center;
+      margin-bottom: var(--space-4);
+    }
+
+    .btn-row--small {
+      margin-top: var(--space-3);
+    }
+
+    .btn-label {
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: var(--text-faint);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      min-width: 60px;
+    }
+
+    /* Base button */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: 9px var(--space-5);
+      border-radius: var(--radius-md);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.875rem;
+      font-weight: 500;
+      line-height: 1;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .btn--sm {
+      padding: 6px var(--space-3);
+      font-size: 0.78rem;
+      border-radius: var(--radius-sm);
+    }
+
+    /* Primary */
+    .btn--primary {
+      background: var(--cyan-400);
+      color: var(--bg-void);
+      border-color: var(--cyan-400);
+    }
+    .btn--primary:hover {
+      background: var(--cyan-200);
+      border-color: var(--cyan-200);
+      box-shadow: var(--shadow-glow-cyan);
+    }
+
+    /* Secondary */
+    .btn--secondary {
+      background: rgba(124,77,255,0.12);
+      color: var(--purple-300);
+      border-color: rgba(124,77,255,0.4);
+    }
+    .btn--secondary:hover {
+      background: rgba(124,77,255,0.2);
+      border-color: var(--purple-300);
+      box-shadow: var(--shadow-glow-purple);
+    }
+
+    /* Ghost */
+    .btn--ghost {
+      background: transparent;
+      color: var(--text-muted);
+      border-color: var(--bg-border);
+    }
+    .btn--ghost:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+      border-color: var(--bg-hover);
+    }
+
+    /* Danger */
+    .btn--danger {
+      background: rgba(255,82,82,0.1);
+      color: var(--status-error);
+      border-color: rgba(255,82,82,0.35);
+    }
+    .btn--danger:hover {
+      background: rgba(255,82,82,0.2);
+      border-color: var(--status-error);
+    }
+
+    /* ─────────────────────────────────────────────
+       STATUS BADGES
+    ───────────────────────────────────────────── */
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-3);
+      align-items: center;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: var(--radius-full);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      border: 1px solid transparent;
+    }
+
+    .badge__dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .badge--healthy {
+      background: rgba(0,230,118,0.1);
+      color: var(--status-success);
+      border-color: rgba(0,230,118,0.25);
+    }
+    .badge--healthy .badge__dot { background: var(--status-success); box-shadow: 0 0 6px var(--status-success); }
+
+    .badge--error {
+      background: rgba(255,82,82,0.1);
+      color: var(--status-error);
+      border-color: rgba(255,82,82,0.25);
+    }
+    .badge--error .badge__dot { background: var(--status-error); box-shadow: 0 0 6px var(--status-error); }
+
+    .badge--warning {
+      background: rgba(255,171,0,0.1);
+      color: var(--status-warning);
+      border-color: rgba(255,171,0,0.25);
+    }
+    .badge--warning .badge__dot { background: var(--status-warning); box-shadow: 0 0 6px var(--status-warning); }
+
+    .badge--running {
+      background: rgba(0,229,255,0.08);
+      color: var(--cyan-400);
+      border-color: rgba(0,229,255,0.2);
+    }
+    .badge--running .badge__dot {
+      background: var(--cyan-400);
+      box-shadow: 0 0 6px var(--cyan-400);
+      animation: pulse-dot 1.6s ease-in-out infinite;
+    }
+
+    .badge--pending {
+      background: rgba(124,77,255,0.1);
+      color: var(--purple-300);
+      border-color: rgba(124,77,255,0.25);
+    }
+    .badge--pending .badge__dot { background: var(--purple-300); }
+
+    .badge--idle {
+      background: rgba(122,139,163,0.08);
+      color: var(--text-muted);
+      border-color: rgba(122,139,163,0.2);
+    }
+    .badge--idle .badge__dot { background: var(--text-muted); }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(0.75); }
+    }
+
+    /* ─────────────────────────────────────────────
+       CARDS
+    ───────────────────────────────────────────── */
+    .card-demo {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: var(--space-4);
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--bg-border);
+      border-radius: var(--radius-lg);
+      padding: var(--space-5);
+      box-shadow: var(--shadow-card);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .card:hover {
+      border-color: var(--bg-hover);
+      box-shadow: var(--shadow-elevated);
+    }
+
+    .card--elevated {
+      background: var(--bg-elevated);
+      border-color: var(--bg-hover);
+    }
+
+    .card--cyan-accent {
+      border-left: 3px solid var(--cyan-400);
+    }
+
+    .card--purple-accent {
+      border-left: 3px solid var(--purple-500);
+    }
+
+    .card__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--space-3);
+    }
+
+    .card__title {
+      font-weight: 500;
+      font-size: 0.95rem;
+      color: var(--text-primary);
+    }
+
+    .card__body {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .card__metric {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.8rem;
+      font-weight: 500;
+      color: var(--cyan-400);
+      letter-spacing: -0.02em;
+      margin: var(--space-3) 0 var(--space-1);
+    }
+
+    .card__sub {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    .card__divider {
+      border: none;
+      border-top: 1px solid var(--bg-border);
+      margin: var(--space-4) 0;
+    }
+
+    .card__footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* ─────────────────────────────────────────────
+       TABS (FOCUS / INTERACTIVE STATES)
+    ───────────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      gap: 2px;
+      border-bottom: 1px solid var(--bg-border);
+      margin-bottom: var(--space-5);
+    }
+
+    .tab {
+      padding: var(--space-3) var(--space-5);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.15s ease, border-color 0.15s ease;
+      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    }
+
+    .tab:hover {
+      color: var(--text-secondary);
+      background: rgba(255,255,255,0.03);
+    }
+
+    .tab--active {
+      color: var(--cyan-400);
+      border-bottom-color: var(--cyan-400);
+    }
+
+    .tab-content {
+      background: var(--bg-card);
+      border: 1px solid var(--bg-border);
+      border-radius: 0 var(--radius-md) var(--radius-md) var(--radius-md);
+      padding: var(--space-5);
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    /* Input focus demo */
+    .input-demo {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+      max-width: 360px;
+    }
+
+    .input {
+      background: var(--bg-deep);
+      border: 1px solid var(--bg-border);
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.875rem;
+      padding: 9px var(--space-4);
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      width: 100%;
+    }
+
+    .input::placeholder { color: var(--text-faint); }
+
+    .input:focus {
+      border-color: var(--cyan-400);
+      box-shadow: 0 0 0 3px rgba(0,229,255,0.12);
+    }
+
+    .input--error {
+      border-color: var(--status-error);
+    }
+
+    .input--error:focus {
+      box-shadow: 0 0 0 3px rgba(255,82,82,0.12);
+    }
+
+    /* ─────────────────────────────────────────────
+       GRAPH NODES
+    ───────────────────────────────────────────── */
+    .nodes-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-5);
+      align-items: center;
+    }
+
+    .node-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .node-dot {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.12);
+    }
+
+    .node-dot--artist   { background: var(--node-artist);   box-shadow: 0 0 20px rgba(0,230,118,0.5);  }
+    .node-dot--release  { background: var(--node-release);  box-shadow: 0 0 20px rgba(255,92,138,0.5); }
+    .node-dot--label    { background: var(--node-label);    box-shadow: 0 0 20px rgba(120,144,156,0.4);}
+    .node-dot--genre    { background: var(--node-genre);    box-shadow: 0 0 20px rgba(255,213,79,0.5); }
+    .node-dot--category { background: var(--node-category); box-shadow: 0 0 20px rgba(64,196,255,0.5); }
+
+    .node-label {
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+    }
+
+    .node-hex {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--text-faint);
+    }
+
+    /* ─────────────────────────────────────────────
+       LOGO VARIANTS
+    ───────────────────────────────────────────── */
+    .logo-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-6);
+      align-items: flex-start;
+    }
+
+    .logo-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-3);
+    }
+
+    .logo-canvas {
+      background: var(--bg-card);
+      border: 1px solid var(--bg-border);
+      border-radius: var(--radius-lg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-5);
+    }
+
+    .logo-canvas--banner {
+      padding: var(--space-5) var(--space-8);
+    }
+
+    .logo-item__img-banner { height: 48px; width: auto; }
+    .logo-item__img-square { width: 80px;  height: 80px;  object-fit: contain; }
+    .logo-item__img-icon   { width: 56px;  height: 56px;  object-fit: contain; }
+
+    .logo-caption {
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: var(--text-faint);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    /* ─────────────────────────────────────────────
+       FAVICON PREVIEW
+    ───────────────────────────────────────────── */
+    .favicon-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-8);
+      align-items: flex-end;
+    }
+
+    .favicon-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .favicon-canvas {
+      background: var(--bg-card);
+      border: 1px solid var(--bg-border);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-4);
+    }
+
+    .favicon-size {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--text-faint);
+      letter-spacing: 0.04em;
+    }
+
+    /* ─────────────────────────────────────────────
+       DATA TABLE (BONUS)
+    ───────────────────────────────────────────── */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    .data-table th {
+      text-align: left;
+      padding: var(--space-2) var(--space-4);
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      border-bottom: 1px solid var(--bg-border);
+    }
+
+    .data-table td {
+      padding: var(--space-3) var(--space-4);
+      color: var(--text-secondary);
+      border-bottom: 1px solid rgba(30,48,80,0.5);
+    }
+
+    .data-table tr:hover td {
+      background: rgba(42,61,88,0.3);
+    }
+
+    .data-table .mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    /* ─────────────────────────────────────────────
+       FOOTER
+    ───────────────────────────────────────────── */
+    .site-footer {
+      margin-top: var(--space-16);
+      padding: var(--space-8) 0;
+      border-top: 1px solid var(--bg-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--space-4);
+    }
+
+    .site-footer__copy {
+      font-size: 0.78rem;
+      color: var(--text-faint);
+    }
+
+    .site-footer__tokens {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--text-faint);
+    }
+
+    /* ─────────────────────────────────────────────
+       UTILITY
+    ───────────────────────────────────────────── */
+    .mt-4  { margin-top: var(--space-4); }
+    .mt-6  { margin-top: var(--space-6); }
+    .flex  { display: flex; }
+    .gap-3 { gap: var(--space-3); }
+    .wrap  { flex-wrap: wrap; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg-deep); }
+    ::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--bg-hover); }
+  </style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <!-- ══════════════════════════════════════════
+       HEADER
+  ══════════════════════════════════════════ -->
+  <header class="site-header">
+    <img class="site-header__logo" src="../explore/static/brand/icon_dark.png" alt="discogsography icon">
+    <div class="site-header__text">
+      <span class="site-header__wordmark">discogsography</span>
+      <span class="site-header__tagline">the choon network</span>
+    </div>
+    <div class="site-header__meta">
+      <div class="site-header__meta-label">Design System</div>
+      <div class="site-header__meta-value">Deep Space + Purple</div>
+    </div>
+  </header>
+
+
+  <!-- ══════════════════════════════════════════
+       COLOR PALETTE
+  ══════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-label">Color Palette</div>
+
+    <div class="palette-group">
+      <div class="palette-group__name">Background Scale</div>
+      <div class="palette-row">
+        <div class="swatch">
+          <div class="swatch__color" style="background:#060a12; border-color:rgba(255,255,255,0.1);"></div>
+          <span class="swatch__hex">#060a12</span>
+          <span class="swatch__token">--bg-void</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#0a1018;"></div>
+          <span class="swatch__hex">#0a1018</span>
+          <span class="swatch__token">--bg-deep</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#0f1a2e;"></div>
+          <span class="swatch__hex">#0f1a2e</span>
+          <span class="swatch__token">--bg-card</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#162540;"></div>
+          <span class="swatch__hex">#162540</span>
+          <span class="swatch__token">--bg-elevated</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#1e3050;"></div>
+          <span class="swatch__hex">#1e3050</span>
+          <span class="swatch__token">--bg-border</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#2a3d58;"></div>
+          <span class="swatch__hex">#2a3d58</span>
+          <span class="swatch__token">--bg-hover</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="palette-group">
+      <div class="palette-group__name">Cyan Primary</div>
+      <div class="palette-row">
+        <div class="swatch">
+          <div class="swatch__color" style="background:#004d5a;"></div>
+          <span class="swatch__hex">#004d5a</span>
+          <span class="swatch__token">--cyan-900</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#00838f;"></div>
+          <span class="swatch__hex">#00838f</span>
+          <span class="swatch__token">--cyan-700</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#00bcd4;"></div>
+          <span class="swatch__hex">#00bcd4</span>
+          <span class="swatch__token">--cyan-500</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#00e5ff; box-shadow:0 0 12px rgba(0,229,255,0.5);"></div>
+          <span class="swatch__hex">#00e5ff</span>
+          <span class="swatch__token">--cyan-400</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#80f0ff; box-shadow:0 0 12px rgba(128,240,255,0.4);"></div>
+          <span class="swatch__hex">#80f0ff</span>
+          <span class="swatch__token">--cyan-200</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="palette-group">
+      <div class="palette-group__name">Purple Secondary</div>
+      <div class="palette-row">
+        <div class="swatch">
+          <div class="swatch__color" style="background:#311b92;"></div>
+          <span class="swatch__hex">#311b92</span>
+          <span class="swatch__token">--purple-900</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#5e35b1;"></div>
+          <span class="swatch__hex">#5e35b1</span>
+          <span class="swatch__token">--purple-700</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#7c4dff; box-shadow:0 0 12px rgba(124,77,255,0.5);"></div>
+          <span class="swatch__hex">#7c4dff</span>
+          <span class="swatch__token">--purple-500</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#b388ff; box-shadow:0 0 12px rgba(179,136,255,0.4);"></div>
+          <span class="swatch__hex">#b388ff</span>
+          <span class="swatch__token">--purple-300</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#d4b8ff;"></div>
+          <span class="swatch__hex">#d4b8ff</span>
+          <span class="swatch__token">--purple-100</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="palette-group">
+      <div class="palette-group__name">Text Scale</div>
+      <div class="palette-row">
+        <div class="swatch">
+          <div class="swatch__color" style="background:#f0f4f8;"></div>
+          <span class="swatch__hex">#f0f4f8</span>
+          <span class="swatch__token">--text-primary</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#b0bec5;"></div>
+          <span class="swatch__hex">#b0bec5</span>
+          <span class="swatch__token">--text-secondary</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#7a8ba3;"></div>
+          <span class="swatch__hex">#7a8ba3</span>
+          <span class="swatch__token">--text-muted</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#4a5e78;"></div>
+          <span class="swatch__hex">#4a5e78</span>
+          <span class="swatch__token">--text-faint</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="palette-group">
+      <div class="palette-group__name">Status Colors</div>
+      <div class="palette-row">
+        <div class="swatch">
+          <div class="swatch__color" style="background:#00e676; box-shadow:0 0 12px rgba(0,230,118,0.5);"></div>
+          <span class="swatch__hex">#00e676</span>
+          <span class="swatch__token">success</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#ff5252; box-shadow:0 0 12px rgba(255,82,82,0.5);"></div>
+          <span class="swatch__hex">#ff5252</span>
+          <span class="swatch__token">error</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#ffab00; box-shadow:0 0 12px rgba(255,171,0,0.5);"></div>
+          <span class="swatch__hex">#ffab00</span>
+          <span class="swatch__token">warning</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="palette-group">
+      <div class="palette-group__name">Graph Node Colors</div>
+      <div class="palette-row">
+        <div class="swatch">
+          <div class="swatch__color" style="background:#00e676; box-shadow:0 0 12px rgba(0,230,118,0.5);"></div>
+          <span class="swatch__hex">#00e676</span>
+          <span class="swatch__token">Artist</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#ff5c8a; box-shadow:0 0 12px rgba(255,92,138,0.5);"></div>
+          <span class="swatch__hex">#ff5c8a</span>
+          <span class="swatch__token">Release</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#78909c;"></div>
+          <span class="swatch__hex">#78909c</span>
+          <span class="swatch__token">Label</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#ffd54f; box-shadow:0 0 12px rgba(255,213,79,0.5);"></div>
+          <span class="swatch__hex">#ffd54f</span>
+          <span class="swatch__token">Genre</span>
+        </div>
+        <div class="swatch">
+          <div class="swatch__color" style="background:#40c4ff; box-shadow:0 0 12px rgba(64,196,255,0.5);"></div>
+          <span class="swatch__hex">#40c4ff</span>
+          <span class="swatch__token">Category</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════
+       TYPOGRAPHY
+  ══════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-label">Typography</div>
+    <div class="type-specimen">
+
+      <div class="type-row">
+        <div class="type-meta">
+          <div class="type-meta__name">Wordmark</div>
+          <div class="type-meta__spec">Space Grotesk 700 · 2rem</div>
+        </div>
+        <div class="type-sample t-wordmark">discogsography</div>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <div class="type-meta__name">Tagline</div>
+          <div class="type-meta__spec">Space Grotesk 400 · 0.9rem</div>
+        </div>
+        <div class="type-sample t-tagline">the choon network</div>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <div class="type-meta__name">Page Title</div>
+          <div class="type-meta__spec">Inter 700 · 1.5rem</div>
+        </div>
+        <div class="type-sample t-page-title">Knowledge Graph Analytics</div>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <div class="type-meta__name">Section Head</div>
+          <div class="type-meta__spec">Inter 600 · 1.1rem</div>
+        </div>
+        <div class="type-sample t-section-head">Graph Exploration</div>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <div class="type-meta__name">Card Title</div>
+          <div class="type-meta__spec">Inter 500 · 0.95rem</div>
+        </div>
+        <div class="type-sample t-card-title">Release Rarity Score</div>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <div class="type-meta__name">Body</div>
+          <div class="type-meta__spec">Inter 400 · 0.875rem</div>
+        </div>
+        <div class="type-sample t-body">Discogs data transformed into Neo4j knowledge graphs and PostgreSQL analytics. Artists, labels, masters, and releases enriched with MusicBrainz metadata.</div>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <div class="type-meta__name">Caption</div>
+          <div class="type-meta__spec">Inter 400 · 0.75rem</div>
+        </div>
+        <div class="type-sample t-caption">Last updated 2026-04-11 · 4.2M nodes indexed</div>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <div class="type-meta__name">Label</div>
+          <div class="type-meta__spec">Inter 500 · 0.7rem · uppercase</div>
+        </div>
+        <div class="type-sample t-label">Queue Status</div>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <div class="type-meta__name">Metric</div>
+          <div class="type-meta__spec">JetBrains Mono 500 · 1.4rem</div>
+        </div>
+        <div class="type-sample t-metric">4,218,340</div>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <div class="type-meta__name">Queue Name</div>
+          <div class="type-meta__spec">JetBrains Mono 400 · 0.8rem</div>
+        </div>
+        <div class="type-sample t-queue">discogsography-discogs-graphinator-releases</div>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <div class="type-meta__name">Timestamp</div>
+          <div class="type-meta__spec">JetBrains Mono 400 · 0.7rem</div>
+        </div>
+        <div class="type-sample t-timestamp">2026-04-11T14:32:07.841Z</div>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════
+       BUTTONS
+  ══════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-label">Buttons</div>
+
+    <div class="btn-row">
+      <span class="btn-label">Default</span>
+      <button class="btn btn--primary">Primary</button>
+      <button class="btn btn--secondary">Secondary</button>
+      <button class="btn btn--ghost">Ghost</button>
+      <button class="btn btn--danger">Danger</button>
+    </div>
+
+    <div class="btn-row btn-row--small">
+      <span class="btn-label">Small</span>
+      <button class="btn btn--primary btn--sm">Primary</button>
+      <button class="btn btn--secondary btn--sm">Secondary</button>
+      <button class="btn btn--ghost btn--sm">Ghost</button>
+      <button class="btn btn--danger btn--sm">Danger</button>
+    </div>
+
+    <div class="btn-row mt-4">
+      <span class="btn-label">With Icon</span>
+      <button class="btn btn--primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        Search Graph
+      </button>
+      <button class="btn btn--secondary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Run Analysis
+      </button>
+      <button class="btn btn--ghost">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export
+      </button>
+      <button class="btn btn--danger">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        Delete
+      </button>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════
+       STATUS BADGES
+  ══════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-label">Status Badges</div>
+    <div class="badge-row">
+      <span class="badge badge--healthy">
+        <span class="badge__dot"></span>Healthy
+      </span>
+      <span class="badge badge--error">
+        <span class="badge__dot"></span>Error
+      </span>
+      <span class="badge badge--warning">
+        <span class="badge__dot"></span>Warning
+      </span>
+      <span class="badge badge--running">
+        <span class="badge__dot"></span>Running
+      </span>
+      <span class="badge badge--pending">
+        <span class="badge__dot"></span>Pending
+      </span>
+      <span class="badge badge--idle">
+        <span class="badge__dot"></span>Idle
+      </span>
+    </div>
+
+    <!-- In context: queue monitor row -->
+    <div class="mt-6" style="background:var(--bg-card); border:1px solid var(--bg-border); border-radius:var(--radius-lg); overflow:hidden;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Queue</th>
+            <th>Messages</th>
+            <th>Consumers</th>
+            <th>Status</th>
+            <th>Last Activity</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">discogsography-discogs-graphinator-artists</td>
+            <td class="mono" style="color:var(--status-success);">0</td>
+            <td class="mono">1</td>
+            <td><span class="badge badge--healthy"><span class="badge__dot"></span>Healthy</span></td>
+            <td class="mono" style="font-size:0.72rem;">2026-04-11 14:31:52</td>
+          </tr>
+          <tr>
+            <td class="mono">discogsography-discogs-graphinator-releases</td>
+            <td class="mono" style="color:var(--status-warning);">14,820</td>
+            <td class="mono">1</td>
+            <td><span class="badge badge--running"><span class="badge__dot"></span>Running</span></td>
+            <td class="mono" style="font-size:0.72rem;">2026-04-11 14:32:07</td>
+          </tr>
+          <tr>
+            <td class="mono">discogsography-discogs-tableinator-releases</td>
+            <td class="mono" style="color:var(--status-error);">89,431</td>
+            <td class="mono">0</td>
+            <td><span class="badge badge--error"><span class="badge__dot"></span>Error</span></td>
+            <td class="mono" style="font-size:0.72rem;">2026-04-11 13:58:11</td>
+          </tr>
+          <tr>
+            <td class="mono">discogsography-musicbrainz-brainzgraphinator-artists</td>
+            <td class="mono" style="color:var(--text-muted);">0</td>
+            <td class="mono">1</td>
+            <td><span class="badge badge--idle"><span class="badge__dot"></span>Idle</span></td>
+            <td class="mono" style="font-size:0.72rem;">2026-04-11 10:12:44</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════
+       CARDS
+  ══════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-label">Cards</div>
+    <div class="card-demo">
+
+      <!-- Metric card -->
+      <div class="card card--cyan-accent">
+        <div class="card__header">
+          <span class="card__title">Total Artists</span>
+          <span class="badge badge--healthy"><span class="badge__dot"></span>Live</span>
+        </div>
+        <div class="card__metric">8,241,093</div>
+        <div class="card__sub">+12,340 since last extraction</div>
+        <hr class="card__divider">
+        <div class="card__footer">
+          <span style="font-size:0.75rem; color:var(--text-faint);">Neo4j · Artist nodes</span>
+          <span class="t-timestamp">updated 14:31</span>
+        </div>
+      </div>
+
+      <!-- Status card -->
+      <div class="card card--purple-accent">
+        <div class="card__header">
+          <span class="card__title">Extraction Status</span>
+          <span class="badge badge--running"><span class="badge__dot"></span>Running</span>
+        </div>
+        <div class="card__body">
+          Processing releases — 68% complete. Estimated completion in 2h 14m. RabbitMQ queue depth nominal.
+        </div>
+        <hr class="card__divider">
+        <div style="display:flex; gap:var(--space-4); margin-top:var(--space-1);">
+          <div>
+            <div class="t-label">Processed</div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size:0.9rem; color:var(--cyan-400); margin-top:2px;">14,820,112</div>
+          </div>
+          <div>
+            <div class="t-label">Remaining</div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size:0.9rem; color:var(--text-muted); margin-top:2px;">6,934,888</div>
+          </div>
+          <div>
+            <div class="t-label">Rate</div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size:0.9rem; color:var(--status-success); margin-top:2px;">2,100/s</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Info card -->
+      <div class="card">
+        <div class="card__header">
+          <span class="card__title">Rarity Score</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div class="card__body">
+          Computed from community have/want ratios, release year, and format scarcity. Scores above 0.85 indicate ultra-rare pressings.
+        </div>
+        <hr class="card__divider">
+        <div class="card__footer">
+          <button class="btn btn--ghost btn--sm">Details</button>
+          <button class="btn btn--primary btn--sm">Explore</button>
+        </div>
+      </div>
+
+      <!-- Elevated card -->
+      <div class="card card--elevated">
+        <div class="card__header">
+          <span class="card__title">Service Health</span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:var(--space-3);">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:0.8rem; color:var(--text-secondary);">API</span>
+            <span class="badge badge--healthy"><span class="badge__dot"></span>Healthy</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:0.8rem; color:var(--text-secondary);">Graphinator</span>
+            <span class="badge badge--running"><span class="badge__dot"></span>Running</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:0.8rem; color:var(--text-secondary);">Tableinator</span>
+            <span class="badge badge--warning"><span class="badge__dot"></span>Warning</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:0.8rem; color:var(--text-secondary);">Brainzgraphinator</span>
+            <span class="badge badge--idle"><span class="badge__dot"></span>Idle</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════
+       FOCUS / INTERACTIVE STATES
+  ══════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-label">Focus &amp; Interactive States</div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab tab--active">Overview</button>
+      <button class="tab">Artists</button>
+      <button class="tab">Releases</button>
+      <button class="tab">Labels</button>
+      <button class="tab">Genres</button>
+    </div>
+    <div class="tab-content">
+      Showing all graph entities. Switch tabs to filter by entity type. Active tab uses <code style="font-family:'JetBrains Mono',monospace; font-size:0.8em; color:var(--cyan-400); background:rgba(0,229,255,0.08); padding:1px 6px; border-radius:3px;">--cyan-400</code> bottom border; hover states reveal subtle background lift.
+    </div>
+
+    <!-- Inputs -->
+    <div class="input-demo mt-6">
+      <input class="input" type="text" placeholder="Search artists, releases, labels…">
+      <input class="input" type="text" value="discogsography-discogs-graphinator-releases" placeholder="">
+      <input class="input input--error" type="text" value="invalid queue name" placeholder="">
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════
+       GRAPH NODE COLORS
+  ══════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-label">Graph Node Colors</div>
+    <div class="nodes-grid">
+      <div class="node-item">
+        <div class="node-dot node-dot--artist"></div>
+        <span class="node-label">Artist</span>
+        <span class="node-hex">#00e676</span>
+      </div>
+      <div class="node-item">
+        <div class="node-dot node-dot--release"></div>
+        <span class="node-label">Release</span>
+        <span class="node-hex">#ff5c8a</span>
+      </div>
+      <div class="node-item">
+        <div class="node-dot node-dot--label"></div>
+        <span class="node-label">Label</span>
+        <span class="node-hex">#78909c</span>
+      </div>
+      <div class="node-item">
+        <div class="node-dot node-dot--genre"></div>
+        <span class="node-label">Genre</span>
+        <span class="node-hex">#ffd54f</span>
+      </div>
+      <div class="node-item">
+        <div class="node-dot node-dot--category"></div>
+        <span class="node-label">Category</span>
+        <span class="node-hex">#40c4ff</span>
+      </div>
+
+      <!-- Node connection demo -->
+      <div style="margin-left:var(--space-8); display:flex; align-items:center; gap:0;">
+        <div style="width:28px; height:28px; border-radius:50%; background:var(--node-artist); box-shadow:0 0 16px rgba(0,230,118,0.6);"></div>
+        <svg width="60" height="2" viewBox="0 0 60 2"><line x1="0" y1="1" x2="60" y2="1" stroke="var(--bg-hover)" stroke-width="1.5" stroke-dasharray="4 2"/></svg>
+        <div style="width:22px; height:22px; border-radius:50%; background:var(--node-release); box-shadow:0 0 14px rgba(255,92,138,0.6);"></div>
+        <svg width="60" height="2" viewBox="0 0 60 2"><line x1="0" y1="1" x2="60" y2="1" stroke="var(--bg-hover)" stroke-width="1.5" stroke-dasharray="4 2"/></svg>
+        <div style="width:18px; height:18px; border-radius:50%; background:var(--node-label); box-shadow:0 0 12px rgba(120,144,156,0.5);"></div>
+        <svg width="60" height="2" viewBox="0 0 60 2"><line x1="0" y1="1" x2="60" y2="1" stroke="var(--bg-hover)" stroke-width="1.5" stroke-dasharray="4 2"/></svg>
+        <div style="width:16px; height:16px; border-radius:50%; background:var(--node-genre); box-shadow:0 0 10px rgba(255,213,79,0.6);"></div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════
+       LOGO VARIANTS
+  ══════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-label">Logo Variants</div>
+    <div class="logo-grid">
+
+      <div class="logo-item">
+        <div class="logo-canvas logo-canvas--banner">
+          <img class="logo-item__img-banner" src="../explore/static/brand/banner_dark.png" alt="discogsography banner">
+        </div>
+        <span class="logo-caption">banner_dark.png</span>
+      </div>
+
+      <div class="logo-item">
+        <div class="logo-canvas">
+          <img class="logo-item__img-square" src="../explore/static/brand/square_dark.png" alt="discogsography square">
+        </div>
+        <span class="logo-caption">square_dark.png</span>
+      </div>
+
+      <div class="logo-item">
+        <div class="logo-canvas">
+          <img class="logo-item__img-icon" src="../explore/static/brand/icon_dark.png" alt="discogsography icon">
+        </div>
+        <span class="logo-caption">icon_dark.png</span>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════
+       FAVICON PREVIEW
+  ══════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-label">Favicon Preview</div>
+    <div class="favicon-row">
+
+      <div class="favicon-item">
+        <div class="favicon-canvas">
+          <img src="../explore/static/brand/favicon-16.png" width="16" height="16" alt="favicon 16">
+        </div>
+        <span class="favicon-size">16 × 16</span>
+      </div>
+
+      <div class="favicon-item">
+        <div class="favicon-canvas">
+          <img src="../explore/static/brand/favicon-32.png" width="32" height="32" alt="favicon 32">
+        </div>
+        <span class="favicon-size">32 × 32</span>
+      </div>
+
+      <div class="favicon-item">
+        <div class="favicon-canvas">
+          <img src="../explore/static/brand/favicon-64.png" width="64" height="64" alt="favicon 64">
+        </div>
+        <span class="favicon-size">64 × 64</span>
+      </div>
+
+      <div class="favicon-item">
+        <div class="favicon-canvas">
+          <img src="../explore/static/brand/favicon-128.png" width="128" height="128" alt="favicon 128">
+        </div>
+        <span class="favicon-size">128 × 128</span>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════════════════════════
+       FOOTER
+  ══════════════════════════════════════════ -->
+  <footer class="site-footer">
+    <span class="site-footer__copy">discogsography · Deep Space + Purple Design System</span>
+    <span class="site-footer__tokens">Inter · Space Grotesk · JetBrains Mono</span>
+  </footer>
+
+</div>
+</body>
+</html>
