@@ -606,11 +606,18 @@ pub async fn message_validator(
             );
         }
 
-        // Compute content hash from post-filter data so consumers detect
-        // changes caused by filter updates, not just upstream XML/JSONL changes.
-        message.sha256 = calculate_content_hash(&message.data);
-
+        // Evaluate rules on pre-normalized (XML-shaped) data — rules use
+        // dot-notation paths like "genres.genre" that match the XML structure.
         let violations = evaluate_rules(&rules, data_type, &message.data);
+
+        // Normalize XML-shaped JSON into flat, consumer-ready format.
+        // Runs after both filters and rules (which operate on XML shape)
+        // and before hash calculation (so hash reflects what consumers see).
+        crate::normalize::normalize_record(data_type, &mut message.data);
+
+        // Compute content hash from post-normalization data so consumers
+        // detect changes caused by filter or normalization updates.
+        message.sha256 = calculate_content_hash(&message.data);
         for violation in &violations {
             report.record_violation(data_type, &violation.rule_name, &violation.severity);
             let capture_files = matches!(violation.severity, Severity::Error | Severity::Warning);

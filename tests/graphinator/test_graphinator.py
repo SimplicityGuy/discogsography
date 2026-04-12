@@ -1346,8 +1346,8 @@ class TestLabelTransactionLogic:
             "id": "L123",
             "name": "Test Label",
             "sha256": "test_hash",
-            "parentLabel": {"@id": "L_PARENT"},
-            "sublabels": {"label": [{"@id": "L_SUB1"}, {"@id": "L_SUB2"}]},
+            "parentLabel": {"id": "L_PARENT"},
+            "sublabels": [{"id": "L_SUB1"}, {"id": "L_SUB2"}],
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -1381,15 +1381,15 @@ class TestLabelTransactionLogic:
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_handles_string_parent_label(self, mock_neo4j_driver: MagicMock) -> None:
-        """Test label with parent as string ID."""
+    async def test_handles_parent_label_dict(self, mock_neo4j_driver: MagicMock) -> None:
+        """Test label with parent as flat format dict."""
         from graphinator.graphinator import on_label_message
 
         label_data = {
             "id": "L123",
             "name": "Test Label",
             "sha256": "test_hash",
-            "parentLabel": "L_PARENT_STRING",  # String instead of dict
+            "parentLabel": {"id": "L_PARENT"},  # Flat format dict
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -1413,7 +1413,7 @@ class TestLabelTransactionLogic:
         ):
             await on_label_message(mock_message)
 
-        # Should handle string parent
+        # Should handle parent label: hash check + create label + parent relationship
         assert mock_tx.run.call_count >= 3
         mock_message.ack.assert_called_once()
 
@@ -1427,7 +1427,7 @@ class TestLabelTransactionLogic:
             "id": "L123",
             "name": "Test Label",
             "sha256": "test_hash",
-            "sublabels": ["L_SUB1", "L_SUB2"],  # Direct list of strings
+            "sublabels": [{"id": "L_SUB1"}, {"id": "L_SUB2"}],  # Flat format list of dicts
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -1497,9 +1497,9 @@ class TestMasterTransactionLogic:
             "title": "Test Master",
             "year": 2023,
             "sha256": "test_hash",
-            "artists": {"artist": [{"id": "A1"}, {"id": "A2"}]},
-            "genres": {"genre": ["Rock", "Electronic"]},
-            "styles": {"style": ["Alternative", "Ambient"]},
+            "artists": [{"id": "A1"}, {"id": "A2"}],
+            "genres": ["Rock", "Electronic"],
+            "styles": ["Alternative", "Ambient"],
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -1542,7 +1542,7 @@ class TestMasterTransactionLogic:
             "id": "M123",
             "title": "Test Master",
             "sha256": "test_hash",
-            "artists": {"artist": ["A1", "A2"]},  # String IDs instead of dicts
+            "artists": [{"id": "A1"}, {"id": "A2"}],  # Flat format dicts
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -1611,11 +1611,11 @@ class TestReleaseTransactionLogic:
             "id": "R123",
             "title": "Test Release",
             "sha256": "test_hash",
-            "artists": {"artist": [{"id": "A1"}]},
-            "labels": {"label": [{"@id": "L1"}]},
-            "master_id": {"#text": "M123"},
-            "genres": {"genre": ["Rock"]},
-            "styles": {"style": ["Alternative"]},
+            "artists": [{"id": "A1"}],
+            "labels": [{"id": "L1"}],
+            "master_id": "M123",
+            "genres": ["Rock"],
+            "styles": ["Alternative"],
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -1660,12 +1660,10 @@ class TestReleaseTransactionLogic:
             "id": "R123",
             "title": "Test Release",
             "sha256": "test_hash",
-            "extraartists": {
-                "artist": [
-                    {"id": "500", "name": "Bob Ludwig", "role": "Mastered By"},
-                    {"name": "Unknown Engineer", "role": "Engineer"},
-                ]
-            },
+            "extraartists": [
+                {"id": "500", "name": "Bob Ludwig", "role": "Mastered By"},
+                {"name": "Unknown Engineer", "role": "Engineer"},
+            ],
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -1712,7 +1710,7 @@ class TestReleaseTransactionLogic:
             "id": "R123",
             "title": "Test Release",
             "sha256": "test_hash",
-            "master_id": "M123",  # Direct string instead of dict with #text
+            "master_id": "M123",  # Direct string (flat format)
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -1747,8 +1745,8 @@ class TestReleaseTransactionLogic:
             "id": "R123",
             "title": "Test Release",
             "sha256": "test_hash",
-            "artists": {"artist": ["A1", "A2"]},  # String IDs
-            "labels": {"label": ["L1"]},  # String IDs
+            "artists": [{"id": "A1"}, {"id": "A2"}],  # Flat format
+            "labels": [{"id": "L1"}],  # Flat format
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -2090,7 +2088,7 @@ class TestArtistTransactionEdgeCases:
             "id": "A123",
             "name": "Test Artist",
             "sha256": "test_hash",
-            "members": {"name": [{"@id": "M1"}, {"name": "No ID Member"}]},  # One without ID
+            "members": [{"id": "M1"}, {"name": "No ID Member"}],  # One without ID
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -2126,7 +2124,7 @@ class TestArtistTransactionEdgeCases:
             "id": "A123",
             "name": "Test Artist",
             "sha256": "test_hash",
-            "groups": {"name": [{"@id": "G1"}, {}]},  # One without ID
+            "groups": [{"id": "G1"}, {}],  # One without ID
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -2161,7 +2159,7 @@ class TestArtistTransactionEdgeCases:
             "id": "A123",
             "name": "Test Artist",
             "sha256": "test_hash",
-            "aliases": {"name": [{"@id": "AL1"}, {"name": "No ID Alias"}]},
+            "aliases": [{"id": "AL1"}, {"name": "No ID Alias"}],
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -2238,7 +2236,7 @@ class TestLabelTransactionEdgeCases:
             "id": "L123",
             "name": "Test Label",
             "sha256": "test_hash",
-            "parentLabel": {"name": "No ID Parent"},  # No @id or id field
+            "parentLabel": {"name": "No ID Parent"},  # No id field
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -2273,7 +2271,7 @@ class TestLabelTransactionEdgeCases:
             "id": "L123",
             "name": "Test Label",
             "sha256": "test_hash",
-            "sublabels": {"label": [{"@id": "SL1"}, {"name": "No ID Sublabel"}]},
+            "sublabels": [{"id": "SL1"}, {"name": "No ID Sublabel"}],
         }
 
         mock_message = AsyncMock(spec=AbstractIncomingMessage)

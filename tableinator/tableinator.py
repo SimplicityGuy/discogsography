@@ -621,8 +621,7 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
         # Non-batch mode: process individual messages
         data_id: str = data["id"]
 
-        # Normalize data to ensure consistent format (handles @id -> id, #text -> name, etc.)
-        # This matches the normalization done in graphinator for consistency
+        # Apply consumer-side normalization (year parsing from date strings)
         data = normalize_record(data_type, data)
 
         # Extract record details for logging
