@@ -55,64 +55,12 @@ class AdminDashboard {
         this._eaVdRule = '';
         this._eaVdEntityType = '';
         this._eaVdPage = 1;
-        this.initTheme();
         this.bindEvents();
         if (this.token) {
             this.showPanel();
         } else {
             this.showLogin();
         }
-    }
-
-    // ─── Theme toggle ────────────────────────────────────────────────────────
-
-    initTheme() {
-        const btn = document.getElementById('theme-toggle');
-        const autoIcon = document.getElementById('theme-icon-auto');
-        const sunIcon = document.getElementById('theme-icon-sun');
-        const moonIcon = document.getElementById('theme-icon-moon');
-        if (!btn || !autoIcon || !sunIcon || !moonIcon) return;
-
-        const getMode = () => localStorage.getItem('theme') || 'auto';
-
-        const applyMode = (mode) => {
-            if (mode === 'auto') {
-                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                document.documentElement.classList.toggle('dark', prefersDark);
-            } else {
-                document.documentElement.classList.toggle('dark', mode === 'dark');
-            }
-        };
-
-        const updateIcons = () => {
-            const mode = getMode();
-            autoIcon.style.display = mode === 'auto' ? '' : 'none';
-            sunIcon.style.display = mode === 'light' ? '' : 'none';
-            moonIcon.style.display = mode === 'dark' ? '' : 'none';
-        };
-
-        applyMode(getMode());
-        updateIcons();
-
-        const cycle = { auto: 'light', light: 'dark', dark: 'auto' };
-
-        btn.addEventListener('click', () => {
-            const next = cycle[getMode()];
-            if (next === 'auto') {
-                localStorage.removeItem('theme');
-            } else {
-                localStorage.setItem('theme', next);
-            }
-            applyMode(next);
-            updateIcons();
-        });
-
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-            if (getMode() === 'auto') {
-                document.documentElement.classList.toggle('dark', e.matches);
-                updateIcons();
-            }
-        });
     }
 
     // ─── Event binding ───────────────────────────────────────────────────────
