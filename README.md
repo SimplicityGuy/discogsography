@@ -1,6 +1,6 @@
-# 🎵 Discogsography
-
 <div align="center">
+
+<img src="dashboard/static/brand/banner_dark.png" alt="discogsography" width="400" />
 
 [![Build](https://github.com/SimplicityGuy/discogsography/actions/workflows/build.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/build.yml)
 [![Code Quality](https://github.com/SimplicityGuy/discogsography/actions/workflows/code-quality.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/code-quality.yml)
@@ -23,9 +23,13 @@
 
 **A modern Python 3.13+ microservices platform for transforming the complete [Discogs](https://www.discogs.com/) music database into powerful, queryable knowledge graphs and analytics engines.**
 
+</div>
+
+<p align="center">
+
 [🚀 Quick Start](#-quick-start) | [📖 Documentation](#-documentation) | [🎯 Features](#-key-features) | [💬 Community](#-support--community)
 
-</div>
+</p>
 
 ## 🎯 What is Discogsography?
 
