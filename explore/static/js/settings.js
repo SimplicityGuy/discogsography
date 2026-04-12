@@ -8,7 +8,7 @@ class SettingsPane {
     constructor() {
         this._initialized = false;
         this._twoFaState = 'disabled'; // disabled | setup | recovery | enabled | disableConfirm
-        this._setupData = null;        // { secret, provisioning_uri } from /api/auth/2fa/setup
+        this._setupData = null;        // { secret, otpauth_uri } from /api/auth/2fa/setup
         this._recoveryCodes = null;    // string[] from /api/auth/2fa/confirm
     }
 
@@ -229,7 +229,7 @@ class SettingsPane {
         container.appendChild(qrContainer);
         /* global QRCode */
         new QRCode(qrContainer, {
-            text: this._setupData.provisioning_uri,
+            text: this._setupData.otpauth_uri,
             width: 160,
             height: 160,
             colorDark: '#000000',

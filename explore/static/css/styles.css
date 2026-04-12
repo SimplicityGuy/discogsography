@@ -2360,11 +2360,16 @@ select option {
 /* ── Settings page ──────────────────────────────────────────────────────── */
 
 .settings-page {
-    max-width: 42rem;
-    margin: 0 auto;
-    padding: 2rem 1rem;
+    padding: 2rem 2rem;
     overflow-y: auto;
     height: 100%;
+}
+
+.settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(28rem, 1fr));
+    gap: 1rem;
+    align-items: start;
 }
 
 .settings-header {
