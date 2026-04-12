@@ -146,21 +146,42 @@ Key visual elements:
 
 ### 3.2 Logo Variants
 
+Each variant is generated in two background modes:
+- **Dark** (`_dark.png`): Dark background (#060a12) — used in-app and as primary brand
+- **Light** (`_light.png`): Light background (#f0f4f8) — used in README, external sharing, print
+
 **Banner (horizontal):**
 - Logo mark (left) + wordmark text + tagline (right)
+- Files: `banner_dark.png`, `banner_light.png`
 - Export sizes: 800x200px, 1600x400px (@2x)
 - Wordmark: Space Grotesk 700, -0.03em tracking
 - Tagline: Space Grotesk 400, 0.02em tracking, --text-muted color
+- Light variant: wordmark text in #0d1b2a, tagline in #5a7088
 
 **Square (stacked):**
 - Logo mark (top) + wordmark text (below)
+- Files: `square_dark.png`, `square_light.png`
 - Export sizes: 512x512px, 1024x1024px (@2x)
 
 **Icon mark (favicon source):**
 - Logo mark only — no text
+- Files: `icon_dark.png`, `icon_light.png`
 - Source size: 1024x1024px
 - Nodes and edges scaled up proportionally for small-size clarity
 - Used as the master source for all favicon derivatives
+
+**Open Graph image:**
+- Social sharing preview (Slack, Discord, Twitter, etc.)
+- File: `og_image.png`
+- Size: 1200x630px (standard OG ratio)
+- Content: Logo mark + wordmark + tagline on dark background
+- Integrated via `<meta property="og:image">` in HTML
+
+**Design showcase:**
+- Visual reference showing the full design language in one image
+- File: `design_showcase.png`
+- Content: Color palette, typography samples, logo variants, component examples
+- Used in README and documentation only (not served by the app)
 
 ### 3.3 Generation Approach
 
@@ -180,18 +201,28 @@ Essential set with web manifest for "add to home screen" support.
 
 | File                  | Size(s)       | Format | Usage                          |
 |-----------------------|---------------|--------|--------------------------------|
-| `favicon.ico`         | 16+32+48      | ICO    | Browser tab (multi-size)       |
+| `favicon.ico`         | 16+32+48      | ICO    | Browser tab (legacy multi-size)|
+| `favicon-16.png`      | 16x16         | PNG    | Small favicon                  |
+| `favicon-32.png`      | 32x32         | PNG    | Standard favicon               |
+| `favicon-48.png`      | 48x48         | PNG    | Large favicon                  |
+| `favicon-64.png`      | 64x64         | PNG    | Extra-large favicon            |
+| `favicon-128.png`     | 128x128       | PNG    | High-DPI favicon               |
+| `favicon-256.png`     | 256x256       | PNG    | Very high-DPI favicon          |
+| `favicon-512.png`     | 512x512       | PNG    | Maximum favicon / manifest     |
 | `apple-touch-icon.png`| 180x180       | PNG    | iOS home screen                |
-| `icon-192.png`        | 192x192       | PNG    | Android manifest / PWA         |
-| `icon-512.png`        | 512x512       | PNG    | Android splash / PWA           |
 | `site.webmanifest`    | —             | JSON   | PWA manifest                   |
 
 ### 4.2 HTML Integration
 
 ```html
 <link rel="icon" type="image/x-icon" href="/static/brand/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/brand/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/brand/favicon-16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/brand/apple-touch-icon.png">
 <link rel="manifest" href="/static/brand/site.webmanifest">
+<meta property="og:image" content="/static/brand/og_image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 ```
 
 ### 4.3 Web Manifest
@@ -202,8 +233,8 @@ Essential set with web manifest for "add to home screen" support.
   "short_name": "Discogsography",
   "description": "The Choon Network — music knowledge graph",
   "icons": [
-    { "src": "/static/brand/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/static/brand/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "/static/brand/favicon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/brand/favicon-512.png", "sizes": "512x512", "type": "image/png" }
   ],
   "theme_color": "#060a12",
   "background_color": "#060a12",
@@ -341,11 +372,34 @@ The existing light/dark toggle is replaced with a single dark theme. The `auto`/
 
 | File | Description |
 |------|-------------|
-| `scripts/generate_brand_assets.py` | Python script to generate all logo variants and favicon set |
-| `explore/static/brand/*` | Generated brand assets (logo variants, favicons, manifest) |
+| `scripts/generate_brand_assets.py` | Python script to generate all brand assets |
+| `explore/static/brand/*` | Generated brand assets (see full list below) |
 | `dashboard/static/brand/*` | Copy of same brand assets for dashboard service |
 
 The generation script outputs directly to `explore/static/brand/` and `dashboard/static/brand/` — each service gets its own copy (no symlinks, since services are deployed independently via Docker).
+
+**Complete generated asset list per service:**
+
+| File | Description |
+|------|-------------|
+| `banner_dark.png` | Horizontal logo on dark background (1600x400) |
+| `banner_light.png` | Horizontal logo on light background (1600x400) |
+| `square_dark.png` | Stacked logo on dark background (1024x1024) |
+| `square_light.png` | Stacked logo on light background (1024x1024) |
+| `icon_dark.png` | Icon mark on dark background (1024x1024) |
+| `icon_light.png` | Icon mark on light background (1024x1024) |
+| `og_image.png` | Open Graph social sharing image (1200x630) |
+| `design_showcase.png` | Full design language reference image |
+| `favicon.ico` | Multi-size ICO (16+32+48) |
+| `favicon-16.png` | 16x16 favicon |
+| `favicon-32.png` | 32x32 favicon |
+| `favicon-48.png` | 48x48 favicon |
+| `favicon-64.png` | 64x64 favicon |
+| `favicon-128.png` | 128x128 favicon |
+| `favicon-256.png` | 256x256 favicon |
+| `favicon-512.png` | 512x512 favicon |
+| `apple-touch-icon.png` | 180x180 iOS icon |
+| `site.webmanifest` | PWA manifest |
 
 ### 10.2 Files to Modify
 
