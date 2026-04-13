@@ -18,13 +18,13 @@ classifiers = [
 ]
 license = {text = "MIT"}
 dependencies = [
-    "fastapi>=0.115.6",
-    "httpx>=0.27.0",
-    "orjson>=3.9.0",
-    "pydantic>=2.10.5",
-    "python-multipart>=0.0.20",
-    "structlog>=24.0.0",
-    "uvicorn[standard]>=0.34.0",
+    "fastapi>=0.135.3",
+    "httpx>=0.28.1",
+    "orjson>=3.11.8",
+    "pydantic>=2.13.0",
+    "python-multipart>=0.0.26",
+    "structlog>=25.5.0",
+    "uvicorn[standard]>=0.44.0",
 ]
 
 [project.scripts]
