@@ -1579,7 +1579,10 @@ document.addEventListener('DOMContentLoaded', () => {
     nlqPanel.checkEnabled().then(enabled => {
         if (enabled) {
             const toggle = document.getElementById('searchAskToggle');
-            if (toggle) toggle.style.display = '';
+            // Set explicit `flex` rather than '' — clearing the inline style
+            // should fall back to the Tailwind `flex` class but isn't
+            // reliable across browsers when the inline rule was set in HTML.
+            if (toggle) toggle.style.display = 'flex';
         }
     });
 
