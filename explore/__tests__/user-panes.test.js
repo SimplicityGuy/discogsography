@@ -52,7 +52,7 @@ describe('UserPanes', () => {
             getTasteCard: vi.fn().mockResolvedValue(null),
             getCollectionGaps: vi.fn().mockResolvedValue(null),
             getCollectionFormats: vi.fn().mockResolvedValue({ formats: [] }),
-            triggerSync: vi.fn().mockResolvedValue(false),
+            triggerSync: vi.fn().mockResolvedValue({ ok: false, status: 500, body: null }),
             authorizeDiscogs: vi.fn().mockResolvedValue(null),
             verifyDiscogs: vi.fn().mockResolvedValue(null),
             revokeDiscogs: vi.fn().mockResolvedValue(null),
@@ -632,12 +632,110 @@ describe('UserPanes', () => {
 
         it('should reset sync button state after completion', async () => {
             const btn = document.getElementById('syncBtn');
-            window.apiClient.triggerSync.mockResolvedValue(false);
+            window.apiClient.triggerSync.mockResolvedValue({ ok: false, status: 500, body: null });
+            window.alert = vi.fn();
 
             await userPanes.triggerSync();
 
             expect(btn.classList.contains('syncing')).toBe(false);
             expect(btn.disabled).toBe(false);
+        });
+
+        it('should show cooldown message on 429', async () => {
+            window.apiClient.triggerSync.mockResolvedValue({
+                ok: false,
+                status: 429,
+                body: { status: 'cooldown', message: 'Sync rate limited.' },
+            });
+            window.alert = vi.fn();
+
+            await userPanes.triggerSync();
+
+            expect(window.alert).toHaveBeenCalledWith('Sync rate limited.');
+        });
+
+        it('should fall back to default cooldown message on 429 with empty body', async () => {
+            window.apiClient.triggerSync.mockResolvedValue({
+                ok: false,
+                status: 429,
+                body: null,
+            });
+            window.alert = vi.fn();
+
+            await userPanes.triggerSync();
+
+            expect(window.alert).toHaveBeenCalledWith(
+                'Sync was triggered very recently. Please wait a moment before trying again.',
+            );
+        });
+
+        it('should show service-unavailable message on 503', async () => {
+            window.apiClient.triggerSync.mockResolvedValue({
+                ok: false,
+                status: 503,
+                body: { detail: 'Service not ready' },
+            });
+            window.alert = vi.fn();
+
+            await userPanes.triggerSync();
+
+            expect(window.alert).toHaveBeenCalledWith(
+                'Sync service is not ready. Please try again in a moment.',
+            );
+        });
+
+        it('should show body.detail on generic non-ok status', async () => {
+            window.apiClient.triggerSync.mockResolvedValue({
+                ok: false,
+                status: 400,
+                body: { detail: 'Discogs not connected' },
+            });
+            window.alert = vi.fn();
+
+            await userPanes.triggerSync();
+
+            expect(window.alert).toHaveBeenCalledWith('Discogs not connected');
+        });
+
+        it('should prefer body.message when body.detail is missing', async () => {
+            window.apiClient.triggerSync.mockResolvedValue({
+                ok: false,
+                status: 500,
+                body: { message: 'Custom server error' },
+            });
+            window.alert = vi.fn();
+
+            await userPanes.triggerSync();
+
+            expect(window.alert).toHaveBeenCalledWith('Custom server error');
+        });
+
+        it('should reload panes after success and not alert', async () => {
+            vi.useFakeTimers();
+            try {
+                window.apiClient.triggerSync.mockResolvedValue({
+                    ok: true,
+                    status: 202,
+                    body: { sync_id: 'abc-123', status: 'started' },
+                });
+                window.alert = vi.fn();
+                const loadCollectionSpy = vi.spyOn(userPanes, 'loadCollection');
+                const loadWantlistSpy = vi.spyOn(userPanes, 'loadWantlist');
+                const clearTasteCacheSpy = vi.spyOn(userPanes, 'clearTasteCache');
+                const loadTasteFingerprintSpy = vi.spyOn(userPanes, 'loadTasteFingerprint');
+
+                await userPanes.triggerSync();
+                expect(window.alert).not.toHaveBeenCalled();
+
+                vi.advanceTimersByTime(2000);
+
+                expect(loadCollectionSpy).toHaveBeenCalledWith(true);
+                expect(loadWantlistSpy).toHaveBeenCalledWith(true);
+                expect(clearTasteCacheSpy).toHaveBeenCalled();
+                expect(loadTasteFingerprintSpy).toHaveBeenCalled();
+            } finally {
+                vi.useRealTimers();
+            }
         });
     });
 

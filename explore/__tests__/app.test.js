@@ -2584,9 +2584,9 @@ describe('app.js NLQ wiring (inline simulation)', () => {
         toggle.style.display = 'none';
 
         const enabled = await nlqPanel.checkEnabled();
-        if (enabled) toggle.style.display = '';
+        if (enabled) toggle.style.display = 'flex';
 
-        expect(toggle.style.display).toBe('');
+        expect(toggle.style.display).toBe('flex');
     });
 
     it('? keyboard shortcut should trigger askModeBtn click', () => {
@@ -2648,7 +2648,7 @@ describe('app.js NLQ wiring (inline simulation)', () => {
         toggle.style.display = 'none';
 
         const enabled = await nlqPanel.checkEnabled();
-        if (enabled) toggle.style.display = '';
+        if (enabled) toggle.style.display = 'flex';
 
         expect(toggle.style.display).toBe('none');
     });

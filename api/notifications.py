@@ -57,6 +57,12 @@ class BrevoNotificationChannel:
         )
 
         logger.debug("🔑 Sending password reset email", email=email)
+        # Click tracking cannot be disabled per-message via the v3 transactional
+        # API — the SDK's `headers` field rejects standard email headers, and
+        # `X-Mailin-Track*` are SMTP-relay only. To prevent password reset URLs
+        # from being wrapped in a sendibt2.com redirect, click tracking must be
+        # turned off in the Brevo dashboard (Senders, Domains & IPs → your
+        # sending domain → Tracking, or Account Settings → Tracking).
         try:
             await asyncio.to_thread(
                 self._client.transactional_emails.send_transac_email,
@@ -67,9 +73,6 @@ class BrevoNotificationChannel:
                     email=self._sender_email,
                 ),
                 to=[SendTransacEmailRequestToItem(email=email)],
-                # Disable Brevo link tracking so the reset URL is delivered
-                # as-is rather than wrapped in a tracking redirect.
-                headers={"X-Mailin-Track-Links": "0", "X-Mailin-Track": "0"},
             )
             logger.info("📧 Password reset email sent", email=email)
         except Exception:

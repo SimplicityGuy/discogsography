@@ -361,7 +361,7 @@ class UserPanes {
 
         try {
             const result = await window.apiClient.triggerSync(token);
-            if (result) {
+            if (result.ok) {
                 // Reload panes after a short delay to allow sync to start
                 setTimeout(() => {
                     this.loadCollection(true);
@@ -369,8 +369,14 @@ class UserPanes {
                     this.clearTasteCache();
                     this.loadTasteFingerprint();
                 }, 2000);
+            } else if (result.status === 429) {
+                const msg = result.body?.message || result.body?.detail || 'Sync was triggered very recently. Please wait a moment before trying again.';
+                alert(msg);
+            } else if (result.status === 503) {
+                alert('Sync service is not ready. Please try again in a moment.');
             } else {
-                alert('Sync could not be started. Please try again later.');
+                const msg = result.body?.detail || result.body?.message || 'Sync could not be started. Please try again later.';
+                alert(msg);
             }
         } finally {
             if (btn) { btn.classList.remove('syncing'); btn.disabled = false; }

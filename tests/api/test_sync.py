@@ -351,7 +351,7 @@ class TestSyncRedisCooldown:
         mock_redis.setex.assert_awaited_once()
         setex_args = mock_redis.setex.call_args[0]
         assert setex_args[0] == f"sync:cooldown:{TEST_USER_ID}"
-        assert setex_args[1] == 600
+        assert setex_args[1] == 60
 
     def test_redis_none_skips_cooldown(self, test_client: TestClient, mock_cur: AsyncMock, auth_headers: dict[str, str]) -> None:
         import asyncio

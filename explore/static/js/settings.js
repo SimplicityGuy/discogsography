@@ -492,8 +492,9 @@ class SettingsPane {
         try {
             const response = await window.apiClient.twoFactorConfirm(token, code);
             if (response.ok) {
-                const data = await response.json();
-                this._recoveryCodes = data.recovery_codes || [];
+                await response.json().catch(() => ({}));
+                // Recovery codes were returned by /api/auth/2fa/setup, not /confirm.
+                this._recoveryCodes = this._setupData?.recovery_codes || [];
                 window.authManager.updateTotpEnabled(true);
                 this._twoFaState = 'recovery';
                 this._renderTwoFaState();

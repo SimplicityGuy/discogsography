@@ -25,6 +25,10 @@
         @apply btn-base bg-purple-500 text-white hover:bg-purple-300 focus:ring-purple-500;
     }
 
+    .btn-danger {
+        @apply btn-base bg-accent-red text-white hover:bg-red-700 focus:ring-accent-red;
+    }
+
     .btn-outline-secondary {
         @apply btn-base border border-border-color text-text-mid hover:bg-card-bg hover:text-text-high focus:ring-border-color;
     }

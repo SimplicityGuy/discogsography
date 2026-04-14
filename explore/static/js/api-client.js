@@ -404,13 +404,13 @@ class ApiClient {
     // --- Sync ---
 
     async triggerSync(token) {
-        if (!token) return null;
+        if (!token) return { ok: false, status: 0, body: null };
         const response = await fetch('/api/sync', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}` },
         });
-        if (!response.ok) return null;
-        return response.json();
+        const body = await response.json().catch(() => null);
+        return { ok: response.ok, status: response.status, body };
     }
 
     async getSyncStatus(token) {

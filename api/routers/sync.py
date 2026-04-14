@@ -88,7 +88,7 @@ async def _get_current_user(
 
 
 @router.post("/api/sync", status_code=status.HTTP_202_ACCEPTED)
-@limiter.limit("2/10minute")
+@limiter.limit("10/minute")
 async def trigger_sync(
     request: Request,  # noqa: ARG001 — required by slowapi rate limiter
     current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
@@ -175,7 +175,7 @@ async def trigger_sync(
 
     # Set cooldown BEFORE releasing lock to prevent TOCTOU race
     if _redis:
-        await _redis.setex(f"sync:cooldown:{user_id}", 600, "1")
+        await _redis.setex(f"sync:cooldown:{user_id}", 60, "1")
         await _redis.delete(f"sync:lock:{user_id}")  # Safe: cooldown is already in place
 
     logger.info("🔄 Sync triggered", user_id=user_id, sync_id=sync_id)
