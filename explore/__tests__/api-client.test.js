@@ -801,31 +801,50 @@ describe('ApiClient', () => {
     });
 
     describe('sync methods', () => {
-        it('triggerSync should return null without token', async () => {
+        it('triggerSync should return not-ok envelope without token', async () => {
             const result = await window.apiClient.triggerSync(null);
-            expect(result).toBeNull();
+            expect(result).toEqual({ ok: false, status: 0, body: null });
         });
 
         it('triggerSync should use POST method', async () => {
             let capturedOptions;
             vi.stubGlobal('fetch', async (_url, options) => {
                 capturedOptions = options;
-                return { ok: true, json: async () => ({ syncing: true }) };
+                return { ok: true, status: 202, json: async () => ({ syncing: true }) };
             });
-
-            await window.apiClient.triggerSync('token');
-            expect(capturedOptions.method).toBe('POST');
-            expect(capturedOptions.headers['Authorization']).toBe('Bearer token');
-        });
-
-        it('triggerSync should return null on HTTP error', async () => {
-            const mockFetch = createMockFetch({
-                '/api/sync': { status: 500 },
-            });
-            vi.stubGlobal('fetch', mockFetch);
 
             const result = await window.apiClient.triggerSync('token');
-            expect(result).toBeNull();
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer token');
+            expect(result.ok).toBe(true);
+            expect(result.status).toBe(202);
+            expect(result.body).toEqual({ syncing: true });
+        });
+
+        it('triggerSync should surface 429 status and body', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: false,
+                status: 429,
+                json: async () => ({ status: 'cooldown', message: 'Sync rate limited.' }),
+            }));
+
+            const result = await window.apiClient.triggerSync('token');
+            expect(result.ok).toBe(false);
+            expect(result.status).toBe(429);
+            expect(result.body).toEqual({ status: 'cooldown', message: 'Sync rate limited.' });
+        });
+
+        it('triggerSync should surface 500 status with null body', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: false,
+                status: 500,
+                json: async () => { throw new Error('not json'); },
+            }));
+
+            const result = await window.apiClient.triggerSync('token');
+            expect(result.ok).toBe(false);
+            expect(result.status).toBe(500);
+            expect(result.body).toBeNull();
         });
 
         it('getSyncStatus should return null without token', async () => {

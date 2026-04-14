@@ -59,9 +59,12 @@ class TestBrevoNotificationChannel:
         assert call_kwargs.kwargs["sender"].email == "noreply@test.com"
         assert call_kwargs.kwargs["sender"].name == "Test Sender"
         assert call_kwargs.kwargs["to"][0].email == "user@example.com"
-        # Verify link tracking is disabled for password reset emails
-        assert call_kwargs.kwargs["headers"]["X-Mailin-Track-Links"] == "0"
-        assert call_kwargs.kwargs["headers"]["X-Mailin-Track"] == "0"
+        # Brevo's v3 transactional API rejects standard email headers (the SDK's
+        # `headers` field only accepts `sender.ip`, `X-Mailin-custom`, etc.), so
+        # `X-Mailin-Track*` cannot disable click tracking per-message — that
+        # must be turned off in the Brevo dashboard. We assert no headers field
+        # is sent so dead/misleading code can't reappear.
+        assert "headers" not in call_kwargs.kwargs
 
     @pytest.mark.asyncio
     async def test_send_password_reset_swallows_api_error(self) -> None:

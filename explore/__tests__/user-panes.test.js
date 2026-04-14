@@ -52,7 +52,7 @@ describe('UserPanes', () => {
             getTasteCard: vi.fn().mockResolvedValue(null),
             getCollectionGaps: vi.fn().mockResolvedValue(null),
             getCollectionFormats: vi.fn().mockResolvedValue({ formats: [] }),
-            triggerSync: vi.fn().mockResolvedValue(false),
+            triggerSync: vi.fn().mockResolvedValue({ ok: false, status: 500, body: null }),
             authorizeDiscogs: vi.fn().mockResolvedValue(null),
             verifyDiscogs: vi.fn().mockResolvedValue(null),
             revokeDiscogs: vi.fn().mockResolvedValue(null),
@@ -632,12 +632,26 @@ describe('UserPanes', () => {
 
         it('should reset sync button state after completion', async () => {
             const btn = document.getElementById('syncBtn');
-            window.apiClient.triggerSync.mockResolvedValue(false);
+            window.apiClient.triggerSync.mockResolvedValue({ ok: false, status: 500, body: null });
+            window.alert = vi.fn();
 
             await userPanes.triggerSync();
 
             expect(btn.classList.contains('syncing')).toBe(false);
             expect(btn.disabled).toBe(false);
+        });
+
+        it('should show cooldown message on 429', async () => {
+            window.apiClient.triggerSync.mockResolvedValue({
+                ok: false,
+                status: 429,
+                body: { status: 'cooldown', message: 'Sync rate limited.' },
+            });
+            window.alert = vi.fn();
+
+            await userPanes.triggerSync();
+
+            expect(window.alert).toHaveBeenCalledWith('Sync rate limited.');
         });
     });
 

@@ -1776,6 +1776,12 @@ select option {
 /* Taste Fingerprint Strip                                            */
 /* ------------------------------------------------------------------ */
 
+/* Collapse the wrapper when the taste fingerprint API hasn't returned data
+   (timeout, < 10 items, or service unavailable) so it leaves no blank gap. */
+#tasteStrip:empty {
+    display: none;
+}
+
 .taste-strip {
     display: grid;
     grid-template-columns: 1fr 1.5fr 1fr;

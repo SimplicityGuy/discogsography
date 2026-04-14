@@ -52,13 +52,19 @@ function setupMocks() {
 
     window.apiClient = {
         changePassword: vi.fn().mockResolvedValue({ ok: true }),
+        // Real /api/auth/2fa/setup returns secret, otpauth_uri, AND recovery_codes.
         twoFactorSetup: vi.fn().mockResolvedValue({
             ok: true,
-            json: async () => ({ secret: 'JBSWY3DPEHPK3PXP', provisioning_uri: 'otpauth://totp/test' }),
+            json: async () => ({
+                secret: 'JBSWY3DPEHPK3PXP',
+                otpauth_uri: 'otpauth://totp/test',
+                recovery_codes: ['code1', 'code2', 'code3', 'code4'],
+            }),
         }),
+        // Real /api/auth/2fa/confirm returns only {message} — no codes.
         twoFactorConfirm: vi.fn().mockResolvedValue({
             ok: true,
-            json: async () => ({ recovery_codes: ['code1', 'code2', 'code3', 'code4'] }),
+            json: async () => ({ message: '2FA has been enabled' }),
         }),
         twoFactorDisable: vi.fn().mockResolvedValue({ ok: true }),
     };
@@ -486,7 +492,8 @@ describe('SettingsPane', () => {
             expect(window.settingsPane._twoFaState).toBe('setup');
             expect(window.settingsPane._setupData).toEqual({
                 secret: 'JBSWY3DPEHPK3PXP',
-                provisioning_uri: 'otpauth://totp/test',
+                otpauth_uri: 'otpauth://totp/test',
+                recovery_codes: ['code1', 'code2', 'code3', 'code4'],
             });
         });
 
