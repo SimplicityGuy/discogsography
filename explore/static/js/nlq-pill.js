@@ -16,6 +16,38 @@ export class NlqPill {
         this.root.className = 'nlq-pill-root';
         mount.appendChild(this.root);
         this._render();
+        this._bindGlobalKeys();
+    }
+
+    _bindGlobalKeys() {
+        document.addEventListener('keydown', (e) => {
+            const target = e.target;
+            const inInput = target && target.matches && target.matches('input, textarea, [contenteditable]');
+            if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                this.expand();
+            } else if (e.key === '?' && !inInput) {
+                e.preventDefault();
+                this.expand();
+            } else if (e.key === 'Escape' && this.state === 'expanded') {
+                e.preventDefault();
+                this.collapse();
+            }
+        });
+    }
+
+    expand() {
+        if (this.state === 'expanded') return;
+        this.state = 'expanded';
+        this._render();
+        const input = this.root.querySelector('[data-testid="nlq-pill-input"]');
+        if (input) input.focus();
+    }
+
+    collapse() {
+        if (this.state === 'collapsed') return;
+        this.state = 'collapsed';
+        this._render();
     }
 
     _render() {
@@ -23,6 +55,8 @@ export class NlqPill {
         while (this.root.firstChild) this.root.removeChild(this.root.firstChild);
         if (this.state === 'collapsed') {
             this._renderCollapsed();
+        } else if (this.state === 'expanded') {
+            this._renderExpanded();
         }
     }
 
@@ -31,6 +65,7 @@ export class NlqPill {
         pill.type = 'button';
         pill.setAttribute('data-testid', 'nlq-pill-collapsed');
         pill.className = 'nlq-pill-collapsed';
+        pill.addEventListener('click', () => this.expand());
         const sparkle = document.createElement('span');
         sparkle.className = 'nlq-pill-sparkle';
         sparkle.textContent = '✨';
@@ -42,5 +77,19 @@ export class NlqPill {
         pill.appendChild(label);
         pill.appendChild(kbd);
         this.root.appendChild(pill);
+    }
+
+    _renderExpanded() {
+        const card = document.createElement('div');
+        card.setAttribute('data-testid', 'nlq-pill-expanded');
+        card.className = 'nlq-pill-expanded';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.setAttribute('data-testid', 'nlq-pill-input');
+        input.className = 'nlq-pill-input';
+        input.placeholder = 'Ask anything about the music graph…';
+        input.maxLength = 500;
+        card.appendChild(input);
+        this.root.appendChild(card);
     }
 }
