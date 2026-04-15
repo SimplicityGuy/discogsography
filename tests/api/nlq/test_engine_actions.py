@@ -84,7 +84,7 @@ async def _run_with_action(tool_name: str, tool_input: dict[str, Any]) -> NLQRes
 @pytest.mark.asyncio
 async def test_seed_graph_action_recorded() -> None:
     result = await _run_with_action(
-        "seed_graph",
+        "ui_seed_graph",
         {"entities": [{"name": "Kraftwerk", "entity_type": "artist"}], "replace": True},
     )
     assert len(result.actions) == 1
@@ -97,7 +97,7 @@ async def test_seed_graph_action_recorded() -> None:
 
 @pytest.mark.asyncio
 async def test_highlight_path_action_recorded() -> None:
-    result = await _run_with_action("highlight_path", {"nodes": ["A", "B", "C"]})
+    result = await _run_with_action("ui_highlight_path", {"nodes": ["A", "B", "C"]})
     assert len(result.actions) == 1
     action = result.actions[0]
     assert isinstance(action, HighlightPathAction)
@@ -106,7 +106,7 @@ async def test_highlight_path_action_recorded() -> None:
 
 @pytest.mark.asyncio
 async def test_focus_node_action_recorded() -> None:
-    result = await _run_with_action("focus_node", {"name": "Aphex Twin", "entity_type": "artist"})
+    result = await _run_with_action("ui_focus_node", {"name": "Aphex Twin", "entity_type": "artist"})
     assert len(result.actions) == 1
     action = result.actions[0]
     assert isinstance(action, FocusNodeAction)
@@ -116,7 +116,7 @@ async def test_focus_node_action_recorded() -> None:
 
 @pytest.mark.asyncio
 async def test_filter_graph_action_recorded() -> None:
-    result = await _run_with_action("filter_graph", {"by": "genre", "value": "Techno"})
+    result = await _run_with_action("ui_filter_graph", {"by": "genre", "value": "Techno"})
     assert len(result.actions) == 1
     action = result.actions[0]
     assert isinstance(action, FilterGraphAction)
@@ -141,7 +141,7 @@ async def test_ui_find_path_action_recorded_as_find_path() -> None:
 
 @pytest.mark.asyncio
 async def test_show_credits_action_recorded() -> None:
-    result = await _run_with_action("show_credits", {"name": "Radiohead", "entity_type": "artist"})
+    result = await _run_with_action("ui_show_credits", {"name": "Radiohead", "entity_type": "artist"})
     assert len(result.actions) == 1
     action = result.actions[0]
     assert isinstance(action, ShowCreditsAction)
@@ -150,7 +150,7 @@ async def test_show_credits_action_recorded() -> None:
 
 @pytest.mark.asyncio
 async def test_switch_pane_action_recorded() -> None:
-    result = await _run_with_action("switch_pane", {"pane": "trends"})
+    result = await _run_with_action("ui_switch_pane", {"pane": "trends"})
     assert len(result.actions) == 1
     action = result.actions[0]
     assert isinstance(action, SwitchPaneAction)
@@ -159,7 +159,7 @@ async def test_switch_pane_action_recorded() -> None:
 
 @pytest.mark.asyncio
 async def test_open_insight_tile_action_recorded() -> None:
-    result = await _run_with_action("open_insight_tile", {"tile_id": "top-labels"})
+    result = await _run_with_action("ui_open_insight_tile", {"tile_id": "top-labels"})
     assert len(result.actions) == 1
     action = result.actions[0]
     assert isinstance(action, OpenInsightTileAction)
@@ -168,7 +168,7 @@ async def test_open_insight_tile_action_recorded() -> None:
 
 @pytest.mark.asyncio
 async def test_set_trend_range_action_recorded() -> None:
-    result = await _run_with_action("set_trend_range", {"from": "1990", "to": "2020"})
+    result = await _run_with_action("ui_set_trend_range", {"from": "1990", "to": "2020"})
     assert len(result.actions) == 1
     action = result.actions[0]
     assert isinstance(action, SetTrendRangeAction)
@@ -179,7 +179,7 @@ async def test_set_trend_range_action_recorded() -> None:
 @pytest.mark.asyncio
 async def test_suggest_followups_action_recorded() -> None:
     result = await _run_with_action(
-        "suggest_followups",
+        "ui_suggest_followups",
         {"queries": ["What about Aphex Twin?", "Show me more like this"]},
     )
     assert len(result.actions) == 1
@@ -198,7 +198,7 @@ async def test_mixed_data_and_action_tools_in_same_iteration() -> None:
         [
             _tool_use_block("search", {"q": "Kraftwerk"}, "tu_data"),
             _tool_use_block(
-                "seed_graph",
+                "ui_seed_graph",
                 {"entities": [{"name": "Kraftwerk", "entity_type": "artist"}]},
                 "tu_action",
             ),
@@ -227,7 +227,7 @@ async def test_mixed_data_and_action_tools_in_same_iteration() -> None:
     result = await engine.run("Show me Kraftwerk", NLQContext())
 
     assert "search" in result.tools_used
-    assert "seed_graph" in result.tools_used
+    assert "ui_seed_graph" in result.tools_used
     assert len(result.actions) == 1
     assert isinstance(result.actions[0], SeedGraphAction)
 
@@ -259,7 +259,7 @@ async def test_invalid_action_payload_returns_error_and_skips_recording() -> Non
     first = _tool_use_response(
         [
             _tool_use_block(
-                "switch_pane",
+                "ui_switch_pane",
                 {"pane": "not_a_real_pane"},
                 "tu_bad",
             ),
@@ -282,8 +282,8 @@ async def test_invalid_action_payload_returns_error_and_skips_recording() -> Non
 async def test_multiple_distinct_actions_recorded_in_order() -> None:
     first = _tool_use_response(
         [
-            _tool_use_block("switch_pane", {"pane": "trends"}, "tu_1"),
-            _tool_use_block("set_trend_range", {"from": "1990", "to": "2020"}, "tu_2"),
+            _tool_use_block("ui_switch_pane", {"pane": "trends"}, "tu_1"),
+            _tool_use_block("ui_set_trend_range", {"from": "1990", "to": "2020"}, "tu_2"),
         ]
     )
     final = _end_turn_response("Done.")

@@ -187,11 +187,13 @@ def get_action_tool_schemas() -> list[dict[str, Any]]:
 
     These tools record the model's intent to mutate the UI. Their handlers
     do not touch any database — the actual UI effect is applied client-side
-    by the Explore front-end's ``NlqActionApplier``.
+    by the Explore front-end's ``NlqActionApplier``. All action tools are
+    prefixed with ``ui_`` to keep them visually distinct from data tools and
+    to avoid collisions with data tool names of the same stem.
     """
     return [
         {
-            "name": "seed_graph",
+            "name": "ui_seed_graph",
             "description": (
                 "Seed the Explore graph pane with one or more entities. Use when the user asks to "
                 "visualize, see, show, or explore specific entities on the graph. Set replace=true "
@@ -221,7 +223,7 @@ def get_action_tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "highlight_path",
+            "name": "ui_highlight_path",
             "description": "Highlight a sequence of node names already on the graph to emphasize a connection.",
             "input_schema": {
                 "type": "object",
@@ -236,7 +238,7 @@ def get_action_tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "focus_node",
+            "name": "ui_focus_node",
             "description": "Focus the Explore pane on a specific entity (loads its detail view).",
             "input_schema": {
                 "type": "object",
@@ -248,7 +250,7 @@ def get_action_tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "filter_graph",
+            "name": "ui_filter_graph",
             "description": "Filter the current graph view by a dimension (year, genre, or label).",
             "input_schema": {
                 "type": "object",
@@ -270,8 +272,8 @@ def get_action_tool_schemas() -> list[dict[str, Any]]:
             "name": "ui_find_path",
             "description": (
                 "Trigger the graph find-path visualization between two named entities in the UI. "
-                "This is a UI action, distinct from the data tool ``find_path`` which computes the "
-                "path. Call the data tool first to verify a path exists."
+                "Distinct from the data tool ``find_path`` which computes the path. Call the data "
+                "tool first to verify a path exists."
             ),
             "input_schema": {
                 "type": "object",
@@ -285,7 +287,7 @@ def get_action_tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "show_credits",
+            "name": "ui_show_credits",
             "description": "Open the credits pane for an entity.",
             "input_schema": {
                 "type": "object",
@@ -297,7 +299,7 @@ def get_action_tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "switch_pane",
+            "name": "ui_switch_pane",
             "description": (
                 "Switch the active UI pane. Use when the user's question is best answered on a "
                 "different pane (e.g., trends for a release-count question)."
@@ -311,7 +313,7 @@ def get_action_tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "open_insight_tile",
+            "name": "ui_open_insight_tile",
             "description": "Open a specific insights tile by its identifier.",
             "input_schema": {
                 "type": "object",
@@ -322,7 +324,7 @@ def get_action_tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "set_trend_range",
+            "name": "ui_set_trend_range",
             "description": "Set the trends pane year range.",
             "input_schema": {
                 "type": "object",
@@ -334,7 +336,7 @@ def get_action_tool_schemas() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "suggest_followups",
+            "name": "ui_suggest_followups",
             "description": "Propose follow-up queries for the user to click next. Use sparingly (1-3 suggestions).",
             "input_schema": {
                 "type": "object",
@@ -406,34 +408,36 @@ _AUTH_TOOLS = {"get_collection_gaps", "get_taste_fingerprint", "get_taste_blinds
 
 # ── Action tool names ─────────────────────────────────────────────────────
 #
-# Action tool names are distinct from data tool names. ``ui_find_path`` maps to
-# client action type ``find_path`` because the data tool ``find_path`` already
-# owns that name.
+# Action tools are named with a ``ui_`` prefix to keep them visually distinct
+# from data tools in the model's tool list and to avoid collisions with data
+# tool names (e.g., the data tool ``find_path`` vs the UI action ``ui_find_path``).
+# Client wire types (``NLQResult.actions[i].type``) stay unprefixed so the
+# frontend applier contract is unchanged.
 
 _ACTION_TOOLS: set[str] = {
-    "seed_graph",
-    "highlight_path",
-    "focus_node",
-    "filter_graph",
+    "ui_seed_graph",
+    "ui_highlight_path",
+    "ui_focus_node",
+    "ui_filter_graph",
     "ui_find_path",
-    "show_credits",
-    "switch_pane",
-    "open_insight_tile",
-    "set_trend_range",
-    "suggest_followups",
+    "ui_show_credits",
+    "ui_switch_pane",
+    "ui_open_insight_tile",
+    "ui_set_trend_range",
+    "ui_suggest_followups",
 }
 
 _ACTION_TOOL_TO_TYPE: dict[str, str] = {
-    "seed_graph": "seed_graph",
-    "highlight_path": "highlight_path",
-    "focus_node": "focus_node",
-    "filter_graph": "filter_graph",
+    "ui_seed_graph": "seed_graph",
+    "ui_highlight_path": "highlight_path",
+    "ui_focus_node": "focus_node",
+    "ui_filter_graph": "filter_graph",
     "ui_find_path": "find_path",
-    "show_credits": "show_credits",
-    "switch_pane": "switch_pane",
-    "open_insight_tile": "open_insight_tile",
-    "set_trend_range": "set_trend_range",
-    "suggest_followups": "suggest_followups",
+    "ui_show_credits": "show_credits",
+    "ui_switch_pane": "switch_pane",
+    "ui_open_insight_tile": "open_insight_tile",
+    "ui_set_trend_range": "set_trend_range",
+    "ui_suggest_followups": "suggest_followups",
 }
 
 

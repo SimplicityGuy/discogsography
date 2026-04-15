@@ -37,16 +37,16 @@ EXPECTED_AUTH_NAMES = {
 }
 
 EXPECTED_ACTION_NAMES = {
-    "seed_graph",
-    "highlight_path",
-    "focus_node",
-    "filter_graph",
+    "ui_seed_graph",
+    "ui_highlight_path",
+    "ui_focus_node",
+    "ui_filter_graph",
     "ui_find_path",
-    "show_credits",
-    "switch_pane",
-    "open_insight_tile",
-    "set_trend_range",
-    "suggest_followups",
+    "ui_show_credits",
+    "ui_switch_pane",
+    "ui_open_insight_tile",
+    "ui_set_trend_range",
+    "ui_suggest_followups",
 }
 
 
