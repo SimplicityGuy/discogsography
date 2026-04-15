@@ -127,6 +127,7 @@ async def nlq_query(request: Request, body: NLQQueryRequest) -> Any:
         "summary": result.summary,
         "entities": result.entities,
         "tools_used": result.tools_used,
+        "actions": [action.model_dump(by_alias=True, mode="json") for action in result.actions],
         "cached": False,
     }
 
@@ -181,6 +182,12 @@ def _stream_response(query: str, user_id: str | None, context: dict[str, Any] | 
             logger.error("❌ NLQ engine error", error=str(exc), exc_info=True)
             yield {"event": "error", "data": json.dumps({"error": "An internal error occurred"})}
             return
+
+        # Emit actions event before result so the client can snapshot and apply
+        yield {
+            "event": "actions",
+            "data": json.dumps({"actions": [action.model_dump(by_alias=True, mode="json") for action in result.actions]}),
+        }
 
         # Emit final result
         response_data = {
