@@ -16,11 +16,13 @@ import structlog
 from api.limiter import limiter
 from api.nlq.config import NLQConfig
 from api.nlq.engine import NLQContext, NLQEngine
+from api.nlq.suggestions import build_suggestions
 
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+_SUGGESTIONS_CACHE_TTL = 300  # 5 minutes
 _nlq_config: NLQConfig = NLQConfig()
 _engine: NLQEngine | None = None
 _redis: Any = None
@@ -67,6 +69,36 @@ def _cache_key(query: str) -> str:
     normalized = query.strip().lower()
     digest = hashlib.sha256(normalized.encode()).hexdigest()[:16]
     return f"nlq:{digest}"
+
+
+@router.get("/api/nlq/suggestions")
+@limiter.limit("100/minute")
+async def nlq_suggestions(
+    request: Request,  # noqa: ARG001
+    pane: str = "explore",
+    focus: str | None = None,
+    focus_type: str | None = None,
+) -> JSONResponse:
+    """Return dynamic suggested queries for the Ask pill."""
+    cache_key = f"nlq:suggest:{pane}:{focus or ''}:{focus_type or ''}"
+    if _redis is not None:
+        try:
+            cached = await _redis.get(cache_key)
+            if cached is not None:
+                return JSONResponse(content=json.loads(cached))
+        except Exception:
+            logger.debug("⚠️ NLQ suggestions cache read failed", key=cache_key)
+
+    suggestions = build_suggestions(pane=pane, focus=focus, focus_type=focus_type)
+    payload = {"suggestions": suggestions}
+
+    if _redis is not None:
+        try:
+            await _redis.setex(cache_key, _SUGGESTIONS_CACHE_TTL, json.dumps(payload))
+        except Exception:
+            logger.debug("⚠️ NLQ suggestions cache write failed", key=cache_key)
+
+    return JSONResponse(content=payload)
 
 
 @router.get("/api/nlq/status")
