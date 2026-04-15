@@ -514,6 +514,23 @@ class ApiClient {
     // --- NLQ (Natural Language Query) ---
 
     /**
+     * Fetch NLQ suggestions for the current context.
+     * @param {Object} opts
+     * @param {string} opts.pane - Active pane (e.g. 'explore', 'search')
+     * @param {string|null} opts.focus - Current entity name, or null
+     * @param {string|null} opts.focusType - Current entity type, or null
+     * @returns {Promise<Object>} Suggestions response
+     */
+    async fetchNlqSuggestions({ pane, focus = null, focusType = null }) {
+        const params = new URLSearchParams({ pane });
+        if (focus) params.set('focus', focus);
+        if (focusType) params.set('focus_type', focusType);
+        const response = await fetch(`/api/nlq/suggestions?${params.toString()}`);
+        if (!response.ok) throw new Error(`Suggestions fetch failed: ${response.status}`);
+        return await response.json();
+    }
+
+    /**
      * Check if NLQ feature is enabled.
      * @returns {Promise<{enabled: boolean}>} NLQ status
      */
