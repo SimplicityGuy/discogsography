@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent } from '@testing-library/dom';
 import { NlqPill } from '../static/js/nlq-pill.js';
 
@@ -74,5 +74,38 @@ describe('NlqPill interactions', () => {
         pill.expand();
         fireEvent.keyDown(document, { key: 'Escape' });
         expect(pill.state).toBe('collapsed');
+    });
+});
+
+describe('NlqPill suggestions integration', () => {
+    beforeEach(() => {
+        document.body.replaceChildren();
+        const mount = document.createElement('div');
+        mount.id = 'nlqPillMount';
+        document.body.appendChild(mount);
+        localStorage.clear();
+    });
+
+    it('renders suggestions into the expanded card', async () => {
+        const fetchFn = vi.fn().mockResolvedValue({ suggestions: ['Suggested Q'] });
+        const pill = new NlqPill({ mountId: 'nlqPillMount', fetchSuggestions: fetchFn });
+        pill.mount();
+        pill.expand();
+        await Promise.resolve();
+        await Promise.resolve();
+        const chip = document.querySelector('[data-testid="nlq-suggestion-chip"]');
+        expect(chip).not.toBeNull();
+    });
+
+    it('picks a suggestion into the input on click', async () => {
+        const fetchFn = vi.fn().mockResolvedValue({ suggestions: ['Suggested Q'] });
+        const onSubmit = vi.fn();
+        const pill = new NlqPill({ mountId: 'nlqPillMount', fetchSuggestions: fetchFn, onSubmit });
+        pill.mount();
+        pill.expand();
+        await Promise.resolve();
+        await Promise.resolve();
+        document.querySelector('[data-testid="nlq-suggestion-chip"]').click();
+        expect(onSubmit).toHaveBeenCalledWith('Suggested Q');
     });
 });

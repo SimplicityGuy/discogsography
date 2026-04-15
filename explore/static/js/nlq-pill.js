@@ -2,9 +2,19 @@
  * Global floating Ask pill — state machine: collapsed → expanded → loading → summary.
  */
 
+import { NlqSuggestions } from './nlq-suggestions.js';
+
 export class NlqPill {
-    constructor({ mountId = 'nlqPillMount' } = {}) {
+    constructor({
+        mountId = 'nlqPillMount',
+        fetchSuggestions = null,
+        getContext = () => ({ pane: 'explore' }),
+        onSubmit = null,
+    } = {}) {
         this.mountId = mountId;
+        this.fetchSuggestions = fetchSuggestions;
+        this.getContext = getContext;
+        this.onSubmit = onSubmit;
         this.state = 'collapsed';
         this.root = null;
     }
@@ -83,13 +93,46 @@ export class NlqPill {
         const card = document.createElement('div');
         card.setAttribute('data-testid', 'nlq-pill-expanded');
         card.className = 'nlq-pill-expanded';
+
         const input = document.createElement('input');
         input.type = 'text';
         input.setAttribute('data-testid', 'nlq-pill-input');
         input.className = 'nlq-pill-input';
         input.placeholder = 'Ask anything about the music graph…';
         input.maxLength = 500;
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this._submitQuery(input.value);
+            }
+        });
         card.appendChild(input);
+
+        const chipsContainer = document.createElement('div');
+        chipsContainer.className = 'nlq-pill-chips';
+        card.appendChild(chipsContainer);
+
         this.root.appendChild(card);
+
+        if (this.fetchSuggestions) {
+            this._suggestions = new NlqSuggestions({
+                container: chipsContainer,
+                fetchFn: this.fetchSuggestions,
+                onPick: (text) => {
+                    input.value = text;
+                    this._submitQuery(text);
+                },
+            });
+            const ctx = this.getContext();
+            this._suggestions.render({ pane: ctx.pane, focus: ctx.focus, focusType: ctx.focusType });
+        }
+    }
+
+    _submitQuery(query) {
+        const trimmed = (query || '').trim();
+        if (!trimmed) return;
+        NlqSuggestions.addRecent(trimmed);
+        this.collapse();
+        if (this.onSubmit) this.onSubmit(trimmed);
     }
 }
