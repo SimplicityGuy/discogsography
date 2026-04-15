@@ -6,6 +6,7 @@ MCP server. No framework coupling — just typed params in, typed dicts out.
 
 from __future__ import annotations
 
+from common.agent_tools.discovery import get_collaborators, get_trends, search
 from common.agent_tools.entities import (
     get_artist_details,
     get_genre_details,
@@ -14,13 +15,19 @@ from common.agent_tools.entities import (
     get_style_details,
 )
 from common.agent_tools.graph import find_path
+from common.agent_tools.stats import get_genre_tree, get_graph_stats
 
 
 __all__ = [
     "find_path",
     "get_artist_details",
+    "get_collaborators",
     "get_genre_details",
+    "get_genre_tree",
+    "get_graph_stats",
     "get_label_details",
     "get_release_details",
     "get_style_details",
+    "get_trends",
+    "search",
 ]
