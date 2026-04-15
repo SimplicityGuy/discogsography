@@ -77,6 +77,48 @@ describe('NlqPill interactions', () => {
     });
 });
 
+describe('NlqPill submit via Enter key', () => {
+    beforeEach(() => {
+        document.body.replaceChildren();
+        const mount = document.createElement('div');
+        mount.id = 'nlqPillMount';
+        document.body.appendChild(mount);
+        localStorage.clear();
+    });
+
+    it('calls onSubmit when Enter is pressed in the input', () => {
+        const onSubmit = vi.fn();
+        const pill = new NlqPill({ mountId: 'nlqPillMount', onSubmit });
+        pill.mount();
+        pill.expand();
+        const input = document.querySelector('[data-testid="nlq-pill-input"]');
+        input.value = 'test query';
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        expect(onSubmit).toHaveBeenCalledWith('test query');
+    });
+
+    it('does NOT call onSubmit when Enter is pressed with empty input', () => {
+        const onSubmit = vi.fn();
+        const pill = new NlqPill({ mountId: 'nlqPillMount', onSubmit });
+        pill.mount();
+        pill.expand();
+        const input = document.querySelector('[data-testid="nlq-pill-input"]');
+        input.value = '   ';
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it('renders expanded card without suggestions when fetchSuggestions is null', () => {
+        const pill = new NlqPill({ mountId: 'nlqPillMount', fetchSuggestions: null });
+        pill.mount();
+        pill.expand();
+        const card = document.querySelector('[data-testid="nlq-pill-expanded"]');
+        expect(card).not.toBeNull();
+        const chips = document.querySelectorAll('[data-testid="nlq-suggestion-chip"]');
+        expect(chips.length).toBe(0);
+    });
+});
+
 describe('NlqPill suggestions integration', () => {
     beforeEach(() => {
         document.body.replaceChildren();

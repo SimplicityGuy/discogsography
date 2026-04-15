@@ -63,4 +63,25 @@ describe('NlqSuggestions', () => {
         const history = NlqSuggestions.loadRecent();
         expect(history).toEqual([]);
     });
+
+    it('resets non-array history and returns empty array', () => {
+        localStorage.setItem('nlq.history', JSON.stringify({ not: 'an array' }));
+        const history = NlqSuggestions.loadRecent();
+        expect(history).toEqual([]);
+        expect(localStorage.getItem('nlq.history')).toBeNull();
+    });
+
+    it('addRecent ignores empty string', () => {
+        NlqSuggestions.addRecent('');
+        expect(localStorage.getItem('nlq.history')).toBeNull();
+    });
+
+    it('_renderChipRow skips empty items array', async () => {
+        const fetchFn = vi.fn().mockResolvedValue({ suggestions: [] });
+        const sug = new NlqSuggestions({ container, fetchFn });
+        await sug.render({ pane: 'explore' });
+        // Neither suggestion row nor recent row should exist when both are empty
+        const rows = container.querySelectorAll('.nlq-chip-row');
+        expect(rows.length).toBe(0);
+    });
 });

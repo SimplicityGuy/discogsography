@@ -52,4 +52,68 @@ describe('buildHandlers', () => {
         expect(app._switchPane).toHaveBeenCalledWith('trends');
         expect(app.graph.restore).toHaveBeenCalledWith({ nodes: [1] });
     });
+
+    it('setTrendRange delegates to app.trends.setRange', () => {
+        app.trends = { setRange: vi.fn() };
+        const handlers = buildHandlers({ app });
+        handlers.setTrendRange({ from: '1980', to: '1990' });
+        expect(app.trends.setRange).toHaveBeenCalledWith('1980', '1990');
+    });
+
+    it('filterGraph delegates to app.graph.applyFilter', () => {
+        app.graph.applyFilter = vi.fn();
+        const handlers = buildHandlers({ app });
+        handlers.filterGraph({ by: 'year', value: '1990' });
+        expect(app.graph.applyFilter).toHaveBeenCalledWith('year', '1990');
+    });
+
+    it('findPath delegates to app.graph.findPath with kwargs', () => {
+        app.graph.findPath = vi.fn();
+        const handlers = buildHandlers({ app });
+        handlers.findPath({ from: 'Kraftwerk', to: 'Daft Punk', from_type: 'artist', to_type: 'artist' });
+        expect(app.graph.findPath).toHaveBeenCalledWith({ from: 'Kraftwerk', to: 'Daft Punk', fromType: 'artist', toType: 'artist' });
+    });
+
+    it('showCredits delegates to app.credits.show', () => {
+        app.credits = { show: vi.fn() };
+        const handlers = buildHandlers({ app });
+        handlers.showCredits({ name: 'Kraftwerk', entity_type: 'artist' });
+        expect(app.credits.show).toHaveBeenCalledWith('Kraftwerk', 'artist');
+    });
+
+    it('highlightPath delegates to app.graph.highlightPath', () => {
+        app.graph.highlightPath = vi.fn();
+        const handlers = buildHandlers({ app });
+        handlers.highlightPath({ nodes: ['A', 'B'] });
+        expect(app.graph.highlightPath).toHaveBeenCalledWith(['A', 'B']);
+    });
+
+    it('openInsightTile delegates to app.insights.openTile', () => {
+        app.insights = { openTile: vi.fn() };
+        const handlers = buildHandlers({ app });
+        handlers.openInsightTile({ tile_id: 'top-artists' });
+        expect(app.insights.openTile).toHaveBeenCalledWith('top-artists');
+    });
+
+    it('suggestFollowups delegates to app.nlq.setFollowups', () => {
+        app.nlq = { setFollowups: vi.fn() };
+        const handlers = buildHandlers({ app });
+        handlers.suggestFollowups({ queries: ['Q1', 'Q2'] });
+        expect(app.nlq.setFollowups).toHaveBeenCalledWith(['Q1', 'Q2']);
+    });
+
+    it('buildSnapshotter.capture includes trendRange when app.trends.getRange is defined', () => {
+        app.trends = { getRange: vi.fn().mockReturnValue({ from: '1980', to: '1990' }) };
+        app.activePane = 'trends';
+        const snap = buildSnapshotter({ app });
+        const s = snap.capture();
+        expect(s.trendRange).toEqual({ from: '1980', to: '1990' });
+    });
+
+    it('buildSnapshotter.restore calls trends.setRange when snapshot has trendRange', () => {
+        app.trends = { setRange: vi.fn() };
+        const snap = buildSnapshotter({ app });
+        snap.restore({ trendRange: { from: '1980', to: '1990' } });
+        expect(app.trends.setRange).toHaveBeenCalledWith('1980', '1990');
+    });
 });
