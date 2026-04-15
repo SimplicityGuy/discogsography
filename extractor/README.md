@@ -424,6 +424,57 @@ Set the `LOG_LEVEL` environment variable to control logging verbosity:
 - `GET /metrics`: Prometheus-compatible metrics
 - `GET /ready`: Readiness probe for container orchestration
 
+### Extraction Status Lifecycle
+
+The `/health` response includes an `extraction_status` field that reports where the extractor is in its lifecycle. The same five values apply to both Discogs and MusicBrainz modes.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+
+    Idle : idle
+    Idle : initial state before any run
+
+    Running : running
+    Running : actively processing
+
+    Completed : completed
+    Completed : transient success<br/>(end of process_*_data)
+
+    Waiting : waiting
+    Waiting : sleeping until next<br/>periodic check
+
+    Failed : failed
+    Failed : last run failed;<br/>preserved through sleep<br/>for operator visibility
+
+    Idle --> Running : initial run or trigger
+    Running --> Completed : Ok(true)
+    Running --> Failed : Err or Ok(false)
+    Completed --> Waiting : run_*_loop before sleep
+    Waiting --> Running : periodic wake or trigger
+    Failed --> Running : next periodic attempt or trigger
+```
+
+**Transition points in code** (`extractor/src/extractor.rs`):
+
+| Transition | Set by | Line |
+|---|---|---|
+| `Idle → Running` | `process_discogs_data` / `process_musicbrainz_data` | top of function |
+| `Running → Completed` | same functions, on success | end of function |
+| `Running → Failed` | same functions, on error | end of function |
+| Early-skip → `Completed` | same functions, on `Skip` / empty-file paths | each early return |
+| `Completed → Waiting` | `run_discogs_loop` / `run_musicbrainz_loop` | immediately before `sleep(periodic_check_days)` |
+| `Waiting → Running` | next invocation of `process_*_data` | via periodic wake or `/trigger` API call |
+| `Failed → Running` | same | `Failed` persists through sleep and is overwritten by the next attempt |
+
+**Design notes:**
+
+- `Completed` is transient by design. It lives for microseconds between the end of a successful run and the loop's next iteration, at which point it becomes `Waiting`. Keeping `Completed` as a distinct value lets single-shot test paths (which call `process_*_data` without a surrounding loop) observe a clean terminal state, and preserves a race-window catch for external pollers.
+- `Waiting` is the dominant observable success state. Downstream consumers treat it as terminal success equivalent to `Completed`:
+  - The MusicBrainz extractor's `wait_for_discogs_idle` proceeds on any status ≠ `running`, so `Waiting` unblocks MusicBrainz extraction immediately instead of making it wait for the next Discogs periodic cycle.
+  - The admin dashboard's `_track_extraction` polls `/health` every 10 seconds during a manually-triggered run and accepts both `completed` and `waiting` as terminal success — it writes whichever value it observed verbatim to `extraction_history.status` so operators can tell a freshly-finished run from one already back on the schedule.
+- `Failed` is **not** overwritten by the loop's `Completed → Waiting` transition. A failed run's status persists through the 5-day sleep window so operators can see the last attempt failed, and only flips back to `Running` when the next attempt begins.
+
 ## Integration
 
 Extractor integrates with the Discogsography platform:

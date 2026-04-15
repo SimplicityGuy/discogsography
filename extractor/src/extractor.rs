@@ -47,13 +47,25 @@ pub struct ExtractorState {
     pub extraction_status: ExtractionStatus,
 }
 
-/// Lifecycle status of the extraction process
+/// Lifecycle status of the extraction process.
+///
+/// Transitions:
+/// - `Idle` — initial state before any extraction runs
+/// - `Running` — actively processing a run (set at the top of `process_*_data`)
+/// - `Completed` — transient success state set by `process_*_data` at the end of a run
+/// - `Waiting` — set by `run_*_loop` right before the periodic sleep; the dominant observable
+///   success state during the 5-day wait between checks. Downstream consumers (MusicBrainz
+///   extractor waiting on Discogs health, admin dashboard tracker) treat `waiting` as terminal
+///   success equivalent to `completed`.
+/// - `Failed` — the last run failed; persists through the sleep window so operators can see it,
+///   and is overwritten to `Running` when the next attempt begins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExtractionStatus {
     #[default]
     Idle,
     Running,
     Completed,
+    Waiting,
     Failed,
 }
 
@@ -63,6 +75,7 @@ impl ExtractionStatus {
             ExtractionStatus::Idle => "idle",
             ExtractionStatus::Running => "running",
             ExtractionStatus::Completed => "completed",
+            ExtractionStatus::Waiting => "waiting",
             ExtractionStatus::Failed => "failed",
         }
     }
@@ -98,6 +111,8 @@ pub async fn process_discogs_data(
 
     if latest_files.is_empty() {
         warn!("⚠️ No data files found");
+        let mut s = state.write().await;
+        s.extraction_status = ExtractionStatus::Completed;
         return Ok(true);
     }
 
@@ -126,6 +141,8 @@ pub async fn process_discogs_data(
     match decision {
         ProcessingDecision::Skip => {
             info!("✅ Version {} already processed, skipping", version);
+            let mut s = state.write().await;
+            s.extraction_status = ExtractionStatus::Completed;
             return Ok(true);
         }
         ProcessingDecision::Reprocess => {
@@ -151,6 +168,8 @@ pub async fn process_discogs_data(
 
     if data_files.is_empty() {
         warn!("⚠️ No data files to process");
+        let mut s = state.write().await;
+        s.extraction_status = ExtractionStatus::Completed;
         return Ok(true);
     }
 
@@ -201,6 +220,8 @@ pub async fn process_discogs_data(
             }
         }
 
+        let mut s = state.write().await;
+        s.extraction_status = ExtractionStatus::Completed;
         return Ok(true);
     }
 
@@ -773,6 +794,17 @@ pub async fn run_extraction_loop(
 
     // Start periodic check loop
     loop {
+        // Transition Completed → Waiting before sleeping so downstream observers
+        // (MusicBrainz extractor, admin dashboard tracker) can tell the difference
+        // between "just finished" and "on periodic schedule". Failed is preserved
+        // to keep the failure signal visible until the next attempt.
+        {
+            let mut s = state.write().await;
+            if s.extraction_status == ExtractionStatus::Completed {
+                s.extraction_status = ExtractionStatus::Waiting;
+            }
+        }
+
         let check_interval = Duration::from_secs(config.periodic_check_days * 24 * 60 * 60);
         info!("⏰ Waiting {} days before next check...", config.periodic_check_days);
 
@@ -931,6 +963,15 @@ pub async fn run_musicbrainz_loop(
         if shutdown_flag.load(Ordering::SeqCst) {
             info!("🛑 Shutdown detected, exiting MusicBrainz periodic check loop");
             break;
+        }
+
+        // Transition Completed → Waiting before sleeping — see the equivalent block
+        // in run_discogs_loop for rationale.
+        {
+            let mut s = state.write().await;
+            if s.extraction_status == ExtractionStatus::Completed {
+                s.extraction_status = ExtractionStatus::Waiting;
+            }
         }
 
         let check_interval = Duration::from_secs(config.periodic_check_days * 24 * 60 * 60);

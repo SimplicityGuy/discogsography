@@ -1051,6 +1051,41 @@ async fn test_extraction_status_set_failed_on_error() {
     assert_eq!(s.extraction_status, ExtractionStatus::Failed);
 }
 
+#[test]
+fn test_extraction_status_as_str_all_variants() {
+    assert_eq!(ExtractionStatus::Idle.as_str(), "idle");
+    assert_eq!(ExtractionStatus::Running.as_str(), "running");
+    assert_eq!(ExtractionStatus::Completed.as_str(), "completed");
+    assert_eq!(ExtractionStatus::Waiting.as_str(), "waiting");
+    assert_eq!(ExtractionStatus::Failed.as_str(), "failed");
+}
+
+#[tokio::test]
+async fn test_completed_transitions_to_waiting_in_loop() {
+    // Simulates the run_*_loop transition block: Completed → Waiting, Failed stays Failed.
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    // Case 1: Completed transitions to Waiting
+    state.write().await.extraction_status = ExtractionStatus::Completed;
+    {
+        let mut s = state.write().await;
+        if s.extraction_status == ExtractionStatus::Completed {
+            s.extraction_status = ExtractionStatus::Waiting;
+        }
+    }
+    assert_eq!(state.read().await.extraction_status, ExtractionStatus::Waiting);
+
+    // Case 2: Failed does NOT transition — failure signal is preserved through the sleep
+    state.write().await.extraction_status = ExtractionStatus::Failed;
+    {
+        let mut s = state.write().await;
+        if s.extraction_status == ExtractionStatus::Completed {
+            s.extraction_status = ExtractionStatus::Waiting;
+        }
+    }
+    assert_eq!(state.read().await.extraction_status, ExtractionStatus::Failed);
+}
+
 mod wait_for_discogs_idle_tests {
     use crate::extractor::{wait_for_discogs_idle, wait_for_discogs_idle_with_interval};
     use std::sync::atomic::AtomicBool;
@@ -1102,6 +1137,27 @@ mod wait_for_discogs_idle_tests {
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(r#"{"extraction_status": "failed"}"#)
+            .create_async()
+            .await;
+
+        let shutdown = AtomicBool::new(false);
+        let url = format!("{}/health", server.url());
+        let result = wait_for_discogs_idle(&url, &shutdown).await;
+
+        assert!(result.is_ok());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_proceeds_when_waiting() {
+        // "waiting" is the dominant observable state between periodic runs — the
+        // MusicBrainz extractor must proceed immediately instead of polling.
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/health")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"extraction_status": "waiting"}"#)
             .create_async()
             .await;
 

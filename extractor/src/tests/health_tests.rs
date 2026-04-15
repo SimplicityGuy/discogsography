@@ -298,3 +298,27 @@ async fn test_health_extraction_status_running() {
     let (_, json) = health_handler(State((state, trigger))).await;
     assert_eq!(json.0["extraction_status"], "running");
 }
+
+#[tokio::test]
+async fn test_health_extraction_status_waiting() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    {
+        let mut s = state.write().await;
+        s.extraction_status = ExtractionStatus::Waiting;
+    }
+    let trigger = Arc::new(Mutex::new(None::<bool>));
+    let (_, json) = health_handler(State((state, trigger))).await;
+    assert_eq!(json.0["extraction_status"], "waiting");
+}
+
+#[tokio::test]
+async fn test_health_extraction_status_completed() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    {
+        let mut s = state.write().await;
+        s.extraction_status = ExtractionStatus::Completed;
+    }
+    let trigger = Arc::new(Mutex::new(None::<bool>));
+    let (_, json) = health_handler(State((state, trigger))).await;
+    assert_eq!(json.0["extraction_status"], "completed");
+}

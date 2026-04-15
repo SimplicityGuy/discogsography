@@ -1317,6 +1317,7 @@ class AdminDashboard {
     _statusBadgeClass(status) {
         switch ((status || '').toLowerCase()) {
             case 'completed': return 'badge-completed';
+            case 'waiting':   return 'badge-waiting';
             case 'failed':    return 'badge-failed';
             case 'running':
             case 'pending':   return 'badge-running';
