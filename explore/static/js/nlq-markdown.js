@@ -1,10 +1,17 @@
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 
-const ALLOWED_TAGS = ['strong', 'em', 'code', 'p', 'br'];
+const ALLOWED_TAGS = [
+    'strong', 'em', 'code', 'p', 'br',
+    'ul', 'ol', 'li',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'blockquote', 'pre',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'hr',
+];
 const ALLOWED_ATTR = [];
 
-marked.setOptions({ gfm: false, breaks: false });
+marked.setOptions({ gfm: true, breaks: true });
 
 /**
  * Render a markdown summary into `container`, injecting entity links.
