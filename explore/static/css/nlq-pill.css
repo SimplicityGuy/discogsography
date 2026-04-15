@@ -1,9 +1,11 @@
-/* Ask pill — collapsed */
+/* Ask pill — fixed centered column holding receipt + card/button */
 .nlq-pill-root {
     position: fixed;
     inset: auto 0 16px 0;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
     z-index: 1500;
     pointer-events: none;
 }
@@ -34,20 +36,29 @@
 }
 .nlq-pill-sparkle { font-size: 14px; }
 
-/* Ask pill — expanded card */
+/* Ask pill — expanded card (shared by expanded / loading / answered) */
 .nlq-pill-expanded {
     background: #141420;
     border: 1px solid #9b8dff;
     border-radius: 14px;
     box-shadow: 0 12px 48px rgba(155, 141, 255, 0.4);
     padding: 16px;
-    width: min(560px, calc(100vw - 48px));
+    width: min(640px, calc(100vw - 48px));
+    max-height: min(70vh, 560px);
     display: flex;
     flex-direction: column;
     gap: 12px;
+    overflow: hidden;
+}
+
+.nlq-pill-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .nlq-pill-input {
+    flex: 1;
     background: #0a0a14;
     border: 1px solid #9b8dff;
     border-radius: 999px;
@@ -55,6 +66,27 @@
     color: #fff;
     font-size: 13px;
     outline: none;
+}
+
+.nlq-pill-close {
+    background: transparent;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: color 0.15s, background 0.15s;
+}
+.nlq-pill-close:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+
+.nlq-pill-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+    min-height: 0;
 }
 
 .nlq-pill-chips { display: flex; flex-direction: column; gap: 8px; }
@@ -78,38 +110,188 @@
 }
 .nlq-chip:hover { border-color: #9b8dff; color: #9b8dff; }
 
-/* Summary strip */
-.nlq-summary-strip {
-    position: fixed;
-    left: 50%;
-    bottom: 64px;
-    transform: translateX(-50%);
-    width: min(640px, calc(100vw - 48px));
-    background: rgba(20, 20, 32, 0.95);
-    border: 1px solid #9b8dff;
-    border-radius: 8px;
-    padding: 10px 14px;
-    color: #ddd;
-    font-size: 12px;
+/* Last-answer receipt — shown above the collapsed button when an answer exists */
+.nlq-pill-receipt {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    max-width: min(640px, calc(100vw - 48px));
+    background: rgba(20, 20, 32, 0.92);
+    border: 1px solid rgba(155, 141, 255, 0.4);
+    border-radius: 999px;
+    padding: 4px 6px 4px 12px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
     backdrop-filter: blur(6px);
-    z-index: 1499;
+    color: #ddd;
+    font-size: 11px;
 }
-.nlq-summary-footer {
+.nlq-pill-receipt-body {
+    background: transparent;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 2px 4px;
+    font: inherit;
+    text-align: left;
+    min-width: 0;
+}
+.nlq-pill-receipt-label {
+    color: #888;
+    text-transform: uppercase;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    flex-shrink: 0;
+}
+.nlq-pill-receipt-text {
+    color: #ddd;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 420px;
+}
+.nlq-pill-receipt-dismiss {
+    background: transparent;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 2px 8px;
+    border-radius: 999px;
+    transition: color 0.15s, background 0.15s;
+}
+.nlq-pill-receipt-dismiss:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+
+/* Loading slot */
+.nlq-pill-loading-slot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #888;
+    font-size: 12px;
+    padding: 8px 4px;
+}
+.nlq-pill-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(155, 141, 255, 0.25);
+    border-top-color: #9b8dff;
+    border-radius: 50%;
+    animation: nlq-spin 0.7s linear infinite;
+}
+@keyframes nlq-spin {
+    to { transform: rotate(360deg); }
+}
+.nlq-pill-loading-label { font-style: italic; }
+
+/* Answer slot */
+.nlq-answer-slot {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: #ddd;
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+.nlq-answer-slot--error .nlq-answer-summary { color: #f6a6a6; }
+
+.nlq-answer-summary > :first-child { margin-top: 0; }
+.nlq-answer-summary > :last-child { margin-bottom: 0; }
+.nlq-answer-summary p { margin: 0 0 6px 0; }
+.nlq-answer-summary strong { color: #fff; }
+.nlq-answer-summary code {
+    background: rgba(155, 141, 255, 0.12);
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11.5px;
+}
+.nlq-answer-summary pre {
+    background: #0a0a14;
+    border: 1px solid #2a2a3a;
+    border-radius: 6px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    font-size: 11.5px;
+}
+.nlq-answer-summary pre code { background: transparent; padding: 0; }
+.nlq-answer-summary ul,
+.nlq-answer-summary ol {
+    margin: 4px 0 6px 0;
+    padding-left: 20px;
+}
+.nlq-answer-summary li { margin: 2px 0; }
+.nlq-answer-summary h1,
+.nlq-answer-summary h2,
+.nlq-answer-summary h3,
+.nlq-answer-summary h4,
+.nlq-answer-summary h5,
+.nlq-answer-summary h6 {
+    margin: 8px 0 4px 0;
+    font-weight: 600;
+    color: #fff;
+    font-size: 13px;
+}
+.nlq-answer-summary blockquote {
+    margin: 4px 0;
+    padding: 2px 10px;
+    border-left: 2px solid rgba(155, 141, 255, 0.5);
+    color: #bbb;
+}
+.nlq-answer-summary hr {
+    border: none;
+    border-top: 1px solid #2a2a3a;
+    margin: 8px 0;
+}
+.nlq-answer-summary table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 6px 0;
+    font-size: 11.5px;
+    display: block;
+    overflow-x: auto;
+}
+.nlq-answer-summary thead { background: rgba(155, 141, 255, 0.08); }
+.nlq-answer-summary th,
+.nlq-answer-summary td {
+    border: 1px solid #2a2a3a;
+    padding: 4px 8px;
+    text-align: left;
+    vertical-align: top;
+}
+.nlq-answer-summary th {
+    color: #fff;
+    font-weight: 600;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.nlq-answer-footer {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-top: 6px;
+    gap: 8px;
     font-size: 10px;
     color: #888;
+    border-top: 1px solid #2a2a3a;
+    padding-top: 6px;
 }
-.nlq-strip-btn {
+.nlq-answer-btn {
     background: transparent;
-    border: none;
+    border: 1px solid rgba(155, 141, 255, 0.4);
     color: #9b8dff;
     cursor: pointer;
     font-size: 11px;
-    padding: 2px 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    transition: background 0.15s;
 }
+.nlq-answer-btn:hover { background: rgba(155, 141, 255, 0.12); }
+
 .nlq-entity-link {
     color: #9b8dff;
     text-decoration: underline;

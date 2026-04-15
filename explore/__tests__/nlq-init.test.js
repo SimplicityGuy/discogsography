@@ -10,9 +10,13 @@ const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'static', 'index.ht
 const appJs = fs.readFileSync(path.join(__dirname, '..', 'static', 'js', 'app.js'), 'utf8');
 
 describe('NLQ init wiring', () => {
-    it('index.html has nlqPillMount and nlqStripMount', () => {
+    it('index.html has nlqPillMount', () => {
         expect(indexHtml).toContain('id="nlqPillMount"');
-        expect(indexHtml).toContain('id="nlqStripMount"');
+    });
+
+    it('index.html no longer references the legacy nlqStripMount', () => {
+        expect(indexHtml).not.toContain('id="nlqStripMount"');
+        expect(indexHtml).not.toContain('nlqStripMount');
     });
 
     it('app.js calls initNlq or window.NlqInit', () => {
