@@ -371,42 +371,30 @@ class NLQToolRunner:
 
     async def _handle_find_path(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import neo4j_queries  # noqa: PLC0415
+        from common import agent_tools  # noqa: PLC0415
 
-        from_id = params.get("from_id", "")
-        to_id = params.get("to_id", "")
-        from_type = params.get("from_type", "")
-        to_type = params.get("to_type", "")
+        async def resolve_name(driver: Any, name: str, entity_type: str) -> dict[str, Any] | None:
+            if name and name.isdigit():
+                return {"id": name}
+            if not entity_type:
+                # No type provided — treat the value as a raw node ID
+                return {"id": name}
+            handler = neo4j_queries.EXPLORE_DISPATCH.get(entity_type)
+            if handler is None:
+                return None
+            result: dict[str, Any] | None = await handler(driver, name)
+            return result
 
-        # Resolve names to node IDs when the value is not purely numeric
-        # (the REST endpoint does this via EXPLORE_DISPATCH; NLQ must match)
-        if from_id and not from_id.isdigit() and from_type:
-            handler = neo4j_queries.EXPLORE_DISPATCH.get(from_type)
-            if handler:
-                node = await handler(self._driver, from_id)
-                if node:
-                    from_id = str(node["id"])
-                else:
-                    return {"error": f"{from_type} '{from_id}' not found"}
-        if to_id and not to_id.isdigit() and to_type:
-            handler = neo4j_queries.EXPLORE_DISPATCH.get(to_type)
-            if handler:
-                node = await handler(self._driver, to_id)
-                if node:
-                    to_id = str(node["id"])
-                else:
-                    return {"error": f"{to_type} '{to_id}' not found"}
-
-        result = await neo4j_queries.find_shortest_path(
+        return await agent_tools.find_path(
             driver=self._driver,
-            from_id=from_id,
-            to_id=to_id,
+            from_name=params.get("from_id", ""),
+            from_type=params.get("from_type", ""),
+            to_name=params.get("to_id", ""),
+            to_type=params.get("to_type", ""),
             max_depth=params.get("max_depth", 6),
-            from_type=from_type,
-            to_type=to_type,
+            resolve_name=resolve_name,
+            find_shortest_path_fn=neo4j_queries.find_shortest_path,
         )
-        if result is None:
-            return {"error": "No path found between the specified entities"}
-        return result
 
     async def _handle_get_collaborators(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import collaborator_queries  # noqa: PLC0415
