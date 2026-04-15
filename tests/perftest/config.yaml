@@ -56,3 +56,19 @@ credit_role_categories:
   - mastering
   - production
   - engineering
+
+# Natural Language Query (NLQ) scenarios
+nlq_scenarios:
+  - name: nlq_query_simple
+    method: POST
+    path: /api/nlq/query
+    body:
+      query: "Most prolific electronic label"
+    target_p95_ms: 4000
+
+  - name: nlq_suggestions
+    method: GET
+    path: /api/nlq/suggestions
+    query_params:
+      pane: "explore"
+    target_p95_ms: 200

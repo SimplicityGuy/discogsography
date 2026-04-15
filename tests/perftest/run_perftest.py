@@ -169,6 +169,28 @@ def timed_get(client: httpx.Client, url: str, params: dict[str, str] | None = No
         }
 
 
+def timed_post(client: httpx.Client, url: str, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Make a POST request and return timing + response metadata."""
+    start = time.perf_counter()
+    try:
+        resp = client.post(url, json=json_body)
+        elapsed = time.perf_counter() - start
+        return {
+            "status": resp.status_code,
+            "elapsed": round(elapsed, 4),
+            "size": len(resp.content),
+            "error": None,
+        }
+    except Exception as exc:
+        elapsed = time.perf_counter() - start
+        return {
+            "status": 0,
+            "elapsed": round(elapsed, 4),
+            "size": 0,
+            "error": str(exc),
+        }
+
+
 def run_endpoint(
     client: httpx.Client,
     name: str,
@@ -176,6 +198,8 @@ def run_endpoint(
     params: dict[str, str] | None,
     iterations: int,
     *,
+    method: str = "GET",
+    json_body: dict[str, Any] | None = None,
     max_429_retries: int = 4,
     base_429_delay: float = 32.0,
     max_429_delay: float = 300.0,
@@ -190,7 +214,7 @@ def run_endpoint(
     for i in range(iterations):
         retries = 0
         while True:
-            result = timed_get(client, url, params)
+            result = timed_post(client, url, json_body) if method == "POST" else timed_get(client, url, params)
             if result["status"] == 429 and retries < max_429_retries:
                 retries += 1
                 delay = min(base_429_delay * (2 ** (retries - 1)), max_429_delay)
@@ -619,6 +643,26 @@ def build_test_plan(
             }
         )
 
+    # --- Natural Language Query (NLQ) scenarios ---
+    for scenario in config.get("nlq_scenarios", []):
+        if scenario["method"] == "POST":
+            tests.append(
+                {
+                    "name": scenario["name"],
+                    "url": f"{base}{scenario['path']}",
+                    "method": "POST",
+                    "json_body": scenario.get("body"),
+                }
+            )
+        else:
+            tests.append(
+                {
+                    "name": scenario["name"],
+                    "url": f"{base}{scenario['path']}",
+                    "params": scenario.get("query_params"),
+                }
+            )
+
     return tests
 
 
@@ -808,7 +852,15 @@ def main() -> None:
         results: list[dict[str, Any]] = []
         for i, test in enumerate(test_plan, 1):
             print(f"[{i}/{len(test_plan)}] {test['name']}")
-            result = run_endpoint(client, test["name"], test["url"], test["params"], iterations)
+            result = run_endpoint(
+                client,
+                test["name"],
+                test["url"],
+                test.get("params"),
+                iterations,
+                method=test.get("method", "GET"),
+                json_body=test.get("json_body"),
+            )
             results.append(result)
             print()
 
