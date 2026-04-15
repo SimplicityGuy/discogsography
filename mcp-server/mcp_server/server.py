@@ -119,6 +119,36 @@ async def _api_post(app: AppContext, path: str, json_data: dict[str, Any] | None
         return {"error": f"API request failed: {exc}", "url": url}
 
 
+async def _call_shared_find_path(app: AppContext, **kwargs: Any) -> dict[str, Any]:
+    """Delegate to common.agent_tools.find_path using API-backed resolvers."""
+    from common import agent_tools  # noqa: PLC0415
+
+    async def resolve_name(_driver: Any, name: str, _entity_type: str) -> dict[str, Any] | None:
+        # The API uses names directly — return the name as the "id" so the path
+        # function can forward it to /api/path as from_name / to_name.
+        return {"id": name}
+
+    async def find_shortest_path_fn(**params: Any) -> dict[str, Any] | None:
+        return await _api_get(  # nosemgrep: ssrf — types validated against _VALID_ENTITY_TYPES allowlist before this call
+            app,
+            "/api/path",
+            {
+                "from_name": params.get("from_id", ""),
+                "from_type": params.get("from_type", ""),
+                "to_name": params.get("to_id", ""),
+                "to_type": params.get("to_type", ""),
+                "max_depth": params.get("max_depth", 10),
+            },
+        )
+
+    return await agent_tools.find_path(
+        driver=None,
+        resolve_name=resolve_name,
+        find_shortest_path_fn=find_shortest_path_fn,
+        **kwargs,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tool 1: search
 # ---------------------------------------------------------------------------
@@ -289,16 +319,13 @@ async def find_path(
         return {"error": f"Invalid to_type: {to_type}. Must be one of: {', '.join(sorted(_VALID_ENTITY_TYPES))}"}
 
     app = _ctx(ctx)
-    return await _api_get(  # nosemgrep: ssrf — types validated against _VALID_ENTITY_TYPES allowlist; names passed as query params
+    return await _call_shared_find_path(
         app,
-        "/api/path",
-        {
-            "from_name": from_name,
-            "from_type": from_type_lower,
-            "to_name": to_name,
-            "to_type": to_type_lower,
-            "max_depth": min(max(int(max_depth) if str(max_depth).lstrip("-").isdigit() else 3, 1), 15),
-        },
+        from_name=from_name,
+        from_type=from_type_lower,
+        to_name=to_name,
+        to_type=to_type_lower,
+        max_depth=min(max(int(max_depth) if str(max_depth).lstrip("-").isdigit() else 3, 1), 15),
     )
 
 
