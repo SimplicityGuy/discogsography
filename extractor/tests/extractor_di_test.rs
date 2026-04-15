@@ -896,10 +896,15 @@ async fn test_run_musicbrainz_loop_periodic_check_err() {
     let marker_path_clone = marker_path.clone();
     let state_clone = state.clone();
     tokio::spawn(async move {
-        // Wait for initial processing to complete by polling state
+        // Wait for initial processing to complete by polling state.
+        // After a successful run, run_*_loop transitions Completed → Waiting
+        // immediately before its next sleep, so "done" means either value.
         loop {
             let s = state_clone.read().await;
-            if s.extraction_status == ExtractionStatus::Completed {
+            if matches!(
+                s.extraction_status,
+                ExtractionStatus::Completed | ExtractionStatus::Waiting
+            ) {
                 break;
             }
             drop(s);
@@ -958,10 +963,15 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_false() {
     let marker_path_clone = marker_path.clone();
     let state_clone = state.clone();
     tokio::spawn(async move {
-        // Wait for initial processing to complete
+        // Wait for initial processing to complete.
+        // After a successful run, run_*_loop transitions Completed → Waiting
+        // immediately before its next sleep, so "done" means either value.
         loop {
             let s = state_clone.read().await;
-            if s.extraction_status == ExtractionStatus::Completed {
+            if matches!(
+                s.extraction_status,
+                ExtractionStatus::Completed | ExtractionStatus::Waiting
+            ) {
                 break;
             }
             drop(s);
@@ -1216,6 +1226,7 @@ fn test_extraction_status_as_str_all_variants() {
     assert_eq!(ExtractionStatus::Idle.as_str(), "idle");
     assert_eq!(ExtractionStatus::Running.as_str(), "running");
     assert_eq!(ExtractionStatus::Completed.as_str(), "completed");
+    assert_eq!(ExtractionStatus::Waiting.as_str(), "waiting");
     assert_eq!(ExtractionStatus::Failed.as_str(), "failed");
 }
 
