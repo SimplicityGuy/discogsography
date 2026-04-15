@@ -18,7 +18,7 @@ from api.nlq.actions import Action, parse_action_list
 from api.nlq.tools import get_authenticated_tool_schemas, get_public_tool_schemas
 
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Awaitable, Callable
 
     from api.nlq.config import NLQConfig
@@ -252,7 +252,7 @@ def _extract_actions(text: str) -> tuple[str, list[Action]]:
         import json as _json  # noqa: PLC0415
 
         raw = _json.loads(raw_json)
-        if not isinstance(raw, list):
+        if not isinstance(raw, list):  # pragma: no cover — regex guarantees list-shaped JSON
             return cleaned, []
         return cleaned, parse_action_list(raw)
     except (json.JSONDecodeError, ValueError):

@@ -33,3 +33,13 @@ def test_suggestions_focus_length_cap() -> None:
     oversized = "x" * 1000
     result = build_suggestions(pane="explore", focus=oversized, focus_type="artist")
     assert all(len(q) <= 256 for q in result)
+
+
+def test_suggestions_whitespace_only_focus_falls_back_to_default() -> None:
+    """A focus that is only whitespace should fall back to default pane templates."""
+    from api.nlq.suggestions import build_suggestions
+
+    result_whitespace = build_suggestions(pane="explore", focus="   ", focus_type="artist")
+    result_default = build_suggestions(pane="explore", focus=None, focus_type=None)
+
+    assert result_whitespace == result_default

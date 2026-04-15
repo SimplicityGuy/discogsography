@@ -7,6 +7,20 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
+def test_extract_actions_invalid_json_returns_empty_list_and_warns(capsys: pytest.CaptureFixture[str]) -> None:
+    """_extract_actions with bracket-wrapped but invalid JSON logs a warning and returns empty actions."""
+    from api.nlq.engine import _extract_actions
+
+    # The regex requires [...]  — use malformed content inside brackets
+    cleaned, actions = _extract_actions("Answer text.<!--actions:[invalid json here]-->")
+
+    assert actions == []
+    assert cleaned == "Answer text."
+    # structlog emits to stdout; verify the warning was logged
+    captured = capsys.readouterr()
+    assert "invalid JSON" in captured.out
+
+
 @pytest.mark.asyncio
 async def test_result_includes_actions_when_agent_emits_them() -> None:
     from api.nlq.actions import SeedGraphAction
