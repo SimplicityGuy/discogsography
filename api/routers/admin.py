@@ -371,13 +371,24 @@ async def _track_extraction(extraction_id: str) -> None:
                                 (json.dumps(record_counts), extraction_id),
                             )
 
-                        if extraction_status == "completed":
+                        # "completed" is the transient state set inside process_*_data at
+                        # the end of a successful run. The surrounding run_*_loop immediately
+                        # transitions Completed → Waiting before sleeping until the next
+                        # periodic check, so "waiting" is the dominant terminal-success value
+                        # the tracker observes. Both are recorded verbatim so operators can
+                        # tell a freshly-finished run from one already back on the schedule.
+                        if extraction_status in ("completed", "waiting"):
                             async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
                                 await cur.execute(
-                                    "UPDATE extraction_history SET status = 'completed', completed_at = NOW(), record_counts = %s WHERE id = %s",
-                                    (json.dumps(record_counts), extraction_id),
+                                    "UPDATE extraction_history SET status = %s, completed_at = NOW(), record_counts = %s WHERE id = %s",
+                                    (extraction_status, json.dumps(record_counts), extraction_id),
                                 )
-                            logger.info("✅ Extraction completed", extraction_id=extraction_id, record_counts=record_counts)
+                            logger.info(
+                                "✅ Extraction finished",
+                                extraction_id=extraction_id,
+                                status=extraction_status,
+                                record_counts=record_counts,
+                            )
                             return
 
                         if extraction_status == "failed":

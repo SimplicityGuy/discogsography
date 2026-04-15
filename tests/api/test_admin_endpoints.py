@@ -582,6 +582,73 @@ class TestTrackExtraction:
 
             await admin_mod._track_extraction(extraction_id)
 
+        # Tracker must write the observed status verbatim — not map "completed" elsewhere.
+        executed = [call.args for call in mock_cur.execute.await_args_list]
+        terminal_calls = [args for args in executed if "completed_at = NOW()" in args[0]]
+        assert terminal_calls, "expected a terminal UPDATE with completed_at"
+        terminal_sql, terminal_params = terminal_calls[-1]
+        assert "SET status = %s" in terminal_sql
+        assert terminal_params[0] == "completed"
+
+        admin_mod._pool = original_pool
+        admin_mod._config = original_config
+
+    @pytest.mark.asyncio
+    async def test_waiting_extraction(self) -> None:
+        """Extractor transitions Completed → Waiting before the tracker's 10s poll
+        fires, so "waiting" is the common terminal-success value. The tracker must
+        accept it and write "waiting" verbatim to extraction_history.status."""
+        import api.routers.admin as admin_mod
+
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        mock_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=conn_ctx)
+
+        mock_config = MagicMock()
+        mock_config.extractor_host = "localhost"
+        mock_config.extractor_health_port = 8000
+
+        original_pool = admin_mod._pool
+        original_config = admin_mod._config
+        admin_mod._pool = mock_pool
+        admin_mod._config = mock_config
+
+        extraction_id = str(uuid4())
+
+        with (
+            patch("api.routers.admin.asyncio.sleep", new_callable=AsyncMock),
+            patch("api.routers.admin.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "extraction_status": "waiting",
+                "extraction_progress": {"artists": 100, "labels": 50, "masters": 25, "releases": 200},
+            }
+            mock_client_instance = AsyncMock()
+            mock_client_instance.get = AsyncMock(return_value=mock_response)
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client_instance
+
+            await admin_mod._track_extraction(extraction_id)
+
+        # Assert the terminal UPDATE wrote "waiting" verbatim — not "completed".
+        executed = [call.args for call in mock_cur.execute.await_args_list]
+        terminal_calls = [args for args in executed if "completed_at = NOW()" in args[0]]
+        assert terminal_calls, "expected a terminal UPDATE with completed_at"
+        terminal_sql, terminal_params = terminal_calls[-1]
+        assert "SET status = %s" in terminal_sql
+        assert terminal_params[0] == "waiting"
+
         admin_mod._pool = original_pool
         admin_mod._config = original_config
 
