@@ -9,10 +9,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import re
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from api.nlq.actions import Action, parse_action_list
 from api.nlq.tools import get_authenticated_tool_schemas, get_public_tool_schemas
 
 
@@ -49,6 +51,20 @@ Do NOT answer general knowledge questions, even if music-adjacent (e.g., band \
 member biographies, music theory, concert schedules). Your knowledge comes \
 exclusively from the tools provided."""
 
+_ACTIONS_INSTRUCTION = """
+
+When your answer should mutate the UI, append a machine-readable actions block \
+at the end of your response, formatted exactly as:
+
+    <!--actions:[{"type":"seed_graph","entities":[{"name":"Kraftwerk","entity_type":"artist"}]}]-->
+
+The marker is invisible to the user; the UI strips it out. Supported action \
+types: seed_graph, highlight_path, focus_node, filter_graph, find_path, \
+show_credits, switch_pane, open_insight_tile, set_trend_range, suggest_followups. \
+Only emit actions that directly follow from the user's question."""
+
+_SYSTEM_PROMPT = _SYSTEM_PROMPT + _ACTIONS_INSTRUCTION
+
 _AUTH_ADDENDUM = """
 
 The user is logged in and has a Discogs collection. You can access their \
@@ -80,6 +96,7 @@ class NLQResult:
     summary: str
     entities: list[dict[str, Any]] = field(default_factory=list)
     tools_used: list[str] = field(default_factory=list)
+    actions: list[Action] = field(default_factory=list)
 
 
 # ── Engine ───────────────────────────────────────────────────────────────
@@ -162,11 +179,8 @@ class NLQEngine:
             messages.append({"role": "assistant", "content": response.content})
             if not tool_results:
                 # Non-tool stop (e.g., max_tokens) — treat as final response.
-                # Return directly without off-topic guardrail since the response
-                # was truncated, not intentionally off-topic.
                 summary = _extract_text(response)
-                deduped = _deduplicate_entities(entities)
-                return NLQResult(summary=summary, entities=deduped, tools_used=tools_used)
+                return self._build_result(summary, entities, tools_used)
             messages.append({"role": "user", "content": tool_results})
 
         # Max iterations reached — return whatever we have
@@ -174,14 +188,18 @@ class NLQEngine:
         summary = _extract_text(response) if response else ""
         return self._build_result(summary, entities, tools_used)
 
-    def _build_result(self, summary: str, entities: list[dict[str, Any]], tools_used: list[str]) -> NLQResult:
-        """Build an NLQResult with guardrails and deduplication applied."""
-        # Off-topic guardrail: if no tools were used, check the response
+    def _build_result(
+        self,
+        summary: str,
+        entities: list[dict[str, Any]],
+        tools_used: list[str],
+    ) -> NLQResult:
+        """Build an NLQResult with guardrails, deduplication, and action extraction."""
         if not tools_used:
             summary = _apply_off_topic_guardrail(summary)
-
+        cleaned_summary, actions = _extract_actions(summary)
         deduped = _deduplicate_entities(entities)
-        return NLQResult(summary=summary, entities=deduped, tools_used=tools_used)
+        return NLQResult(summary=cleaned_summary, entities=deduped, tools_used=tools_used, actions=actions)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -213,6 +231,33 @@ def _apply_off_topic_guardrail(summary: str) -> str:
     # Non-empty response without refusal keywords — may be a valid on-topic
     # answer from system prompt context. Pass through instead of replacing.
     return summary
+
+
+_ACTIONS_MARKER_RE = re.compile(r"<!--actions:(\[.*?\])-->", re.DOTALL)
+
+
+def _extract_actions(text: str) -> tuple[str, list[Action]]:
+    """Strip an optional ``<!--actions:[...]-->`` marker from the agent's text.
+
+    The system prompt instructs the agent to append its structured UI actions
+    inside this marker at the end of its response. We strip the marker from the
+    user-visible summary and parse the JSON list.
+    """
+    match = _ACTIONS_MARKER_RE.search(text)
+    if not match:
+        return text, []
+    raw_json = match.group(1)
+    cleaned = _ACTIONS_MARKER_RE.sub("", text).strip()
+    try:
+        import json as _json  # noqa: PLC0415
+
+        raw = _json.loads(raw_json)
+        if not isinstance(raw, list):
+            return cleaned, []
+        return cleaned, parse_action_list(raw)
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("⚠️ NLQ actions marker contained invalid JSON")
+        return cleaned, []
 
 
 def _deduplicate_entities(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
