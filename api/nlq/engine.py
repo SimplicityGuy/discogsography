@@ -9,18 +9,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
-import re
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from api.nlq.actions import Action, parse_action_list
-from api.nlq.tools import get_authenticated_tool_schemas, get_public_tool_schemas
+from api.nlq.tools import get_action_tool_schemas, get_authenticated_tool_schemas, get_public_tool_schemas
 
 
 if TYPE_CHECKING:  # pragma: no cover
     from collections.abc import Awaitable, Callable
 
+    from api.nlq.actions import Action
     from api.nlq.config import NLQConfig
     from api.nlq.tools import NLQToolRunner
 
@@ -49,21 +48,14 @@ to music or this database, politely decline and suggest a music-related query.
 
 Do NOT answer general knowledge questions, even if music-adjacent (e.g., band \
 member biographies, music theory, concert schedules). Your knowledge comes \
-exclusively from the tools provided."""
+exclusively from the tools provided.
 
-_ACTIONS_INSTRUCTION = """
-
-When your answer should mutate the UI, append a machine-readable actions block \
-at the end of your response, formatted exactly as:
-
-    <!--actions:[{"type":"seed_graph","entities":[{"name":"Kraftwerk","entity_type":"artist"}]}]-->
-
-The marker is invisible to the user; the UI strips it out. Supported action \
-types: seed_graph, highlight_path, focus_node, filter_graph, find_path, \
-show_credits, switch_pane, open_insight_tile, set_trend_range, suggest_followups. \
-Only emit actions that directly follow from the user's question."""
-
-_SYSTEM_PROMPT = _SYSTEM_PROMPT + _ACTIONS_INSTRUCTION
+When your answer should mutate the UI, invoke the appropriate action tool(s) \
+— seed_graph, switch_pane, filter_graph, ui_find_path, highlight_path, \
+focus_node, show_credits, open_insight_tile, set_trend_range, or \
+suggest_followups — after fetching data with the data tools. Action tools \
+record the UI effect; they do not fetch data. Only emit actions that directly \
+follow from the user's question."""
 
 _AUTH_ADDENDUM = """
 
@@ -137,12 +129,14 @@ class NLQEngine:
             system_prompt += _AUTH_ADDENDUM
 
         tools = get_public_tool_schemas()
+        tools.extend(get_action_tool_schemas())
         if context.user_id is not None:
             tools.extend(get_authenticated_tool_schemas())
 
         messages: list[dict[str, Any]] = [{"role": "user", "content": query}]
         tools_used: list[str] = []
         entities: list[dict[str, Any]] = []
+        actions: list[Action] = []
         response = None
 
         for _iteration in range(self._config.max_iterations):
@@ -156,7 +150,7 @@ class NLQEngine:
 
             if response.stop_reason == "end_turn":
                 summary = _extract_text(response)
-                return self._build_result(summary, entities, tools_used)
+                return self._build_result(summary, entities, tools_used, actions)
 
             # Execute each tool_use block
             tool_results: list[dict[str, Any]] = []
@@ -165,7 +159,12 @@ class NLQEngine:
                     if on_status is not None:
                         await on_status(f"Running {block.name}...")
 
-                    result = await self._tool_runner.execute(block.name, block.input, context.user_id)
+                    result = await self._tool_runner.execute(
+                        block.name,
+                        block.input,
+                        context.user_id,
+                        action_recorder=actions,
+                    )
                     tools_used.append(block.name)
                     entities.extend(self._tool_runner.extract_entities(block.name, result))
                     tool_results.append(
@@ -180,26 +179,26 @@ class NLQEngine:
             if not tool_results:
                 # Non-tool stop (e.g., max_tokens) — treat as final response.
                 summary = _extract_text(response)
-                return self._build_result(summary, entities, tools_used)
+                return self._build_result(summary, entities, tools_used, actions)
             messages.append({"role": "user", "content": tool_results})
 
         # Max iterations reached — return whatever we have
         logger.warning("⚠️ NLQ engine reached max iterations", max_iterations=self._config.max_iterations)
         summary = _extract_text(response) if response else ""
-        return self._build_result(summary, entities, tools_used)
+        return self._build_result(summary, entities, tools_used, actions)
 
     def _build_result(
         self,
         summary: str,
         entities: list[dict[str, Any]],
         tools_used: list[str],
+        actions: list[Action],
     ) -> NLQResult:
-        """Build an NLQResult with guardrails, deduplication, and action extraction."""
+        """Build an NLQResult with guardrails and entity deduplication."""
         if not tools_used:
             summary = _apply_off_topic_guardrail(summary)
-        cleaned_summary, actions = _extract_actions(summary)
         deduped = _deduplicate_entities(entities)
-        return NLQResult(summary=cleaned_summary, entities=deduped, tools_used=tools_used, actions=actions)
+        return NLQResult(summary=summary, entities=deduped, tools_used=tools_used, actions=actions)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -231,33 +230,6 @@ def _apply_off_topic_guardrail(summary: str) -> str:
     # Non-empty response without refusal keywords — may be a valid on-topic
     # answer from system prompt context. Pass through instead of replacing.
     return summary
-
-
-_ACTIONS_MARKER_RE = re.compile(r"<!--actions:(\[.*?\])-->", re.DOTALL)
-
-
-def _extract_actions(text: str) -> tuple[str, list[Action]]:
-    """Strip an optional ``<!--actions:[...]-->`` marker from the agent's text.
-
-    The system prompt instructs the agent to append its structured UI actions
-    inside this marker at the end of its response. We strip the marker from the
-    user-visible summary and parse the JSON list.
-    """
-    match = _ACTIONS_MARKER_RE.search(text)
-    if not match:
-        return text, []
-    raw_json = match.group(1)
-    cleaned = _ACTIONS_MARKER_RE.sub("", text).strip()
-    try:
-        import json as _json  # noqa: PLC0415
-
-        raw = _json.loads(raw_json)
-        if not isinstance(raw, list):  # pragma: no cover — regex guarantees list-shaped JSON
-            return cleaned, []
-        return cleaned, parse_action_list(raw)
-    except (json.JSONDecodeError, ValueError):
-        logger.warning("⚠️ NLQ actions marker contained invalid JSON")
-        return cleaned, []
 
 
 def _deduplicate_entities(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
