@@ -58,3 +58,47 @@ async def test_find_path_returns_error_when_source_missing() -> None:
 
     assert result == {"error": "artist 'Nobody' not found"}
     find_shortest_path.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_find_path_returns_error_when_target_missing() -> None:
+    from common.agent_tools.graph import find_path
+
+    driver = AsyncMock()
+    resolve_name = AsyncMock(side_effect=[{"id": "42"}, None])
+    find_shortest_path = AsyncMock()
+
+    result = await find_path(
+        driver=driver,
+        from_name="Kraftwerk",
+        from_type="artist",
+        to_name="Nobody",
+        to_type="artist",
+        resolve_name=resolve_name,
+        find_shortest_path_fn=find_shortest_path,
+    )
+
+    assert result == {"error": "artist 'Nobody' not found"}
+    find_shortest_path.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_find_path_returns_error_when_no_path_between_entities() -> None:
+    from common.agent_tools.graph import find_path
+
+    driver = AsyncMock()
+    resolve_name = AsyncMock(side_effect=[{"id": "42"}, {"id": "99"}])
+    find_shortest_path = AsyncMock(return_value=None)
+
+    result = await find_path(
+        driver=driver,
+        from_name="Kraftwerk",
+        from_type="artist",
+        to_name="Afrika Bambaataa",
+        to_type="artist",
+        resolve_name=resolve_name,
+        find_shortest_path_fn=find_shortest_path,
+    )
+
+    assert result == {"error": "No path found between the specified entities"}
+    find_shortest_path.assert_awaited_once()
