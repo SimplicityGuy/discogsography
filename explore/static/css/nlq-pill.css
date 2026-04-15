@@ -1,0 +1,117 @@
+/* Ask pill — collapsed */
+.nlq-pill-root {
+    position: fixed;
+    inset: auto 0 16px 0;
+    display: flex;
+    justify-content: center;
+    z-index: 1500;
+    pointer-events: none;
+}
+.nlq-pill-root > * { pointer-events: auto; }
+
+.nlq-pill-collapsed {
+    background: linear-gradient(135deg, #9b8dff, #6b5ddf);
+    color: #fff;
+    padding: 8px 20px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 20px rgba(155, 141, 255, 0.5);
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    border: none;
+}
+.nlq-pill-collapsed:hover { transform: scale(1.03); }
+.nlq-pill-collapsed kbd {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 10px;
+}
+.nlq-pill-sparkle { font-size: 14px; }
+
+/* Ask pill — expanded card */
+.nlq-pill-expanded {
+    background: #141420;
+    border: 1px solid #9b8dff;
+    border-radius: 14px;
+    box-shadow: 0 12px 48px rgba(155, 141, 255, 0.4);
+    padding: 16px;
+    width: min(560px, calc(100vw - 48px));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.nlq-pill-input {
+    background: #0a0a14;
+    border: 1px solid #9b8dff;
+    border-radius: 999px;
+    padding: 10px 18px;
+    color: #fff;
+    font-size: 13px;
+    outline: none;
+}
+
+.nlq-pill-chips { display: flex; flex-direction: column; gap: 8px; }
+.nlq-chip-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.nlq-chip-label {
+    font-size: 9px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    flex-basis: 100%;
+}
+.nlq-chip {
+    background: #1a1a24;
+    border: 1px solid #333;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: #bbb;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.nlq-chip:hover { border-color: #9b8dff; color: #9b8dff; }
+
+/* Summary strip */
+.nlq-summary-strip {
+    position: fixed;
+    left: 50%;
+    bottom: 64px;
+    transform: translateX(-50%);
+    width: min(640px, calc(100vw - 48px));
+    background: rgba(20, 20, 32, 0.95);
+    border: 1px solid #9b8dff;
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: #ddd;
+    font-size: 12px;
+    backdrop-filter: blur(6px);
+    z-index: 1499;
+}
+.nlq-summary-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 6px;
+    font-size: 10px;
+    color: #888;
+}
+.nlq-strip-btn {
+    background: transparent;
+    border: none;
+    color: #9b8dff;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 6px;
+}
+.nlq-entity-link {
+    color: #9b8dff;
+    text-decoration: underline;
+    cursor: pointer;
+}

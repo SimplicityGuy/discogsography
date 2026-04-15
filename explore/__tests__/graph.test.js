@@ -1341,6 +1341,53 @@ describe('GraphVisualization', () => {
         });
     });
 
+    describe('snapshot / restore / clearAll / addEntity', () => {
+        it('snapshot returns a deep copy of nodes and links', () => {
+            graph.nodes = [{ id: 'n1', name: 'Artist', type: 'artist' }];
+            graph.links = [{ source: 'n1', target: 'n2' }];
+            const snap = graph.snapshot();
+            expect(snap.nodes).toEqual(graph.nodes);
+            expect(snap.links).toEqual(graph.links);
+            // Ensure it's a deep copy
+            snap.nodes[0].name = 'Modified';
+            expect(graph.nodes[0].name).toBe('Artist');
+        });
+
+        it('restore replaces nodes and links', () => {
+            graph.nodes = [{ id: 'old' }];
+            graph.links = [];
+            graph.restore({ nodes: [{ id: 'restored' }], links: [{ source: 'a', target: 'b' }] });
+            expect(graph.nodes).toEqual([{ id: 'restored' }]);
+            expect(graph.links).toEqual([{ source: 'a', target: 'b' }]);
+        });
+
+        it('clearAll empties nodes and links', () => {
+            graph.nodes = [{ id: 'n1' }];
+            graph.links = [{ source: 'n1', target: 'n2' }];
+            graph.clearAll();
+            expect(graph.nodes).toEqual([]);
+            expect(graph.links).toEqual([]);
+        });
+
+        it('addEntity appends node directly when _app is not set', () => {
+            graph._app = null;
+            graph.addEntity({ name: 'Kraftwerk', entity_type: 'artist' });
+            const added = graph.nodes.find(n => n.id === 'Kraftwerk');
+            expect(added).toBeDefined();
+            expect(added.type).toBe('artist');
+        });
+
+        it('addEntity delegates to _app._loadExplore when available', () => {
+            const loadExplore = vi.fn();
+            graph._app = { _loadExplore: loadExplore };
+            const prevNodeCount = graph.nodes.length;
+            graph.addEntity({ name: 'Kraftwerk', entity_type: 'artist' });
+            expect(loadExplore).toHaveBeenCalledWith('Kraftwerk', 'artist');
+            // Should not append a node directly
+            expect(graph.nodes.length).toBe(prevNodeCount);
+        });
+    });
+
     describe('setBeforeYear with categories', () => {
         it('should re-fetch categories with year filter', async () => {
             graph.centerName = 'Radiohead';

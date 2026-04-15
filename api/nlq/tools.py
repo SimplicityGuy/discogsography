@@ -327,10 +327,10 @@ class NLQToolRunner:
     # ── Tool handlers ─────────────────────────────────────────────────────
 
     async def _handle_search(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
-        # Lazy imports to avoid circular dependencies
         from api.queries import search_queries  # noqa: PLC0415
+        from common import agent_tools  # noqa: PLC0415
 
-        return await search_queries.execute_search(
+        return await agent_tools.search(
             pool=self._pool,
             redis=self._redis,
             q=params.get("q", ""),
@@ -340,6 +340,7 @@ class NLQToolRunner:
             year_max=params.get("year_max"),
             limit=params.get("limit", 10),
             offset=params.get("offset", 0),
+            search_fn=search_queries.execute_search,
         )
 
     async def _handle_autocomplete(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
@@ -356,65 +357,62 @@ class NLQToolRunner:
 
     async def _handle_explore_entity(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import neo4j_queries  # noqa: PLC0415
+        from common import agent_tools  # noqa: PLC0415
 
         entity_type = params.get("type", "artist")
-        name = params.get("name", "")
         handler = neo4j_queries.EXPLORE_DISPATCH.get(entity_type)
         if handler is None:
             return {"error": f"Unknown explore type: {entity_type}"}
-        explore_result = await handler(self._driver, name)
-        if explore_result is None:
-            return {"error": f"{entity_type} '{name}' not found"}
-        result = dict(explore_result)
-        result["_entity_type"] = entity_type
-        return result
+
+        tool_fn = {
+            "artist": agent_tools.get_artist_details,
+            "label": agent_tools.get_label_details,
+            "genre": agent_tools.get_genre_details,
+            "style": agent_tools.get_style_details,
+            "release": agent_tools.get_release_details,
+        }.get(entity_type)
+        if tool_fn is None:
+            return {"error": f"Unknown explore type: {entity_type}"}
+
+        return await tool_fn(driver=self._driver, name=params.get("name", ""), handler=handler)
 
     async def _handle_find_path(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import neo4j_queries  # noqa: PLC0415
+        from common import agent_tools  # noqa: PLC0415
 
-        from_id = params.get("from_id", "")
-        to_id = params.get("to_id", "")
-        from_type = params.get("from_type", "")
-        to_type = params.get("to_type", "")
+        async def resolve_name(driver: Any, name: str, entity_type: str) -> dict[str, Any] | None:
+            if name and name.isdigit():
+                return {"id": name}
+            if not entity_type:
+                # No type provided — treat the value as a raw node ID
+                return {"id": name}
+            handler = neo4j_queries.EXPLORE_DISPATCH.get(entity_type)
+            if handler is None:
+                return None
+            result: dict[str, Any] | None = await handler(driver, name)
+            return result
 
-        # Resolve names to node IDs when the value is not purely numeric
-        # (the REST endpoint does this via EXPLORE_DISPATCH; NLQ must match)
-        if from_id and not from_id.isdigit() and from_type:
-            handler = neo4j_queries.EXPLORE_DISPATCH.get(from_type)
-            if handler:
-                node = await handler(self._driver, from_id)
-                if node:
-                    from_id = str(node["id"])
-                else:
-                    return {"error": f"{from_type} '{from_id}' not found"}
-        if to_id and not to_id.isdigit() and to_type:
-            handler = neo4j_queries.EXPLORE_DISPATCH.get(to_type)
-            if handler:
-                node = await handler(self._driver, to_id)
-                if node:
-                    to_id = str(node["id"])
-                else:
-                    return {"error": f"{to_type} '{to_id}' not found"}
-
-        result = await neo4j_queries.find_shortest_path(
+        return await agent_tools.find_path(
             driver=self._driver,
-            from_id=from_id,
-            to_id=to_id,
+            from_name=params.get("from_id", ""),
+            from_type=params.get("from_type", ""),
+            to_name=params.get("to_id", ""),
+            to_type=params.get("to_type", ""),
             max_depth=params.get("max_depth", 6),
-            from_type=from_type,
-            to_type=to_type,
+            resolve_name=resolve_name,
+            find_shortest_path_fn=neo4j_queries.find_shortest_path,
         )
-        if result is None:
-            return {"error": "No path found between the specified entities"}
-        return result
 
     async def _handle_get_collaborators(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import collaborator_queries  # noqa: PLC0415
+        from common import agent_tools  # noqa: PLC0415
 
-        artist_id = params.get("artist_id", "")
-        limit = params.get("limit", 20)
-        collaborators = await collaborator_queries.get_collaborators(self._driver, artist_id, limit=limit)
-        return {"collaborators": collaborators}
+        return await agent_tools.get_collaborators(
+            driver=self._driver,
+            artist_id=params.get("artist_id", ""),
+            limit=params.get("limit", 20),
+            collaborators_fn=collaborator_queries.get_collaborators,
+        )
 
     async def _handle_get_similar_artists(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries.recommend_queries import compute_similar_artists, get_artist_profile, get_candidate_artists  # noqa: PLC0415
@@ -440,26 +438,28 @@ class NLQToolRunner:
 
     async def _handle_get_trends(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import neo4j_queries  # noqa: PLC0415
+        from common import agent_tools  # noqa: PLC0415
 
         entity_type = params.get("type", "artist")
-        name = params.get("name", "")
         handler = neo4j_queries.TRENDS_DISPATCH.get(entity_type)
-        if handler is None:
-            return {"error": f"Unknown trends type: {entity_type}"}
-        results = await handler(self._driver, name)
-        return {"trends": results}
+        return await agent_tools.get_trends(
+            driver=self._driver,
+            entity_type=entity_type,
+            name=params.get("name", ""),
+            handler=handler,
+        )
 
     async def _handle_get_genre_tree(self, _params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import genre_tree_queries  # noqa: PLC0415
+        from common import agent_tools  # noqa: PLC0415
 
-        tree = await genre_tree_queries.get_genre_tree(self._driver)
-        return {"genres": tree}
+        return await agent_tools.get_genre_tree(driver=self._driver, tree_fn=genre_tree_queries.get_genre_tree)
 
     async def _handle_get_graph_stats(self, _params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import neo4j_queries  # noqa: PLC0415
+        from common import agent_tools  # noqa: PLC0415
 
-        stats = await neo4j_queries.get_graph_stats(self._driver)
-        return stats
+        return await agent_tools.get_graph_stats(driver=self._driver, stats_fn=neo4j_queries.get_graph_stats)
 
     async def _handle_get_collection_gaps(self, params: dict[str, Any], user_id: str | None) -> dict[str, Any]:
         from api.queries import gap_queries  # noqa: PLC0415

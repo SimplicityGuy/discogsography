@@ -897,4 +897,49 @@ class GraphVisualization {
 
         this._render();
     }
+
+    /**
+     * Return a deep-copy snapshot of the current nodes and links.
+     * @returns {{ nodes: Array, links: Array }}
+     */
+    snapshot() {
+        return {
+            nodes: JSON.parse(JSON.stringify(this.nodes || [])),
+            links: JSON.parse(JSON.stringify(this.links || [])),
+        };
+    }
+
+    /**
+     * Replace current nodes and links with a previously captured snapshot and re-render.
+     * @param {{ nodes: Array, links: Array }} snap
+     */
+    restore(snap) {
+        this.nodes = snap.nodes || [];
+        this.links = snap.links || [];
+        if (this._render) this._render();
+    }
+
+    /**
+     * Clear all nodes and links from the graph and re-render.
+     */
+    clearAll() {
+        this.nodes = [];
+        this.links = [];
+        if (this._render) this._render();
+    }
+
+    /**
+     * Add a single entity node to the graph.
+     * If the app's explore loader is available it will perform a full explore load;
+     * otherwise the node is appended directly and the graph is re-rendered.
+     * @param {{ name: string, entity_type: string }} entity
+     */
+    addEntity(entity) {
+        if (this._app && this._app._loadExplore) {
+            this._app._loadExplore(entity.name, entity.entity_type);
+            return;
+        }
+        this.nodes = [...(this.nodes || []), { id: entity.name, name: entity.name, type: entity.entity_type }];
+        if (this._render) this._render();
+    }
 }
