@@ -141,7 +141,6 @@ describe('initPathFinder', () => {
         loadScriptDirect('graph.js');
         loadScriptDirect('trends.js');
         loadScriptDirect('user-panes.js');
-        loadScriptDirect('nlq.js');
         loadScriptDirect('app.js');
     });
 

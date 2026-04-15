@@ -19,6 +19,7 @@
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" integrity="sha384-Hl48Kq2HifOWdXEjMsKo6qxqvRLTYqIGbvlENBmkHAxZKIGCXv43H6W1jA671RzC" crossorigin="anonymous"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.8/dist/cdn.min.js" integrity="sha384-LXWjKwDZz29o7TduNe+r/UxaolHh5FsSvy2W7bDHSZ8jJeGgDeuNnsDNHoxpSgDi" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="/css/nlq-pill.css">
     <style>[x-cloak] { display: none !important; }</style>
     <style>
 /* Tailwind .hidden fallback — tailwind.css is only built during Docker builds,
@@ -466,36 +467,6 @@ body {
                     </button>
                 </div>
                 <div class="autocomplete-dropdown" id="autocompleteDropdown"></div>
-            </div>
-
-            <!-- NLQ Search/Ask toggle + panel — separate row 2 of navbar grid
-                 so the search input above stays vertically aligned with brand and login. -->
-            <div class="navbar-search-extras">
-                <!-- NLQ Search/Ask Toggle -->
-                <div id="searchAskToggle" style="display: none;" class="flex gap-1 justify-center">
-                    <button id="searchModeBtn" class="px-3 py-1 text-xs rounded-full bg-purple-accent text-white">Search</button>
-                    <button id="askModeBtn" class="px-3 py-1 text-xs rounded-full bg-inner-bg text-text-mid border border-border-color hover:bg-bg-hover">Ask</button>
-                </div>
-                <!-- NLQ Ask Panel -->
-                <div id="nlqPanel" style="display: none;" class="mt-3">
-                    <div class="flex gap-2">
-                        <input type="text" id="nlqInput" placeholder="Ask anything about the music graph..."
-                               class="form-input-dark flex-1" maxlength="500">
-                        <button id="nlqSubmit" class="btn-primary">
-                            <span class="material-symbols-outlined" style="font-size:18px">send</span>
-                        </button>
-                    </div>
-                    <div id="nlqStatus" class="text-xs text-text-mid mt-2 italic" style="display: none;"></div>
-                    <div id="nlqResult" class="mt-3 text-sm leading-relaxed"></div>
-                    <div id="nlqExamples" class="mt-3">
-                        <p class="text-xs text-text-low mb-2">Try asking:</p>
-                        <div class="flex flex-wrap gap-1">
-                            <button data-nlq-example="Most prolific electronic label" class="px-2 py-1 text-xs rounded-full bg-inner-bg text-text-mid border border-border-color hover:bg-bg-hover cursor-pointer">Most prolific electronic label</button>
-                            <button data-nlq-example="How are Kraftwerk and Afrika Bambaataa connected?" class="px-2 py-1 text-xs rounded-full bg-inner-bg text-text-mid border border-border-color hover:bg-bg-hover cursor-pointer">How are Kraftwerk and Afrika Bambaataa connected?</button>
-                            <button data-nlq-example="What genres emerged in the 1990s?" class="px-2 py-1 text-xs rounded-full bg-inner-bg text-text-mid border border-border-color hover:bg-bg-hover cursor-pointer">What genres emerged in the 1990s?</button>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <!-- Utilities: theme + auth -->
@@ -1195,8 +1166,10 @@ body {
     <script src="js/collaborators.js"></script>
     <script src="js/credits.js"></script>
     <script src="js/theme.js"></script>
-    <script src="js/nlq.js"></script>
+    <script type="module" src="js/nlq.js"></script>
     <script src="js/settings.js"></script>
     <script src="js/app.js"></script>
+    <div id="nlqPillMount"></div>
+    <div id="nlqStripMount"></div>
 </body>
 </html>

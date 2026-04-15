@@ -80,8 +80,6 @@ function setupAppDOM() {
         'explorePane', 'trendsPane', 'searchPane', 'insightsPane',
         'collectionPane', 'wantlistPane', 'recommendationsPane', 'gapsPane', 'settingsPane',
         // NLQ
-        'nlqPanel', 'nlqInput', 'nlqSubmit', 'nlqStatus', 'nlqResult', 'nlqExamples',
-        'searchAskToggle', 'searchModeBtn', 'askModeBtn',
         // Password reset
         'resetEmail', 'resetRequestError', 'resetRequestSuccess',
         // 2FA verify
@@ -92,7 +90,6 @@ function setupAppDOM() {
         'searchInput', 'loginEmail', 'loginPassword',
         'registerEmail', 'registerPassword',
         'timelineSlider', 'compareSliderA', 'compareSliderB',
-        'nlqInput',
         'resetEmail', 'recoveryCodeInput',
     ]);
 
@@ -353,7 +350,6 @@ beforeAll(() => {
     loadScriptDirect('graph.js');
     loadScriptDirect('trends.js');
     loadScriptDirect('user-panes.js');
-    loadScriptDirect('nlq.js');
     loadScriptDirect('app.js');
 });
 
@@ -2518,139 +2514,6 @@ describe('TimelineScrubber event handlers', () => {
             expect(ts.comparing).toBe(false);
             expect(ts.container.classList.contains('hidden')).toBe(true);
         });
-    });
-});
-
-
-// ---------------------------------------------------------------------------
-// NLQ wiring in app.js
-// ---------------------------------------------------------------------------
-
-describe('app.js NLQ wiring (inline simulation)', () => {
-    // app.js can't be reloaded in the same jsdom context (class redeclaration).
-    // Instead we simulate the wiring logic inline — this matches the code in
-    // app.js lines 1301-1341 and exercises the same branches.
-
-    let nlqPanel;
-
-    beforeEach(() => {
-        setupAppDOM();
-        globalThis.apiClient = globalThis.apiClient || {};
-        globalThis.apiClient.checkNlqStatus = vi.fn(async () => ({ enabled: true }));
-        globalThis.apiClient.askNlqStream = vi.fn();
-
-        // Load NLQPanel if not already loaded
-        if (typeof globalThis.NLQPanel === 'undefined') {
-            loadScriptDirect('nlq.js');
-        }
-
-        nlqPanel = new NLQPanel();
-
-        // Wire the same event handlers as app.js
-        nlqPanel.onExploreEntity = (name, type) => {
-            nlqPanel.hide();
-        };
-
-        document.getElementById('searchModeBtn')?.addEventListener('click', () => {
-            nlqPanel.hide();
-        });
-
-        document.getElementById('askModeBtn')?.addEventListener('click', () => {
-            nlqPanel.show();
-            nlqPanel.input?.focus();
-        });
-
-        document.addEventListener('keydown', (e) => {
-            if (e.key === '?' && !e.target.matches('input, textarea, [contenteditable]')) {
-                e.preventDefault();
-                document.getElementById('askModeBtn')?.click();
-            }
-        });
-    });
-
-    it('searchModeBtn click should hide NLQ panel', () => {
-        nlqPanel.show();
-        document.getElementById('searchModeBtn').click();
-        expect(document.getElementById('nlqPanel').style.display).toBe('none');
-    });
-
-    it('askModeBtn click should show NLQ panel', () => {
-        document.getElementById('askModeBtn').click();
-        expect(document.getElementById('nlqPanel').style.display).toBe('');
-    });
-
-    it('should show searchAskToggle when NLQ is enabled', async () => {
-        const toggle = document.getElementById('searchAskToggle');
-        toggle.style.display = 'none';
-
-        const enabled = await nlqPanel.checkEnabled();
-        if (enabled) toggle.style.display = 'flex';
-
-        expect(toggle.style.display).toBe('flex');
-    });
-
-    it('? keyboard shortcut should trigger askModeBtn click', () => {
-        const askBtn = document.getElementById('askModeBtn');
-        const clickSpy = vi.spyOn(askBtn, 'click');
-
-        // Dispatch from body so e.target has matches()
-        const event = new KeyboardEvent('keydown', { key: '?', bubbles: true });
-        document.body.dispatchEvent(event);
-
-        expect(clickSpy).toHaveBeenCalled();
-    });
-
-    it('? keyboard shortcut should NOT fire when target is an input', () => {
-        const askBtn = document.getElementById('askModeBtn');
-        const clickSpy = vi.spyOn(askBtn, 'click');
-
-        // Dispatch from an input element so e.target.matches('input') is true
-        const input = document.getElementById('nlqInput');
-        const event = new KeyboardEvent('keydown', { key: '?', bubbles: true });
-        input.dispatchEvent(event);
-
-        expect(clickSpy).not.toHaveBeenCalled();
-    });
-
-    it('onExploreEntity callback should hide NLQ panel', () => {
-        nlqPanel.show();
-        nlqPanel.onExploreEntity('Miles Davis', 'artist');
-        expect(document.getElementById('nlqPanel').style.display).toBe('none');
-    });
-
-    it('onExploreEntity callback should call _switchPane and _loadExplore on exploreApp', () => {
-        const mockSwitchPane = vi.fn();
-        const mockLoadExplore = vi.fn();
-        window.exploreApp = { _switchPane: mockSwitchPane, _loadExplore: mockLoadExplore };
-
-        // Re-wire onExploreEntity to match actual app.js logic
-        nlqPanel.onExploreEntity = (name, type) => {
-            nlqPanel.hide();
-            if (window.exploreApp) {
-                window.exploreApp._switchPane('explore');
-                window.exploreApp._loadExplore(name, type);
-            }
-        };
-
-        nlqPanel.show();
-        nlqPanel.onExploreEntity('Miles Davis', 'artist');
-
-        expect(mockSwitchPane).toHaveBeenCalledWith('explore');
-        expect(mockLoadExplore).toHaveBeenCalledWith('Miles Davis', 'artist');
-        expect(document.getElementById('nlqPanel').style.display).toBe('none');
-
-        delete window.exploreApp;
-    });
-
-    it('should keep toggle hidden when NLQ is disabled', async () => {
-        globalThis.apiClient.checkNlqStatus = vi.fn(async () => ({ enabled: false }));
-        const toggle = document.getElementById('searchAskToggle');
-        toggle.style.display = 'none';
-
-        const enabled = await nlqPanel.checkEnabled();
-        if (enabled) toggle.style.display = 'flex';
-
-        expect(toggle.style.display).toBe('none');
     });
 });
 

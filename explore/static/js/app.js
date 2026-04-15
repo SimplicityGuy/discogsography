@@ -1344,6 +1344,18 @@ class ExploreApp {
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     window.exploreApp = new ExploreApp();
+
+    // Initialize NLQ pill and strip. nlq.js sets window.NlqInit before app.js runs.
+    // (When loaded as an ES module the equivalent would be: import { initNlq } from './nlq.js')
+    if (typeof window !== 'undefined' && window.apiClient) {
+        const nlqInit = window.NlqInit;
+        if (typeof nlqInit === 'function') {
+            nlqInit({
+                app: window.exploreApp,
+                apiClient: window.apiClient,
+            });
+        }
+    }
 });
 
 // ============================================================
@@ -1555,58 +1567,5 @@ document.addEventListener('DOMContentLoaded', () => {
         el.addEventListener('keydown', e => {
             if (e.key === 'Enter') handleConnect();
         });
-    });
-})();
-
-// ---------------------------------------------------------------------------
-// NLQ panel setup
-// ---------------------------------------------------------------------------
-(function initNlqPanel() {
-    const nlqPanel = new NLQPanel();
-    nlqPanel.onExploreEntity = (name, type) => {
-        document.getElementById('askModeBtn')?.classList.remove('bg-purple-accent', 'text-white');
-        document.getElementById('askModeBtn')?.classList.add('bg-inner-bg', 'text-text-mid', 'border', 'border-border-color');
-        document.getElementById('searchModeBtn')?.classList.add('bg-purple-accent', 'text-white');
-        document.getElementById('searchModeBtn')?.classList.remove('bg-inner-bg', 'text-text-mid', 'border', 'border-border-color');
-        nlqPanel.hide();
-        // Trigger explore
-        if (window.exploreApp) {
-            window.exploreApp._switchPane('explore');
-            window.exploreApp._loadExplore(name, type);
-        }
-    };
-
-    nlqPanel.checkEnabled().then(enabled => {
-        if (enabled) {
-            const toggle = document.getElementById('searchAskToggle');
-            // Set explicit `flex` rather than '' — clearing the inline style
-            // should fall back to the Tailwind `flex` class but isn't
-            // reliable across browsers when the inline rule was set in HTML.
-            if (toggle) toggle.style.display = 'flex';
-        }
-    });
-
-    document.getElementById('searchModeBtn')?.addEventListener('click', () => {
-        document.getElementById('searchModeBtn')?.classList.add('bg-purple-accent', 'text-white');
-        document.getElementById('searchModeBtn')?.classList.remove('bg-inner-bg', 'text-text-mid', 'border', 'border-border-color');
-        document.getElementById('askModeBtn')?.classList.remove('bg-purple-accent', 'text-white');
-        document.getElementById('askModeBtn')?.classList.add('bg-inner-bg', 'text-text-mid', 'border', 'border-border-color');
-        nlqPanel.hide();
-    });
-
-    document.getElementById('askModeBtn')?.addEventListener('click', () => {
-        document.getElementById('askModeBtn')?.classList.add('bg-purple-accent', 'text-white');
-        document.getElementById('askModeBtn')?.classList.remove('bg-inner-bg', 'text-text-mid', 'border', 'border-border-color');
-        document.getElementById('searchModeBtn')?.classList.remove('bg-purple-accent', 'text-white');
-        document.getElementById('searchModeBtn')?.classList.add('bg-inner-bg', 'text-text-mid', 'border', 'border-border-color');
-        nlqPanel.show();
-        nlqPanel.input?.focus();
-    });
-
-    document.addEventListener('keydown', (e) => {
-        if (e.key === '?' && !e.target.matches('input, textarea, [contenteditable]')) {
-            e.preventDefault();
-            document.getElementById('askModeBtn')?.click();
-        }
     });
 })();
