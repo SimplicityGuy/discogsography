@@ -1,27 +1,20 @@
 // explore/static/js/nlq.js
 /**
- * NLQ orchestrator: pill + suggestions + action applier + summary strip.
+ * NLQ orchestrator: pill + suggestions + action applier.
  *
  * Kept as a thin coordinator — business logic lives in the individual
- * components imported below.
+ * components imported below. The pill now owns the full conversation
+ * surface (collapsed → expanded → loading → answered), so there is no
+ * separate summary strip.
  */
 import { NlqActionApplier } from './nlq-action-applier.js';
 import { NlqPill } from './nlq-pill.js';
-import { NlqSuggestions } from './nlq-suggestions.js';
-import { NlqSummaryStrip } from './nlq-summary-strip.js';
 import { buildHandlers, buildSnapshotter } from './nlq-handlers.js';
 
-export function initNlq({ app, apiClient, mountId = 'nlqPillMount', stripMountId = 'nlqStripMount' }) {
+export function initNlq({ app, apiClient, mountId = 'nlqPillMount' }) {
     const handlers = buildHandlers({ app });
     const snapshotter = buildSnapshotter({ app });
     const applier = new NlqActionApplier({ handlers, snapshotter });
-
-    const stripEl = document.getElementById(stripMountId) || document.body;
-    const strip = new NlqSummaryStrip({
-        container: stripEl,
-        onUndo: () => applier.undo(),
-        onEntityClick: (name, type) => app._loadExplore?.(name, type),
-    });
 
     const pill = new NlqPill({
         mountId,
@@ -31,7 +24,9 @@ export function initNlq({ app, apiClient, mountId = 'nlqPillMount', stripMountId
             focus: app.currentEntity?.name ?? null,
             focusType: app.currentEntity?.type ?? null,
         }),
-        onSubmit: (query) => _submit({ query, app, apiClient, applier, strip, pill }),
+        onSubmit: (query) => _submit({ query, app, apiClient, applier, pill }),
+        onUndo: () => applier.undo(),
+        onEntityClick: (name, type) => app._loadExplore?.(name, type),
     });
 
     apiClient.checkNlqStatus().then((status) => {
@@ -39,9 +34,8 @@ export function initNlq({ app, apiClient, mountId = 'nlqPillMount', stripMountId
     });
 }
 
-function _submit({ query, app, apiClient, applier, strip, pill }) {
-    pill.setLoading?.(true);
-    strip.hide();
+function _submit({ query, app, apiClient, applier, pill }) {
+    pill.setLoading();
 
     const appliedActionTypes = [];
 
@@ -56,19 +50,22 @@ function _submit({ query, app, apiClient, applier, strip, pill }) {
             const actions = result.actions || [];
             appliedActionTypes.push(...actions.map((a) => a.type));
             const counts = applier.apply(actions);
-            strip.show({
+            pill.setAnswer({
                 summary: result.summary || '',
                 entities: result.entities || [],
                 appliedActions: appliedActionTypes,
                 skipped: counts.skipped,
             });
-            pill.setLoading?.(false);
-            pill.flash?.(`✓ ${counts.applied} actions applied`);
         },
         (err) => {
             console.error('❌ NLQ stream error', err);
-            pill.setLoading?.(false);
-            strip.show({ summary: 'Request failed — please try again.', entities: [], appliedActions: [], skipped: 0 });
+            pill.setAnswer({
+                summary: 'Request failed — please try again.',
+                entities: [],
+                appliedActions: [],
+                skipped: 0,
+                isError: true,
+            });
         },
     );
 }
