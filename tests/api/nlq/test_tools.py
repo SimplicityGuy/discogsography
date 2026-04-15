@@ -7,6 +7,7 @@ import pytest
 
 from api.nlq.tools import (
     NLQToolRunner,
+    get_action_tool_schemas,
     get_authenticated_tool_schemas,
     get_public_tool_schemas,
 )
@@ -35,6 +36,19 @@ EXPECTED_AUTH_NAMES = {
     "get_collection_stats",
 }
 
+EXPECTED_ACTION_NAMES = {
+    "ui_seed_graph",
+    "ui_highlight_path",
+    "ui_focus_node",
+    "ui_filter_graph",
+    "ui_find_path",
+    "ui_show_credits",
+    "ui_switch_pane",
+    "ui_open_insight_tile",
+    "ui_set_trend_range",
+    "ui_suggest_followups",
+}
+
 
 def test_public_tools_returns_10_schemas() -> None:
     """Public tool schemas should contain exactly 10 tools with correct names."""
@@ -54,12 +68,27 @@ def test_authenticated_tools_returns_4_schemas() -> None:
 
 def test_all_schemas_have_required_fields() -> None:
     """Every schema must have name, description, and input_schema with type=object."""
-    all_schemas = get_public_tool_schemas() + get_authenticated_tool_schemas()
+    all_schemas = get_public_tool_schemas() + get_authenticated_tool_schemas() + get_action_tool_schemas()
     for schema in all_schemas:
         assert "name" in schema, f"Schema missing 'name': {schema}"
         assert "description" in schema, f"Schema {schema.get('name')} missing 'description'"
         assert "input_schema" in schema, f"Schema {schema['name']} missing 'input_schema'"
         assert schema["input_schema"]["type"] == "object", f"Schema {schema['name']} input_schema type != object"
+
+
+def test_action_tools_returns_10_schemas() -> None:
+    """Action tool schemas should contain exactly 10 tools with correct names."""
+    schemas = get_action_tool_schemas()
+    assert len(schemas) == 10
+    names = {s["name"] for s in schemas}
+    assert names == EXPECTED_ACTION_NAMES
+
+
+def test_action_tool_names_do_not_collide_with_data_tool_names() -> None:
+    """Action tool names must be disjoint from public and authenticated data tool names."""
+    action_names = {s["name"] for s in get_action_tool_schemas()}
+    data_names = {s["name"] for s in get_public_tool_schemas()} | {s["name"] for s in get_authenticated_tool_schemas()}
+    assert action_names.isdisjoint(data_names), f"Collision: {action_names & data_names}"
 
 
 # ── Runner tests ──────────────────────────────────────────────────────────

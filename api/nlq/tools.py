@@ -1,7 +1,10 @@
 """NLQ tool schemas and runner for Claude tool-use API.
 
 Defines tool schemas for public and authenticated tools, and the NLQToolRunner
-class that dispatches tool calls to existing query functions.
+class that dispatches tool calls to existing query functions. Also defines the
+UI action tool schemas — these are "write" tools that the model invokes to
+signal UI mutations; the runner records each invocation into a per-request
+list so the engine can ship them in ``NLQResult.actions``.
 """
 
 from __future__ import annotations
@@ -10,6 +13,8 @@ import asyncio
 from typing import Any
 
 import structlog
+
+from api.nlq.actions import Action, parse_action
 
 
 logger = structlog.get_logger(__name__)
@@ -172,6 +177,182 @@ def get_public_tool_schemas() -> list[dict[str, Any]]:
     ]
 
 
+_ENTITY_TYPES = ["artist", "label", "genre", "style", "release"]
+_PANE_NAMES = ["explore", "trends", "insights", "genres", "credits"]
+_FILTER_DIMENSIONS = ["year", "genre", "label"]
+
+
+def get_action_tool_schemas() -> list[dict[str, Any]]:
+    """Return 10 UI action tool schemas.
+
+    These tools record the model's intent to mutate the UI. Their handlers
+    do not touch any database — the actual UI effect is applied client-side
+    by the Explore front-end's ``NlqActionApplier``. All action tools are
+    prefixed with ``ui_`` to keep them visually distinct from data tools and
+    to avoid collisions with data tool names of the same stem.
+    """
+    return [
+        {
+            "name": "ui_seed_graph",
+            "description": (
+                "Seed the Explore graph pane with one or more entities. Use when the user asks to "
+                "visualize, see, show, or explore specific entities on the graph. Set replace=true "
+                "to clear the graph first; false to add to the existing graph."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "entities": {
+                        "type": "array",
+                        "description": "Entities to add to the graph.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "description": "Exact entity name as returned by a data tool."},
+                                "entity_type": {"type": "string", "enum": _ENTITY_TYPES},
+                            },
+                            "required": ["name", "entity_type"],
+                        },
+                    },
+                    "replace": {
+                        "type": "boolean",
+                        "description": "If true, clear the current graph before seeding. Defaults to false.",
+                    },
+                },
+                "required": ["entities"],
+            },
+        },
+        {
+            "name": "ui_highlight_path",
+            "description": "Highlight a sequence of node names already on the graph to emphasize a connection.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "nodes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Ordered list of node names to highlight.",
+                    },
+                },
+                "required": ["nodes"],
+            },
+        },
+        {
+            "name": "ui_focus_node",
+            "description": "Focus the Explore pane on a specific entity (loads its detail view).",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Exact entity name."},
+                    "entity_type": {"type": "string", "enum": _ENTITY_TYPES},
+                },
+                "required": ["name", "entity_type"],
+            },
+        },
+        {
+            "name": "ui_filter_graph",
+            "description": "Filter the current graph view by a dimension (year, genre, or label).",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "by": {
+                        "type": "string",
+                        "enum": _FILTER_DIMENSIONS,
+                        "description": "The dimension to filter by.",
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "Filter value (e.g., '1995', 'Techno', 'Warp Records').",
+                    },
+                },
+                "required": ["by", "value"],
+            },
+        },
+        {
+            "name": "ui_find_path",
+            "description": (
+                "Trigger the graph find-path visualization between two named entities in the UI. "
+                "Distinct from the data tool ``find_path`` which computes the path. Call the data "
+                "tool first to verify a path exists."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "from": {"type": "string", "description": "Starting entity name."},
+                    "to": {"type": "string", "description": "Target entity name."},
+                    "from_type": {"type": "string", "enum": _ENTITY_TYPES},
+                    "to_type": {"type": "string", "enum": _ENTITY_TYPES},
+                },
+                "required": ["from", "to", "from_type", "to_type"],
+            },
+        },
+        {
+            "name": "ui_show_credits",
+            "description": "Open the credits pane for an entity.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Exact entity name."},
+                    "entity_type": {"type": "string", "enum": _ENTITY_TYPES},
+                },
+                "required": ["name", "entity_type"],
+            },
+        },
+        {
+            "name": "ui_switch_pane",
+            "description": (
+                "Switch the active UI pane. Use when the user's question is best answered on a "
+                "different pane (e.g., trends for a release-count question)."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "pane": {"type": "string", "enum": _PANE_NAMES},
+                },
+                "required": ["pane"],
+            },
+        },
+        {
+            "name": "ui_open_insight_tile",
+            "description": "Open a specific insights tile by its identifier.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "tile_id": {"type": "string", "description": "The tile identifier to open."},
+                },
+                "required": ["tile_id"],
+            },
+        },
+        {
+            "name": "ui_set_trend_range",
+            "description": "Set the trends pane year range.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "from": {"type": "string", "description": "Start year (e.g., '1990')."},
+                    "to": {"type": "string", "description": "End year (e.g., '2020')."},
+                },
+                "required": ["from", "to"],
+            },
+        },
+        {
+            "name": "ui_suggest_followups",
+            "description": "Propose follow-up queries for the user to click next. Use sparingly (1-3 suggestions).",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "queries": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Follow-up query strings.",
+                    },
+                },
+                "required": ["queries"],
+            },
+        },
+    ]
+
+
 def get_authenticated_tool_schemas() -> list[dict[str, Any]]:
     """Return 4 tool schemas that require user authentication."""
     return [
@@ -225,6 +406,40 @@ def get_authenticated_tool_schemas() -> list[dict[str, Any]]:
 
 _AUTH_TOOLS = {"get_collection_gaps", "get_taste_fingerprint", "get_taste_blindspots", "get_collection_stats"}
 
+# ── Action tool names ─────────────────────────────────────────────────────
+#
+# Action tools are named with a ``ui_`` prefix to keep them visually distinct
+# from data tools in the model's tool list and to avoid collisions with data
+# tool names (e.g., the data tool ``find_path`` vs the UI action ``ui_find_path``).
+# Client wire types (``NLQResult.actions[i].type``) stay unprefixed so the
+# frontend applier contract is unchanged.
+
+_ACTION_TOOLS: set[str] = {
+    "ui_seed_graph",
+    "ui_highlight_path",
+    "ui_focus_node",
+    "ui_filter_graph",
+    "ui_find_path",
+    "ui_show_credits",
+    "ui_switch_pane",
+    "ui_open_insight_tile",
+    "ui_set_trend_range",
+    "ui_suggest_followups",
+}
+
+_ACTION_TOOL_TO_TYPE: dict[str, str] = {
+    "ui_seed_graph": "seed_graph",
+    "ui_highlight_path": "highlight_path",
+    "ui_focus_node": "focus_node",
+    "ui_filter_graph": "filter_graph",
+    "ui_find_path": "find_path",
+    "ui_show_credits": "show_credits",
+    "ui_switch_pane": "switch_pane",
+    "ui_open_insight_tile": "open_insight_tile",
+    "ui_set_trend_range": "set_trend_range",
+    "ui_suggest_followups": "suggest_followups",
+}
+
 
 # ── NLQToolRunner ─────────────────────────────────────────────────────────
 
@@ -233,7 +448,10 @@ class NLQToolRunner:
     """Dispatches NLQ tool calls to existing query functions.
 
     Each tool handler is a thin wrapper that validates params and calls
-    the appropriate query function with the correct arguments.
+    the appropriate query function with the correct arguments. Action tools
+    are dispatched through :meth:`execute_action`, which validates the payload
+    via pydantic and appends the resulting :class:`Action` to a per-request
+    recorder list supplied by the caller.
     """
 
     def __init__(self, neo4j_driver: Any, pg_pool: Any, redis: Any) -> None:
@@ -241,12 +459,22 @@ class NLQToolRunner:
         self._pool = pg_pool
         self._redis = redis
 
-    async def execute(self, tool_name: str, params: dict[str, Any], user_id: str | None = None) -> dict[str, Any]:
+    async def execute(
+        self,
+        tool_name: str,
+        params: dict[str, Any],
+        user_id: str | None = None,
+        action_recorder: list[Action] | None = None,
+    ) -> dict[str, Any]:
         """Execute a tool by name with the given parameters.
 
         Returns the tool result as a dict, or ``{"error": "..."}`` on failure.
-        Auth-required tools check that ``user_id is not None``.
+        Auth-required tools check that ``user_id is not None``. Action tools
+        validate their payload and append to ``action_recorder`` when supplied.
         """
+        if tool_name in _ACTION_TOOLS:
+            return self.execute_action(tool_name, params, action_recorder)
+
         if tool_name in _AUTH_TOOLS and user_id is None:
             return {"error": "Authentication required for this tool"}
 
@@ -260,6 +488,33 @@ class NLQToolRunner:
         except Exception:
             logger.exception("❌ Tool execution failed", tool=tool_name)
             return {"error": f"Tool '{tool_name}' failed"}
+
+    def execute_action(
+        self,
+        tool_name: str,
+        params: dict[str, Any],
+        recorder: list[Action] | None,
+    ) -> dict[str, Any]:
+        """Validate a UI action tool call and append it to ``recorder``.
+
+        Returns ``{"ok": True}`` on success so the model's tool loop continues
+        cleanly. On validation failure, returns an error dict and skips the
+        recorder — the model sees the error and can retry or ignore.
+        """
+        action_type = _ACTION_TOOL_TO_TYPE.get(tool_name)
+        if action_type is None:
+            return {"error": f"Unknown action tool: {tool_name}"}
+
+        raw: dict[str, Any] = {"type": action_type, **(params or {})}
+        try:
+            action = parse_action(raw)
+        except Exception as exc:
+            logger.warning("⚠️ NLQ action tool invoked with invalid payload", tool=tool_name, error=str(exc))
+            return {"error": f"Invalid {action_type} payload: {exc}"}
+
+        if recorder is not None:
+            recorder.append(action)
+        return {"ok": True}
 
     def _get_handler(self, tool_name: str) -> Any:
         """Return the async handler for a tool name, or None."""
