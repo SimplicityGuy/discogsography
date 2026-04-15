@@ -1344,6 +1344,18 @@ class ExploreApp {
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     window.exploreApp = new ExploreApp();
+
+    // Initialize NLQ pill and strip. nlq.js sets window.NlqInit before app.js runs.
+    // (When loaded as an ES module the equivalent would be: import { initNlq } from './nlq.js')
+    if (typeof window !== 'undefined' && window.apiClient) {
+        const nlqInit = window.NlqInit;
+        if (typeof nlqInit === 'function') {
+            nlqInit({
+                app: window.exploreApp,
+                apiClient: window.apiClient,
+            });
+        }
+    }
 });
 
 // ============================================================
