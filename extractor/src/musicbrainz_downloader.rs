@@ -5,7 +5,6 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use tokio::fs;
-use tokio::io::AsyncWriteExt;
 use tracing::{debug, error, info, warn};
 
 use crate::types::DataType;
@@ -217,7 +216,10 @@ impl MbDownloader {
         // Step 4: Create version directory
         fs::create_dir_all(&version_dir).await.with_context(|| format!("Failed to create directory: {:?}", version_dir))?;
 
-        // Step 5: Download, verify, and extract each entity
+        // Step 5: Download, verify, and extract each entity — streamed end-to-end.
+        // The .tar.xz bytes flow directly from the network through the xz decoder,
+        // tar extractor, and xz encoder, landing on disk only as {entity}.jsonl.xz.
+        // SHA256 is computed on the raw compressed bytes as they flow past.
         for entity in MB_ENTITIES {
             let tarball_name = format!("{}.tar.xz", entity);
             let expected_hash = checksums
@@ -225,27 +227,11 @@ impl MbDownloader {
                 .ok_or_else(|| anyhow::anyhow!("No SHA256 checksum found for {} in SHA256SUMS", tarball_name))?;
 
             let download_url = format!("{}{}/{}", self.base_url, version, tarball_name);
-            let tmp_path = version_dir.join(format!("{}.tmp", tarball_name)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-            let tarball_path = version_dir.join(&tarball_name); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
             let out_path = version_dir.join(format!("{}.jsonl.xz", entity)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
 
-            // Download with retry
-            self.download_file(&download_url, &tmp_path, expected_hash, entity).await?;
+            self.stream_download_verify_extract(&download_url, entity, expected_hash, &out_path).await?;
 
-            // Rename temp file to final tarball path (keep original tarball)
-            fs::rename(&tmp_path, &tarball_path)
-                .await
-                .with_context(|| format!("Failed to rename {:?} to {:?}", tmp_path, tarball_path))?;
-
-            // Extract+compress on blocking thread: tar.xz → .jsonl.xz in a single streaming pass
-            let extract_tar = tarball_path.clone();
-            let extract_entity = entity.to_string();
-            let extract_out = out_path.clone();
-            tokio::task::spawn_blocking(move || extract_entity_from_tarball(&extract_tar, &extract_entity, &extract_out))
-                .await
-                .context("Extraction task panicked")??;
-
-            info!("✅ Successfully downloaded and extracted MusicBrainz {} dump", entity);
+            info!("✅ Successfully streamed MusicBrainz {} dump to jsonl.xz", entity);
         }
 
         info!("✅ MusicBrainz dump {} download complete", version);
@@ -263,23 +249,31 @@ impl MbDownloader {
             .all(|entity| version_dir.join(format!("{}.jsonl", entity)).exists() || version_dir.join(format!("{}.jsonl.xz", entity)).exists())
     }
 
-    /// Download a file with retry logic and SHA256 verification.
-    async fn download_file(&self, url: &str, dest: &Path, expected_sha256: &str, entity: &str) -> Result<()> {
-        use futures::StreamExt;
+    /// Stream a `.tar.xz` from `url` straight through xz decompression, tar extraction, and
+    /// xz re-compression into `{entity}.jsonl.xz` without ever writing the source tarball to disk.
+    ///
+    /// The raw compressed bytes flow through a [`HashingReader`] so SHA256 is verified against
+    /// the published checksum. Because the tar iterator may stop reading after the target entry,
+    /// the caller drains the remainder of the stream post-extraction to ensure every byte is
+    /// hashed. On any failure (network, checksum, extraction) the partial output file is removed
+    /// and the attempt is retried up to [`MB_MAX_DOWNLOAD_RETRIES`] times with exponential backoff.
+    async fn stream_download_verify_extract(&self, url: &str, entity: &str, expected_sha256: &str, out_path: &Path) -> Result<()> {
+        use futures::TryStreamExt;
+        use tokio_util::io::{StreamReader, SyncIoBridge};
 
         let mut last_error: Option<anyhow::Error> = None;
 
         for attempt in 1..=MB_MAX_DOWNLOAD_RETRIES {
             if attempt > 1 {
-                if dest.exists() {
-                    let _ = fs::remove_file(dest).await;
+                if out_path.exists() {
+                    let _ = fs::remove_file(out_path).await;
                 }
                 let delay_ms = MB_RETRY_BASE_DELAY_MS * (1u64 << (attempt - 2));
                 warn!("🔄 Retry {}/{} for {} (waiting {}ms)...", attempt - 1, MB_MAX_DOWNLOAD_RETRIES - 1, entity, delay_ms);
                 tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
             }
 
-            info!("⬇️ Downloading {} (attempt {}/{})...", entity, attempt, MB_MAX_DOWNLOAD_RETRIES);
+            info!("⬇️ Streaming {} (attempt {}/{})...", entity, attempt, MB_MAX_DOWNLOAD_RETRIES);
 
             let response = match reqwest::get(url).await {
                 // nosemgrep: rust.actix.ssrf.reqwest-taint.reqwest-taint
@@ -299,73 +293,101 @@ impl MbDownloader {
                 continue;
             }
 
-            let mut file = fs::File::create(dest) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-                .await
-                .context("Failed to create download file")?;
-            let mut hasher = Sha256::new();
-            let mut downloaded: u64 = 0;
-            let download_start = std::time::Instant::now();
-            let mut last_progress_log = download_start;
+            // Bridge the async reqwest byte stream to a blocking Read and tee SHA256 on the way past.
+            let byte_stream = response.bytes_stream().map_err(std::io::Error::other);
+            let async_read = StreamReader::new(byte_stream);
+            let sync_read = SyncIoBridge::new(async_read);
+            let hashing_reader = HashingReader::new(sync_read);
 
-            let mut stream = response.bytes_stream();
-            let mut stream_error: Option<anyhow::Error> = None;
+            let entity_owned = entity.to_string();
+            let expected_hash_owned = expected_sha256.to_string();
+            let out_path_owned = out_path.to_path_buf();
+            let attempt_start = std::time::Instant::now();
 
-            while let Some(chunk_result) = stream.next().await {
-                match chunk_result {
-                    Ok(chunk) => {
-                        hasher.update(&chunk);
-                        if let Err(e) = file.write_all(&chunk).await {
-                            stream_error = Some(anyhow::anyhow!("Write failed: {}", e));
-                            break;
-                        }
-                        downloaded += chunk.len() as u64;
+            let extract_result = tokio::task::spawn_blocking(move || -> Result<(u64, u64)> {
+                // Core extraction — reads bytes from the network through xz → tar → xz encoder.
+                // Returns the recovered reader so we can drain remaining bytes through the hasher.
+                let mut recovered = extract_entity_from_reader(hashing_reader, &entity_owned, &out_path_owned)?;
 
-                        let now = std::time::Instant::now();
-                        if now.duration_since(last_progress_log).as_secs() >= 10 {
-                            let elapsed = download_start.elapsed().as_secs_f64();
-                            let speed = if elapsed > 0.0 { (downloaded as f64 / 1_048_576.0) / elapsed } else { 0.0 };
-                            info!("⬇️ {} — {:.1} MB received ({:.1} MB/s)", entity, downloaded as f64 / 1_048_576.0, speed);
-                            last_progress_log = now;
-                        }
-                    }
-                    Err(e) => {
-                        stream_error = Some(anyhow::anyhow!("Stream error: {}", e));
-                        break;
+                // The tar iterator may stop as soon as the target entry is written, leaving some
+                // compressed bytes unread. Drain them so SHA256 sees every byte before finalize().
+                let mut discard = [0u8; 64 * 1024];
+                loop {
+                    match recovered.read(&mut discard) {
+                        Ok(0) => break,
+                        Ok(_) => continue,
+                        Err(e) => return Err(anyhow::anyhow!("Failed to drain compressed stream: {}", e)),
                     }
                 }
-            }
 
-            if let Some(err) = stream_error {
-                warn!("⚠️ Attempt {}/{} failed for {}: {}", attempt, MB_MAX_DOWNLOAD_RETRIES, entity, err);
-                last_error = Some(err);
-                continue;
-            }
+                let (actual_hash, total_bytes) = recovered.finalize();
+                if actual_hash != expected_hash_owned {
+                    let _ = std::fs::remove_file(&out_path_owned);
+                    return Err(anyhow::anyhow!("SHA256 mismatch for {}: expected {}, got {}", entity_owned, expected_hash_owned, actual_hash));
+                }
+                let compressed_out = std::fs::metadata(&out_path_owned).map(|m| m.len()).unwrap_or(0);
+                Ok((total_bytes, compressed_out))
+            })
+            .await
+            .context("Streaming extraction task panicked")?;
 
-            if let Err(e) = file.flush().await {
-                last_error = Some(anyhow::anyhow!("Flush failed: {}", e));
-                continue;
+            match extract_result {
+                Ok((total_bytes, compressed_out)) => {
+                    let elapsed = attempt_start.elapsed().as_secs_f64();
+                    let speed = if elapsed > 0.0 { (total_bytes as f64 / 1_048_576.0) / elapsed } else { 0.0 };
+                    info!(
+                        "✅ Streamed {} ({:.1} MB in {:.1} MB .tar.xz → {:.1} MB .jsonl.xz in {:.1}s, {:.1} MB/s, SHA256 verified)",
+                        entity,
+                        total_bytes as f64 / 1_048_576.0,
+                        total_bytes as f64 / 1_048_576.0,
+                        compressed_out as f64 / 1_048_576.0,
+                        elapsed,
+                        speed
+                    );
+                    return Ok(());
+                }
+                Err(e) => {
+                    warn!("⚠️ Attempt {}/{} failed for {}: {}", attempt, MB_MAX_DOWNLOAD_RETRIES, entity, e);
+                    last_error = Some(e);
+                    if out_path.exists() {
+                        let _ = fs::remove_file(out_path).await;
+                    }
+                    continue;
+                }
             }
-            if let Err(e) = file.sync_data().await {
-                last_error = Some(anyhow::anyhow!("Sync failed: {}", e));
-                continue;
-            }
-
-            // Verify SHA256
-            let actual_hash = hex::encode(hasher.finalize());
-            if actual_hash != expected_sha256 {
-                let msg = format!("SHA256 mismatch for {}: expected {}, got {}", entity, expected_sha256, actual_hash);
-                warn!("⚠️ {}", msg);
-                last_error = Some(anyhow::anyhow!(msg));
-                let _ = fs::remove_file(dest).await;
-                continue;
-            }
-
-            info!("✅ Downloaded {} ({:.2} MB, SHA256 verified)", entity, downloaded as f64 / 1_048_576.0);
-            return Ok(());
         }
 
         error!("❌ Download failed after {} attempts for {}", MB_MAX_DOWNLOAD_RETRIES, entity);
         Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Download failed after {} attempts", MB_MAX_DOWNLOAD_RETRIES)))
+    }
+}
+
+/// `Read` adapter that tees every byte through a SHA256 hasher while counting total bytes read.
+/// The hash is available via [`HashingReader::finalize`] once all reads are complete.
+struct HashingReader<R: Read> {
+    inner: R,
+    hasher: Sha256,
+    bytes: u64,
+}
+
+impl<R: Read> HashingReader<R> {
+    fn new(inner: R) -> Self {
+        Self { inner, hasher: Sha256::new(), bytes: 0 }
+    }
+
+    fn finalize(self) -> (String, u64) {
+        (hex::encode(self.hasher.finalize()), self.bytes)
+    }
+}
+
+impl<R: Read> Read for HashingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if n > 0 {
+            self.hasher.update(&buf[..n]);
+            self.bytes += n as u64;
+        }
+        Ok(n)
     }
 }
 
@@ -400,81 +422,101 @@ pub fn parse_sha256sums(content: &str) -> HashMap<String, String> {
         .collect()
 }
 
-/// Extract the `mbdump/<entity>` file from a `.tar.xz` archive directly to a compressed
-/// `.jsonl.xz` file in a single streaming pass.
-///
-/// Streams: tar.xz → XZ decoder → XZ encoder (level 6) → disk. No intermediate uncompressed
-/// file is written, saving both disk space and a separate re-compression step.
-///
-/// Only the target entry is extracted; all other entries are skipped.
-/// Returns an error if the target entry is not found.
-/// Cleans up partial output file on failure to prevent poisoning restarts.
+/// Extract `mbdump/<entity>` from a `.tar.xz` file on disk into a compressed `.jsonl.xz`
+/// output file. Thin wrapper around [`extract_entity_from_reader`] — kept as a stable public
+/// entry point so existing disk-based tests and any standalone callers keep working.
+#[allow(dead_code)]
 pub fn extract_entity_from_tarball(tar_path: &Path, entity: &str, out_path: &Path) -> Result<()> {
-    use xz2::write::XzEncoder;
-
     // `tar_path` and `out_path` come from operator-controlled config (CLI/env var), not HTTP input.
     let file = std::fs::File::open(tar_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
         .with_context(|| format!("Failed to open tarball: {:?}", tar_path))?;
-    let xz = xz2::read::XzDecoder::new(file);
-    let mut archive = tar::Archive::new(xz);
+    extract_entity_from_reader(file, entity, out_path).map(|_| ())
+}
 
+/// Core extraction: pull a `.tar.xz` byte stream through an XZ decoder, locate
+/// `mbdump/<entity>` inside the tar archive, and re-encode it as `.jsonl.xz` at the given path.
+///
+/// Generic over any blocking `Read`, so the same code path handles both on-disk tarballs
+/// (`File`) and live network streams (via `SyncIoBridge<StreamReader<…>>`). On success,
+/// returns the inner reader so callers can drain any unread trailing bytes — necessary
+/// when SHA256 is being computed on the way in, because the tar iterator typically stops
+/// as soon as the target entry is written.
+///
+/// On failure, the partial output file is removed so a retry can start from a clean slate.
+fn extract_entity_from_reader<R: Read>(reader: R, entity: &str, out_path: &Path) -> Result<R> {
+    use xz2::write::XzEncoder;
+
+    let xz = xz2::read::XzDecoder::new(reader);
+    let mut archive = tar::Archive::new(xz);
     let target_suffix = format!("mbdump/{}", entity);
+
+    let mut found_total_bytes: Option<u64> = None;
 
     for entry_result in archive.entries().context("Failed to read tar entries")? {
         let mut entry = entry_result.context("Failed to read tar entry")?;
-        let path = entry.path().context("Failed to read entry path")?;
+        let is_target = {
+            let path = entry.path().context("Failed to read entry path")?;
+            path.ends_with(&target_suffix)
+        };
 
-        if path.ends_with(&target_suffix) {
-            let out_file = std::fs::File::create(out_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-                .with_context(|| format!("Failed to create output file: {:?}", out_path))?;
-            let mut encoder = XzEncoder::new(out_file, 6);
-
-            // Stream with progress logging — xz decompression of large files can take 30+ minutes
-            let mut buf = [0u8; 256 * 1024]; // 256 KB buffer
-            let mut total_read: u64 = 0;
-            let extract_start = std::time::Instant::now();
-            let mut last_progress_log = extract_start;
-
-            let extract_result = (|| -> Result<()> {
-                loop {
-                    let n = entry.read(&mut buf).with_context(|| format!("Failed to read {} from tarball", entity))?;
-                    if n == 0 {
-                        break;
-                    }
-                    encoder.write_all(&buf[..n]).with_context(|| format!("Failed to write compressed {} to {:?}", entity, out_path))?;
-                    total_read += n as u64;
-
-                    let now = std::time::Instant::now();
-                    if now.duration_since(last_progress_log).as_secs() >= 10 {
-                        let elapsed = extract_start.elapsed().as_secs_f64();
-                        let speed = if elapsed > 0.0 { (total_read as f64 / 1_048_576.0) / elapsed } else { 0.0 };
-                        info!("📦 {} — extracting+compressing: {:.1} MB processed ({:.1} MB/s)", entity, total_read as f64 / 1_048_576.0, speed,);
-                        last_progress_log = now;
-                    }
-                }
-                encoder.finish().context("Failed to finalize XZ compression")?;
-                Ok(())
-            })();
-
-            // Clean up partial .xz file on any failure to prevent poisoning restarts
-            if let Err(e) = extract_result {
-                let _ = std::fs::remove_file(out_path);
-                return Err(e);
-            }
-
-            let compressed_size = std::fs::metadata(out_path).map(|m| m.len()).unwrap_or(0);
-            info!(
-                "📋 Extracted+compressed {} from {} ({:.1} MB uncompressed → {:.1} MB XZ)",
-                entity,
-                tar_path.display(),
-                total_read as f64 / 1_048_576.0,
-                compressed_size as f64 / 1_048_576.0,
-            );
-            return Ok(());
+        if !is_target {
+            continue;
         }
+
+        let out_file = std::fs::File::create(out_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            .with_context(|| format!("Failed to create output file: {:?}", out_path))?;
+        let mut encoder = XzEncoder::new(out_file, 6);
+
+        // Stream with progress logging — xz decompression of large files can take 30+ minutes.
+        let mut buf = [0u8; 256 * 1024]; // 256 KB buffer
+        let mut total_read: u64 = 0;
+        let extract_start = std::time::Instant::now();
+        let mut last_progress_log = extract_start;
+
+        let extract_result = (|| -> Result<()> {
+            loop {
+                let n = entry.read(&mut buf).with_context(|| format!("Failed to read {} from tarball", entity))?;
+                if n == 0 {
+                    break;
+                }
+                encoder.write_all(&buf[..n]).with_context(|| format!("Failed to write compressed {} to {:?}", entity, out_path))?;
+                total_read += n as u64;
+
+                let now = std::time::Instant::now();
+                if now.duration_since(last_progress_log).as_secs() >= 10 {
+                    let elapsed = extract_start.elapsed().as_secs_f64();
+                    let speed = if elapsed > 0.0 { (total_read as f64 / 1_048_576.0) / elapsed } else { 0.0 };
+                    info!("📦 {} — streaming+compressing: {:.1} MB processed ({:.1} MB/s)", entity, total_read as f64 / 1_048_576.0, speed);
+                    last_progress_log = now;
+                }
+            }
+            encoder.finish().context("Failed to finalize XZ compression")?;
+            Ok(())
+        })();
+
+        if let Err(e) = extract_result {
+            let _ = std::fs::remove_file(out_path);
+            return Err(e);
+        }
+
+        let compressed_size = std::fs::metadata(out_path).map(|m| m.len()).unwrap_or(0);
+        info!(
+            "📋 Extracted+compressed {} ({:.1} MB uncompressed → {:.1} MB XZ)",
+            entity,
+            total_read as f64 / 1_048_576.0,
+            compressed_size as f64 / 1_048_576.0,
+        );
+        found_total_bytes = Some(total_read);
+        break;
     }
 
-    Err(anyhow::anyhow!("Entry '{}' not found in {:?}", target_suffix, tar_path))
+    if found_total_bytes.is_none() {
+        let _ = std::fs::remove_file(out_path);
+        return Err(anyhow::anyhow!("Entry '{}' not found in archive", target_suffix));
+    }
+
+    // Recover the underlying reader so the caller can continue consuming it (drain for hashing).
+    Ok(archive.into_inner().into_inner())
 }
 
 #[cfg(test)]

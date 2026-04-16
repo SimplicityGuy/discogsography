@@ -107,9 +107,12 @@ async fn test_download_latest_new_version() {
     assert!(version_dir.join("release-group.jsonl.xz").exists());
     assert!(version_dir.join("release.jsonl.xz").exists());
 
-    // Verify temp files cleaned up but tarballs preserved
+    // Verify temp files and source tarballs are cleaned up after extraction
     assert!(!version_dir.join("artist.tar.xz.tmp").exists());
-    assert!(version_dir.join("artist.tar.xz").exists());
+    assert!(!version_dir.join("artist.tar.xz").exists());
+    assert!(!version_dir.join("label.tar.xz").exists());
+    assert!(!version_dir.join("release-group.tar.xz").exists());
+    assert!(!version_dir.join("release.tar.xz").exists());
 
     // Verify content via decompression round-trip
     let file = std::fs::File::open(version_dir.join("artist.jsonl.xz")).unwrap();
@@ -153,7 +156,12 @@ async fn test_download_latest_sha256_mismatch() {
 
     assert!(result.is_err());
     let err_msg = format!("{}", result.unwrap_err());
-    assert!(err_msg.contains("SHA256") || err_msg.contains("checksum") || err_msg.contains("mismatch"), "Error should mention checksum: {}", err_msg);
+    // With streaming, invalid data fails at the xz/tar decoder or at SHA256 verification.
+    assert!(
+        err_msg.contains("SHA256") || err_msg.contains("checksum") || err_msg.contains("mismatch") || err_msg.contains("tar") || err_msg.contains("failed"),
+        "Error should indicate corrupt data or checksum mismatch: {}",
+        err_msg,
+    );
 }
 
 #[test]
@@ -518,8 +526,8 @@ async fn test_download_latest_retry_on_failure() {
 
     assert!(matches!(result, MbDownloadResult::Downloaded(_)));
     assert!(dir.path().join("20260325-001001/artist.jsonl.xz").exists());
-    // Original tarball should be preserved (renamed from .tmp)
-    assert!(dir.path().join("20260325-001001/artist.tar.xz").exists());
+    // Source tarball is deleted after successful extraction to reclaim disk space
+    assert!(!dir.path().join("20260325-001001/artist.tar.xz").exists());
 }
 
 // ── is_version_complete ─────────────────────────────────────────────────
@@ -846,7 +854,12 @@ async fn test_download_latest_empty_response_stream_error() {
 
     assert!(result.is_err());
     let err_msg = format!("{}", result.unwrap_err());
-    assert!(err_msg.contains("SHA256") || err_msg.contains("mismatch"), "Expected checksum error, got: {}", err_msg);
+    // With streaming, empty body fails at the xz/tar decoder or at SHA256 verification.
+    assert!(
+        err_msg.contains("SHA256") || err_msg.contains("mismatch") || err_msg.contains("tar") || err_msg.contains("failed"),
+        "Expected corrupt data or checksum error, got: {}",
+        err_msg,
+    );
 }
 
 #[test]

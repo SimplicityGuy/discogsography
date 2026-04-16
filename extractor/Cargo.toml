@@ -17,6 +17,7 @@ test-support = ["mockall"]
 [dependencies]
 # Core async runtime
 tokio = { version = "1.51", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io-util"] }
 
 # XML parsing (following disco-quick's approach)
 quick-xml = { version = "0.39", features = ["serialize"] }
