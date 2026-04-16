@@ -1,3 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@plugin "@tailwindcss/forms";
+@source "./static/index.html";
+@source "./static/dashboard.js";
+@source "./static/admin.html";
+@source "./static/admin.js";

@@ -1,66 +1,87 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@plugin "@tailwindcss/forms";
+@source "./static/index.html";
+@source "./static/js/**/*.js";
 
-@layer components {
-    /* Button base */
-    .btn-base {
-        @apply inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-bg-deep;
-    }
+@theme {
+    --color-bg-void: var(--bg-void);
+    --color-bg-deep: var(--bg-deep);
+    --color-card-bg: var(--card-bg);
+    --color-inner-bg: var(--inner-bg);
+    --color-bg-hover: var(--bg-hover);
+    --color-text-high: var(--text-high);
+    --color-text-mid: var(--text-mid);
+    --color-text-dim: var(--text-dim);
+    --color-text-muted: var(--text-muted);
+    --color-cyan-500: var(--cyan-500);
+    --color-cyan-glow: var(--cyan-glow);
+    --color-purple-500: var(--purple-500);
+    --color-purple-300: var(--purple-300);
+    --color-blue-accent: var(--blue-accent);
+    --color-purple-accent: var(--purple-accent);
+    --color-accent-green: var(--accent-green);
+    --color-accent-yellow: var(--accent-yellow);
+    --color-accent-red: var(--accent-red);
+    --color-border-color: var(--border-color);
+}
 
-    /* Button variants */
-    .btn-primary {
-        @apply btn-base bg-cyan-500 text-white hover:bg-cyan-glow focus:ring-cyan-500;
-    }
+/* Button base — defined as @utility so other utilities can @apply it (v4 requirement) */
+@utility btn-base {
+    @apply inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-bg-deep;
+}
 
-    .btn-success {
-        @apply btn-base bg-accent-green text-white hover:bg-green-700 focus:ring-accent-green;
-    }
+/* Button variants */
+@utility btn-primary {
+    @apply btn-base bg-cyan-500 text-white hover:bg-cyan-glow focus:ring-cyan-500;
+}
 
-    .btn-warning {
-        @apply btn-base bg-accent-yellow text-black hover:bg-yellow-500 focus:ring-accent-yellow;
-    }
+@utility btn-success {
+    @apply btn-base bg-accent-green text-white hover:bg-green-700 focus:ring-accent-green;
+}
 
-    .btn-secondary {
-        @apply btn-base bg-purple-500 text-white hover:bg-purple-300 focus:ring-purple-500;
-    }
+@utility btn-warning {
+    @apply btn-base bg-accent-yellow text-black hover:bg-yellow-500 focus:ring-accent-yellow;
+}
 
-    .btn-danger {
-        @apply btn-base bg-accent-red text-white hover:bg-red-700 focus:ring-accent-red;
-    }
+@utility btn-secondary {
+    @apply btn-base bg-purple-500 text-white hover:bg-purple-300 focus:ring-purple-500;
+}
 
-    .btn-outline-secondary {
-        @apply btn-base border border-border-color text-text-mid hover:bg-card-bg hover:text-text-high focus:ring-border-color;
-    }
+@utility btn-danger {
+    @apply btn-base bg-accent-red text-white hover:bg-red-700 focus:ring-accent-red;
+}
 
-    .btn-outline-primary {
-        @apply btn-base border border-cyan-500 text-cyan-500 hover:bg-cyan-500 hover:text-white focus:ring-cyan-500;
-    }
+@utility btn-outline-secondary {
+    @apply btn-base border border-border-color text-text-mid hover:bg-card-bg hover:text-text-high focus:ring-border-color;
+}
 
-    .btn-outline-danger {
-        @apply btn-base border border-accent-red text-accent-red hover:bg-accent-red hover:text-white focus:ring-accent-red;
-    }
+@utility btn-outline-primary {
+    @apply btn-base border border-cyan-500 text-cyan-500 hover:bg-cyan-500 hover:text-white focus:ring-cyan-500;
+}
 
-    .btn-outline-warning {
-        @apply btn-base border border-accent-yellow text-accent-yellow hover:bg-accent-yellow hover:text-black focus:ring-accent-yellow;
-    }
+@utility btn-outline-danger {
+    @apply btn-base border border-accent-red text-accent-red hover:bg-accent-red hover:text-white focus:ring-accent-red;
+}
 
-    .btn-sm {
-        @apply px-2 py-1 text-xs;
-    }
+@utility btn-outline-warning {
+    @apply btn-base border border-accent-yellow text-accent-yellow hover:bg-accent-yellow hover:text-black focus:ring-accent-yellow;
+}
 
-    /* Form input */
-    .form-input-dark {
-        @apply w-full rounded border border-border-color bg-bg-deep text-text-high placeholder-text-mid px-3 py-2 text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none;
-    }
+@utility btn-sm {
+    @apply px-2 py-1 text-xs;
+}
 
-    /* Badge */
-    .badge {
-        @apply inline-flex items-center rounded px-2 py-0.5 text-xs font-medium;
-    }
+/* Form input */
+@utility form-input-dark {
+    @apply w-full rounded border border-border-color bg-bg-deep text-text-high placeholder-text-mid px-3 py-2 text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none;
+}
 
-    /* Spinner */
-    .spinner {
-        @apply inline-block h-8 w-8 animate-spin rounded-full border-4 border-cyan-500 border-r-transparent;
-    }
+/* Badge */
+@utility badge {
+    @apply inline-flex items-center rounded px-2 py-0.5 text-xs font-medium;
+}
+
+/* Spinner */
+@utility spinner {
+    @apply inline-block h-8 w-8 animate-spin rounded-full border-4 border-cyan-500 border-r-transparent;
 }

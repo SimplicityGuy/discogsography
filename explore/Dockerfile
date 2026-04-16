@@ -13,15 +13,14 @@ FROM node:24-slim AS css-builder
 WORKDIR /build
 
 # Copy only the files the CLI needs to generate the CSS
-COPY explore/tailwind.config.js ./
 COPY explore/tailwind.input.css ./
 COPY explore/static/index.html ./static/index.html
 COPY explore/static/js/ ./static/js/
 
-# Install Tailwind + the forms plugin, then emit a minified stylesheet
-RUN npm install tailwindcss@^3 @tailwindcss/forms@^0.5 --save-dev && \
+# Install Tailwind v4 CLI + the forms plugin, then emit a minified stylesheet
+# hadolint ignore=DL3016
+RUN npm install @tailwindcss/cli@^4 @tailwindcss/forms --save-dev && \
     ./node_modules/.bin/tailwindcss \
-        --config tailwind.config.js \
         --input tailwind.input.css \
         --output tailwind.css \
         --minify
