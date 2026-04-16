@@ -25,65 +25,63 @@
     --color-border-color: var(--border-color);
 }
 
-@layer components {
-    /* Button base */
-    .btn-base {
-        @apply inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-bg-deep;
-    }
+/* Button base — defined as @utility so other utilities can @apply it (v4 requirement) */
+@utility btn-base {
+    @apply inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-bg-deep;
+}
 
-    /* Button variants */
-    .btn-primary {
-        @apply btn-base bg-cyan-500 text-white hover:bg-cyan-glow focus:ring-cyan-500;
-    }
+/* Button variants */
+@utility btn-primary {
+    @apply btn-base bg-cyan-500 text-white hover:bg-cyan-glow focus:ring-cyan-500;
+}
 
-    .btn-success {
-        @apply btn-base bg-accent-green text-white hover:bg-green-700 focus:ring-accent-green;
-    }
+@utility btn-success {
+    @apply btn-base bg-accent-green text-white hover:bg-green-700 focus:ring-accent-green;
+}
 
-    .btn-warning {
-        @apply btn-base bg-accent-yellow text-black hover:bg-yellow-500 focus:ring-accent-yellow;
-    }
+@utility btn-warning {
+    @apply btn-base bg-accent-yellow text-black hover:bg-yellow-500 focus:ring-accent-yellow;
+}
 
-    .btn-secondary {
-        @apply btn-base bg-purple-500 text-white hover:bg-purple-300 focus:ring-purple-500;
-    }
+@utility btn-secondary {
+    @apply btn-base bg-purple-500 text-white hover:bg-purple-300 focus:ring-purple-500;
+}
 
-    .btn-danger {
-        @apply btn-base bg-accent-red text-white hover:bg-red-700 focus:ring-accent-red;
-    }
+@utility btn-danger {
+    @apply btn-base bg-accent-red text-white hover:bg-red-700 focus:ring-accent-red;
+}
 
-    .btn-outline-secondary {
-        @apply btn-base border border-border-color text-text-mid hover:bg-card-bg hover:text-text-high focus:ring-border-color;
-    }
+@utility btn-outline-secondary {
+    @apply btn-base border border-border-color text-text-mid hover:bg-card-bg hover:text-text-high focus:ring-border-color;
+}
 
-    .btn-outline-primary {
-        @apply btn-base border border-cyan-500 text-cyan-500 hover:bg-cyan-500 hover:text-white focus:ring-cyan-500;
-    }
+@utility btn-outline-primary {
+    @apply btn-base border border-cyan-500 text-cyan-500 hover:bg-cyan-500 hover:text-white focus:ring-cyan-500;
+}
 
-    .btn-outline-danger {
-        @apply btn-base border border-accent-red text-accent-red hover:bg-accent-red hover:text-white focus:ring-accent-red;
-    }
+@utility btn-outline-danger {
+    @apply btn-base border border-accent-red text-accent-red hover:bg-accent-red hover:text-white focus:ring-accent-red;
+}
 
-    .btn-outline-warning {
-        @apply btn-base border border-accent-yellow text-accent-yellow hover:bg-accent-yellow hover:text-black focus:ring-accent-yellow;
-    }
+@utility btn-outline-warning {
+    @apply btn-base border border-accent-yellow text-accent-yellow hover:bg-accent-yellow hover:text-black focus:ring-accent-yellow;
+}
 
-    .btn-sm {
-        @apply px-2 py-1 text-xs;
-    }
+@utility btn-sm {
+    @apply px-2 py-1 text-xs;
+}
 
-    /* Form input */
-    .form-input-dark {
-        @apply w-full rounded border border-border-color bg-bg-deep text-text-high placeholder-text-mid px-3 py-2 text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none;
-    }
+/* Form input */
+@utility form-input-dark {
+    @apply w-full rounded border border-border-color bg-bg-deep text-text-high placeholder-text-mid px-3 py-2 text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none;
+}
 
-    /* Badge */
-    .badge {
-        @apply inline-flex items-center rounded px-2 py-0.5 text-xs font-medium;
-    }
+/* Badge */
+@utility badge {
+    @apply inline-flex items-center rounded px-2 py-0.5 text-xs font-medium;
+}
 
-    /* Spinner */
-    .spinner {
-        @apply inline-block h-8 w-8 animate-spin rounded-full border-4 border-cyan-500 border-r-transparent;
-    }
+/* Spinner */
+@utility spinner {
+    @apply inline-block h-8 w-8 animate-spin rounded-full border-4 border-cyan-500 border-r-transparent;
 }
