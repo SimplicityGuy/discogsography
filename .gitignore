@@ -199,6 +199,7 @@ static/build/
 explore/coverage/
 # Generated at Docker build time by the Tailwind CLI; not committed
 dashboard/static/tailwind.css
+explore/static/tailwind.css
 
 # uv lock file - DO NOT IGNORE (needed for reproducible builds)
 # uv.lock

@@ -13,7 +13,7 @@ asset pipeline add a third stage **before** the builder stage.
 
 ### Optional: CSS Build Stage (dashboard only)
 
-The dashboard uses a dedicated Node stage to run the Tailwind CLI and produce a minified stylesheet
+The dashboard uses a dedicated Node stage to run the Tailwind v4 CLI and produce a minified stylesheet
 at image build time, eliminating any CDN dependency at runtime:
 
 ```dockerfile
@@ -23,14 +23,13 @@ FROM node:24-slim AS css-builder
 WORKDIR /build
 
 # Copy only the files the CLI needs
-COPY dashboard/tailwind.config.js ./
 COPY dashboard/tailwind.input.css ./
 COPY dashboard/static/index.html ./static/index.html
 
-# Install Tailwind + forms plugin, emit minified stylesheet
-RUN npm install tailwindcss@^3 @tailwindcss/forms@^0.5 --save-dev && \
+# Install Tailwind v4 CLI + forms plugin, emit minified stylesheet
+# hadolint ignore=DL3016
+RUN npm install @tailwindcss/cli@^4 @tailwindcss/forms --save-dev && \
     ./node_modules/.bin/tailwindcss \
-        --config tailwind.config.js \
         --input tailwind.input.css \
         --output tailwind.css \
         --minify
@@ -293,7 +292,7 @@ Additional volumes:
 ### Dashboard
 
 - Three-stage build: `css-builder` (Node) → `builder` (Python) → final
-- `css-builder` stage runs Tailwind CLI to produce `dashboard/static/tailwind.css`
+- `css-builder` stage runs Tailwind v4 CLI to produce `dashboard/static/tailwind.css`
 - Expose port 8003
 - All database connections in environment
 
