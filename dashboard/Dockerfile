@@ -17,6 +17,8 @@ WORKDIR /build
 COPY dashboard/tailwind.input.css ./
 COPY dashboard/static/index.html ./static/index.html
 COPY dashboard/static/dashboard.js ./static/dashboard.js
+COPY dashboard/static/admin.html ./static/admin.html
+COPY dashboard/static/admin.js ./static/admin.js
 
 # Install Tailwind v4 CLI + the forms plugin, then emit a minified stylesheet
 # hadolint ignore=DL3016
