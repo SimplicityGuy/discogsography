@@ -1126,7 +1126,6 @@ pub async fn process_musicbrainz_data(
     } else {
         HashMap::new()
     };
-    info!("📊 Built MBID→Discogs map: {} entries", artist_discogs_map.len());
 
     let mut record_counts: HashMap<String, u64> = HashMap::new();
     let mut success = true;
