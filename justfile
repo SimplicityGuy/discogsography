@@ -93,10 +93,26 @@ update-deps:
     @echo '✅ All dependencies updated!'
     @echo '💡 Run "just test-all" to verify everything still works'
 
-# Update uv itself to the latest version
+# Update uv itself to the latest version (only if installed via standalone script)
 [group('setup')]
 update-uv:
-    uv self update
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # `uv self update` only works for the standalone installer. Managed installs
+    # (package manager, GitHub Actions runner image, pipx, brew) intentionally
+    # refuse to self-update and exit non-zero. Detect that case and return 0 so
+    # callers (scripts/update-project.sh, CI) don't surface a spurious error.
+    if output=$(uv self update 2>&1); then
+        echo "$output"
+    else
+        exit_code=$?
+        if echo "$output" | grep -q "standalone installation scripts"; then
+            echo "⏭️  Skipping uv self-update: uv was not installed via the standalone installer"
+            exit 0
+        fi
+        echo "$output" >&2
+        exit "$exit_code"
+    fi
 
 # Lock Python dependencies with upgrades (respects >= constraints)
 [group('setup')]
