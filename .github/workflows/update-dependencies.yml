@@ -46,6 +46,13 @@ jobs:
       - name: 🔧 Setup Just
         uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
 
+      # hadolint is required by the `just lint` pre-commit hook invoked
+      # indirectly from scripts/update-project.sh. Mirrors code-quality.yml.
+      - name: 🔧 Install hadolint
+        uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
+        with:
+          hadolint: latest
+
       - name: 🔧 Configure git
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
@@ -71,19 +78,15 @@ jobs:
           [[ "$UPDATE_PYTHON" == "true" ]] && CMD_ARGS+=(--python "$PYTHON_VERSION_INPUT")
           [[ "$MAJOR_UPGRADES" == "true" ]] && CMD_ARGS+=(--major)
 
-          # Run the update script and capture output
+          # Run the update script and tee output to a file for later steps.
+          # Do NOT propagate full output via $GITHUB_OUTPUT — multi-MB output
+          # gets embedded into env/args of downstream steps and hits the OS
+          # E2BIG limit ("Argument list too long"). The artifact upload step
+          # preserves the full log for debugging.
           set +e
-          OUTPUT=$(./scripts/update-project.sh "${CMD_ARGS[@]}" 2>&1)
-          EXIT_CODE=$?
+          ./scripts/update-project.sh "${CMD_ARGS[@]}" 2>&1 | tee update-output.txt
+          EXIT_CODE=${PIPESTATUS[0]}
           set -e
-
-          # Save output for PR body
-          echo "$OUTPUT" > update-output.txt
-          {
-            echo "output<<ENDOFOUTPUT"
-            echo "$OUTPUT"
-            echo "ENDOFOUTPUT"
-          } >> "$GITHUB_OUTPUT"
 
           # Check if changes were made
           if git diff --quiet; then
@@ -93,7 +96,7 @@ jobs:
           fi
 
           # Exit with same code as update script
-          exit $EXIT_CODE
+          exit "$EXIT_CODE"
 
       - name: 📊 Extract update summary
         if: steps.update.outputs.no_changes != 'true'
@@ -199,14 +202,8 @@ jobs:
 
             ---
 
-            <details>
-            <summary>Full update output</summary>
-
-            ```
-            ${{ steps.update.outputs.output }}
-            ```
-
-            </details>
+            Full update output is available as a workflow artifact
+            (`update-logs`) on the run that created this PR.
           commit-message: |
             chore: update dependencies
 
@@ -225,7 +222,6 @@ jobs:
           NO_CHANGES: ${{ steps.update.outputs.no_changes }}
           UPDATE_OUTCOME: ${{ steps.update.outcome }}
           PR_URL: ${{ steps.create-pr.outputs.pull-request-url }}
-          UPDATE_OUTPUT: ${{ steps.update.outputs.output }}
         run: |
           if [[ "$NO_CHANGES" == "true" ]]; then
             echo "✅ All dependencies are already up to date!"
@@ -233,8 +229,11 @@ jobs:
             echo "✅ Successfully created PR with dependency updates"
             echo "🔗 Review the PR: $PR_URL"
           else
-            echo "❌ Failed to update dependencies"
-            echo "$UPDATE_OUTPUT"
+            echo "❌ Failed to update dependencies — see the 'update-logs' artifact for details"
+            if [[ -f update-output.txt ]]; then
+              echo "--- tail of update-output.txt ---"
+              tail -n 100 update-output.txt
+            fi
           fi
 
       - name: 📢 Send notification to Discord
