@@ -340,9 +340,9 @@ def browser_type_launch_args() -> dict[str, Any]:
 def pytest_runtest_teardown(item: pytest.Item) -> None:
     """Collect Istanbul JS coverage from browser after E2E tests.
 
-    Instrumented JS files (via nyc instrument in CI) populate window.__coverage__
-    as code executes. This hook extracts that data after each E2E test and
-    writes it to .nyc_output/ for later merging with nyc report.
+    Instrumented JS files populate window.__coverage__ as code executes.
+    This hook extracts that data after each E2E test and writes it to
+    .nyc_output/ for later merging via monocart-coverage-reports.
 
     Uses a pytest hook instead of a fixture so it runs during teardown while
     the page fixture is still alive (fixtures are torn down after hooks).
