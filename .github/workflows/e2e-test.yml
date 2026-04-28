@@ -102,7 +102,7 @@ jobs:
       - name: "🔬 Instrument JS for coverage"
         run: |
           cd explore && npm ci
-          npx nyc instrument --in-place static/js
+          node scripts/instrument-coverage.mjs
           echo "✅ Istanbul instrumentation applied to explore JS files"
 
       - name: 🎭 Install Playwright browsers
@@ -159,17 +159,10 @@ jobs:
         if: always()
         run: |
           if [ -d .nyc_output ] && ls .nyc_output/*.json 1>/dev/null 2>&1; then
-            cd explore && npx nyc report \
-              --reporter=lcov \
-              --report-dir=coverage-e2e \
-              --temp-dir=../.nyc_output
-            # Fix SF: paths to be repo-relative for Codecov
-            # Use perl instead of sed for cross-platform compatibility (BSD sed on macOS
-            # requires different -i syntax than GNU sed on Linux)
-            perl -pi -e 's|^SF:static/|SF:explore/static/|' coverage-e2e/lcov.info
+            cd explore && node scripts/generate-coverage-report.mjs
             echo "✅ JS coverage report generated at explore/coverage-e2e/lcov.info"
           else
-            echo "⚠️ No JS coverage data found — skipping nyc report"
+            echo "⚠️ No JS coverage data found — skipping coverage report"
           fi
 
       - name: 📤 Upload test results
