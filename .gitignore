@@ -333,3 +333,8 @@ explore/coverage-e2e/
 # Performance test results
 ###
 perftest-results/
+
+###
+# graphify
+###
+graphify-out/cache/
