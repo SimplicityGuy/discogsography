@@ -17,6 +17,7 @@ mod message_queue;
 mod musicbrainz_downloader;
 mod normalize;
 mod parser;
+mod polite_http;
 mod rules;
 mod state_marker;
 mod types;
@@ -166,6 +167,19 @@ async fn main() -> Result<()> {
         }
         Err(e) => {
             error!("❌ Rust-extractor failed: {}", e);
+            // Sleep before exiting so docker-compose's `restart: on-failure`
+            // policy can't flap us through a rate-limit window. The polite
+            // client already absorbs single Retry-After cooldowns up to 2h;
+            // this cooldown is a backstop for the residual case where the
+            // failure cause is something the client can't retry past
+            // (cap exceeded, network error, etc.).
+            //
+            // Configurable via FAILURE_COOLDOWN_SECS — default 600s (10 min).
+            let cooldown = std::env::var("FAILURE_COOLDOWN_SECS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(600);
+            if cooldown > 0 {
+                error!("😴 Sleeping {}s before exiting to avoid restart-loop flapping (override with FAILURE_COOLDOWN_SECS=0)", cooldown);
+                tokio::time::sleep(std::time::Duration::from_secs(cooldown)).await;
+            }
             std::process::exit(1);
         }
     }
