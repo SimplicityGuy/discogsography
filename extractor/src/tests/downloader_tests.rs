@@ -770,3 +770,58 @@ async fn test_datasource_download_discogs_data_via_trait() {
     let result = downloader.download_discogs_data().await.unwrap();
     assert_eq!(result.len(), 4);
 }
+
+// ── HTTP-error branches added by polite-client wiring ─────────────────
+
+#[tokio::test]
+async fn test_scrape_main_page_non_success_returns_error() {
+    // Discogs returning 500 on the main listing should propagate as an error,
+    // not silently succeed with an empty file list — otherwise the periodic
+    // check would no-op forever after a server hiccup.
+    let temp_dir = TempDir::new().unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let _m = server.mock("GET", "/").with_status(500).with_body("upstream broke").create_async().await;
+
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url.clone()).await.unwrap();
+    let result = downloader.download_discogs_data().await;
+
+    let err = result.expect_err("expected error from 500 response");
+    let msg = format!("{:#}", err);
+    assert!(msg.contains("HTTP 500") || msg.contains("Discogs website returned"), "unexpected error: {}", msg);
+}
+
+#[tokio::test]
+async fn test_year_directory_non_success_skipped_other_years_succeed() {
+    // The year-fetch loop walks the two most recent years. If one of them
+    // returns a 500 we should warn-and-continue rather than fail the whole
+    // listing — the other year still gives us a usable file list.
+    let temp_dir = TempDir::new().unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    // Main page advertises two years. The newer year errors; the older one works.
+    let main_page_html = r#"<html><body>
+        <a href="?prefix=data%2F2026%2F">2026/</a>
+        <a href="?prefix=data%2F2025%2F">2025/</a>
+    </body></html>"#;
+    let _main = server.mock("GET", "/").with_status(200).with_body(main_page_html).create_async().await;
+
+    let _bad_year = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(500).with_body("oops").create_async().await;
+
+    let good_year_html = r#"<html><body>
+        <a href="?download=data%2F2025%2Fdiscogs_20251201_artists.xml.gz">a</a>
+        <a href="?download=data%2F2025%2Fdiscogs_20251201_labels.xml.gz">l</a>
+        <a href="?download=data%2F2025%2Fdiscogs_20251201_masters.xml.gz">m</a>
+        <a href="?download=data%2F2025%2Fdiscogs_20251201_releases.xml.gz">r</a>
+    </body></html>"#;
+    let _good_year = server.mock("GET", "/?prefix=data%2F2025%2F").with_status(200).with_body(good_year_html).create_async().await;
+
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
+    let files = downloader.list_s3_files().await.expect("should still succeed despite one bad year");
+
+    // We should only see files from the working year — and we should see them all.
+    assert!(!files.is_empty(), "expected files from the working year");
+    assert!(files.iter().all(|f| f.name.contains("2025")), "should not have any 2026 files; got {:?}", files);
+}

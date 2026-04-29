@@ -58,3 +58,42 @@ fn test_ascii_art_display_none() {
     // Just verify the function doesn't panic with no source
     print_ascii_art(None);
 }
+
+// ── failure-cooldown parser ───────────────────────────────────────────
+
+#[test]
+fn test_parse_failure_cooldown_default_when_missing() {
+    assert_eq!(parse_failure_cooldown(None), DEFAULT_FAILURE_COOLDOWN_SECS);
+}
+
+#[test]
+fn test_parse_failure_cooldown_default_when_garbage() {
+    assert_eq!(parse_failure_cooldown(Some("not-a-number")), DEFAULT_FAILURE_COOLDOWN_SECS);
+    assert_eq!(parse_failure_cooldown(Some("")), DEFAULT_FAILURE_COOLDOWN_SECS);
+    assert_eq!(parse_failure_cooldown(Some("-1")), DEFAULT_FAILURE_COOLDOWN_SECS);
+}
+
+#[test]
+fn test_parse_failure_cooldown_explicit_value() {
+    assert_eq!(parse_failure_cooldown(Some("0")), 0);
+    assert_eq!(parse_failure_cooldown(Some("1")), 1);
+    assert_eq!(parse_failure_cooldown(Some("3600")), 3600);
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_apply_failure_cooldown_zero_returns_immediately() {
+    // FAILURE_COOLDOWN_SECS=0 must not sleep at all — under start_paused this
+    // would otherwise hang forever waiting on virtual time to advance.
+    let start = tokio::time::Instant::now();
+    apply_failure_cooldown(Some("0")).await;
+    assert!(start.elapsed() < std::time::Duration::from_millis(5));
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_apply_failure_cooldown_advances_virtual_clock() {
+    // Verify a non-zero value actually requests a sleep of that duration.
+    let start = tokio::time::Instant::now();
+    apply_failure_cooldown(Some("60")).await;
+    let elapsed = start.elapsed();
+    assert!(elapsed >= std::time::Duration::from_secs(60), "expected ≥60s virtual sleep, got {:?}", elapsed);
+}

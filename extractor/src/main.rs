@@ -173,15 +173,29 @@ async fn main() -> Result<()> {
             // this cooldown is a backstop for the residual case where the
             // failure cause is something the client can't retry past
             // (cap exceeded, network error, etc.).
-            //
-            // Configurable via FAILURE_COOLDOWN_SECS — default 600s (10 min).
-            let cooldown = std::env::var("FAILURE_COOLDOWN_SECS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(600);
-            if cooldown > 0 {
-                error!("😴 Sleeping {}s before exiting to avoid restart-loop flapping (override with FAILURE_COOLDOWN_SECS=0)", cooldown);
-                tokio::time::sleep(std::time::Duration::from_secs(cooldown)).await;
-            }
+            apply_failure_cooldown(std::env::var("FAILURE_COOLDOWN_SECS").ok().as_deref()).await;
             std::process::exit(1);
         }
+    }
+}
+
+/// Default cooldown applied before the extractor exits with a non-zero status.
+const DEFAULT_FAILURE_COOLDOWN_SECS: u64 = 600;
+
+/// Parse the `FAILURE_COOLDOWN_SECS` env-var value into a number of seconds.
+/// Garbage / missing values fall back to [`DEFAULT_FAILURE_COOLDOWN_SECS`].
+/// Pure function — extracted so the env→duration mapping is unit-testable
+/// without invoking `process::exit`.
+fn parse_failure_cooldown(env_value: Option<&str>) -> u64 {
+    env_value.and_then(|s| s.parse::<u64>().ok()).unwrap_or(DEFAULT_FAILURE_COOLDOWN_SECS)
+}
+
+/// Sleep the configured failure cooldown, if non-zero, before the caller exits.
+async fn apply_failure_cooldown(env_value: Option<&str>) {
+    let cooldown = parse_failure_cooldown(env_value);
+    if cooldown > 0 {
+        error!("😴 Sleeping {}s before exiting to avoid restart-loop flapping (override with FAILURE_COOLDOWN_SECS=0)", cooldown);
+        tokio::time::sleep(std::time::Duration::from_secs(cooldown)).await;
     }
 }
 
