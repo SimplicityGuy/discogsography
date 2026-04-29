@@ -1005,3 +1005,43 @@ fn test_is_version_complete_missing_entity() {
     let downloader = MbDownloader::new(dir.path().to_path_buf(), "https://example.com".to_string());
     assert!(!downloader.is_version_complete(dir.path()), "Should be incomplete with missing entity");
 }
+
+// ── HTTP-error branches added by polite-client wiring ─────────────────
+
+#[tokio::test]
+async fn test_download_latest_index_non_success_returns_error() {
+    // A non-2xx (and non-throttle) response on the index page must surface
+    // as a clear error — the prior code would silently parse an error body
+    // as HTML and fail later with a confusing "no version directories found".
+    // Using 500 (not 503) so the polite client doesn't intercept this for
+    // a multi-minute retry loop; we just want the status-guard branch covered.
+    let dir = TempDir::new().unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let _idx = server.mock("GET", "/").with_status(500).with_body("upstream broke").create_async().await;
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), base_url);
+    let err = downloader.download_latest().await.expect_err("expected error from 500 response");
+    let msg = format!("{:#}", err);
+    assert!(msg.contains("500") || msg.contains("MusicBrainz index returned"), "unexpected error: {}", msg);
+}
+
+#[tokio::test]
+async fn test_download_latest_sha256sums_non_success_returns_error() {
+    // The index works but SHA256SUMS returns 404 (e.g., a partially-published
+    // dump). We should surface that as an error rather than racing to the
+    // entity download with empty checksums.
+    let dir = TempDir::new().unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let index_html = r#"<html><body><a href="20260322-000000/">20260322-000000/</a></body></html>"#;
+    let _idx = server.mock("GET", "/").with_status(200).with_body(index_html).create_async().await;
+    let _sha = server.mock("GET", "/20260322-000000/SHA256SUMS").with_status(404).with_body("not found").create_async().await;
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), base_url);
+    let err = downloader.download_latest().await.expect_err("expected error from 404 SHA256SUMS");
+    let msg = format!("{:#}", err);
+    assert!(msg.contains("404") || msg.contains("MusicBrainz SHA256SUMS returned"), "unexpected error: {}", msg);
+}

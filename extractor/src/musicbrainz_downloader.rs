@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 use tokio::fs;
 use tracing::{debug, error, info, warn};
 
+use crate::polite_http::{PoliteClient, PoliteConfig};
 use crate::types::DataType;
 
 /// Known file name patterns for MusicBrainz JSONL dump files.
@@ -142,11 +143,11 @@ pub fn find_latest_mb_directory(root: &Path) -> Option<PathBuf> {
 const MB_ENTITIES: &[&str] = &["artist", "label", "release-group", "release"];
 
 #[allow(dead_code)]
-const MB_MAX_DOWNLOAD_RETRIES: u32 = 3;
+const MB_MAX_DOWNLOAD_RETRIES: u32 = 5;
 
 #[cfg(not(test))]
 #[allow(dead_code)]
-const MB_RETRY_BASE_DELAY_MS: u64 = 2_000;
+const MB_RETRY_BASE_DELAY_MS: u64 = 30_000;
 #[cfg(test)]
 #[allow(dead_code)]
 const MB_RETRY_BASE_DELAY_MS: u64 = 10;
@@ -172,21 +173,32 @@ impl MbDownloadResult {
 pub struct MbDownloader {
     output_directory: PathBuf,
     base_url: String,
+    client: PoliteClient,
 }
 
 #[allow(dead_code)]
 impl MbDownloader {
     pub fn new(output_directory: PathBuf, base_url: String) -> Self {
-        Self { output_directory, base_url }
+        let mut cfg = PoliteConfig::musicbrainz();
+        if cfg!(test) {
+            cfg.min_gap = std::time::Duration::from_millis(10);
+        }
+        // Constructing PoliteClient with the default user-agent should not fail under
+        // normal conditions; if it does (e.g., reqwest TLS init failure on a misconfigured
+        // host), we'd rather surface the error on first use than panic at startup, but
+        // the existing API is non-fallible here, so we fall back to a best-effort default.
+        let client = PoliteClient::new(cfg).expect("polite HTTP client init failed — TLS or system config broken");
+        Self { output_directory, base_url, client }
     }
 
     /// Discover the latest MusicBrainz dump version and download it if not already present.
     pub async fn download_latest(&self) -> Result<MbDownloadResult> {
         // Step 1: Scrape index page for version directories
         info!("🌐 Fetching MusicBrainz dump index from {}...", self.base_url);
-        let response = reqwest::get(&self.base_url) // nosemgrep: rust.actix.ssrf.reqwest-taint.reqwest-taint
-            .await
-            .context("Failed to fetch MusicBrainz dump index")?;
+        let response = self.client.get(&self.base_url).await.context("Failed to fetch MusicBrainz dump index")?;
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("MusicBrainz index returned HTTP {} for {}", response.status(), self.base_url));
+        }
         let html = response.text().await.context("Failed to read index HTML")?;
 
         let versions = parse_version_directories(&html);
@@ -207,9 +219,10 @@ impl MbDownloader {
         // Step 3: Download SHA256SUMS
         let sha_url = format!("{}{}/SHA256SUMS", self.base_url, version);
         info!("⬇️ Fetching SHA256SUMS from {}...", sha_url);
-        let sha_response = reqwest::get(&sha_url) // nosemgrep: rust.actix.ssrf.reqwest-taint.reqwest-taint
-            .await
-            .context("Failed to fetch SHA256SUMS")?;
+        let sha_response = self.client.get(&sha_url).await.context("Failed to fetch SHA256SUMS")?;
+        if !sha_response.status().is_success() {
+            return Err(anyhow::anyhow!("MusicBrainz SHA256SUMS returned HTTP {} for {}", sha_response.status(), sha_url));
+        }
         let sha_content = sha_response.text().await.context("Failed to read SHA256SUMS")?;
         let checksums = parse_sha256sums(&sha_content);
 
@@ -275,8 +288,7 @@ impl MbDownloader {
 
             info!("⬇️ Streaming {} (attempt {}/{})...", entity, attempt, MB_MAX_DOWNLOAD_RETRIES);
 
-            let response = match reqwest::get(url).await {
-                // nosemgrep: rust.actix.ssrf.reqwest-taint.reqwest-taint
+            let response = match self.client.get(url).await {
                 Ok(r) => r,
                 Err(e) => {
                     let msg = format!("Failed to start download for {}: {}", entity, e);
