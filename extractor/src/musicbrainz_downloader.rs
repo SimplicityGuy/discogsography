@@ -143,11 +143,13 @@ pub fn find_latest_mb_directory(root: &Path) -> Option<PathBuf> {
 const MB_ENTITIES: &[&str] = &["artist", "label", "release-group", "release"];
 
 #[allow(dead_code)]
-const MB_MAX_DOWNLOAD_RETRIES: u32 = 5;
+const MB_MAX_DOWNLOAD_RETRIES: u32 = 3;
 
+// Post-connect transport-error retry — see the equivalent comment in
+// `discogs_downloader.rs`. Rate-limit handling lives in `polite_http`.
 #[cfg(not(test))]
 #[allow(dead_code)]
-const MB_RETRY_BASE_DELAY_MS: u64 = 30_000;
+const MB_RETRY_BASE_DELAY_MS: u64 = 2_000;
 #[cfg(test)]
 #[allow(dead_code)]
 const MB_RETRY_BASE_DELAY_MS: u64 = 10;
