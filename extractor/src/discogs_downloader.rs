@@ -18,13 +18,16 @@ use crate::types::{LocalFileInfo, S3FileInfo};
 // S3 file names already contain the full key (e.g., "data/2026/discogs_...xml.gz")
 // so no prefix stripping or re-prepending is needed.
 const DISCOGS_DATA_URL: &str = "https://data.discogs.com/";
-// Discogs has been observed returning Retry-After ~36 minutes; with 5 attempts
-// we give ourselves enough headroom to ride out a single bad cooldown without
-// the docker restart loop sliding the limiter window forward.
-const MAX_DOWNLOAD_RETRIES: u32 = 5;
+// This retry loop only fires for *post-connect* failures — partial reads,
+// flush/sync errors, transport drops mid-stream. Rate-limit (HTTP 429 / 503)
+// handling lives upstream in `polite_http::PoliteClient` and never reaches
+// this loop, so 3 attempts at 2s base is plenty to ride out a brief network
+// hiccup. Higher values bloat CI runtime — integration tests in `tests/`
+// see `cfg(not(test))` and pay the full backoff per failing-download test.
+const MAX_DOWNLOAD_RETRIES: u32 = 3;
 
 #[cfg(not(test))]
-const RETRY_BASE_DELAY_MS: u64 = 30_000;
+const RETRY_BASE_DELAY_MS: u64 = 2_000;
 #[cfg(test)]
 const RETRY_BASE_DELAY_MS: u64 = 10;
 
