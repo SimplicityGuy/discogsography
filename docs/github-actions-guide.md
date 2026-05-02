@@ -49,7 +49,6 @@ on:
 - ⚡ Parallel test execution for faster feedback
 - 💾 Advanced Docker layer caching
 - 📊 Build metrics and performance tracking
-- 📢 Discord notifications with build status
 
 ### 🧹 Code Quality Workflow (`code-quality.yml`)
 
@@ -106,7 +105,6 @@ on:
 1. Runs update script
 1. Creates PR with detailed summary
 1. Assigns reviewers
-1. Sends Discord notification
 
 ### 🛡️ Security Workflow (`security.yml`)
 
@@ -248,7 +246,6 @@ Advanced Docker layer caching for faster builds.
 - Build duration tracking
 - Cache hit rate reporting
 - Performance notices in workflow logs
-- Enhanced Discord notifications with metrics
 
 ## 🛡️ Security Features
 
@@ -293,7 +290,6 @@ permissions:
 
 ### 📢 Notifications
 
-- Discord webhooks for build status
 - Detailed error messages in logs
 - PR comments for dependency updates
 - Workflow status badges in README

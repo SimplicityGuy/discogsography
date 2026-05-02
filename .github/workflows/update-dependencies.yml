@@ -235,16 +235,3 @@ jobs:
               tail -n 100 update-output.txt
             fi
           fi
-
-      - name: 📢 Send notification to Discord
-        uses: sarisia/actions-status-discord@eb045afee445dc055c18d3d90bd0f244fd062708 # v1.16.0
-        if: always()
-        with:
-          title: Weekly Dependency Update
-          description: |
-            ${{ steps.update.outputs.no_changes == 'true' && '✅ All dependencies are already up to date!' ||
-                (steps.create-pr.conclusion == 'success' &&
-                 format('✅ Successfully created PR with dependency updates\n🔗 [Review PR]({0})',
-                        steps.create-pr.outputs.pull-request-url) ||
-                 '❌ Failed to update dependencies') }}
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}

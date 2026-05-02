@@ -331,13 +331,3 @@ jobs:
           if [[ -n "${{ steps.docker-cache.outputs.cache-hit }}" ]]; then
             echo "::notice title=Cache Performance::Docker cache hit for ${{ matrix.name }}"
           fi
-
-      - name: 📢 Send notification to Discord
-        uses: sarisia/actions-status-discord@eb045afee445dc055c18d3d90bd0f244fd062708 # v1.16.0
-        if: always()
-        with:
-          title: discogsography/${{ matrix.name }}
-          description: |
-            Build duration: ${{ steps.timer.outputs.duration || 'N/A' }}s
-            Cache used: ${{ matrix.use_cache }}
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
