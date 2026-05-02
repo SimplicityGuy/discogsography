@@ -9,6 +9,7 @@ pub mod message_queue;
 pub mod musicbrainz_downloader;
 pub mod normalize;
 pub mod parser;
+pub mod polite_http;
 pub mod rules;
 pub mod state_marker;
 pub mod types;

@@ -11,12 +11,19 @@ use tracing::{debug, error, info, warn};
 
 use async_trait::async_trait;
 
+use crate::polite_http::{PoliteClient, PoliteConfig};
 use crate::state_marker::StateMarker;
 use crate::types::{LocalFileInfo, S3FileInfo};
 
 // S3 file names already contain the full key (e.g., "data/2026/discogs_...xml.gz")
 // so no prefix stripping or re-prepending is needed.
 const DISCOGS_DATA_URL: &str = "https://data.discogs.com/";
+// This retry loop only fires for *post-connect* failures — partial reads,
+// flush/sync errors, transport drops mid-stream. Rate-limit (HTTP 429 / 503)
+// handling lives upstream in `polite_http::PoliteClient` and never reaches
+// this loop, so 3 attempts at 2s base is plenty to ride out a brief network
+// hiccup. Higher values bloat CI runtime — integration tests in `tests/`
+// see `cfg(not(test))` and pay the full backoff per failing-download test.
 const MAX_DOWNLOAD_RETRIES: u32 = 3;
 
 #[cfg(not(test))]
@@ -31,6 +38,7 @@ pub struct Downloader {
     pub state_marker: Option<StateMarker>,
     pub marker_path: Option<PathBuf>,
     cached_files: Option<Vec<S3FileInfo>>,
+    client: PoliteClient,
 }
 
 #[cfg_attr(feature = "test-support", mockall::automock)]
@@ -52,8 +60,19 @@ impl Downloader {
     #[doc(hidden)]
     pub async fn new_with_base_url(output_directory: PathBuf, base_url: String) -> Result<Self> {
         let metadata = load_metadata(&output_directory)?;
+        let client = PoliteClient::new(Self::polite_config())?;
 
-        Ok(Self { output_directory, metadata, base_url, state_marker: None, marker_path: None, cached_files: None })
+        Ok(Self { output_directory, metadata, base_url, state_marker: None, marker_path: None, cached_files: None, client })
+    }
+
+    /// Polite-client tuning for `data.discogs.com`. Tests override `min_gap`
+    /// to keep them fast; production uses the upstream-friendly defaults.
+    fn polite_config() -> PoliteConfig {
+        let mut cfg = PoliteConfig::discogs();
+        if cfg!(test) {
+            cfg.min_gap = std::time::Duration::from_millis(10);
+        }
+        cfg
     }
 
     /// Set the state marker for tracking download progress (builder pattern, used by integration tests)
@@ -159,8 +178,10 @@ impl Downloader {
         info!("🌐 Fetching file list from Discogs website...");
 
         // Step 1: Fetch the main page to get available years
-        let response = reqwest::get(&self.base_url).await.context("Failed to fetch Discogs website")?;
-
+        let response = self.client.get(&self.base_url).await.context("Failed to fetch Discogs website")?;
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("Discogs website returned HTTP {} for {}", response.status(), self.base_url));
+        }
         let html = response.text().await.context("Failed to read HTML response")?;
 
         // Extract year directories (e.g., 2026/, 2025/, etc.)
@@ -186,8 +207,8 @@ impl Downloader {
         for year in years.iter().take(2) {
             let year_url = format!("{}?prefix=data%2F{}%2F", self.base_url, year);
 
-            match reqwest::get(&year_url).await {
-                Ok(year_response) => {
+            match self.client.get(&year_url).await {
+                Ok(year_response) if year_response.status().is_success() => {
                     if let Ok(year_html) = year_response.text().await {
                         let mut file_count = 0;
                         for cap in file_pattern.captures_iter(&year_html) {
@@ -211,6 +232,10 @@ impl Downloader {
                             info!("📋 Found {} files in year {} directory", file_count, year);
                         }
                     }
+                }
+                Ok(year_response) => {
+                    warn!("⚠️ Discogs returned HTTP {} for year {} directory", year_response.status(), year);
+                    continue;
                 }
                 Err(e) => {
                     warn!("⚠️ Failed to fetch year {} directory: {}", year, e);
@@ -361,8 +386,9 @@ impl Downloader {
             let pb = ProgressBar::new_spinner();
             pb.set_style(ProgressStyle::default_spinner().template("{spinner:.green} [{elapsed_precise}] {bytes} ({bytes_per_sec})").unwrap());
 
-            // Download using reqwest with streaming
-            let response = match reqwest::get(&download_url).await {
+            // Download via the polite client — gates the request on min_gap and
+            // server-driven Retry-After so a 429 doesn't burn a retry slot here.
+            let response = match self.client.get(&download_url).await {
                 Ok(r) => r,
                 Err(e) => {
                     let msg = format!("Failed to start HTTP download from {}: {}", download_url, e);
