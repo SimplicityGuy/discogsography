@@ -1976,9 +1976,9 @@ dependencies = [
 
 [[package]]
 name = "lapin"
-version = "4.7.2"
+version = "4.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b2e572c434103775d7598b09b2385e02f1ea8ff18cc452335591b5f1cbff12a"
+checksum = "478790661081f7434e111a31953acc1cf23654cf2a2d815d0e12cef9a2aed720"
 dependencies = [
  "amq-protocol",
  "async-rs",
@@ -3533,9 +3533,9 @@ dependencies = [
 
 [[package]]
 name = "tcp-stream"
-version = "0.34.8"
+version = "0.34.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "993be82e36e4545bdf988701c9fbbde2a452f9e85bc2b91729c7df4e43a80ad3"
+checksum = "fd7219422d3348cddeaf9073772997c452085c33e22d0b08cbd19652e1b16da5"
 dependencies = [
  "async-rs",
  "cfg-if",
