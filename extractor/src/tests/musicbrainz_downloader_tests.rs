@@ -1,5 +1,4 @@
 use super::*;
-use hex;
 use std::io::{Read, Write};
 use tempfile::TempDir;
 
