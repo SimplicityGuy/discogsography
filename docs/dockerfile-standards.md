@@ -55,7 +55,7 @@ ARG GID=1000
 FROM python:${PYTHON_VERSION}-slim AS builder
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.11.13 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.14 /uv /bin/uv
 
 # Set environment for build
 ENV UV_SYSTEM_PYTHON=1 \
@@ -103,7 +103,7 @@ WORKDIR /app
 COPY --from=builder --chown=discogsography:discogsography /app /app
 
 # Install uv for runtime
-COPY --from=ghcr.io/astral-sh/uv:0.11.13 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.14 /uv /bin/uv
 
 # Create startup script
 # [Startup script section - see below]
