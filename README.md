@@ -7,7 +7,7 @@
 [![Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml)
 [![E2E Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml)
 [![codecov](https://codecov.io/gh/SimplicityGuy/discogsography/branch/main/graph/badge.svg?token=K72AL2L2FY)](https://codecov.io/gh/SimplicityGuy/discogsography)
-![License: MIT](https://img.shields.io/github/license/SimplicityGuy/discogsography)
+![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm--NC--1.0.0-blue)
 ![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)
 ![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 [![uv](https://img.shields.io/badge/uv-package%20manager-orange?logo=python)](https://github.com/astral-sh/uv)
@@ -234,7 +234,11 @@ See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local develo
 
 ## 📄 License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+This project is **source-available** under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0). See the [LICENSE](LICENSE) file for the full text.
+
+- **Free for noncommercial use** — personal projects, research, education, hobby use, and use by nonprofits, charities, and public institutions are all permitted at no cost.
+- **Commercial use requires a separate license.** If you (or your employer) want to use this software for a commercial purpose — inside a for-profit business, as part of a paid or hosted product, or in any other context that isn't noncommercial — please contact **Robert Wlodarczyk** at [robert@simplicityguy.com](mailto:robert@simplicityguy.com) to discuss licensing terms.
+- **Prior versions remain MIT.** Releases prior to 2026-05-13 were distributed under the MIT License. Copies obtained under MIT may continue to be used under MIT.
 
 ## Other Discogs Projects
 
