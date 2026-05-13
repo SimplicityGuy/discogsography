@@ -22,7 +22,6 @@ allow = [
   "CC0-1.0",
   "CDLA-Permissive-2.0",
   "Zlib",
-  "OpenSSL",
 ]
 # Confidence threshold for license detection
 confidence-threshold = 0.8
