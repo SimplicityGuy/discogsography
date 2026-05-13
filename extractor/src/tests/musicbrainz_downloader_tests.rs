@@ -157,7 +157,11 @@ async fn test_download_latest_sha256_mismatch() {
     let err_msg = format!("{}", result.unwrap_err());
     // With streaming, invalid data fails at the xz/tar decoder or at SHA256 verification.
     assert!(
-        err_msg.contains("SHA256") || err_msg.contains("checksum") || err_msg.contains("mismatch") || err_msg.contains("tar") || err_msg.contains("failed"),
+        err_msg.contains("SHA256")
+            || err_msg.contains("checksum")
+            || err_msg.contains("mismatch")
+            || err_msg.contains("tar")
+            || err_msg.contains("failed"),
         "Error should indicate corrupt data or checksum mismatch: {}",
         err_msg,
     );

@@ -133,7 +133,7 @@ repos:
         args: ["."]
       - id: cargo-fmt
         name: cargo fmt
-        entry: bash -c 'cd extractor 2>/dev/null && cargo fmt --check || exit 0'
+        entry: bash -c 'cd extractor && cargo fmt --check'
         language: system
         files: '^extractor/.*\.rs$'
         pass_filenames: false

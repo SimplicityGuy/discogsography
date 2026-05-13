@@ -913,10 +913,7 @@ async fn test_run_musicbrainz_loop_periodic_check_err() {
         // immediately before its next sleep, so "done" means either value.
         loop {
             let s = state_clone.read().await;
-            if matches!(
-                s.extraction_status,
-                ExtractionStatus::Completed | ExtractionStatus::Waiting
-            ) {
+            if matches!(s.extraction_status, ExtractionStatus::Completed | ExtractionStatus::Waiting) {
                 break;
             }
             drop(s);
@@ -980,10 +977,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_false() {
         // immediately before its next sleep, so "done" means either value.
         loop {
             let s = state_clone.read().await;
-            if matches!(
-                s.extraction_status,
-                ExtractionStatus::Completed | ExtractionStatus::Waiting
-            ) {
+            if matches!(s.extraction_status, ExtractionStatus::Completed | ExtractionStatus::Waiting) {
                 break;
             }
             drop(s);

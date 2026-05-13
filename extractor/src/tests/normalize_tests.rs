@@ -116,10 +116,7 @@ fn test_artist_with_members() {
         "members": {"name": [{"@id": "10", "#text": "John"}, {"@id": "20", "#text": "Jane"}]}
     });
     normalize_record("artists", &mut record);
-    assert_eq!(
-        record["members"],
-        json!([{"id": "10", "name": "John"}, {"id": "20", "name": "Jane"}])
-    );
+    assert_eq!(record["members"], json!([{"id": "10", "name": "John"}, {"id": "20", "name": "Jane"}]));
 }
 
 #[test]
@@ -191,10 +188,7 @@ fn test_label_sublabels_container() {
         "sublabels": {"label": [{"@id": "10", "#text": "Sub A"}, {"@id": "20", "#text": "Sub B"}]}
     });
     normalize_record("labels", &mut record);
-    assert_eq!(
-        record["sublabels"],
-        json!([{"id": "10", "name": "Sub A"}, {"id": "20", "name": "Sub B"}])
-    );
+    assert_eq!(record["sublabels"], json!([{"id": "10", "name": "Sub A"}, {"id": "20", "name": "Sub B"}]));
 }
 
 #[test]
@@ -307,10 +301,7 @@ fn test_release_labels() {
         "labels": {"label": [{"@id": "10", "@name": "Lab", "@catno": "CAT01"}]}
     });
     normalize_record("releases", &mut record);
-    assert_eq!(
-        record["labels"],
-        json!([{"id": "10", "name": "Lab", "catno": "CAT01"}])
-    );
+    assert_eq!(record["labels"], json!([{"id": "10", "name": "Lab", "catno": "CAT01"}]));
 }
 
 #[test]
@@ -349,10 +340,7 @@ fn test_release_extraartists() {
         "extraartists": {"artist": [{"@id": "5", "#text": "Producer"}]}
     });
     normalize_record("releases", &mut record);
-    assert_eq!(
-        record["extraartists"],
-        json!([{"id": "5", "name": "Producer"}])
-    );
+    assert_eq!(record["extraartists"], json!([{"id": "5", "name": "Producer"}]));
 }
 
 #[test]
@@ -411,25 +399,13 @@ fn test_release_full_pipeline() {
     assert_eq!(record["title"], json!("Full Album"));
     assert_eq!(record["released"], json!("2024-01-01"));
     assert_eq!(record["country"], json!("UK"));
-    assert_eq!(
-        record["artists"],
-        json!([{"id": "1", "name": "Band"}, {"id": "2", "name": "Featured"}])
-    );
-    assert_eq!(
-        record["labels"],
-        json!([{"id": "10", "name": "BigLabel", "catno": "BIG001"}])
-    );
+    assert_eq!(record["artists"], json!([{"id": "1", "name": "Band"}, {"id": "2", "name": "Featured"}]));
+    assert_eq!(record["labels"], json!([{"id": "10", "name": "BigLabel", "catno": "BIG001"}]));
     assert_eq!(record["master_id"], json!("5000"));
     assert_eq!(record["genres"], json!(["Electronic", "Rock"]));
     assert_eq!(record["styles"], json!(["Synth-pop"]));
-    assert_eq!(
-        record["extraartists"],
-        json!([{"id": "99", "name": "Mixer"}])
-    );
-    assert_eq!(
-        record["formats"],
-        json!([{"name": "CD", "qty": "1"}, {"name": "Vinyl", "qty": "2"}])
-    );
+    assert_eq!(record["extraartists"], json!([{"id": "99", "name": "Mixer"}]));
+    assert_eq!(record["formats"], json!([{"name": "CD", "qty": "1"}, {"name": "Vinyl", "qty": "2"}]));
 }
 
 // ── edge cases from code review ─────────────────────────────────────
