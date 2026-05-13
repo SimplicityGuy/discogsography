@@ -839,12 +839,24 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_true() {
 
     let trigger: Arc<tokio::sync::Mutex<Option<bool>>> = Arc::new(tokio::sync::Mutex::new(None));
 
-    // Advance time past the check interval, then signal shutdown
+    // Wait for initial processing to finish before advancing time, then signal shutdown.
+    // Polling state (instead of `sleep(100ms)` in paused virtual time) is required
+    // because `start_paused = true` will auto-advance virtual time whenever no tasks
+    // are runnable - including while the main task is in real HTTP I/O. A naive
+    // 100ms paused sleep advances instantly, skipping past the connect deadline
+    // before the loop even enters the select.
     let shutdown_clone = shutdown.clone();
     let config_clone = config.clone();
+    let state_clone = state.clone();
     tokio::spawn(async move {
-        // Wait a bit for the loop to enter the select
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        loop {
+            let s = state_clone.read().await;
+            if matches!(s.extraction_status, ExtractionStatus::Completed | ExtractionStatus::Waiting) {
+                break;
+            }
+            drop(s);
+            tokio::task::yield_now().await;
+        }
         // Advance past the periodic check interval (config says 1 day)
         let check_interval = tokio::time::Duration::from_secs(config_clone.periodic_check_days * 24 * 60 * 60);
         tokio::time::sleep(check_interval).await;
@@ -855,7 +867,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_true() {
 
     let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
 
-    assert!(result.is_ok());
+    assert!(result.is_ok(), "expected Ok, got Err: {:?}", result.err());
 }
 
 #[tokio::test(start_paused = true)]
@@ -901,10 +913,7 @@ async fn test_run_musicbrainz_loop_periodic_check_err() {
         // immediately before its next sleep, so "done" means either value.
         loop {
             let s = state_clone.read().await;
-            if matches!(
-                s.extraction_status,
-                ExtractionStatus::Completed | ExtractionStatus::Waiting
-            ) {
+            if matches!(s.extraction_status, ExtractionStatus::Completed | ExtractionStatus::Waiting) {
                 break;
             }
             drop(s);
@@ -968,10 +977,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_false() {
         // immediately before its next sleep, so "done" means either value.
         loop {
             let s = state_clone.read().await;
-            if matches!(
-                s.extraction_status,
-                ExtractionStatus::Completed | ExtractionStatus::Waiting
-            ) {
+            if matches!(s.extraction_status, ExtractionStatus::Completed | ExtractionStatus::Waiting) {
                 break;
             }
             drop(s);

@@ -3,7 +3,6 @@
 
 use extractor::discogs_downloader::Downloader;
 use extractor::types::{LocalFileInfo, S3FileInfo};
-use hex;
 use std::collections::HashMap;
 use tempfile::TempDir;
 

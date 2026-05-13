@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.13",
 ]
-license = {text = "MIT"}
+license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
     "aio-pika>=9.0.0",
     "neo4j-rust-ext>=6.1.0",
