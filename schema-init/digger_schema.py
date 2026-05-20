@@ -168,4 +168,50 @@ CREATE TABLE IF NOT EXISTS digger.agent_messages (
     token_counts  jsonb,
     created_at    timestamptz   NOT NULL DEFAULT now()
 );
+
+CREATE OR REPLACE FUNCTION digger.recompute_priority_for_release(p_release_id bigint)
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+    max_tier digger.priority_tier;
+BEGIN
+    SELECT
+        CASE
+            WHEN bool_or(tier = 'must') THEN 'must'::digger.priority_tier
+            WHEN bool_or(tier = 'nice') THEN 'nice'::digger.priority_tier
+            WHEN bool_or(tier = 'eventually') THEN 'eventually'::digger.priority_tier
+            ELSE 'eventually'::digger.priority_tier
+        END
+    INTO max_tier
+    FROM digger.user_wantlist_priorities
+    WHERE release_id = p_release_id;
+
+    IF max_tier IS NULL THEN
+        RETURN;
+    END IF;
+
+    UPDATE digger.release_scrape_state
+       SET priority_tier = max_tier
+     WHERE release_id = p_release_id
+       AND priority_tier IS DISTINCT FROM max_tier;
+END $$;
+
+CREATE OR REPLACE FUNCTION digger.uwp_after_change()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        PERFORM digger.recompute_priority_for_release(OLD.release_id);
+        RETURN OLD;
+    ELSE
+        PERFORM digger.recompute_priority_for_release(NEW.release_id);
+        IF TG_OP = 'UPDATE' AND OLD.release_id IS DISTINCT FROM NEW.release_id THEN
+            PERFORM digger.recompute_priority_for_release(OLD.release_id);
+        END IF;
+        RETURN NEW;
+    END IF;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_uwp_recompute ON digger.user_wantlist_priorities;
+CREATE TRIGGER trg_uwp_recompute
+AFTER INSERT OR UPDATE OR DELETE ON digger.user_wantlist_priorities
+FOR EACH ROW EXECUTE FUNCTION digger.uwp_after_change();
 """
