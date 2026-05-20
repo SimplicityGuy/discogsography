@@ -1214,6 +1214,183 @@ graph LR
 
 All MusicBrainz-sourced edges carry `source: 'musicbrainz'` for provenance tracking. The existing `MEMBER_OF` relationship is enriched with date information from MusicBrainz.
 
+#### Digger Schema
+
+All Digger marketplace-scraper data lives in a dedicated `digger` schema, owned by `schema-init/digger_schema.py`. M1 actively uses `sellers`, `release_scrape_state`, `listings`, `user_wantlist_priorities`, and `user_digger_settings`; the `reports`, `proposals`, `agent_sessions`, and `agent_messages` tables are scaffolding for the M2 (optimizer) and M3 (agent) milestones.
+
+```sql
+CREATE SCHEMA IF NOT EXISTS digger;
+```
+
+**Enums** — 11 enumerated types scope the domain values:
+
+```sql
+CREATE TYPE digger.priority_tier    AS ENUM ('must', 'nice', 'eventually');
+CREATE TYPE digger.condition        AS ENUM ('M','NM','VG+','VG','G+','G','F','P');
+CREATE TYPE digger.sleeve_condition AS ENUM ('M','NM','VG+','VG','G+','G','F','P','generic','no_cover');
+CREATE TYPE digger.region           AS ENUM ('us','ca','eu','uk','jp','au','other');
+CREATE TYPE digger.cadence          AS ENUM ('off','weekly','biweekly','monthly');
+CREATE TYPE digger.model            AS ENUM ('haiku','sonnet','opus');
+CREATE TYPE digger.report_kind      AS ENUM ('scheduled','interactive');
+CREATE TYPE digger.change_flag      AS ENUM ('significant','none','first_run');
+CREATE TYPE digger.confidence       AS ENUM ('high','low');
+CREATE TYPE digger.proposal_status  AS ENUM ('pending','approved','rejected','expired');
+CREATE TYPE digger.role             AS ENUM ('system','user','assistant','tool');
+```
+
+**digger.sellers** — public Discogs marketplace sellers.
+
+```sql
+CREATE TABLE IF NOT EXISTS digger.sellers (
+    seller_id              BIGINT        PRIMARY KEY,
+    username               TEXT          NOT NULL,
+    country_code           CHAR(2),
+    region                 digger.region NOT NULL DEFAULT 'other',
+    feedback_count         INT,
+    feedback_score         NUMERIC(4,1),
+    ships_internationally  BOOL          NOT NULL DEFAULT FALSE,
+    shipping_policy        JSONB,
+    last_refreshed_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+```
+
+**digger.release_scrape_state** — per-release scrape scheduling and failure tracking. `priority_tier` is recomputed by a trigger on `user_wantlist_priorities` (see below).
+
+```sql
+CREATE TABLE IF NOT EXISTS digger.release_scrape_state (
+    release_id             BIGINT                PRIMARY KEY,
+    priority_tier          digger.priority_tier  NOT NULL DEFAULT 'eventually',
+    last_scraped_at        TIMESTAMPTZ,
+    next_scrape_due_at     TIMESTAMPTZ           NOT NULL DEFAULT NOW(),
+    listings_delta_7d      INT                   NOT NULL DEFAULT 0,
+    consecutive_failures   INT                   NOT NULL DEFAULT 0,
+    next_retry_at          TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_rss_due_tier
+    ON digger.release_scrape_state (priority_tier, next_scrape_due_at);
+```
+
+**digger.listings** — marketplace listings with a soft-delete lifecycle. `first_seen_at` is set once; `last_seen_at` is refreshed on every scrape that re-observes a listing; `removed_at` is set (not deleted) when a previously-seen listing disappears from a scrape. Active-listing queries filter on `removed_at IS NULL` via partial indexes.
+
+```sql
+CREATE TABLE IF NOT EXISTS digger.listings (
+    listing_id          BIGINT                   PRIMARY KEY,
+    release_id          BIGINT                   NOT NULL REFERENCES digger.release_scrape_state(release_id) ON DELETE CASCADE,
+    seller_id           BIGINT                   NOT NULL REFERENCES digger.sellers(seller_id) ON DELETE CASCADE,
+    price_value         NUMERIC(10,2)            NOT NULL,
+    price_currency      CHAR(3)                  NOT NULL,
+    media_condition     digger.condition         NOT NULL,
+    sleeve_condition    digger.sleeve_condition  NOT NULL,
+    comments            TEXT,
+    posted_at           TIMESTAMPTZ,
+    first_seen_at       TIMESTAMPTZ              NOT NULL DEFAULT NOW(),  -- set once, on first observation
+    last_seen_at        TIMESTAMPTZ              NOT NULL DEFAULT NOW(),  -- refreshed each re-observation
+    removed_at          TIMESTAMPTZ                                       -- soft-delete marker (NULL = active)
+);
+
+CREATE INDEX IF NOT EXISTS idx_listings_release_active
+    ON digger.listings (release_id) WHERE removed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_listings_seller_active
+    ON digger.listings (seller_id) WHERE removed_at IS NULL;
+```
+
+**digger.user_wantlist_priorities** — per-user, per-release priority and minimum-condition / max-price preferences. An `AFTER INSERT OR UPDATE OR DELETE` trigger recomputes `release_scrape_state.priority_tier` to the highest tier any user has assigned to that release.
+
+```sql
+CREATE TABLE IF NOT EXISTS digger.user_wantlist_priorities (
+    user_id              UUID                    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    release_id           BIGINT                  NOT NULL,
+    tier                 digger.priority_tier    NOT NULL DEFAULT 'nice',
+    min_media_condition  digger.condition        NOT NULL DEFAULT 'VG',
+    min_sleeve_condition digger.sleeve_condition NOT NULL DEFAULT 'VG',
+    max_price_cents      INT,
+    updated_at           TIMESTAMPTZ             NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, release_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_uwp_release ON digger.user_wantlist_priorities (release_id);
+```
+
+The priority-recompute trigger keeps each release's scrape priority in sync with user demand:
+
+```sql
+-- recompute_priority_for_release() sets release_scrape_state.priority_tier to the
+-- highest tier (must > nice > eventually) any user has assigned to the release.
+CREATE OR REPLACE TRIGGER trg_uwp_recompute
+AFTER INSERT OR UPDATE OR DELETE ON digger.user_wantlist_priorities
+FOR EACH ROW EXECUTE FUNCTION digger.uwp_after_change();
+```
+
+> **Note**: `user_wantlist_priorities.release_id` intentionally has **no** foreign key to `release_scrape_state`. Priorities are user-owned and may be seeded before a scrape-state row exists; the trigger's `UPDATE` is a harmless no-op when the parent row is absent, and the worker reconciles scrape state on first encounter.
+
+**digger.user_digger_settings** — per-user Digger configuration (enable flag, locale, scheduled cadence, model preference, daily token caps).
+
+```sql
+CREATE TABLE IF NOT EXISTS digger.user_digger_settings (
+    user_id                       UUID             PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    enabled                       BOOL             NOT NULL DEFAULT FALSE,
+    country_code                  CHAR(2),
+    currency                      CHAR(3)          NOT NULL DEFAULT 'USD',
+    scheduled_cadence             digger.cadence   NOT NULL DEFAULT 'off',
+    next_scheduled_run_at         TIMESTAMPTZ,
+    preferred_model               digger.model     NOT NULL DEFAULT 'sonnet',
+    daily_token_cap_interactive   INT              NOT NULL DEFAULT 200000,
+    daily_token_cap_scheduled     INT              NOT NULL DEFAULT 100000
+);
+```
+
+**digger.reports**, **digger.proposals**, **digger.agent_sessions**, **digger.agent_messages** — scaffolding for the M2 optimizer and M3 agent milestones (not exercised in M1).
+
+```sql
+CREATE TABLE IF NOT EXISTS digger.reports (
+    report_id            UUID                     PRIMARY KEY,
+    user_id              UUID                     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind                 digger.report_kind       NOT NULL,
+    generated_at         TIMESTAMPTZ              NOT NULL DEFAULT NOW(),
+    read_at              TIMESTAMPTZ,
+    title                TEXT                     NOT NULL,
+    summary              JSONB                    NOT NULL,
+    bundles              JSONB                    NOT NULL,
+    watching             JSONB                    NOT NULL DEFAULT '[]'::JSONB,
+    change_flag          digger.change_flag       NOT NULL,
+    shipping_confidence  digger.confidence        NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS digger.proposals (
+    proposal_id  UUID                     PRIMARY KEY,
+    user_id      UUID                     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_id   UUID,
+    created_at   TIMESTAMPTZ              NOT NULL DEFAULT NOW(),
+    status       digger.proposal_status   NOT NULL DEFAULT 'pending',
+    payload      JSONB                    NOT NULL,
+    expires_at   TIMESTAMPTZ              NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS digger.agent_sessions (
+    session_id              UUID           PRIMARY KEY,
+    user_id                 UUID           NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    started_at              TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    last_active_at          TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    model                   digger.model   NOT NULL,
+    total_input_tokens      INT            NOT NULL DEFAULT 0,
+    total_output_tokens     INT            NOT NULL DEFAULT 0,
+    total_cache_read_tokens INT            NOT NULL DEFAULT 0,
+    total_cost_usd          NUMERIC(10,4)  NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS digger.agent_messages (
+    message_id    UUID          PRIMARY KEY,
+    session_id    UUID          NOT NULL REFERENCES digger.agent_sessions(session_id) ON DELETE CASCADE,
+    role          digger.role   NOT NULL,
+    content       JSONB         NOT NULL,
+    token_counts  JSONB,
+    created_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+```
+
+See [Digger Scraping Policy](digger-scraping-policy.md) for how the worker populates `listings`, `sellers`, and `release_scrape_state`.
+
 ### Common Queries
 
 #### Full-text search releases
