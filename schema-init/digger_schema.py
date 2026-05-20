@@ -96,6 +96,11 @@ CREATE INDEX IF NOT EXISTS idx_listings_release_active
 CREATE INDEX IF NOT EXISTS idx_listings_seller_active
     ON digger.listings (seller_id) WHERE removed_at IS NULL;
 
+-- NOTE: release_id intentionally has NO foreign key to digger.release_scrape_state.
+-- Priorities are user-owned and may be seeded before a scrape-state row exists; the
+-- uwp trigger's UPDATE of release_scrape_state.priority_tier is a harmless no-op when
+-- the parent row is absent, and the digger worker reconciles scrape state on first
+-- encounter. This decoupling lets priority seeding succeed independently of scrape state.
 CREATE TABLE IF NOT EXISTS digger.user_wantlist_priorities (
     user_id              uuid                    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     release_id           bigint                  NOT NULL,
