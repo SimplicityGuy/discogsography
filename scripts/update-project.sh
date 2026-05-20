@@ -5,17 +5,24 @@
 # This script provides a safe and comprehensive way to update:
 # - Python version across all project files
 # - Python package dependencies via uv (all version types)
+# - Dependency floors (>=) in every pyproject.toml, raised to match uv.lock
 # - Rust crate dependencies in Rust extractor (main, dev, build)
 # - Node.js dependencies in Explore frontend tests (npm)
-# - UV package manager version in Dockerfiles and GitHub workflows
+# - UV package manager version in Dockerfiles and GitHub workflows/actions
 # - Pre-commit hooks to latest versions
-# - Docker base images to latest versions
+# - Docker dependency review (FROM base images, uv image, compose service images)
+#
+# It also flags capped dependencies (those with a ',<X' upper bound) that have a
+# newer release available beyond the cap, so they can be reviewed manually.
 #
 # Tool invocations delegate to `just` commands wherever possible, keeping the
 # justfile as the single source of truth for command definitions.
 #
 # Ecosystem behavior:
-#   Python (uv):  uv lock --upgrade respects >=X.Y constraints (includes majors)
+#   Python (uv):  uv lock --upgrade refreshes uv.lock within the existing >=X.Y
+#                 floors (this includes majors). It never raises the floors
+#                 themselves, so sync_dependency_floors() does that after the lock
+#                 so pyproject.toml minimums track what is actually resolved.
 #   Rust (cargo): minor/patch = cargo update (lock file only)
 #                 major (--major) = cargo upgrade --incompatible + cargo update
 #
@@ -385,43 +392,89 @@ update_uv_version() {
     print_success "UV version in Dockerfiles is already up to date ($current_uv)"
   fi
 
-  # Update GitHub workflows that use setup-uv action
-  print_info "Checking GitHub workflows for setup-uv updates..."
+  # Update setup-uv action references (workflows + composite actions).
+  # NOTE: setup-uv lives in .github/actions/setup-python-uv/action.yml in this
+  # repo, NOT in the workflows, so we must scan both trees. Pin format:
+  # astral-sh/setup-uv@<40-char-sha>  # vX.Y.Z  (two spaces before '#', matching
+  # the repo's SHA-pin convention so yamllint stays happy).
+  print_info "Checking GitHub Actions for setup-uv updates (workflows + composite actions)..."
 
-  for workflow in .github/workflows/*.yml; do
-    if [[ -f "$workflow" ]] && grep -q "astral-sh/setup-uv@" "$workflow"; then
-      local current_commit
-      current_commit=$(grep -oE "astral-sh/setup-uv@[a-f0-9]+" "$workflow" | head -1 | cut -d'@' -f2)
+  if [[ -n "$latest_setup_uv_commit" ]] && [[ "$latest_setup_uv_commit" != "null" ]]; then
+    local f
+    local setup_uv_files=()
+    while IFS= read -r f; do
+      [[ -n "$f" ]] && setup_uv_files+=("$f")
+    done < <(grep -rlE "astral-sh/setup-uv@" .github/workflows .github/actions 2>/dev/null || true)
 
+    local workflow current_commit
+    for workflow in "${setup_uv_files[@]:-}"; do
+      [[ -f "$workflow" ]] || continue
+      current_commit=$(grep -oE "astral-sh/setup-uv@[a-f0-9]{40}" "$workflow" | head -1 | cut -d'@' -f2)
       if [[ -n "$current_commit" ]] && [[ "$current_commit" != "$latest_setup_uv_commit" ]]; then
-        print_info "Updating setup-uv in $(basename "$workflow")"
-
         if [[ "$DRY_RUN" == false ]]; then
           backup_file "$workflow"
-
-          # Update the action reference
+          # Replace the ref AND its version comment in one shot so the SHA and the
+          # `# vX.Y.Z` comment always stay in sync (two spaces before '#').
           if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s/astral-sh\/setup-uv@[a-f0-9]\{40\}/astral-sh\/setup-uv@$latest_setup_uv_commit/g" "$workflow"
-            # Update the comment with version number
-            sed -i '' "s/# v[0-9.]\+/# $latest_setup_uv/g" "$workflow"
+            sed -i '' "s|\(astral-sh/setup-uv@\).*|\1$latest_setup_uv_commit  # $latest_setup_uv|" "$workflow"
           else
-            sed -i "s/astral-sh\/setup-uv@[a-f0-9]\{40\}/astral-sh\/setup-uv@$latest_setup_uv_commit/g" "$workflow"
-            sed -i "s/# v[0-9.]\+/# $latest_setup_uv/g" "$workflow"
+            sed -i "s|\(astral-sh/setup-uv@\).*|\1$latest_setup_uv_commit  # $latest_setup_uv|" "$workflow"
           fi
-
-          print_success "Updated $(basename "$workflow")"
-          WORKFLOW_CHANGES+=("$(basename "$workflow"): setup-uv ${current_commit:0:7} → ${latest_setup_uv_commit:0:7}")
+          print_success "Updated ${workflow#./} (setup-uv → ${latest_setup_uv_commit:0:7} $latest_setup_uv)"
+          WORKFLOW_CHANGES+=("${workflow#./}: setup-uv ${current_commit:0:7} → ${latest_setup_uv_commit:0:7}")
           CHANGES_MADE=true
         else
-          print_info "[DRY RUN] Would update setup-uv in $(basename "$workflow")"
+          print_info "[DRY RUN] Would update setup-uv in ${workflow#./}"
         fi
       fi
-    fi
-  done
+    done
+  fi
 
   if [[ $(array_length WORKFLOW_CHANGES) -eq 0 ]]; then
-    print_success "GitHub workflows are already up to date"
+    print_success "setup-uv action is already up to date"
   fi
+}
+
+# Review the full Docker dependency surface.
+#
+# This SURFACES every Docker dependency so nothing is silently missed; it does
+# not mutate anything itself. Division of labour:
+#   - uv binary image (ghcr.io/astral-sh/uv) -> bumped by update_uv_version()
+#   - Python base image (python:X-slim)      -> bumped by update_python_version() (--python)
+#   - other FROM base images (node, rust, debian) + docker-compose service
+#     images (postgres, neo4j, rabbitmq, redis, ...) -> tracked by Dependabot's
+#     docker group
+#   - apt packages -> intentionally unpinned / distro-managed (see DL3008 pragmas)
+update_docker_images() {
+  print_section "$EMOJI_DOCKER" "Reviewing Docker Dependencies"
+
+  local dockerfiles=()
+  while IFS= read -r df; do
+    [[ -n "$df" ]] && dockerfiles+=("$df")
+  done < <(find . -maxdepth 3 -name "Dockerfile" -type f \
+    -not -path './.worktrees/*' -not -path './.claude/*' -not -path './backups/*' | sort)
+
+  local df matches
+  print_info "Base + tool images in Dockerfiles (FROM lines and the uv image):"
+  for df in "${dockerfiles[@]:-}"; do
+    [[ -f "$df" ]] || continue
+    matches=$(grep -nE "^FROM |ghcr.io/astral-sh/uv:" "$df" 2>/dev/null) || true
+    [[ -n "$matches" ]] && echo "$matches" | sed "s|^|  ${df#./}:|"
+  done
+
+  local compose
+  print_info "Service images in docker-compose:"
+  for compose in docker-compose*.yml; do
+    [[ -f "$compose" ]] || continue
+    matches=$(grep -nE "^[[:space:]]*image:" "$compose" 2>/dev/null) || true
+    [[ -n "$matches" ]] && echo "$matches" | sed "s|^|  $compose:|"
+  done
+
+  print_info "Dependency ownership:"
+  print_info "  • uv image (ghcr.io/astral-sh/uv)   → managed by update_uv_version()"
+  print_info "  • Python base (python:X-slim)       → managed by --python"
+  print_info "  • Other FROM tags (node, rust, debian) + compose service images → Dependabot docker group"
+  print_info "  • apt packages                      → distro-managed (intentionally unpinned; see 'hadolint ignore=DL3008')"
 }
 
 # Update pre-commit hooks to latest versions
@@ -498,6 +551,7 @@ verify_dependency_updates() {
   print_success "✓ Python optional dependencies ([project.optional-dependencies])"
   print_success "✓ Python dev dependencies ([dependency-groups])"
   print_success "✓ Python build dependencies ([build-system])"
+  print_success "✓ Python dependency floors raised to match uv.lock (root + members)"
 
   # Rust dependencies
   if [[ -f "extractor/Cargo.toml" ]]; then
@@ -732,6 +786,269 @@ update_python_packages() {
     print_success "Completed Python dependency updates"
   else
     print_info "[DRY RUN] Would run: just sync"
+  fi
+}
+
+# Raise the `>=` floors in every pyproject.toml to match the versions actually
+# pinned in the single root uv.lock.
+#
+# `uv lock --upgrade` refreshes the lockfile WITHIN the existing floors but never
+# raises the floors themselves — this is the gap Dependabot otherwise opens PRs
+# for. This closes it so the declared minimums track what is actually resolved.
+#
+# Monorepo specifics: this is a uv WORKSPACE with one root uv.lock, so we iterate
+# the root pyproject.toml AND every workspace member, resolving each requirement
+# against that single lock. We cover [project.dependencies],
+# [project.optional-dependencies].* sub-arrays and [dependency-groups].*, and we
+# rewrite ONLY the `>=` floor token — caps (`,<X`), extras (`pkg[redis]`), env
+# markers (`; sys_platform ...`) and trailing inline comments are preserved. The
+# editing is line-based (tomllib cannot write), then we re-run `uv lock` so the
+# lockfile's recorded requirement metadata matches the raised floors.
+sync_dependency_floors() {
+  print_section "$EMOJI_PACKAGE" "Syncing Dependency Floors"
+
+  local apply_val=1
+  [[ "$DRY_RUN" == true ]] && apply_val=0
+
+  local output
+  output=$(
+    APPLY="$apply_val" uv run python - <<'PY'
+import os
+import re
+import tomllib
+from pathlib import Path
+
+apply = os.environ.get("APPLY") == "1"
+
+try:
+    from packaging.version import InvalidVersion, Version
+
+    def strictly_newer(candidate: str, current: str) -> bool:
+        try:
+            return Version(candidate) > Version(current)
+        except InvalidVersion:
+            # uv.lock always resolves at or above the floor, so default to True.
+            return True
+except ImportError:  # packaging should be present, but never block on it.
+
+    def strictly_newer(candidate: str, current: str) -> bool:
+        return True
+
+
+# Discover every pyproject.toml in the workspace: root + members.
+root = Path("pyproject.toml")
+root_data = tomllib.loads(root.read_text())
+members = root_data.get("tool", {}).get("uv", {}).get("workspace", {}).get("members", [])
+pyprojects = [root]
+for member in members:
+    candidate = Path(member) / "pyproject.toml"
+    if candidate.exists():
+        pyprojects.append(candidate)
+
+# Resolve every requirement against the single root uv.lock.
+lock = tomllib.loads(Path("uv.lock").read_text())
+locked = {p["name"].lower().replace("_", "-"): p["version"] for p in lock.get("package", [])}
+
+header_re = re.compile(r"^\[\[?(?P<name>[^\]]+)\]\]?\s*$")
+open_re = re.compile(r"^(?P<key>[A-Za-z0-9._-]+)\s*=\s*\[\s*(#.*)?$")
+close_re = re.compile(r"^\s*\]")
+entry_re = re.compile(r'^(?P<indent>\s*)"(?P<spec>[^"]+)"(?P<trail>.*)$')
+spec_re = re.compile(
+    r"^(?P<name>[A-Za-z0-9._-]+(?:\[[A-Za-z0-9._,-]+\])?)"
+    r"(?P<specs>[<>=!~][^;]*)?"
+    r"(?P<marker>;.*)?$"
+)
+floor_re = re.compile(r">=\s*([^,;\s]+)")
+
+total = 0
+for pyproject in pyprojects:
+    lines = pyproject.read_text().split("\n")
+    out: list[str] = []
+    section = ""
+    in_array = False
+    process = False
+    changes: list[tuple[str, str, str]] = []
+    for line in lines:
+        if not in_array:
+            header = header_re.match(line.strip())
+            if header:
+                section = header.group("name")
+                out.append(line)
+                continue
+            opener = open_re.match(line.strip())
+            if opener:
+                key = opener.group("key")
+                process = (
+                    (section == "project" and key == "dependencies")
+                    or section == "project.optional-dependencies"
+                    or section == "dependency-groups"
+                )
+                in_array = True
+                out.append(line)
+                continue
+            out.append(line)
+            continue
+        # Inside an array.
+        if close_re.match(line):
+            in_array = False
+            process = False
+            out.append(line)
+            continue
+        if process:
+            matched = entry_re.match(line)
+            if matched:
+                parsed = spec_re.match(matched.group("spec"))
+                specs = parsed.group("specs") if parsed else None
+                if parsed and specs:
+                    base = parsed.group("name").split("[")[0].lower().replace("_", "-")
+                    locked_version = locked.get(base)
+                    floor = floor_re.search(specs)
+                    if locked_version and floor:
+                        current = floor.group(1)
+                        if current != locked_version and strictly_newer(locked_version, current):
+                            new_specs = specs[: floor.start(1)] + locked_version + specs[floor.end(1) :]
+                            new_spec = parsed.group("name") + new_specs + (parsed.group("marker") or "")
+                            changes.append((base, current, locked_version))
+                            out.append(f'{matched.group("indent")}"{new_spec}"{matched.group("trail")}')
+                            continue
+        out.append(line)
+    for base, old, new in changes:
+        print(f"BUMPED {pyproject}: {base} {old} -> {new}")
+    if apply and changes:
+        pyproject.write_text("\n".join(out))
+    total += len(changes)
+
+print(f"FLOORS_CHANGED={total}")
+PY
+  )
+
+  echo "$output" | grep -E "^BUMPED " | sed 's/^BUMPED /  /' || true
+
+  local changed
+  changed=$(echo "$output" | sed -n 's/^FLOORS_CHANGED=//p')
+  changed=${changed:-0}
+
+  if [[ "$DRY_RUN" == true ]]; then
+    if [[ "$changed" -gt 0 ]]; then
+      print_info "[DRY RUN] Would raise $changed dependency floor(s) across pyproject.toml files to match uv.lock"
+    else
+      print_success "[DRY RUN] All dependency floors already match uv.lock"
+    fi
+    return
+  fi
+
+  if [[ "$changed" -gt 0 ]]; then
+    print_info "Re-locking so uv.lock requirement metadata matches the raised floors..."
+    uv lock >/dev/null 2>&1 || uv lock
+    CHANGES_MADE=true
+    FILE_CHANGES+=("pyproject.toml (root + members): raised $changed dependency floor(s) to match uv.lock")
+    print_success "Raised $changed dependency floor(s) to match uv.lock"
+  else
+    print_success "All dependency floors already match uv.lock"
+  fi
+}
+
+# Flag capped dependencies (`,<X` upper bound) with a release available AT OR
+# BEYOND the cap. `uv lock --upgrade` cannot cross a cap on its own, so raising
+# it is a deliberate human decision — we only warn, never edit.
+#
+# Monorepo specifics: caps are parsed from ALL pyproject.toml files (root +
+# members) across [project.dependencies], [project.optional-dependencies] and
+# [dependency-groups]. We cross-reference `uv pip list --outdated`, compare with
+# packaging.version, and skip the workspace's own packages (discogsography*).
+flag_capped_dependencies() {
+  print_section "$EMOJI_VERIFY" "Checking Capped Dependencies"
+
+  if [[ "$DRY_RUN" == true ]]; then
+    print_info "[DRY RUN] Would flag capped dependencies with releases beyond their cap"
+    return
+  fi
+
+  local outdated
+  outdated=$(uv pip list --outdated 2>/dev/null) || true
+
+  local output
+  output=$(
+    OUTDATED="$outdated" uv run python - <<'PY'
+import os
+import re
+import tomllib
+from pathlib import Path
+
+try:
+    from packaging.version import InvalidVersion, Version
+
+    def at_or_beyond_cap(latest: str, cap: str) -> bool:
+        try:
+            return Version(latest) >= Version(cap)
+        except InvalidVersion:
+            return True
+except ImportError:
+
+    def at_or_beyond_cap(latest: str, cap: str) -> bool:
+        return True
+
+
+root_data = tomllib.loads(Path("pyproject.toml").read_text())
+members = root_data.get("tool", {}).get("uv", {}).get("workspace", {}).get("members", [])
+pyprojects = [Path("pyproject.toml")] + [Path(m) / "pyproject.toml" for m in members]
+
+name_re = re.compile(r"^([A-Za-z0-9._-]+)")
+cap_re = re.compile(r"<\s*([0-9][^,;\s]*)")
+caps: dict[str, str] = {}
+own: set[str] = set()
+
+for pyproject in pyprojects:
+    if not pyproject.exists():
+        continue
+    try:
+        data = tomllib.loads(pyproject.read_text())
+    except tomllib.TOMLDecodeError:
+        continue
+    project = data.get("project", {})
+    own_name = project.get("name")
+    if own_name:
+        own.add(own_name.lower().replace("_", "-"))
+    specs: list[str] = list(project.get("dependencies", []))
+    for group in project.get("optional-dependencies", {}).values():
+        specs.extend(s for s in group if isinstance(s, str))
+    for group in data.get("dependency-groups", {}).values():
+        specs.extend(s for s in group if isinstance(s, str))
+    for spec in specs:
+        name_match = name_re.match(spec)
+        cap_match = cap_re.search(spec.split(";")[0])
+        if name_match and cap_match:
+            caps[name_match.group(1).lower().replace("_", "-")] = cap_match.group(1)
+
+latest: dict[str, str] = {}
+for raw in os.environ.get("OUTDATED", "").splitlines():
+    parts = raw.split()
+    if len(parts) >= 3 and parts[0] != "Package" and not parts[0].startswith("-"):
+        latest[parts[0].lower().replace("_", "-")] = parts[2]
+
+flagged = 0
+for name, cap in sorted(caps.items()):
+    if name in own:
+        continue
+    newest = latest.get(name)
+    if newest and at_or_beyond_cap(newest, cap):
+        print(f"FLAG {name}: {newest} available, capped at <{cap}")
+        flagged += 1
+print(f"CAPPED_FLAGGED={flagged}")
+PY
+  )
+
+  local flagged
+  flagged=$(echo "$output" | sed -n 's/^CAPPED_FLAGGED=//p')
+  flagged=${flagged:-0}
+
+  if [[ "$flagged" -gt 0 ]]; then
+    while IFS= read -r line; do
+      print_warning "${line#FLAG }"
+    done < <(echo "$output" | grep -E "^FLAG ")
+    print_info "Raise the cap in pyproject.toml manually, then re-run: just lock-upgrade && just sync"
+  else
+    print_success "No capped dependencies have releases beyond their cap"
   fi
 }
 
@@ -1341,14 +1658,23 @@ main() {
   # Update Python version if requested
   update_python_version
 
-  # Update UV version in Dockerfiles
+  # Update UV version in Dockerfiles and GitHub Actions
   update_uv_version
+
+  # Review the full Docker dependency surface (FROM images, uv image, compose)
+  update_docker_images
 
   # Update pre-commit hooks
   update_precommit_hooks
 
   # Update Python packages (ALL types: core, optional, dev, build)
   update_python_packages
+
+  # Raise pyproject.toml floors to match the freshly resolved uv.lock
+  sync_dependency_floors
+
+  # Warn about capped deps with releases available beyond their cap
+  flag_capped_dependencies
 
   # Update Rust crates (minor/patch via cargo update; major via cargo upgrade with --major)
   update_rust_crates
