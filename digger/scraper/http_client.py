@@ -6,11 +6,12 @@ within the allow-list or are rejected with BlockedTargetError.
 
 from __future__ import annotations
 
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
 ALLOWED_HOSTS: frozenset[str] = frozenset({"www.discogs.com", "discogs.com"})
+ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 
 
 class BlockedTargetError(RuntimeError):
@@ -18,7 +19,10 @@ class BlockedTargetError(RuntimeError):
 
 
 def _check_host(url: str) -> None:
-    host = (urlparse(url).hostname or "").lower()
+    parsed = urlparse(url)
+    if parsed.scheme not in ALLOWED_SCHEMES:
+        raise BlockedTargetError(f"scheme {parsed.scheme!r} not allowed")
+    host = (parsed.hostname or "").lower()
     if host not in ALLOWED_HOSTS:
         raise BlockedTargetError(f"host {host!r} not in allow-list")
 
@@ -50,11 +54,13 @@ class DiggerHttpClient:
     async def get(self, url: str) -> httpx.Response:
         """Fetch ``url``, validating the host against the allow-list.
 
-        Manually follows 3xx redirects and re-validates each ``Location``
-        header before issuing the next request.
+        Manually follows 3xx redirects. Each ``Location`` header is resolved
+        against the current URL (relative redirects are supported) and
+        re-validated for both scheme and host before the next request.
 
         Raises:
-            BlockedTargetError: If the URL or any redirect target is not in the allow-list.
+            BlockedTargetError: If the URL or any redirect target has a disallowed
+                scheme or a host not in the allow-list.
         """
         _check_host(url)
         r = await self._client.get(url)
@@ -62,6 +68,7 @@ class DiggerHttpClient:
             loc = r.headers.get("location")
             if not loc:
                 break
+            loc = urljoin(str(r.url), loc)
             _check_host(loc)
             r = await self._client.get(loc)
         return r

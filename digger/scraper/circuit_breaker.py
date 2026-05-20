@@ -52,8 +52,9 @@ class CircuitBreaker:
             self._events.append((now, success))
             self._evict_expired(now)
             if self._opened_at is not None and success:
-                self._opened_at = None
-                CIRCUIT_BREAKER_OPEN.set(0)
+                if time.time() - self._opened_at >= self.cooldown_seconds:
+                    self._opened_at = None
+                    CIRCUIT_BREAKER_OPEN.set(0)
                 return
             total = len(self._events)
             if total < 10:
