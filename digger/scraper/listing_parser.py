@@ -14,9 +14,9 @@ import re
 from decimal import Decimal, InvalidOperation
 from typing import cast
 
-import bleach
-from selectolax.parser import HTMLParser, Node
+from selectolax.parser import HTMLParser
 
+from digger.scraper._textutil import clean_node
 from digger.scraper.types import Condition, ParsedListing, SleeveCondition
 
 
@@ -28,7 +28,9 @@ class UnknownLayoutError(RuntimeError):
     """
 
 
-# Matches "USD 12.99", "EUR 8,500.00", etc. — currency code then numeric amount.
+# Matches "USD 12.99", "EUR 8.500,00", etc. — currency code then numeric amount
+# (digits with optional grouping/decimal separators). Match on the ORIGINAL
+# string so locale normalization can inspect both separators.
 _PRICE_RE = re.compile(r"([A-Z]{3})\s*([\d,.]+)")
 
 # Extract listing_id from href like "/sell/item/12345678"
@@ -36,16 +38,6 @@ _LISTING_ID_RE = re.compile(r"/sell/item/(\d+)")
 
 _VALID_MEDIA: frozenset[str] = frozenset({"M", "NM", "VG+", "VG", "G+", "G", "F", "P"})
 _VALID_SLEEVE: frozenset[str] = _VALID_MEDIA | frozenset({"generic", "no_cover"})
-
-
-def _clean_text(node: Node | None) -> str:
-    """Extract text from a selectolax node and strip any HTML via bleach."""
-    if node is None:
-        return ""
-    raw = node.text(strip=True) or ""
-    # bleach.clean returns Any (no stubs); we know it's always str.
-    result: str = bleach.clean(raw, tags=[], strip=True)
-    return result
 
 
 def _normalize_condition(raw: str, valid: frozenset[str]) -> str | None:
@@ -68,6 +60,25 @@ def _normalize_condition(raw: str, valid: frozenset[str]) -> str | None:
         return parts[0]
     # Exact match fallback.
     return raw if raw in valid else None
+
+
+def _normalize_amount(numeric_str: str) -> str:
+    """Normalize a locale-formatted numeric string to a Decimal-parseable form.
+
+    Distinguishes thousands separators from the decimal separator by which
+    symbol appears LAST:
+      - "1,299.00" (en) → "1299.00"  (comma = thousands, dot = decimal)
+      - "8.500,00" (de/eu) → "8500.00"  (dot = thousands, comma = decimal)
+      - "1299" / "12.99" / "8,50" handled as the single-separator cases.
+    """
+    has_comma = "," in numeric_str
+    has_dot = "." in numeric_str
+    # Comma is the decimal separator when it appears after the last dot
+    # (or when there's no dot at all but a comma is present).
+    if has_comma and (not has_dot or numeric_str.rfind(",") > numeric_str.rfind(".")):
+        return numeric_str.replace(".", "").replace(",", ".")
+    # Otherwise dot (if any) is the decimal separator; commas are thousands groups.
+    return numeric_str.replace(",", "")
 
 
 def parse_listings(html: str, release_id: int) -> list[ParsedListing]:
@@ -123,12 +134,12 @@ def parse_listings(html: str, release_id: int) -> list[ParsedListing]:
         seller_node = row.css_first("td.seller_info strong a")
         if seller_node is None:
             continue
-        seller_username = _clean_text(seller_node)
+        seller_username = clean_node(seller_node)
         if not seller_username:
             continue
 
         # ---- media condition ----
-        media_raw = _clean_text(
+        media_raw = clean_node(
             row.css_first("p.item_condition span.condition-label-desktop + span")
         )
         media_str = _normalize_condition(media_raw, _VALID_MEDIA)
@@ -137,9 +148,9 @@ def parse_listings(html: str, release_id: int) -> list[ParsedListing]:
         media = cast("Condition", media_str)
 
         # ---- sleeve condition (defaults to "generic" if absent/unrecognized) ----
-        sleeve_raw = _clean_text(row.css_first("p.item_sleeve_condition span"))
+        sleeve_raw = clean_node(row.css_first("p.item_sleeve_condition span"))
         sleeve_raw2 = (
-            _clean_text(
+            clean_node(
                 row.css_first(
                     "p.item_sleeve_condition span.condition-label-desktop + span"
                 )
@@ -152,20 +163,20 @@ def parse_listings(html: str, release_id: int) -> list[ParsedListing]:
         )
 
         # ---- price ----
-        price_raw = _clean_text(row.css_first("td.item_price span.price"))
-        # Remove thousands separators before parsing.
-        price_raw_clean = price_raw.replace(",", "")
-        price_match = _PRICE_RE.search(price_raw_clean)
+        # Match on the ORIGINAL string so locale normalization can inspect
+        # both separators (en uses "1,299.00", de/eu uses "8.500,00").
+        price_raw = clean_node(row.css_first("td.item_price span.price"))
+        price_match = _PRICE_RE.search(price_raw)
         if not price_match:
             continue
         currency = price_match.group(1)
         try:
-            price_value = Decimal(price_match.group(2))
+            price_value = Decimal(_normalize_amount(price_match.group(2)))
         except InvalidOperation:
             continue
 
         # ---- optional seller comment (bleach-sanitized) ----
-        comments = _clean_text(row.css_first("p.item_description_comments")) or None
+        comments = clean_node(row.css_first("p.item_description_comments")) or None
 
         results.append(
             ParsedListing(

@@ -7,7 +7,9 @@ Shipping policy is normalized to:
     {region_name: {"first_cents": int, "additional_cents": int, "currency": str}}
 
 Returns None for shipping_policy if the page doesn't expose a shipping table.
-The parser raises ValueError if the page has no seller link at all (wrong page type).
+The parser raises ValueError if the page has no seller link, or if the link
+carries no numeric user ID (either case is a wrong/invalid page type). All
+seller-supplied text is sanitized through bleach before use.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from decimal import Decimal
 
 from selectolax.parser import HTMLParser
 
+from digger.scraper._textutil import clean_node
 from digger.scraper.types import ParsedSeller
 
 
@@ -76,8 +79,10 @@ def parse_seller_profile(html: str) -> ParsedSeller:
         page contains no shipping table.
 
     Raises:
-        ValueError: If no seller link (href containing /users/<id>) is found,
-            indicating this is not a recognizable seller profile page.
+        ValueError: If no seller link (an anchor whose href contains /users/)
+            is found, or if such a link exists but has no numeric user ID —
+            either case indicates this is not a valid seller profile page.
+            A bogus seller_id would poison the digger.sellers FK in Task 12.
     """
     tree = HTMLParser(html)
 
@@ -88,19 +93,19 @@ def parse_seller_profile(html: str) -> ParsedSeller:
 
     href: str = seller_link.attributes.get("href") or ""
     id_match = _SELLER_ID_RE.search(href)
-    seller_id = int(id_match.group(1)) if id_match else 0
+    if id_match is None:
+        raise ValueError(
+            f"no numeric user ID found in href {href!r} — not a valid seller profile page"
+        )
+    seller_id = int(id_match.group(1))
 
-    # ---- username: prefer h1.profile-name, fall back to link text ----
+    # ---- username: prefer h1.profile-name, fall back to link text (bleach-sanitized) ----
     username_node = tree.css_first("h1.profile-name")
-    username = (
-        username_node.text(strip=True)
-        if username_node
-        else seller_link.text(strip=True)
-    )
+    username = clean_node(username_node) if username_node else clean_node(seller_link)
 
-    # ---- country code ----
+    # ---- country code (bleach-sanitized before lookup) ----
     country_node = tree.css_first("div.profile-country")
-    country_text = country_node.text(strip=True) if country_node else ""
+    country_text = clean_node(country_node)
     country_code = _COUNTRY_MAP.get(country_text)
 
     # ---- feedback ----
@@ -110,16 +115,16 @@ def parse_seller_profile(html: str) -> ParsedSeller:
     score_node = tree.css_first("span.feedback-score")
     if count_node is not None:
         try:
-            feedback_count = int(count_node.text(strip=True).replace(",", ""))
+            feedback_count = int(clean_node(count_node).replace(",", ""))
         except ValueError:
             pass
     if score_node is not None:
         try:
-            feedback_score = Decimal(score_node.text(strip=True).rstrip("%"))
+            feedback_score = Decimal(clean_node(score_node).rstrip("%"))
         except (ValueError, ArithmeticError):
             pass
 
-    # ---- shipping policy table ----
+    # ---- shipping policy table (all seller-supplied text bleach-sanitized) ----
     shipping_policy: dict[str, dict[str, object]] = {}
     for row in tree.css("table.shipping-policies tr.region-row"):
         region_node = row.css_first("td.region-name")
@@ -127,10 +132,10 @@ def parse_seller_profile(html: str) -> ParsedSeller:
         addl_node = row.css_first("td.additional-item-cost")
         if not (region_node and first_node and addl_node):
             continue
-        region_key = region_node.text(strip=True).lower()
+        region_key = clean_node(region_node).lower()
         shipping_policy[region_key] = {
-            "first_cents": _to_cents(first_node.text(strip=True)),
-            "additional_cents": _to_cents(addl_node.text(strip=True)),
+            "first_cents": _to_cents(clean_node(first_node)),
+            "additional_cents": _to_cents(clean_node(addl_node)),
             "currency": "USD",
         }
 
