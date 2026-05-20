@@ -254,6 +254,26 @@ async def sync_collection(
     return total_synced
 
 
+async def _seed_digger_priority_for_wantlist_item(pool: AsyncPostgreSQLPool, user_id: UUID, release_id: int) -> None:
+    """Ensure digger priority rows exist for this user+release.
+
+    Creates a digger.release_scrape_state row (if absent) then a
+    digger.user_wantlist_priorities row with default tier 'nice'. Both
+    statements are ON CONFLICT DO NOTHING so the helper is fully idempotent.
+    The schema trigger maintains digger.release_scrape_state.priority_tier
+    as a side-effect of the user_wantlist_priorities INSERT.
+    """
+    async with pool.connection() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "INSERT INTO digger.release_scrape_state (release_id) VALUES (%s) ON CONFLICT (release_id) DO NOTHING",
+            (release_id,),
+        )
+        await cur.execute(
+            "INSERT INTO digger.user_wantlist_priorities (user_id, release_id) VALUES (%s, %s) ON CONFLICT (user_id, release_id) DO NOTHING",
+            (user_id, release_id),
+        )
+
+
 async def sync_wantlist(
     user_uuid: UUID,
     discogs_username: str,
@@ -374,6 +394,8 @@ async def sync_wantlist(
                         batch_params,
                     )
                 total_synced += len(batch_params)
+                for row in batch_params:
+                    await _seed_digger_priority_for_wantlist_item(pg_pool, user_uuid, row[1])
 
             # Upsert to Neo4j — ensure User node and WANTS relationships
             cypher = """
