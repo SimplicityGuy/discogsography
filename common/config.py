@@ -515,6 +515,9 @@ class ApiConfig:
     brevo_sender_email: str = "noreply@discogsography.com"
     brevo_sender_name: str = "Discogsography"
 
+    # Digger internal service token — shared secret between the API and the digger worker
+    digger_api_service_token: str | None = None
+
     # Admin dashboard — extractor connection
     extractor_host: str = "extractor"
     extractor_health_port: int = 8000
@@ -594,6 +597,7 @@ class ApiConfig:
         brevo_api_key = get_secret("BREVO_API_KEY") or None
         brevo_sender_email = getenv("BREVO_SENDER_EMAIL", "noreply@discogsography.com")
         brevo_sender_name = getenv("BREVO_SENDER_NAME", "Discogsography")
+        digger_api_service_token = get_secret("DIGGER_API_SERVICE_TOKEN") or None
 
         metrics_retention_days_str = getenv("METRICS_RETENTION_DAYS", "366")
         try:
@@ -635,6 +639,7 @@ class ApiConfig:
             rabbitmq_password=get_secret("RABBITMQ_PASSWORD") or "guest",
             metrics_retention_days=metrics_retention_days,
             metrics_collection_interval=metrics_collection_interval,
+            digger_api_service_token=digger_api_service_token,
         )
 
 

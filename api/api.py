@@ -45,6 +45,7 @@ import api.routers.explore as _explore_router
 import api.routers.extraction_analysis as _extraction_analysis_router
 import api.routers.insights as _insights_router
 import api.routers.insights_compute as _insights_compute_router
+import api.routers.internal_digger as _internal_digger_router
 import api.routers.label_dna as _label_dna_router
 import api.routers.musicbrainz as _musicbrainz_router
 import api.routers.network as _network_router
@@ -246,8 +247,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         )
         logger.info("🔗 Neo4j driver initialized")
     jwt_secret_for_neo4j = _config.jwt_secret_key if _config.neo4j_host else None
-    _dependencies.configure(jwt_secret_for_neo4j, _redis, pool=_pool)
+    _dependencies.configure(jwt_secret_for_neo4j, _redis, pool=_pool, digger_api_service_token=_config.digger_api_service_token)
     _digger_router.configure(_pool)
+    _internal_digger_router.configure(_pool)
     _sync_router.configure(_pool, _neo4j, _config, _running_syncs, _redis)
     _explore_router.configure(_neo4j, jwt_secret_for_neo4j, _redis)
     _user_router.configure(_neo4j, jwt_secret_for_neo4j)
@@ -395,6 +397,7 @@ async def metrics_middleware(request: Request, call_next: Any) -> Any:
 
 app.include_router(_auth_router.router)
 app.include_router(_digger_router.router)
+app.include_router(_internal_digger_router.router)
 app.include_router(_sync_router.router)
 app.include_router(_explore_router.router)
 app.include_router(_insights_router.router)
