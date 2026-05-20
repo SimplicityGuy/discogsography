@@ -29,7 +29,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: 🔧 Setup Python and UV
         uses: ./.github/actions/setup-python-uv
@@ -37,7 +37,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -49,7 +49,7 @@ jobs:
 
       - name: 📊 Upload coverage (api)
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -69,7 +69,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: 🔧 Setup Python and UV
         uses: ./.github/actions/setup-python-uv
@@ -77,7 +77,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -89,7 +89,7 @@ jobs:
 
       - name: 📊 Upload coverage (common)
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -109,7 +109,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: 🔧 Setup Python and UV
         uses: ./.github/actions/setup-python-uv
@@ -117,7 +117,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -134,7 +134,7 @@ jobs:
 
       - name: 📊 Upload coverage (dashboard)
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -154,7 +154,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: 🔧 Setup Python and UV
         uses: ./.github/actions/setup-python-uv
@@ -162,7 +162,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -174,7 +174,7 @@ jobs:
 
       - name: 📊 Upload coverage (explore)
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -194,7 +194,7 @@ jobs:
 
     steps:
       - name: "🔀 Checkout repository"
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: "🔧 Setup Python and UV"
         uses: ./.github/actions/setup-python-uv
@@ -202,7 +202,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: "🔧 Setup Just"
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -214,7 +214,7 @@ jobs:
 
       - name: "📊 Upload coverage (insights)"
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -234,7 +234,7 @@ jobs:
 
     steps:
       - name: "🔀 Checkout repository"
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: "🔧 Setup Python and UV"
         uses: ./.github/actions/setup-python-uv
@@ -242,7 +242,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: "🔧 Setup Just"
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -254,7 +254,7 @@ jobs:
 
       - name: "📊 Upload coverage (mcp-server)"
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -274,7 +274,7 @@ jobs:
 
     steps:
       - name: "🔀 Checkout repository"
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: "🔧 Setup Python and UV"
         uses: ./.github/actions/setup-python-uv
@@ -282,7 +282,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: "🔧 Setup Just"
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -294,7 +294,7 @@ jobs:
 
       - name: "📊 Upload coverage (brainzgraphinator)"
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -314,7 +314,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: 🔧 Setup Python and UV
         uses: ./.github/actions/setup-python-uv
@@ -322,7 +322,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -334,7 +334,7 @@ jobs:
 
       - name: 📊 Upload coverage (graphinator)
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -354,7 +354,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: 🔧 Setup Python and UV
         uses: ./.github/actions/setup-python-uv
@@ -362,7 +362,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -374,7 +374,7 @@ jobs:
 
       - name: 📊 Upload coverage (schema-init)
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -394,7 +394,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: 🔧 Setup Python and UV
         uses: ./.github/actions/setup-python-uv
@@ -402,7 +402,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -414,7 +414,7 @@ jobs:
 
       - name: 📊 Upload coverage (tableinator)
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -434,7 +434,7 @@ jobs:
 
     steps:
       - name: "🔀 Checkout repository"
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: "🔧 Setup Python and UV"
         uses: ./.github/actions/setup-python-uv
@@ -442,7 +442,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: "🔧 Setup Just"
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -454,7 +454,7 @@ jobs:
 
       - name: "📊 Upload coverage (brainztableinator)"
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -474,17 +474,17 @@ jobs:
 
     steps:
       - name: "🔀 Checkout repository"
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: "🔧 Setup Node.js"
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: explore/package-lock.json
 
       - name: "🔧 Setup Just"
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -496,7 +496,7 @@ jobs:
 
       - name: "📊 Upload coverage (explore-js)"
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -516,7 +516,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: 🔍 Check if Rust extractor exists
         id: check-rust
@@ -537,23 +537,26 @@ jobs:
 
       - name: 🔧 Setup Just
         if: steps.check-rust.outputs.exists == 'true'
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🦀 Setup Rust toolchain
         if: steps.check-rust.outputs.exists == 'true'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
+          toolchain: stable
           components: llvm-tools-preview
 
       - name: 📦 Install cargo-llvm-cov
         if: steps.check-rust.outputs.exists == 'true'
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@213ccc1a076163c093f914550b94feb90fab916d  # v2.79.2
+        with:
+          tool: cargo-llvm-cov
 
       - name: 💾 Cache Rust dependencies
         if: steps.check-rust.outputs.exists == 'true'
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: |
             ~/.cargo/bin/
@@ -572,7 +575,7 @@ jobs:
 
       - name: 📊 Upload Rust coverage reports
         if: steps.check-rust.outputs.exists == 'true'
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
