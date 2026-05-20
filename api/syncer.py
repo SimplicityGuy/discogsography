@@ -254,23 +254,26 @@ async def sync_collection(
     return total_synced
 
 
-async def _seed_digger_priority_for_wantlist_item(pool: AsyncPostgreSQLPool, user_id: UUID, release_id: int) -> None:
-    """Ensure digger priority rows exist for this user+release.
+async def _seed_digger_priorities_for_wantlist(pool: AsyncPostgreSQLPool, user_id: UUID, release_ids: list[int]) -> None:
+    """Seed digger priority rows for a page of wantlist releases.
 
-    Creates a digger.release_scrape_state row (if absent) then a
-    digger.user_wantlist_priorities row with default tier 'nice'. Both
-    statements are ON CONFLICT DO NOTHING so the helper is fully idempotent.
-    The schema trigger maintains digger.release_scrape_state.priority_tier
-    as a side-effect of the user_wantlist_priorities INSERT.
+    For each release, ensures a digger.release_scrape_state row (parent) and a
+    digger.user_wantlist_priorities row (default tier 'nice', from the schema
+    column default). The schema trigger maintains release_scrape_state.priority_tier
+    as a side effect. Idempotent (ON CONFLICT DO NOTHING). Opens ONE pooled
+    connection per page and uses executemany; psycopg3 autocommit single-statement
+    writes — no explicit transaction needed.
     """
+    if not release_ids:
+        return
     async with pool.connection() as conn, conn.cursor() as cur:
-        await cur.execute(
+        await cur.executemany(
             "INSERT INTO digger.release_scrape_state (release_id) VALUES (%s) ON CONFLICT (release_id) DO NOTHING",
-            (release_id,),
+            [(rid,) for rid in release_ids],
         )
-        await cur.execute(
+        await cur.executemany(
             "INSERT INTO digger.user_wantlist_priorities (user_id, release_id) VALUES (%s, %s) ON CONFLICT (user_id, release_id) DO NOTHING",
-            (user_id, release_id),
+            [(user_id, rid) for rid in release_ids],
         )
 
 
@@ -394,8 +397,10 @@ async def sync_wantlist(
                         batch_params,
                     )
                 total_synced += len(batch_params)
-                for row in batch_params:
-                    await _seed_digger_priority_for_wantlist_item(pg_pool, user_uuid, row[1])
+                try:
+                    await _seed_digger_priorities_for_wantlist(pg_pool, user_uuid, [row[1] for row in batch_params])
+                except Exception as exc:  # seeding is a non-critical side-effect; never fail the sync over it
+                    logger.warning("⚠️ Failed to seed digger priorities", error=str(exc))
 
             # Upsert to Neo4j — ensure User node and WANTS relationships
             cypher = """
