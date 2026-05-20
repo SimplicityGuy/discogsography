@@ -165,7 +165,7 @@ ignore = [
 lines-after-imports = 2
 combine-as-imports = true
 split-on-trailing-comma = true
-known-first-party = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard", "explore", "graphinator", "mcp_server", "neo4j_schema", "postgres_schema", "schema_init", "tableinator"]
+known-first-party = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard", "digger", "explore", "graphinator", "mcp_server", "neo4j_schema", "postgres_schema", "schema_init", "tableinator"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 force-sort-within-sections = true
 
@@ -180,6 +180,7 @@ force-sort-within-sections = true
 "*/schema_init.py" = ["T201"]               # Allow print statements for ASCII art
 "*/server.py" = ["T201"]                    # Allow print statements for ASCII art
 "*/brainztableinator.py" = ["T201"]          # Allow print statements for ASCII art
+"*/digger/main.py" = ["T201"]               # Allow print statements for ASCII art
 "*/tableinator.py" = ["T201"]               # Allow print statements for ASCII art
 "api/admin_setup.py" = ["T201"]              # CLI tool uses print for user output
 "api/setup.py" = ["T201"]                   # CLI tool uses print for user output
@@ -204,8 +205,10 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 explicit_package_bases = true
-# Exclude test files from type checking
-exclude = "^tests/"
+# Exclude test files and the digger service directory from root-level type checking
+# (digger uses a nested package structure that conflicts with explicit_package_bases;
+# run mypy for digger from within digger/ using its own pyproject.toml)
+exclude = "^tests/|^digger/"
 
 # Ignore missing imports for third-party libraries without stubs
 [[tool.mypy.overrides]]
@@ -220,7 +223,7 @@ disallow_untyped_decorators = false
 
 
 [tool.coverage.run]
-source = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator"]
+source = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard", "digger", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator"]
 omit = ["*/tests/*", "*/__init__.py"]
 relative_files = true
 
@@ -286,7 +289,7 @@ skips = ["B101", "B108", "B608"]  # Skip assert_used, hardcoded temp directory, 
 
 # uv workspace configuration
 [tool.uv.workspace]
-members = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator"]
+members = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard", "digger", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator"]
 
 # Environment restrictions for uv to avoid iOS and other incompatible platforms
 [tool.uv]

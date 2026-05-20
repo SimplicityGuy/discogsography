@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "discogsography-digger"
+version = "0.1.0"
+description = "Discogs marketplace scraper and scheduled-run worker for the Digger feature."
+authors = [{name = "Robert Wlodarczyk", email = "robert@simplicityguy.com"}]
+readme = "README.md"
+requires-python = ">=3.13"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+]
+license = {text = "PolyForm-Noncommercial-1.0.0"}
+dependencies = [
+    "bleach>=6.1",
+    "common",
+    "httpx>=0.28.1",
+    "prometheus-client>=0.25.0",
+    "redis[hiredis]>=7.4.0",
+    "selectolax>=0.3.21",
+    "structlog>=25.5.0",
+]
+
+[project.scripts]
+digger = "digger.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+# Tool configurations inherit from root pyproject.toml
+# Only service-specific overrides are defined here
+
+[tool.ruff.lint.per-file-ignores]
+"digger/main.py" = ["T201"]    # Allow print statements for ASCII art
+
+[[tool.mypy.overrides]]
+module = [
+    "bleach",
+    "selectolax.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "digger.*",
+]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["digger"]
+
+[tool.pytest.ini_options]
+testpaths = ["../tests/digger"]
