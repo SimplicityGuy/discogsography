@@ -27,7 +27,7 @@ graph LR
     ENV --> GH
     ENV --> BUILD
 
-    Script[update-python-version.sh] --> PY
+    Script[update-project.sh --python] --> PY
     Script --> DOCKER
     Script --> PYRIGHT
 

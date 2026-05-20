@@ -115,7 +115,7 @@ Emojis in Discogsography serve to:
 | 🔑    | Password Reset  | Password reset links  |
 | 🛡️    | Scanning        | Security scanning     |
 | 🚀    | Build/Deploy    | Build and deployment  |
-| 📢    | Notifications   | Discord, alerts       |
+| 📢    | Notifications   | Alerts, announcements |
 | 🏷️    | Tagging         | Version tags, labels  |
 | ⏱️    | Timing          | Performance timing    |
 | 🎯    | Target          | Goals, objectives     |

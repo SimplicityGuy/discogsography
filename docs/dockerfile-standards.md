@@ -11,10 +11,11 @@ All Dockerfiles must follow these standards to ensure consistency, security, and
 The standard template uses a two-stage build (builder + final). Services that require a build-time
 asset pipeline add a third stage **before** the builder stage.
 
-### Optional: CSS Build Stage (dashboard only)
+### Optional: CSS Build Stage (dashboard and explore)
 
-The dashboard uses a dedicated Node stage to run the Tailwind v4 CLI and produce a minified stylesheet
-at image build time, eliminating any CDN dependency at runtime:
+Both the dashboard and explore services use a dedicated Node stage to run the Tailwind v4 CLI and
+produce a minified stylesheet at image build time, eliminating any CDN dependency at runtime. The
+example below is the dashboard's; explore's is identical apart from the `explore/` source paths:
 
 ```dockerfile
 # ── CSS build stage ────────────────────────────────────────────────────────────

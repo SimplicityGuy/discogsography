@@ -26,8 +26,8 @@ This guide covers common issues you might encounter while using Discogsography a
 **Diagnostic Steps**:
 
 ```bash
-# Check connectivity to Discogs S3
-curl -I https://discogs-data-dumps.s3.us-west-2.amazonaws.com
+# Check connectivity to the Discogs data host
+curl -I https://data.discogs.com
 
 # Verify disk space (need 76GB+)
 df -h /discogs-data
@@ -45,7 +45,7 @@ docker-compose logs -f extractor-discogs extractor-musicbrainz
 
    ```bash
    # Test connection
-   ping discogs-data-dumps.s3.us-west-2.amazonaws.com
+   ping data.discogs.com
    ```
 
 1. **✅ Verify 76GB+ free space**
@@ -631,7 +631,7 @@ docker-compose restart dashboard
 
 ```bash
 # Check network connectivity
-curl -I https://discogs-data-dumps.s3.us-west-2.amazonaws.com
+curl -I https://data.discogs.com
 
 # Restart extractor
 docker-compose restart extractor-discogs  # or extractor-musicbrainz

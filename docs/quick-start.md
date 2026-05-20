@@ -355,7 +355,7 @@ docker-compose restart [service-name]
 
 ```bash
 # Check internet connectivity
-curl -I https://discogs-data-dumps.s3.us-west-2.amazonaws.com
+curl -I https://data.discogs.com
 
 # Check extractor logs
 docker-compose logs extractor-discogs

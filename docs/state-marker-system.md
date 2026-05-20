@@ -254,14 +254,15 @@ State markers are stored in the respective data root directories:
 
 ```
 /musicbrainz-data/
-├── artist.jsonl.xz
-├── label.jsonl.xz
-├── release-group.jsonl.xz
-├── release.jsonl.xz
-└── .mb_extraction_status_20260326.json # MusicBrainz state marker
+└── 20260326-001001/                       # Per-version subdirectory
+    ├── artist.jsonl.xz
+    ├── label.jsonl.xz
+    ├── release-group.jsonl.xz
+    ├── release.jsonl.xz
+    └── .mb_extraction_status_20260326-001001.json  # MusicBrainz state marker
 ```
 
-MusicBrainz state markers use the `.mb_extraction_status_{version}.json` naming convention to distinguish from Discogs markers. They follow the same internal structure and status values as Discogs markers, but track 4 data types (artists, labels, release-groups, releases) instead of 4 (no masters).
+MusicBrainz dumps and their marker live in a per-version subdirectory (e.g. `/musicbrainz-data/20260326-001001/`), since the extractor downloads each dated dump into its own directory. The marker uses the `.mb_extraction_status_{version}.json` naming convention to distinguish from Discogs markers. It follows the same internal structure and status values as Discogs markers, but tracks `release-groups` in place of `masters` (artists, labels, release-groups, releases instead of artists, labels, masters, releases).
 
 ## Version-Specific Tracking
 
@@ -311,7 +312,7 @@ Both Rust and Python implementations have comprehensive tests:
 **Rust:**
 
 ```bash
-cd extractor/extractor
+cd extractor
 cargo test state_marker
 ```
 

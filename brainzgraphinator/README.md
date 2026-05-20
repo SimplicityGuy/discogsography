@@ -15,7 +15,7 @@ The brainzgraphinator service:
 ## Architecture
 
 - **Language**: Python 3.13+
-- **Database**: Neo4j 5.x (enriches existing Discogs graph)
+- **Database**: Neo4j 2026 (calendar versioning) — enriches existing Discogs graph
 - **Message Broker**: RabbitMQ 4.x (quorum queues)
 - **Health Port**: 8011
 - **Driver**: neo4j async driver with retry and resilience
@@ -28,7 +28,7 @@ Environment variables:
 # Neo4j connection
 NEO4J_HOST=neo4j
 NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=neo4j
+NEO4J_PASSWORD=discogsography
 
 # RabbitMQ (individual vars; also supports _FILE variants for Docker secrets)
 RABBITMQ_USERNAME=discogsography

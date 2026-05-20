@@ -480,9 +480,9 @@ stateDiagram-v2
 Extractor integrates with the Discogsography platform:
 
 - **Discogs mode**: Publishes to 4 RabbitMQ fanout exchanges (`discogsography-discogs-{artists,labels,masters,releases}`) consumed by Graphinator (Neo4j) and Tableinator (PostgreSQL)
-- **MusicBrainz mode**: Publishes to 3 RabbitMQ fanout exchanges (`discogsography-musicbrainz-{artists,labels,releases}`) with MBID→Discogs ID cross-referencing
+- **MusicBrainz mode**: Publishes to 4 RabbitMQ fanout exchanges (`discogsography-musicbrainz-{artists,labels,release-groups,releases}`) with MBID→Discogs ID cross-referencing
 - Provides HTTP health, metrics, and readiness endpoints
 
 ## License
 
-MIT
+This project is licensed under the PolyForm Noncommercial License 1.0.0. See the [LICENSE](../LICENSE) file in the repository root.

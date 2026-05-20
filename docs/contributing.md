@@ -314,7 +314,7 @@ git push origin feature/your-feature-name
 # All checks
 just lint
 just format
-just typecheck
+just lint-python
 just security
 just test
 

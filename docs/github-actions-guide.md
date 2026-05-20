@@ -108,7 +108,7 @@ on:
 
 ### 🛡️ Security Workflow (`security.yml`)
 
-**Trigger**: Called by `build.yml`, weekly schedule (Monday 04:00 UTC) **Purpose**: Comprehensive
+**Trigger**: Called by `build.yml` via `workflow_call` (no schedule of its own) **Purpose**: Comprehensive
 security scanning across Python, Rust, secrets, and containers
 
 **Jobs**:

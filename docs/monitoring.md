@@ -96,7 +96,7 @@ The dashboard includes a login-gated admin panel at `/admin` for managing extrac
 
 ```bash
 # Create an admin account (one-time setup)
-docker exec -it discogsography-api-1 admin-setup \
+docker exec -it discogsography-api admin-setup \
   --email admin@example.com --password <min-8-chars>
 
 # Access admin panel
@@ -388,7 +388,7 @@ The Insights service runs scheduled batch analytics and exposes results via the 
 
 ```bash
 # From within the Docker network:
-docker exec discogsography-insights-1 curl -s http://localhost:8009/health
+docker exec discogsography-insights curl -s http://localhost:8009/health
 # Response: {"status": "healthy"}
 ```
 
@@ -735,7 +735,7 @@ docker-compose logs -f | grep "📊"
 docker stats
 
 # Specific service
-docker stats discogsography-graphinator-1
+docker stats discogsography-graphinator
 
 # System monitor utility
 just system-monitor

@@ -6,7 +6,7 @@ Shared utilities and configuration for all discogsography services.
 
 - `config.py`: Centralized configuration management (environment variable parsing, defaults)
 - `health_server.py`: Lightweight HTTP health check server used by all services
-- `data_normalizer.py`: Record normalization (`normalize_record()`) that flattens XML-dict structures from the extractor into consistent formats; also provides `extract_format_names()` and `_parse_year_int()`
+- `data_normalizer.py`: Consumer-side record normalization (`normalize_record()`) — year parsing and final shaping of records. Structural normalization (flattening nested containers, stripping `@`/`#text`) is now handled upstream by the Rust extractor. Also provides `_parse_year_int()`
 - `neo4j_resilient.py`: `ResilientNeo4jDriver` / `AsyncResilientNeo4jDriver` — Neo4j driver wrappers with retry logic and connection resilience
 - `postgres_resilient.py`: `ResilientPostgreSQLPool` / `AsyncPostgreSQLPool` — PostgreSQL connection pools with retry logic
 - `rabbitmq_resilient.py`: `ResilientRabbitMQConnection` / `AsyncResilientRabbitMQ` — RabbitMQ connection wrappers with automatic reconnection

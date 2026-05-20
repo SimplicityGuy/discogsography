@@ -33,14 +33,14 @@ MusicBrainz publishes new JSONL dumps **twice weekly** (Wednesdays and Saturdays
 
 ### Initial Import
 
-1. Download MusicBrainz JSONL dumps (xz-compressed):
+1. On startup the extractor **automatically downloads the latest dump**. It reads `MUSICBRAINZ_DUMP_URL` (default `https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/`), selects the newest dated dump (`YYYYMMDD-HHMMSS`), and streams each `.tar.xz` archive directly to a versioned subdirectory as `{version}/{entity}.jsonl.xz`:
 
    - `artist.jsonl.xz`
    - `label.jsonl.xz`
    - `release-group.jsonl.xz`
    - `release.jsonl.xz`
 
-1. Place files in the `musicbrainz_data` Docker volume (or mounted directory)
+   > Manual placement remains an optional override: drop pre-downloaded `.jsonl.xz` files into the `musicbrainz_data` volume and the extractor will use them instead of downloading.
 
 1. Start (or restart) the `extractor-musicbrainz` container:
 
@@ -123,6 +123,5 @@ Returns coverage statistics:
 
 ## Future Enhancements
 
-- **Automated download**: Cron job or scheduled CI to fetch latest dumps automatically
 - **Hourly replication**: MusicBrainz offers replication packets for near-real-time updates (complex, requires tracking replication sequence numbers)
 - **Delta detection**: Compare record SHA256 hashes to skip unchanged entities during re-import

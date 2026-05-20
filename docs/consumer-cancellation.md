@@ -98,7 +98,7 @@ The periodic progress reports now include consumer status:
 
 ```
 📊 Progress: 1000 total messages processed (🎉 Artists: 500, Labels: 500, Masters: 0, Releases: 0)
-🔌 Canceled consumers: ['artists']
+🔧 Canceled consumers: ['artists']
 ✅ Active consumers: ['labels', 'masters', 'releases']
 ```
 
@@ -107,7 +107,7 @@ The periodic progress reports now include consumer status:
 Watch for these log messages:
 
 - `🎉 File processing complete for {type}!` - File marked as complete
-- `🔌 Canceling consumer for {type} after {delay}s grace period` - Consumer cancellation scheduled
+- `🔧 Canceling consumer for {type} after {delay}s grace period` - Consumer cancellation scheduled
 - `✅ Consumer for {type} successfully canceled` - Consumer successfully canceled
 - `❌ Failed to cancel consumer for {type}` - Cancellation failed (non-fatal)
 

@@ -197,7 +197,7 @@ NEO4J_PASSWORD="your-secure-password"
 | Variable            | Description         | Default          | Required |
 | ------------------- | ------------------- | ---------------- | -------- |
 | `POSTGRES_HOST`     | PostgreSQL hostname | `localhost`      | Yes      |
-| `POSTGRES_USERNAME` | PostgreSQL username | `postgres`       | Yes      |
+| `POSTGRES_USERNAME` | PostgreSQL username | (none)           | Yes      |
 | `POSTGRES_PASSWORD` | PostgreSQL password | (none)           | Yes      |
 | `POSTGRES_DATABASE` | Database name       | `discogsography` | Yes      |
 
