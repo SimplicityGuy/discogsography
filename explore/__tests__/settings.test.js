@@ -67,7 +67,65 @@ function setupMocks() {
             json: async () => ({ message: '2FA has been enabled' }),
         }),
         twoFactorDisable: vi.fn().mockResolvedValue({ ok: true }),
+        getDiggerSettings: vi.fn().mockResolvedValue({ ok: false, status: 404, body: null }),
+        putDiggerSettings: vi.fn().mockResolvedValue({ ok: true, status: 204, body: null }),
     };
+}
+
+/** Add the Digger settings card elements to the current DOM fixture. */
+function setupDiggerCardDOM() {
+    const card = document.createElement('div');
+    card.id = 'settingsDiggerCard';
+
+    const enabled = document.createElement('input');
+    enabled.type = 'checkbox';
+    enabled.id = 'diggerEnabled';
+    card.appendChild(enabled);
+
+    for (const id of ['diggerCountry', 'diggerCurrency']) {
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.id = id;
+        card.appendChild(inp);
+    }
+
+    for (const id of ['diggerCapInteractive', 'diggerCapScheduled']) {
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.id = id;
+        card.appendChild(inp);
+    }
+
+    const cadence = document.createElement('select');
+    cadence.id = 'diggerCadence';
+    for (const v of ['off', 'weekly', 'biweekly', 'monthly']) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        cadence.appendChild(opt);
+    }
+    card.appendChild(cadence);
+
+    const model = document.createElement('select');
+    model.id = 'diggerModel';
+    for (const v of ['haiku', 'sonnet', 'opus']) {
+        const opt = document.createElement('option');
+        opt.value = v;
+        model.appendChild(opt);
+    }
+    card.appendChild(model);
+
+    for (const id of ['diggerSettingsError', 'diggerSettingsSuccess']) {
+        const el = document.createElement('div');
+        el.id = id;
+        if (id === 'diggerSettingsSuccess') el.classList.add('hidden');
+        card.appendChild(el);
+    }
+
+    const btn = document.createElement('button');
+    btn.id = 'diggerSettingsSaveBtn';
+    card.appendChild(btn);
+
+    document.body.appendChild(card);
 }
 
 describe('SettingsPane', () => {
@@ -678,6 +736,259 @@ describe('SettingsPane', () => {
             expect(window.settingsPane._camelToKebab('setupTotp')).toBe('setup-totp');
             expect(window.settingsPane._camelToKebab('disableTotp')).toBe('disable-totp');
             expect(window.settingsPane._camelToKebab('myLongName')).toBe('my-long-name');
+        });
+    });
+
+    // ------------------------------------------------------------------ //
+    // Digger settings card
+    // ------------------------------------------------------------------ //
+
+    describe('Digger settings card', () => {
+        beforeEach(() => {
+            setupDiggerCardDOM();
+        });
+
+        const FULL_SETTINGS = {
+            enabled: true,
+            country_code: 'GB',
+            currency: 'GBP',
+            scheduled_cadence: 'monthly',
+            preferred_model: 'opus',
+            daily_token_cap_interactive: 150000,
+            daily_token_cap_scheduled: 75000,
+        };
+
+        describe('_loadDiggerSettings', () => {
+            it('should populate all fields from a GET ok response', async () => {
+                window.apiClient.getDiggerSettings.mockResolvedValue({ ok: true, status: 200, body: FULL_SETTINGS });
+
+                await window.settingsPane._loadDiggerSettings();
+
+                expect(document.getElementById('diggerEnabled').checked).toBe(true);
+                expect(document.getElementById('diggerCountry').value).toBe('GB');
+                expect(document.getElementById('diggerCurrency').value).toBe('GBP');
+                expect(document.getElementById('diggerCadence').value).toBe('monthly');
+                expect(document.getElementById('diggerModel').value).toBe('opus');
+                expect(document.getElementById('diggerCapInteractive').value).toBe('150000');
+                expect(document.getElementById('diggerCapScheduled').value).toBe('75000');
+            });
+
+            it('should populate empty country when country_code is null', async () => {
+                window.apiClient.getDiggerSettings.mockResolvedValue({
+                    ok: true,
+                    status: 200,
+                    body: { ...FULL_SETTINGS, country_code: null },
+                });
+
+                await window.settingsPane._loadDiggerSettings();
+
+                expect(document.getElementById('diggerCountry').value).toBe('');
+            });
+
+            it('should populate defaults on a 404 response', async () => {
+                window.apiClient.getDiggerSettings.mockResolvedValue({ ok: false, status: 404, body: null });
+
+                await window.settingsPane._loadDiggerSettings();
+
+                expect(document.getElementById('diggerEnabled').checked).toBe(false);
+                expect(document.getElementById('diggerCountry').value).toBe('');
+                expect(document.getElementById('diggerCurrency').value).toBe('USD');
+                expect(document.getElementById('diggerCadence').value).toBe('weekly');
+                expect(document.getElementById('diggerModel').value).toBe('sonnet');
+                expect(document.getElementById('diggerCapInteractive').value).toBe('200000');
+                expect(document.getElementById('diggerCapScheduled').value).toBe('100000');
+            });
+
+            it('should return early (no API call) when the card element is absent', async () => {
+                document.getElementById('settingsDiggerCard').remove();
+
+                await window.settingsPane._loadDiggerSettings();
+
+                expect(window.apiClient.getDiggerSettings).not.toHaveBeenCalled();
+            });
+
+            it('should return early (no API call) when there is no token', async () => {
+                window.authManager.getToken.mockReturnValue(null);
+
+                await window.settingsPane._loadDiggerSettings();
+
+                expect(window.apiClient.getDiggerSettings).not.toHaveBeenCalled();
+            });
+
+            it('should leave fields as-is on a non-404 error response', async () => {
+                window.apiClient.getDiggerSettings.mockResolvedValue({ ok: false, status: 500, body: null });
+                document.getElementById('diggerCurrency').value = 'EUR';
+
+                await window.settingsPane._loadDiggerSettings();
+
+                expect(document.getElementById('diggerCurrency').value).toBe('EUR');
+            });
+
+            it('should swallow network errors without throwing', async () => {
+                window.apiClient.getDiggerSettings.mockRejectedValue(new Error('network'));
+
+                await expect(window.settingsPane._loadDiggerSettings()).resolves.toBeUndefined();
+            });
+        });
+
+        describe('_handleSaveDiggerSettings', () => {
+            function fillFields({ enabled = true, country = 'us', currency = 'usd', cadence = 'weekly', model = 'sonnet', capI = '300000', capS = '120000' } = {}) {
+                document.getElementById('diggerEnabled').checked = enabled;
+                document.getElementById('diggerCountry').value = country;
+                document.getElementById('diggerCurrency').value = currency;
+                document.getElementById('diggerCadence').value = cadence;
+                document.getElementById('diggerModel').value = model;
+                document.getElementById('diggerCapInteractive').value = capI;
+                document.getElementById('diggerCapScheduled').value = capS;
+            }
+
+            it('should call putDiggerSettings with the correct body and show success', async () => {
+                fillFields();
+
+                await window.settingsPane._handleSaveDiggerSettings();
+
+                expect(window.apiClient.putDiggerSettings).toHaveBeenCalledWith('test-token', {
+                    enabled: true,
+                    country_code: 'US',
+                    currency: 'USD',
+                    scheduled_cadence: 'weekly',
+                    preferred_model: 'sonnet',
+                    daily_token_cap_interactive: 300000,
+                    daily_token_cap_scheduled: 120000,
+                });
+                expect(document.getElementById('diggerSettingsSuccess').textContent).toBe('Digger settings saved');
+                expect(document.getElementById('diggerSettingsSuccess').classList.contains('hidden')).toBe(false);
+            });
+
+            it('should send null country_code when country is empty', async () => {
+                fillFields({ country: '' });
+
+                await window.settingsPane._handleSaveDiggerSettings();
+
+                expect(window.apiClient.putDiggerSettings.mock.calls[0][1].country_code).toBeNull();
+            });
+
+            it('should send null token caps when cap fields are empty', async () => {
+                fillFields({ capI: '', capS: '' });
+
+                await window.settingsPane._handleSaveDiggerSettings();
+
+                const body = window.apiClient.putDiggerSettings.mock.calls[0][1];
+                expect(body.daily_token_cap_interactive).toBeNull();
+                expect(body.daily_token_cap_scheduled).toBeNull();
+            });
+
+            it('should send enabled false when checkbox unchecked', async () => {
+                fillFields({ enabled: false });
+
+                await window.settingsPane._handleSaveDiggerSettings();
+
+                expect(window.apiClient.putDiggerSettings.mock.calls[0][1].enabled).toBe(false);
+            });
+
+            it('should show an error and keep the form on save failure', async () => {
+                window.apiClient.putDiggerSettings.mockResolvedValue({ ok: false, status: 400, body: { detail: 'Bad cadence' } });
+                fillFields();
+
+                await window.settingsPane._handleSaveDiggerSettings();
+
+                expect(document.getElementById('diggerSettingsError').textContent).toBe('Bad cadence');
+                expect(document.getElementById('diggerSettingsSuccess').classList.contains('hidden')).toBe(true);
+            });
+
+            it('should show a generic error when failure has no detail', async () => {
+                window.apiClient.putDiggerSettings.mockResolvedValue({ ok: false, status: 500, body: null });
+                fillFields();
+
+                await window.settingsPane._handleSaveDiggerSettings();
+
+                expect(document.getElementById('diggerSettingsError').textContent).toBe('Failed to save Digger settings');
+            });
+
+            it('should show a network error on exception', async () => {
+                window.apiClient.putDiggerSettings.mockRejectedValue(new Error('boom'));
+                fillFields();
+
+                await window.settingsPane._handleSaveDiggerSettings();
+
+                expect(document.getElementById('diggerSettingsError').textContent).toBe('Network error — please try again');
+            });
+
+            it('should reject an invalid currency length and not call the API', async () => {
+                fillFields({ currency: 'US' });
+
+                await window.settingsPane._handleSaveDiggerSettings();
+
+                expect(document.getElementById('diggerSettingsError').textContent).toBe('Currency must be a 3-letter code');
+                expect(window.apiClient.putDiggerSettings).not.toHaveBeenCalled();
+            });
+
+            it('should reject an invalid country length and not call the API', async () => {
+                fillFields({ country: 'USA' });
+
+                await window.settingsPane._handleSaveDiggerSettings();
+
+                expect(document.getElementById('diggerSettingsError').textContent).toBe('Country code must be a 2-letter code');
+                expect(window.apiClient.putDiggerSettings).not.toHaveBeenCalled();
+            });
+
+            it('should reject a negative token cap and not call the API', async () => {
+                fillFields({ capI: '-5' });
+
+                await window.settingsPane._handleSaveDiggerSettings();
+
+                expect(document.getElementById('diggerSettingsError').textContent).toBe('Daily token caps must be non-negative whole numbers');
+                expect(window.apiClient.putDiggerSettings).not.toHaveBeenCalled();
+            });
+
+            it('should reject a non-integer token cap and not call the API', async () => {
+                fillFields({ capS: '1.5' });
+
+                await window.settingsPane._handleSaveDiggerSettings();
+
+                expect(document.getElementById('diggerSettingsError').textContent).toBe('Daily token caps must be non-negative whole numbers');
+                expect(window.apiClient.putDiggerSettings).not.toHaveBeenCalled();
+            });
+
+            it('should show Not authenticated when there is no token', async () => {
+                window.authManager.getToken.mockReturnValue(null);
+                fillFields();
+
+                await window.settingsPane._handleSaveDiggerSettings();
+
+                expect(document.getElementById('diggerSettingsError').textContent).toBe('Not authenticated');
+                expect(window.apiClient.putDiggerSettings).not.toHaveBeenCalled();
+            });
+
+            it('should re-enable the save button after completion', async () => {
+                fillFields();
+
+                await window.settingsPane._handleSaveDiggerSettings();
+
+                expect(document.getElementById('diggerSettingsSaveBtn').disabled).toBe(false);
+            });
+
+            it('should be wired to the save button click via init', async () => {
+                const spy = vi.spyOn(window.settingsPane, '_handleSaveDiggerSettings');
+                window.settingsPane.init();
+
+                document.getElementById('diggerSettingsSaveBtn').click();
+
+                expect(spy).toHaveBeenCalled();
+            });
+        });
+
+        describe('init integration', () => {
+            it('should load Digger settings via init when the card is present', async () => {
+                window.apiClient.getDiggerSettings.mockResolvedValue({ ok: true, status: 200, body: FULL_SETTINGS });
+
+                window.settingsPane.init();
+                // Allow the async _loadDiggerSettings to resolve.
+                await Promise.resolve();
+                await Promise.resolve();
+
+                expect(window.apiClient.getDiggerSettings).toHaveBeenCalledWith('test-token');
+            });
         });
     });
 });

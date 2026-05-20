@@ -2471,6 +2471,17 @@ select option {
     color: var(--text-high);
 }
 
+/* Digger settings — enable checkbox row */
+.digger-settings-checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.digger-settings-checkbox-row .settings-label {
+    min-width: 0;
+}
+
 /* 2FA status badges */
 .twofa-badge {
     display: inline-block;
