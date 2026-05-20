@@ -29,6 +29,7 @@ install-all:
     uv pip install -e brainztableinator
     uv pip install -e common
     uv pip install -e dashboard
+    uv pip install -e digger
     uv pip install -e explore
     uv pip install -e graphinator
     uv pip install -e insights
@@ -255,6 +256,9 @@ test-parallel:
     uv run pytest tests/brainztableinator/ -v > /tmp/test-brainztableinator.log 2>&1 &
     pid_brainztableinator=$!
 
+    uv run pytest tests/digger/ -v > /tmp/test-digger.log 2>&1 &
+    pid_digger=$!
+
     (cd explore && npx vitest run) > /tmp/test-js.log 2>&1 &
     pid_js=$!
 
@@ -277,6 +281,7 @@ test-parallel:
     wait $pid_schema_init || { echo "❌ Schema-init tests failed"; cat /tmp/test-schema-init.log; failed=1; }
     wait $pid_tableinator || { echo "❌ Tableinator tests failed"; cat /tmp/test-tableinator.log; failed=1; }
     wait $pid_brainztableinator || { echo "❌ Brainztableinator tests failed"; cat /tmp/test-brainztableinator.log; failed=1; }
+    wait $pid_digger || { echo "❌ Digger tests failed"; cat /tmp/test-digger.log; failed=1; }
     wait $pid_js || { echo "❌ JS tests failed"; cat /tmp/test-js.log; failed=1; }
 
     if [ -n "$pid_extractor" ]; then
@@ -374,6 +379,12 @@ test-tableinator:
 test-brainztableinator:
     uv run pytest tests/brainztableinator/ -v \
         --cov --cov-config=.coveragerc.brainztableinator --cov-report=xml --cov-report=json --cov-report=term
+
+# Run digger service tests with coverage
+[group('test')]
+test-digger:
+    uv run pytest tests/digger/ -v \
+        --cov --cov-config=.coveragerc.digger --cov-report=xml --cov-report=json --cov-report=term
 
 # E2E workflow: dashboard unit tests establishing coverage baseline
 [group('test')]

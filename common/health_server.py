@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class HealthHandler(BaseHTTPRequestHandler):
-    """HTTP request handler for health checks."""
+    """HTTP request handler for health checks and optional Prometheus metrics."""
 
     def do_GET(self) -> None:
         """Handle GET requests."""
@@ -25,6 +25,14 @@ class HealthHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(health_data).encode())
+        elif self.path == "/metrics" and cast("HealthServer", self.server).metrics_enabled:
+            from prometheus_client import CONTENT_TYPE_LATEST, generate_latest  # noqa: PLC0415
+
+            payload = generate_latest()
+            self.send_response(200)
+            self.send_header("Content-Type", CONTENT_TYPE_LATEST)
+            self.end_headers()
+            self.wfile.write(payload)
         else:
             self.send_response(404)
             self.end_headers()
@@ -35,17 +43,24 @@ class HealthHandler(BaseHTTPRequestHandler):
 
 
 class HealthServer(HTTPServer):
-    """HTTP server with health check endpoint."""
+    """HTTP server with health check endpoint and optional Prometheus metrics endpoint."""
 
-    def __init__(self, port: int, health_func: Callable[[], dict[str, Any]]):
+    def __init__(
+        self,
+        port: int,
+        health_func: Callable[[], dict[str, Any]],
+        metrics_enabled: bool = False,
+    ):
         """Initialize health server.
 
         Args:
             port: Port to listen on
             health_func: Function that returns current health data
+            metrics_enabled: If True, serve Prometheus metrics at GET /metrics
         """
         super().__init__(("0.0.0.0", port), HealthHandler)  # noqa: S104  # nosec B104
         self.health_func = health_func
+        self.metrics_enabled = metrics_enabled
         self.thread: Thread | None = None
 
     def get_health_data(self) -> dict[str, Any]:

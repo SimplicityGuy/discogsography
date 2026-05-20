@@ -724,6 +724,86 @@ class InsightsConfig:
         )
 
 
+@dataclass(frozen=True)
+class DiggerConfig:
+    """Configuration for the digger service."""
+
+    postgres_host: str
+    postgres_username: str = field(repr=False)
+    postgres_password: str = field(repr=False)
+    postgres_database: str
+    redis_host: str
+    scraper_user_agent: str
+    rate_budget_per_hour: int
+    circuit_breaker_window_seconds: int
+    circuit_breaker_failure_pct: int
+    circuit_breaker_cooldown_seconds: int
+
+    @classmethod
+    def from_env(cls) -> "DiggerConfig":
+        """Create configuration from environment variables."""
+        postgres_username = get_secret("POSTGRES_USERNAME")
+        postgres_password = get_secret("POSTGRES_PASSWORD")
+        postgres_database = getenv("POSTGRES_DATABASE")
+
+        missing_vars = []
+        if not getenv("POSTGRES_HOST"):
+            missing_vars.append("POSTGRES_HOST")
+        if not postgres_username:
+            missing_vars.append("POSTGRES_USERNAME")
+        if not postgres_password:
+            missing_vars.append("POSTGRES_PASSWORD")
+        if not postgres_database:
+            missing_vars.append("POSTGRES_DATABASE")
+        if not getenv("REDIS_HOST"):
+            missing_vars.append("REDIS_HOST")
+
+        if missing_vars:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+        scraper_user_agent = getenv(
+            "DIGGER_SCRAPER_USER_AGENT",
+            "discogsography-digger/0.1 (github.com/SimplicityGuy/discogsography)",
+        )
+
+        rate_budget_per_hour_str = getenv("DIGGER_RATE_BUDGET_PER_HOUR", "600")
+        try:
+            rate_budget_per_hour = int(rate_budget_per_hour_str)
+        except ValueError:
+            rate_budget_per_hour = 600
+
+        cb_window_str = getenv("DIGGER_CB_WINDOW_SECONDS", "300")
+        try:
+            circuit_breaker_window_seconds = int(cb_window_str)
+        except ValueError:
+            circuit_breaker_window_seconds = 300
+
+        cb_failure_str = getenv("DIGGER_CB_FAILURE_PCT", "30")
+        try:
+            circuit_breaker_failure_pct = int(cb_failure_str)
+        except ValueError:
+            circuit_breaker_failure_pct = 30
+
+        cb_cooldown_str = getenv("DIGGER_CB_COOLDOWN_SECONDS", "1800")
+        try:
+            circuit_breaker_cooldown_seconds = int(cb_cooldown_str)
+        except ValueError:
+            circuit_breaker_cooldown_seconds = 1800
+
+        return cls(
+            postgres_host=_build_postgres_connstr(),
+            postgres_username=cast("str", postgres_username),
+            postgres_password=cast("str", postgres_password),
+            postgres_database=cast("str", postgres_database),
+            redis_host=_build_redis_url(),
+            scraper_user_agent=scraper_user_agent,
+            rate_budget_per_hour=rate_budget_per_hour,
+            circuit_breaker_window_seconds=circuit_breaker_window_seconds,
+            circuit_breaker_failure_pct=circuit_breaker_failure_pct,
+            circuit_breaker_cooldown_seconds=circuit_breaker_cooldown_seconds,
+        )
+
+
 def get_config() -> DashboardConfig:
     """Get dashboard/discovery configuration from environment.
 

@@ -179,8 +179,8 @@ class TestHealthHandlerHTTP:
         assert body["status"] == "healthy"
         assert body["service"] == "test"
 
-    def test_get_unknown_path_returns_404(self, running_server: HealthServer) -> None:
-        """Test GET to an unknown path returns 404."""
+    def test_get_metrics_returns_404_when_metrics_disabled(self, running_server: HealthServer) -> None:
+        """Test GET /metrics returns 404 when metrics are disabled (default)."""
         conn = self._connect(running_server)
         conn.request("GET", "/metrics")
         response = conn.getresponse()
@@ -221,3 +221,94 @@ class TestHealthHandlerHTTP:
         body = json.loads(response.read())
 
         assert body == new_data
+
+
+class TestHealthServerMetricsEndpoint:
+    """Tests for the optional /metrics endpoint added to HealthServer."""
+
+    @pytest.fixture
+    def running_server_metrics_enabled(self):
+        """Start a HealthServer with metrics_enabled=True and yield it."""
+        health_func = Mock(return_value={"status": "healthy"})
+        server = HealthServer(0, health_func, metrics_enabled=True)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        yield server
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+    @pytest.fixture
+    def running_server_metrics_disabled(self):
+        """Start a HealthServer with metrics_enabled=False (default) and yield it."""
+        health_func = Mock(return_value={"status": "healthy"})
+        server = HealthServer(0, health_func)  # default: metrics_enabled=False
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        yield server
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+    def _connect(self, server: HealthServer) -> HTTPConnection:
+        port = server.server_address[1]
+        return HTTPConnection("127.0.0.1", port, timeout=5)
+
+    def test_metrics_enabled_returns_200(self, running_server_metrics_enabled: HealthServer) -> None:
+        """GET /metrics returns 200 when metrics_enabled=True."""
+        conn = self._connect(running_server_metrics_enabled)
+        conn.request("GET", "/metrics")
+        response = conn.getresponse()
+
+        assert response.status == 200
+
+    def test_metrics_enabled_content_type_is_prometheus(self, running_server_metrics_enabled: HealthServer) -> None:
+        """GET /metrics returns a prometheus text/plain Content-Type."""
+        conn = self._connect(running_server_metrics_enabled)
+        conn.request("GET", "/metrics")
+        response = conn.getresponse()
+        content_type = response.getheader("Content-Type", "")
+
+        assert "text/plain" in content_type
+
+    def test_metrics_enabled_body_is_nonempty(self, running_server_metrics_enabled: HealthServer) -> None:
+        """GET /metrics body is non-empty Prometheus exposition format."""
+        conn = self._connect(running_server_metrics_enabled)
+        conn.request("GET", "/metrics")
+        response = conn.getresponse()
+        body = response.read()
+
+        assert len(body) > 0
+
+    def test_metrics_disabled_returns_404(self, running_server_metrics_disabled: HealthServer) -> None:
+        """GET /metrics returns 404 when metrics_enabled=False (default)."""
+        conn = self._connect(running_server_metrics_disabled)
+        conn.request("GET", "/metrics")
+        response = conn.getresponse()
+
+        assert response.status == 404
+
+    def test_metrics_enabled_flag_stored(self) -> None:
+        """HealthServer stores the metrics_enabled flag correctly."""
+        health_func = Mock(return_value={"status": "healthy"})
+        server_on = HealthServer(0, health_func, metrics_enabled=True)
+        server_off = HealthServer(0, health_func, metrics_enabled=False)
+        server_default = HealthServer(0, health_func)
+        try:
+            assert server_on.metrics_enabled is True
+            assert server_off.metrics_enabled is False
+            assert server_default.metrics_enabled is False
+        finally:
+            server_on.server_close()
+            server_off.server_close()
+            server_default.server_close()
+
+    def test_health_endpoint_unaffected_by_metrics_flag(self, running_server_metrics_enabled: HealthServer) -> None:
+        """GET /health still returns 200 when metrics_enabled=True."""
+        conn = self._connect(running_server_metrics_enabled)
+        conn.request("GET", "/health")
+        response = conn.getresponse()
+
+        assert response.status == 200
+        body = json.loads(response.read())
+        assert body["status"] == "healthy"

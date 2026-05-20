@@ -26,6 +26,7 @@ members = [
     "discogsography-brainztableinator",
     "discogsography-common",
     "discogsography-dashboard",
+    "discogsography-digger",
     "discogsography-explore",
     "discogsography-graphinator",
     "discogsography-mcp",
@@ -153,6 +154,18 @@ wheels = [
 ]
 
 [[package]]
+name = "bleach"
+version = "6.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "webencodings", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/07/18/3c8523962314be6bf4c8989c79ad9531c825210dd13a8669f6b84336e8bd/bleach-6.3.0.tar.gz", hash = "sha256:6f3b91b1c0a02bb9a78b5a454c92506aa0fdf197e1d5e114d2e00c6f64306d22", size = 203533, upload-time = "2025-10-27T17:57:39.211Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cd/3a/577b549de0cc09d95f11087ee63c739bba856cd3952697eec4c4bb91350a/bleach-6.3.0-py3-none-any.whl", hash = "sha256:fe10ec77c93ddf3d13a73b035abaac7a9f5e436513864ccdad516693213c65d6", size = 164437, upload-time = "2025-10-27T17:57:37.538Z" },
+]
+
+[[package]]
 name = "boolean-py"
 version = "5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -273,6 +286,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/23/e4/796662cd90cf80e3a
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ee/ae/8e92f8058baf87f6c7d86ee7e457668690195cc77efedb8d3797a06e3940/click-8.4.0-py3-none-any.whl", hash = "sha256:40c50b7c6c6adac2823d411041ec84f3f103f1b280d5e9ce0d7f998995832f81", size = 116147, upload-time = "2026-05-17T00:47:56.842Z" },
 ]
+
+[[package]]
+name = "common"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/eb/b2/c900168d36abd28b1b08a81387835eff8b574bc6c2e9fefb5c4a38135d94/common-0.1.2.tar.gz", hash = "sha256:3dfa982670abefc870043b239eaa0ecd860be7aa952b1931c1356b426ff8c76a", size = 3541, upload-time = "2016-05-19T14:38:59.454Z" }
 
 [[package]]
 name = "coverage"
@@ -542,6 +561,7 @@ utilities = [
 [package.dev-dependencies]
 dev = [
     { name = "bandit", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "bleach", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "fakeredis", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "mdformat", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "mdformat-gfm", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
@@ -554,7 +574,9 @@ dev = [
     { name = "pytest-cov", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "pytest-timeout", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "pytest-xdist", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "respx", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "ruff", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "selectolax", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "types-psutil", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "types-tqdm", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "types-xmltodict", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
@@ -640,6 +662,7 @@ provides-extras = ["api", "dashboard", "brainzgraphinator", "graphinator", "insi
 [package.metadata.requires-dev]
 dev = [
     { name = "bandit", specifier = ">=1.9.4" },
+    { name = "bleach", specifier = ">=6.1" },
     { name = "fakeredis", specifier = ">=2.35.1" },
     { name = "mdformat", specifier = ">=1.0.0" },
     { name = "mdformat-gfm", specifier = ">=1.0.0" },
@@ -652,7 +675,9 @@ dev = [
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-timeout", specifier = ">=2.4.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
+    { name = "respx", specifier = ">=0.21" },
     { name = "ruff", specifier = ">=0.15.10" },
+    { name = "selectolax", specifier = ">=0.3.21" },
     { name = "types-psutil", specifier = ">=7.2.2.20260408" },
     { name = "types-tqdm", specifier = ">=4.67.3.20260408" },
     { name = "types-xmltodict", specifier = ">=1.0.1.20260408" },
@@ -741,6 +766,7 @@ dependencies = [
     { name = "aio-pika", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "neo4j-rust-ext", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "pika", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "prometheus-client", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "psycopg", extra = ["binary"], marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 
@@ -749,6 +775,7 @@ requires-dist = [
     { name = "aio-pika", specifier = ">=9.6.2" },
     { name = "neo4j-rust-ext", specifier = ">=6.1.0" },
     { name = "pika", specifier = ">=1.3.2" },
+    { name = "prometheus-client", specifier = ">=0.25.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.3" },
 ]
 
@@ -787,6 +814,31 @@ requires-dist = [
     { name = "structlog", specifier = ">=25.5.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.44.0" },
     { name = "websockets", specifier = ">=16.0" },
+]
+
+[[package]]
+name = "discogsography-digger"
+version = "0.1.0"
+source = { editable = "digger" }
+dependencies = [
+    { name = "bleach", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "common", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "httpx", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "prometheus-client", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "redis", extra = ["hiredis"], marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "selectolax", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "structlog", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "bleach", specifier = ">=6.1" },
+    { name = "common" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "prometheus-client", specifier = ">=0.25.0" },
+    { name = "redis", extras = ["hiredis"], specifier = ">=7.4.0" },
+    { name = "selectolax", specifier = ">=0.3.21" },
+    { name = "structlog", specifier = ">=25.5.0" },
 ]
 
 [[package]]
@@ -2124,6 +2176,18 @@ wheels = [
 ]
 
 [[package]]
+name = "respx"
+version = "0.23.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/43/98/4e55c9c486404ec12373708d015ebce157966965a5ebe7f28ff2c784d41b/respx-0.23.1.tar.gz", hash = "sha256:242dcc6ce6b5b9bf621f5870c82a63997e8e82bc7c947f9ffe272b8f3dd5a780", size = 29243, upload-time = "2026-04-08T14:37:16.008Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1d/4a/221da6ca167db45693d8d26c7dc79ccfc978a440251bf6721c9aaf251ac0/respx-0.23.1-py2.py3-none-any.whl", hash = "sha256:b18004b029935384bccfa6d7d9d74b4ec9af73a081cc28600fffc0447f4b8c1a", size = 25557, upload-time = "2026-04-08T14:37:14.613Z" },
+]
+
+[[package]]
 name = "rich"
 version = "15.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2180,6 +2244,32 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/e8/31/bf1a0803d077e679cfeee5f2f67290a0fa79c7385b5d9a8c17b9db2c48f0/ruff-0.15.13-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cc411dfebe5eebe55ce041c6ae080eb7668955e866daa2fbb16692a784f1c4ca", size = 11434486, upload-time = "2026-05-14T13:44:27.761Z" },
     { url = "https://files.pythonhosted.org/packages/fc/89/7e959047a104df3eb12863447c110140191fc5b6c4f379ea2e803fcdb0e4/ruff-0.15.13-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:fb75f9a3a7e42ffe117d734494e6c5e5cb3565d66e12612cb63d0e572a41a5b6", size = 10781380, upload-time = "2026-05-14T13:43:56.734Z" },
     { url = "https://files.pythonhosted.org/packages/c2/13/070fb048c24080fba188f66371e2a92785be257ad02242066dc7255ac6e9/ruff-0.15.13-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:f345a13937bd7f09f6f5d19fa0721b0c103e00e7f62bc67089a8e5e037719e0b", size = 11528133, upload-time = "2026-05-14T13:44:22.808Z" },
+]
+
+[[package]]
+name = "selectolax"
+version = "0.4.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f8/46/b2956203e943c6417ff7da9ad9bcb5860d60372de6e05934af1b3f0a4950/selectolax-0.4.9.tar.gz", hash = "sha256:15c3de54f75d0d13726fee140bbfec8805050a3d34d298f2e9c05c9da1b87e7a", size = 4879844, upload-time = "2026-05-15T08:59:12.802Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b3/aa/cf3ef1ae4f9a53f53a0add5dcf7c5b241f56f9a778feb7c13cf65e73331b/selectolax-0.4.9-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:b1ca6686d0199ca3ef2c919421116d9d34f56964e2162a0d8757a4e9a7bdfb4a", size = 2240742, upload-time = "2026-05-15T08:58:11.596Z" },
+    { url = "https://files.pythonhosted.org/packages/da/81/16ff9754e720769fe3f723baee9e207b2f7b7cf2612d509a9ae84b357ec5/selectolax-0.4.9-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:0f49b7391544f60cc891587bcc504daed4995be2b02af9c6e3054a564a1b25d0", size = 2291271, upload-time = "2026-05-15T08:58:13.057Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/c0/b9dd13726bb13a6d439c1fef14d70345da9d15155f058edf9bb124952cd2/selectolax-0.4.9-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:6833df2a2f74cd89872a2915f5ba6b9e56e4bed31c0b3e26b593ca086f10d298", size = 2373955, upload-time = "2026-05-15T08:58:14.983Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/d6/aad9d222d2599bad16f1ee936ccddec3e5e8299a140ea56af2359ed72631/selectolax-0.4.9-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:010ff30cc2266074801d92fa717a3c333cc1cf9c98b699a46fc649a9707acc69", size = 2420661, upload-time = "2026-05-15T08:58:16.437Z" },
+    { url = "https://files.pythonhosted.org/packages/50/cc/07b6190d0b20627880c612450d1211ff22cfc9ad1e845882846b0f97be97/selectolax-0.4.9-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:395261e997f0d1d9d0232cf9ba7d69f46229e027ad7eb3ad0afba57c8eec7413", size = 2378677, upload-time = "2026-05-15T08:58:18.221Z" },
+    { url = "https://files.pythonhosted.org/packages/de/70/a2592179765f948146952fbea67ccf9b8e32f125847bf30632b0a8574af5/selectolax-0.4.9-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:19ee1f7de842be9dcdae7c7d27b01c91a0a717a06b136984234bc5b3048fc3d4", size = 2440935, upload-time = "2026-05-15T08:58:20.129Z" },
+    { url = "https://files.pythonhosted.org/packages/14/c7/fe04c5466577bd23433f5ea8de16a3e1aa273b547616a6141591641c109c/selectolax-0.4.9-cp314-cp314-macosx_10_13_x86_64.whl", hash = "sha256:b65f589b8e613089e77b6f735d956f6690021c66acaba0973df0e59b7fb6ab22", size = 2256543, upload-time = "2026-05-15T08:58:27.333Z" },
+    { url = "https://files.pythonhosted.org/packages/53/aa/95211bc61a84d2f42678791654bde6a3526520f423c1450b735ef54bcf8d/selectolax-0.4.9-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:e1a2a70a02960efc7112a99b81031fb60bca557e62f99806dd3a6354e6c888e3", size = 2308274, upload-time = "2026-05-15T08:58:28.961Z" },
+    { url = "https://files.pythonhosted.org/packages/57/c7/f1c63a427346f27ca9a94c63f5f6f83a0130e011f7d6e0bd44a9e073cb31/selectolax-0.4.9-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:85c463dbd4f1a5b9a1219ea7895ed3307231cb4edcf46e60de99dde93d9dc65b", size = 2373791, upload-time = "2026-05-15T08:58:30.462Z" },
+    { url = "https://files.pythonhosted.org/packages/d3/e5/a86685d5bf6ae5d8d1068247aae9a64e5b455b2ffe0d7178d1d780fbcbf3/selectolax-0.4.9-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:432dca308603fcb39600fcbf9e02d8917596fde2d7b0fd752d437953bbb83ff0", size = 2419455, upload-time = "2026-05-15T08:58:32.07Z" },
+    { url = "https://files.pythonhosted.org/packages/3b/01/14b5a9a425438d8a40c97b08d3221dd2315470ac6edf586abe1c49f3f8b0/selectolax-0.4.9-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:25da6d4afec67efcb5b9f228a7f318163e65bc7f4956448cfc994b45894a062f", size = 2394963, upload-time = "2026-05-15T08:58:33.748Z" },
+    { url = "https://files.pythonhosted.org/packages/90/f2/6b0b7434b850415adbe050e82d20a6f119dd05c912022a9964b4db47b880/selectolax-0.4.9-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:718872445d44b58b0e6bc029993ac79396b5588b13d0c12c8b585f5a1a490c2d", size = 2458094, upload-time = "2026-05-15T08:58:35.553Z" },
+    { url = "https://files.pythonhosted.org/packages/17/38/e0f0bdacc94dc868e4f7b542f459a34bb71330b1351cfe177cfa749abfee/selectolax-0.4.9-cp314-cp314t-macosx_10_13_x86_64.whl", hash = "sha256:fb3eef8d522534b59498e2aff67d30b879ffb70961406fc6359336d846409f24", size = 2271971, upload-time = "2026-05-15T08:58:43.055Z" },
+    { url = "https://files.pythonhosted.org/packages/99/b0/6fd60519f100051e58f83c604452c997b0ce4e25c279405bdd80ba1c8ef9/selectolax-0.4.9-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:dd270f3c008eddd9b93d6875b05fda569b9943e94b5c918ce5d06123330d35ec", size = 2317744, upload-time = "2026-05-15T08:58:44.521Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/5e/f95857eab0a0e213f46eec42ae74cfe939b8aae507e23af3fa17e111ba0a/selectolax-0.4.9-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:0fe69c7d4a510574746fae68d00016d4ff10cffdba845dfa2a40296534390a91", size = 2378938, upload-time = "2026-05-15T08:58:45.975Z" },
+    { url = "https://files.pythonhosted.org/packages/20/aa/92f66653993e9b2006dc37c202dbfa0e49803266dead36301461957e6345/selectolax-0.4.9-cp314-cp314t-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8720dce153464c1d8172160a2dd96e97dfae0a64534aa2b54eafbe8371ba85b1", size = 2429671, upload-time = "2026-05-15T08:58:47.63Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/f2/4d0e8a5b875ca822121a4f3cba66a652379903e2cff1beaace48fa7004db/selectolax-0.4.9-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:44d07709c7ddc49702af5661d717aaeab469121328ce1131e182bbe98020c504", size = 2404125, upload-time = "2026-05-15T08:58:49.065Z" },
+    { url = "https://files.pythonhosted.org/packages/16/4e/99b4962e5a4171c32ae6747a8d84d5d549a85e9cc48a1f8200e35415acec/selectolax-0.4.9-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:919fbb7ba30e9e172913e029e453be68215122bbb3e7e8cedf524e525c24556b", size = 2466287, upload-time = "2026-05-15T08:58:50.889Z" },
 ]
 
 [[package]]
@@ -2535,6 +2625,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/2c/ee/afaf0f85a9a18fe47a67f1e4422ed6cf1fe642f0ae0a2f81166231303c52/wcwidth-0.7.0.tar.gz", hash = "sha256:90e3a7ea092341c44b99562e75d09e4d5160fe7a3974c6fb842a101a95e7eed0", size = 182132, upload-time = "2026-05-02T16:04:12.653Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/41/52/e465037f5375f43533d1a80b6923955201596a99142ed524d77b571a1418/wcwidth-0.7.0-py3-none-any.whl", hash = "sha256:5d69154c429a82910e241c738cd0e2976fac8a2dd47a1a805f4afed1c0f136f2", size = 110825, upload-time = "2026-05-02T16:04:11.033Z" },
+]
+
+[[package]]
+name = "webencodings"
+version = "0.5.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0b/02/ae6ceac1baeda530866a85075641cec12989bd8d31af6d5ab4a3e8c92f47/webencodings-0.5.1.tar.gz", hash = "sha256:b36a1c245f2d304965eb4e0a82848379241dc04b865afcc4aab16748587e1923", size = 9721, upload-time = "2017-04-05T20:21:34.189Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f4/24/2a3e3df732393fed8b3ebf2ec078f05546de641fe1b667ee316ec1dcf3b7/webencodings-0.5.1-py2.py3-none-any.whl", hash = "sha256:a0af1213f3c2226497a97e2b3aa01a7e4bee4f403f95be16fc9acd2947514a78", size = 11774, upload-time = "2017-04-05T20:21:32.581Z" },
 ]
 
 [[package]]
