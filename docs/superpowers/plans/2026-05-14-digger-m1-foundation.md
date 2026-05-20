@@ -577,6 +577,21 @@ git commit -m "feat(digger): seed default priority rows during wantlist sync"
 
 ---
 
+## Scraper-layer conventions (VERIFIED against codebase 2026-05-19 — these OVERRIDE the illustrative code in Tasks 5–16)
+
+The original Tasks 5–16 were drafted against asyncpg + invented helpers. Build to these verified patterns instead; where a task's sample code conflicts, the convention wins. Implementers MUST read the cited reference files and match them.
+
+- **Config lives in `common/config.py`, not a local `digger/digger/config.py`.** Add a `@dataclass(frozen=True) class DiggerConfig` with a `from_env()` classmethod, modeled on `GraphinatorConfig`/`TableinatorConfig` in `common/config.py`. Use `get_secret("VAR")` for secrets/`_FILE` support, `os.getenv("VAR", default)` for non-secrets, and raise `ValueError` listing any missing required vars. Reuse `_build_postgres_connstr()` and `_build_redis_url()` helpers. The digger worker does `from common.config import DiggerConfig`. There is **no** `env_str`/`env_int` in `common.config` — do not invent them.
+- **Health + metrics use the shared `common.health_server.HealthServer`, not aiohttp.** It is a stdlib threaded `HTTPServer` started via `HealthServer(port, health_func).start_background()` and stopped with `.stop()` (see `graphinator/graphinator.py` usage). It currently serves only `/health`. **Enhance `common/health_server.py`** with an OPTIONAL metrics endpoint (e.g., `metrics_enabled: bool = False` param; when true, `GET /metrics` returns `prometheus_client.generate_latest()` with `Content-Type: CONTENT_TYPE_LATEST`). Keep it backward-compatible (default off) so existing callers are unaffected; add a unit test for the new branch. The digger worker constructs `HealthServer(8012, get_health_data, metrics_enabled=True)`. Prometheus exposure pattern reference: `dashboard/dashboard.py` (`generate_latest`, `CONTENT_TYPE_LATEST`). Do NOT use `aiohttp` (not a dependency).
+- **Postgres = async psycopg3 via `common.postgres_resilient.AsyncPostgreSQLPool`.** `async with pool.connection() as conn:` → `async with conn.cursor() as cur:` → `await cur.execute(sql, (%s params,))` / `executemany`; `await cur.fetchone()/fetchall()`. `%s` placeholders, params as tuples. NO asyncpg, no `pool.acquire()`, no `conn.fetch/fetchval`, no `$1`. Autocommit is ON by default — single-statement upserts need no transaction; for the queue-pop `SELECT … FOR UPDATE SKIP LOCKED` use `await conn.set_autocommit(False)` then `async with conn.transaction():` (the pool restores autocommit on return). Build the pool from `_build_postgres_connstr()` / connection params exactly as `tableinator` does — read it for the pattern.
+- **Redis = `redis.asyncio` from `redis[hiredis]>=7.4.0`** (already a dependency). Tests use `fakeredis` / `fakeredis.aioredis` (already a dev dep) — provide a `fakeredis`-backed fixture rather than an invented `redis_test_client`.
+- **digger/pyproject.toml deps**: align versions to the repo — `httpx>=0.28.1`, `redis[hiredis]>=7.4.0`, `prometheus-client>=0.25.0`, plus NEW `selectolax>=0.3.21` and `bleach>=6.1`. Do NOT add `aiohttp` or `uvloop`. Model the file on `graphinator/pyproject.toml` (extends root config; `[tool.ruff] extend`, `[tool.mypy] strict`, `[tool.hatch...]`). Add `"digger"` to the root `pyproject.toml` workspace members and to the `[tool.pytest.ini_options] pythonpath` if other service dirs are listed there.
+- **Entry point / logging**: model `digger/digger/main.py` on an existing worker's startup — use `common.config.setup_logging(...)` (not a bare `logging.basicConfig`), print pure-text ASCII art (no emojis in art), and lazily create any asyncio primitives inside the first async method / `initialize()` (never in `__init__` or module scope).
+- **Tests** live in `tests/digger/` (new dir, fine) and are mock-/fakeredis-based. Real-DB/HTTP behavior is exercised by the M1 e2e smoke (Task 28). Parser tests (Tasks 10–11) need captured/synthetic Discogs HTML fixtures committed under `tests/digger/fixtures/` with provenance noted.
+- All other conventions from the schema-layer block still apply (emoji logging from `docs/emoji-guide.md`, `>=` tier thresholds, type hints, 150-char lines, ≥80% coverage).
+
+---
+
 ## Task 5: `digger/` service skeleton
 
 **Files:**
