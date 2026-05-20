@@ -566,6 +566,85 @@ class ApiClient {
         }
     }
 
+    // --- Digger ---
+
+    /**
+     * Get Digger settings for the current user.
+     * Returns 404 (ok:false, status:404) when Digger is not enabled for this user.
+     * @param {string} token - JWT auth token
+     * @returns {Promise<{ok: boolean, status: number, body: Object|null}>}
+     */
+    async getDiggerSettings(token) {
+        const response = await fetch('/api/digger/settings', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const body = await response.json().catch(() => null);
+        return { ok: response.ok, status: response.status, body };
+    }
+
+    /**
+     * Update Digger settings for the current user.
+     * @param {string} token - JWT auth token
+     * @param {Object} settings - Settings object to persist
+     * @returns {Promise<{ok: boolean, status: number, body: Object|null}>} 204 → body null
+     */
+    async putDiggerSettings(token, settings) {
+        const response = await fetch('/api/digger/settings', {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings),
+        });
+        const body = await response.json().catch(() => null);
+        return { ok: response.ok, status: response.status, body };
+    }
+
+    /**
+     * Get the Digger wantlist with per-item priority info.
+     * @param {string} token - JWT auth token
+     * @returns {Promise<{ok: boolean, status: number, body: Object|null}>} body = { items: [...] }
+     */
+    async getDiggerWantlist(token) {
+        const response = await fetch('/api/digger/wantlist', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const body = await response.json().catch(() => null);
+        return { ok: response.ok, status: response.status, body };
+    }
+
+    /**
+     * Set the priority (tier, conditions, max price) for a single wantlist release.
+     * @param {string} token - JWT auth token
+     * @param {number} releaseId - Discogs release ID
+     * @param {Object} patch - Partial update (tier?, min_media_condition?, min_sleeve_condition?, max_price_cents?)
+     * @returns {Promise<{ok: boolean, status: number, body: Object|null}>} 204 → body null
+     */
+    async setDiggerPriority(token, releaseId, patch) {
+        const response = await fetch(`/api/digger/wantlist/${encodeURIComponent(releaseId)}/priority`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(patch),
+        });
+        const body = await response.json().catch(() => null);
+        return { ok: response.ok, status: response.status, body };
+    }
+
+    /**
+     * Bulk-update the tier for multiple wantlist releases.
+     * @param {string} token - JWT auth token
+     * @param {number[]} releaseIds - Array of Discogs release IDs
+     * @param {string} tier - Target tier ("must"|"nice"|"eventually")
+     * @returns {Promise<{ok: boolean, status: number, body: Object|null}>} body = { updated: n }
+     */
+    async bulkSetDiggerTier(token, releaseIds, tier) {
+        const response = await fetch('/api/digger/wantlist/bulk-tier', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ release_ids: releaseIds, tier }),
+        });
+        const body = await response.json().catch(() => null);
+        return { ok: response.ok, status: response.status, body };
+    }
+
     /**
      * Send a natural language query with SSE streaming.
      * @param {string} query - Natural language question

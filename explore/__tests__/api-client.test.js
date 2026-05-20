@@ -1319,4 +1319,325 @@ describe('ApiClient', () => {
             }));
         });
     });
+
+    // --- Digger ---
+
+    describe('getDiggerSettings', () => {
+        it('should GET /api/digger/settings with Authorization header', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 200, json: async () => ({ enabled: true, currency: 'USD' }) };
+            });
+
+            await window.apiClient.getDiggerSettings('my-token');
+            expect(capturedUrl).toBe('/api/digger/settings');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-token');
+        });
+
+        it('should return { ok:true, status:200, body } on success', async () => {
+            const settingsData = {
+                enabled: true,
+                country_code: 'US',
+                currency: 'USD',
+                scheduled_cadence: 'weekly',
+                preferred_model: 'haiku',
+                daily_token_cap_interactive: 10000,
+                daily_token_cap_scheduled: 50000,
+            };
+            vi.stubGlobal('fetch', async () => ({
+                ok: true,
+                status: 200,
+                json: async () => settingsData,
+            }));
+
+            const result = await window.apiClient.getDiggerSettings('token');
+            expect(result.ok).toBe(true);
+            expect(result.status).toBe(200);
+            expect(result.body).toEqual(settingsData);
+        });
+
+        it('should return { ok:false, status:404, body } when digger not enabled', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: false,
+                status: 404,
+                json: async () => ({ detail: 'Digger not enabled' }),
+            }));
+
+            const result = await window.apiClient.getDiggerSettings('token');
+            expect(result.ok).toBe(false);
+            expect(result.status).toBe(404);
+            expect(result.body).toEqual({ detail: 'Digger not enabled' });
+        });
+
+        it('should return body:null when json() throws (empty body)', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: false,
+                status: 500,
+                json: async () => { throw new Error('not json'); },
+            }));
+
+            const result = await window.apiClient.getDiggerSettings('token');
+            expect(result.ok).toBe(false);
+            expect(result.status).toBe(500);
+            expect(result.body).toBeNull();
+        });
+    });
+
+    describe('putDiggerSettings', () => {
+        it('should PUT /api/digger/settings with Authorization and Content-Type headers', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 204, json: async () => { throw new Error('no body'); } };
+            });
+
+            const settings = { enabled: true, currency: 'USD', scheduled_cadence: 'weekly', preferred_model: 'haiku' };
+            await window.apiClient.putDiggerSettings('my-token', settings);
+            expect(capturedUrl).toBe('/api/digger/settings');
+            expect(capturedOptions.method).toBe('PUT');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-token');
+            expect(capturedOptions.headers['Content-Type']).toBe('application/json');
+        });
+
+        it('should serialize settings as JSON body', async () => {
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (_url, options) => {
+                capturedOptions = options;
+                return { ok: true, status: 204, json: async () => { throw new Error('no body'); } };
+            });
+
+            const settings = { enabled: false, country_code: 'GB', currency: 'GBP', scheduled_cadence: 'monthly', preferred_model: 'opus', daily_token_cap_interactive: null, daily_token_cap_scheduled: null };
+            await window.apiClient.putDiggerSettings('token', settings);
+            expect(JSON.parse(capturedOptions.body)).toEqual(settings);
+        });
+
+        it('should return { ok:true, status:204, body:null } on 204 No Content', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: true,
+                status: 204,
+                json: async () => { throw new Error('no body'); },
+            }));
+
+            const result = await window.apiClient.putDiggerSettings('token', { enabled: true });
+            expect(result.ok).toBe(true);
+            expect(result.status).toBe(204);
+            expect(result.body).toBeNull();
+        });
+
+        it('should return { ok:false, status:422, body } on validation error', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: false,
+                status: 422,
+                json: async () => ({ detail: 'Validation error' }),
+            }));
+
+            const result = await window.apiClient.putDiggerSettings('token', { enabled: 'bad' });
+            expect(result.ok).toBe(false);
+            expect(result.status).toBe(422);
+            expect(result.body).toEqual({ detail: 'Validation error' });
+        });
+    });
+
+    describe('getDiggerWantlist', () => {
+        it('should GET /api/digger/wantlist with Authorization header', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 200, json: async () => ({ items: [] }) };
+            });
+
+            await window.apiClient.getDiggerWantlist('my-token');
+            expect(capturedUrl).toBe('/api/digger/wantlist');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-token');
+        });
+
+        it('should return { ok:true, status:200, body } with items array on success', async () => {
+            const wantlistData = {
+                items: [
+                    {
+                        release_id: 12345,
+                        title: 'Loveless',
+                        artist: 'My Bloody Valentine',
+                        year: 1991,
+                        tier: 'must',
+                        min_media_condition: 'VG+',
+                        min_sleeve_condition: 'VG',
+                        max_price_cents: 5000,
+                        active_listings: 3,
+                        last_scraped_at: '2026-01-01T00:00:00Z',
+                    },
+                ],
+            };
+            vi.stubGlobal('fetch', async () => ({
+                ok: true,
+                status: 200,
+                json: async () => wantlistData,
+            }));
+
+            const result = await window.apiClient.getDiggerWantlist('token');
+            expect(result.ok).toBe(true);
+            expect(result.status).toBe(200);
+            expect(result.body).toEqual(wantlistData);
+        });
+
+        it('should return { ok:false, status:401, body } on unauthorized', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: false,
+                status: 401,
+                json: async () => ({ detail: 'Unauthorized' }),
+            }));
+
+            const result = await window.apiClient.getDiggerWantlist('bad-token');
+            expect(result.ok).toBe(false);
+            expect(result.status).toBe(401);
+            expect(result.body).toEqual({ detail: 'Unauthorized' });
+        });
+
+        it('should return body:null when json() throws', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: false,
+                status: 503,
+                json: async () => { throw new Error('no body'); },
+            }));
+
+            const result = await window.apiClient.getDiggerWantlist('token');
+            expect(result.body).toBeNull();
+        });
+    });
+
+    describe('setDiggerPriority', () => {
+        it('should PUT /api/digger/wantlist/{releaseId}/priority with Authorization and Content-Type headers', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 204, json: async () => { throw new Error('no body'); } };
+            });
+
+            await window.apiClient.setDiggerPriority('my-token', 12345, { tier: 'must' });
+            expect(capturedUrl).toBe('/api/digger/wantlist/12345/priority');
+            expect(capturedOptions.method).toBe('PUT');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-token');
+            expect(capturedOptions.headers['Content-Type']).toBe('application/json');
+        });
+
+        it('should serialize the patch as JSON body', async () => {
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (_url, options) => {
+                capturedOptions = options;
+                return { ok: true, status: 204, json: async () => { throw new Error('no body'); } };
+            });
+
+            const patch = { tier: 'nice', min_media_condition: 'VG+', max_price_cents: 3000 };
+            await window.apiClient.setDiggerPriority('token', 99, patch);
+            expect(JSON.parse(capturedOptions.body)).toEqual(patch);
+        });
+
+        it('should build URL with integer releaseId', async () => {
+            let capturedUrl;
+            vi.stubGlobal('fetch', async (url) => {
+                capturedUrl = url;
+                return { ok: true, status: 204, json: async () => { throw new Error('no body'); } };
+            });
+
+            await window.apiClient.setDiggerPriority('token', 67890, {});
+            expect(capturedUrl).toBe('/api/digger/wantlist/67890/priority');
+        });
+
+        it('should return { ok:true, status:204, body:null } on 204 No Content', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: true,
+                status: 204,
+                json: async () => { throw new Error('no body'); },
+            }));
+
+            const result = await window.apiClient.setDiggerPriority('token', 1, { tier: 'eventually' });
+            expect(result.ok).toBe(true);
+            expect(result.status).toBe(204);
+            expect(result.body).toBeNull();
+        });
+
+        it('should return { ok:false, status:404, body } when release not in wantlist', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: false,
+                status: 404,
+                json: async () => ({ detail: 'Release not in wantlist' }),
+            }));
+
+            const result = await window.apiClient.setDiggerPriority('token', 9999, { tier: 'must' });
+            expect(result.ok).toBe(false);
+            expect(result.status).toBe(404);
+            expect(result.body).toEqual({ detail: 'Release not in wantlist' });
+        });
+    });
+
+    describe('bulkSetDiggerTier', () => {
+        it('should POST /api/digger/wantlist/bulk-tier with Authorization and Content-Type headers', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 200, json: async () => ({ updated: 3 }) };
+            });
+
+            await window.apiClient.bulkSetDiggerTier('my-token', [1, 2, 3], 'must');
+            expect(capturedUrl).toBe('/api/digger/wantlist/bulk-tier');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-token');
+            expect(capturedOptions.headers['Content-Type']).toBe('application/json');
+        });
+
+        it('should serialize release_ids and tier as JSON body', async () => {
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (_url, options) => {
+                capturedOptions = options;
+                return { ok: true, status: 200, json: async () => ({ updated: 2 }) };
+            });
+
+            await window.apiClient.bulkSetDiggerTier('token', [111, 222], 'nice');
+            expect(JSON.parse(capturedOptions.body)).toEqual({ release_ids: [111, 222], tier: 'nice' });
+        });
+
+        it('should return { ok:true, status:200, body } with updated count on success', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: true,
+                status: 200,
+                json: async () => ({ updated: 5 }),
+            }));
+
+            const result = await window.apiClient.bulkSetDiggerTier('token', [1, 2, 3, 4, 5], 'eventually');
+            expect(result.ok).toBe(true);
+            expect(result.status).toBe(200);
+            expect(result.body).toEqual({ updated: 5 });
+            expect(result.body.updated).toBe(5);
+        });
+
+        it('should return { ok:false, status:422, body } on validation error', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: false,
+                status: 422,
+                json: async () => ({ detail: 'Invalid tier' }),
+            }));
+
+            const result = await window.apiClient.bulkSetDiggerTier('token', [1], 'bad-tier');
+            expect(result.ok).toBe(false);
+            expect(result.status).toBe(422);
+            expect(result.body).toEqual({ detail: 'Invalid tier' });
+        });
+
+        it('should return body:null when json() throws', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: false,
+                status: 500,
+                json: async () => { throw new Error('no body'); },
+            }));
+
+            const result = await window.apiClient.bulkSetDiggerTier('token', [], 'must');
+            expect(result.body).toBeNull();
+        });
+    });
 });
