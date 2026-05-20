@@ -274,6 +274,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     "fakeredis>=2.35.1",
     "pillow>=12.2.0",
+    "respx>=0.21",
 ]
 
 [tool.mdformat]
