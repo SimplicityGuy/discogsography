@@ -43,11 +43,14 @@ async def refresh_all_due_times(cur: object) -> int:
     *cur* must be an open psycopg ``AsyncCursor`` (caller owns the
     connection/transaction).  Returns the number of rows updated.
     """
+    # Only re-throttle rows that have actually been scraped. Never-scraped rows
+    # (last_scraped_at IS NULL) keep their default next_scrape_due_at = now() so
+    # brand-new releases get picked up promptly instead of being pushed 7-28 days out.
     await cur.execute(  # type: ignore[attr-defined]
         """
         UPDATE digger.release_scrape_state
            SET next_scrape_due_at =
-               COALESCE(last_scraped_at, now())
+               last_scraped_at
                + (CASE priority_tier
                     WHEN 'must'       THEN interval '7 days'
                     WHEN 'nice'       THEN interval '14 days'
@@ -56,6 +59,7 @@ async def refresh_all_due_times(cur: object) -> int:
                * GREATEST(0.5, LEAST(1.5,
                    1.0 - log(1 + GREATEST(0, listings_delta_7d)) * 0.2
                ))
+         WHERE last_scraped_at IS NOT NULL
         """
     )
     return int(cur.rowcount)  # type: ignore[attr-defined]

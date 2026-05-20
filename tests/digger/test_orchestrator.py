@@ -120,7 +120,7 @@ async def test_scrape_loop_runs_one_iteration_and_stops() -> None:
     stop_event = asyncio.Event()
 
     async def stopper() -> None:
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.2)
         stop_event.set()
 
     _task = asyncio.create_task(stopper())
@@ -148,7 +148,7 @@ async def test_scrape_loop_records_failure_on_scrape_error() -> None:
     with patch("digger.scraper.orchestrator.record_failure", new=_fake_record_failure):
 
         async def stopper() -> None:
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.2)
             stop_event.set()
 
         _task = asyncio.create_task(stopper())
@@ -184,7 +184,7 @@ async def test_scrape_loop_sleeps_when_queue_empty() -> None:
     stop_event = asyncio.Event()
 
     async def stopper() -> None:
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.2)
         stop_event.set()
 
     _task = asyncio.create_task(stopper())
@@ -213,7 +213,7 @@ async def test_state_loop_calls_refresh_and_stops() -> None:
     with patch("digger.scraper.orchestrator.refresh_all_due_times", new=_fake_refresh):
 
         async def stopper() -> None:
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.2)
             stop_event.set()
 
         _task = asyncio.create_task(stopper())

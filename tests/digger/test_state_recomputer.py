@@ -89,3 +89,17 @@ async def test_refresh_all_due_times_executes_update_and_returns_rowcount() -> N
     assert "UPDATE digger.release_scrape_state" in executed_sql
     assert "next_scrape_due_at" in executed_sql
     assert result == 7
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_due_times_skips_never_scraped_rows() -> None:
+    """The UPDATE must guard with WHERE last_scraped_at IS NOT NULL so brand-new
+    (never-scraped) rows keep their default next_scrape_due_at = now()."""
+    cur = AsyncMock()
+    cur.execute = AsyncMock()
+    cur.rowcount = 0
+
+    await refresh_all_due_times(cur)
+
+    executed_sql: str = cur.execute.call_args[0][0]
+    assert "WHERE last_scraped_at IS NOT NULL" in executed_sql

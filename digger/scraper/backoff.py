@@ -19,7 +19,9 @@ def next_retry_delay(consecutive_failures: int) -> timedelta:
 
     Doubles each failure: 1 h → 2 h → 4 h → … capped at MAX_BACKOFF (24 h).
     ``consecutive_failures`` is the count *before* recording the current failure.
-    The exponent is clamped to 24 before computing to avoid integer overflow.
+    The exponent is clamped to 24 before computing so the intermediate ``2 ** n``
+    stays bounded (it is well past the 24 h cap anyway), avoiding pointlessly huge
+    intermediate values for runaway failure counts.
     """
     exponent = min(24, max(0, consecutive_failures))
     delay = timedelta(hours=2**exponent)

@@ -1,6 +1,15 @@
 """Pop the next due release from the scrape queue.
 
-SELECT ... FOR UPDATE SKIP LOCKED — multi-worker safe.
+SELECT ... FOR UPDATE SKIP LOCKED.
+
+Lock-release window: the ``FOR UPDATE SKIP LOCKED`` row lock is released when
+the pop transaction closes — which the orchestrator does BEFORE it scrapes the
+release. So the lock provides no cross-worker exclusion DURING the scrape; it
+only prevents two workers from popping the same row in the same instant. This
+is acceptable for the single-worker M1 deployment. A multi-worker deployment
+would need either the lock held for the whole scrape (long-lived transaction)
+or an explicit in-flight marker (e.g. a ``scraping_started_at`` column) to
+prevent duplicate concurrent scrapes of the same release.
 
 Real transactional behaviour (SKIP LOCKED ordering, upsert + soft-delete
 correctness against a live DB) is deferred to the M1 e2e smoke (Task 28).

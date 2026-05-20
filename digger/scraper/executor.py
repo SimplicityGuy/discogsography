@@ -159,9 +159,21 @@ class ScrapeExecutor:
                         )
 
                     # --- 4. Update scrape state ---
+                    # next_scrape_due_at is set here (not just by state_loop) so the queue
+                    # runner does not re-pop and re-scrape this release on the very next
+                    # iteration. The adaptive formula mirrors state_recomputer.refresh_all_due_times.
                     await cur.execute(
                         "UPDATE digger.release_scrape_state "
-                        "   SET last_scraped_at = now(), consecutive_failures = 0, next_retry_at = NULL "
+                        "   SET last_scraped_at      = now(), "
+                        "       consecutive_failures = 0, "
+                        "       next_retry_at        = NULL, "
+                        "       next_scrape_due_at   = now() "
+                        "                              + (CASE priority_tier "
+                        "                                   WHEN 'must' THEN interval '7 days' "
+                        "                                   WHEN 'nice' THEN interval '14 days' "
+                        "                                   ELSE             interval '28 days' "
+                        "                                 END) "
+                        "                              * GREATEST(0.5, LEAST(1.5, 1.0 - log(1 + GREATEST(0, listings_delta_7d)) * 0.2)) "
                         " WHERE release_id = %s",
                         (release_id,),
                     )

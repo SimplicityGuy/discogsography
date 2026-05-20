@@ -159,8 +159,13 @@ async def test_scrape_release_upserts_listing_and_updates_state(monkeypatch: pyt
     assert "INSERT INTO digger.listings" in calls[2][0][0]
     # 4th call: soft-delete (UPDATE ... != ALL(%s))
     assert "!= ALL(%s)" in calls[3][0][0] or "removed_at" in calls[3][0][0]
-    # 5th call: update scrape state
-    assert "release_scrape_state" in calls[4][0][0]
+    # 5th call: update scrape state — must set next_scrape_due_at so the queue
+    # runner does not immediately re-pop and re-scrape this release.
+    state_sql = calls[4][0][0]
+    assert "release_scrape_state" in state_sql
+    assert "next_scrape_due_at" in state_sql
+    assert "last_scraped_at" in state_sql
+    assert "consecutive_failures" in state_sql
 
 
 @pytest.mark.asyncio
