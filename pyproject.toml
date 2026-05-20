@@ -211,7 +211,9 @@ exclude = "^tests/"
 # Ignore missing imports for third-party libraries without stubs
 [[tool.mypy.overrides]]
 module = [
+    "bleach",
     "pika.*",
+    "selectolax.*",
 ]
 ignore_missing_imports = true
 
@@ -272,9 +274,11 @@ dev = [
     "mdformat-gfm>=1.0.0",
     # "mdformat-tables>=1.0.0",  # Disabled: requires mdformat<0.8.0
     "pytest-xdist>=3.8.0",
+    "bleach>=6.1",
     "fakeredis>=2.35.1",
     "pillow>=12.2.0",
     "respx>=0.21",
+    "selectolax>=0.3.21",
 ]
 
 [tool.mdformat]
