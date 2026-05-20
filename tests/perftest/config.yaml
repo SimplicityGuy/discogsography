@@ -72,3 +72,40 @@ nlq_scenarios:
     query_params:
       pane: "explore"
     target_p95_ms: 200
+
+# Digger user-facing endpoints (all require an authenticated user).
+# Run with `--seed` so these hit pre-seeded rows for the fixed perftest user.
+# `auth: true` makes the runner attach a minted Bearer token whose `sub` matches
+# the seeded users row. The PUT/bulk-tier scenarios target release_id 12345,
+# which the seed step inserts into the user's wantlist priorities.
+digger_scenarios:
+  - name: digger_settings_get
+    method: GET
+    path: /api/digger/settings
+    auth: true
+    target_p95_ms: 200
+
+  - name: digger_wantlist_get
+    method: GET
+    path: /api/digger/wantlist
+    auth: true
+    target_p95_ms: 500
+
+  - name: digger_wantlist_priority_put
+    method: PUT
+    path: /api/digger/wantlist/{release_id}/priority
+    path_params:
+      release_id: 12345
+    body:
+      tier: nice
+    auth: true
+    target_p95_ms: 300
+
+  - name: digger_wantlist_bulk_tier_post
+    method: POST
+    path: /api/digger/wantlist/bulk-tier
+    body:
+      release_ids: [12345]
+      tier: nice
+    auth: true
+    target_p95_ms: 300

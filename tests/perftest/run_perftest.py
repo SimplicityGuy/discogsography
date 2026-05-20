@@ -8,10 +8,14 @@ and writes results to JSON and human-readable report files.
 from __future__ import annotations
 
 import argparse
+import base64
 from datetime import UTC, datetime
+import hashlib
+import hmac
 from itertools import combinations
 import json
 import math
+import os
 from pathlib import Path
 import sys
 import time
@@ -19,6 +23,61 @@ from typing import Any
 
 import httpx
 import yaml
+
+
+# ---------------------------------------------------------------------------
+# Auth: minted JWT for digger (authenticated) scenarios
+# ---------------------------------------------------------------------------
+
+# Fixed perftest user UUID. The minted token's `sub` claim and the seeded
+# `users` row MUST share this value so authenticated digger endpoints resolve
+# to real, pre-seeded rows. Kept in sync with seed_digger_perftest_data().
+PERFTEST_USER_ID = "00000000-0000-0000-0000-0000000d1996"
+PERFTEST_USER_EMAIL = "perftest-digger@example.invalid"
+
+# Release id shared by the seed and the digger PUT/bulk-tier scenarios.
+PERFTEST_RELEASE_ID = 12345
+
+
+def _jwt_secret() -> str:
+    """Return the JWT signing secret from the environment.
+
+    Mirrors the API service: the secret is sourced from JWT_SECRET_KEY (with the
+    standard _FILE secret convention). Never hardcoded.
+    """
+    file_path = os.getenv("JWT_SECRET_KEY_FILE")
+    if file_path:
+        return Path(file_path).read_text().strip()
+    secret = os.getenv("JWT_SECRET_KEY")
+    if not secret:
+        raise RuntimeError("JWT_SECRET_KEY (or JWT_SECRET_KEY_FILE) must be set to run authenticated digger scenarios")
+    return secret
+
+
+def mint_perftest_jwt(
+    user_id: str = PERFTEST_USER_ID,
+    email: str = PERFTEST_USER_EMAIL,
+    *,
+    secret: str | None = None,
+    exp: int = 9_999_999_999,
+) -> str:
+    """Mint an HS256 JWT for the fixed perftest user.
+
+    Claim shape mirrors tests/api/conftest.py make_test_jwt exactly: header
+    {"alg": "HS256", "typ": "JWT"} and body {"sub", "email", "exp"}. require_user
+    only checks `sub` presence and rejects admin tokens, so no other claims are
+    needed.
+    """
+    secret_value = secret if secret is not None else _jwt_secret()
+
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    body = b64url(json.dumps({"sub": user_id, "email": email, "exp": exp}, separators=(",", ":")).encode())
+    signing_input = f"{header}.{body}".encode("ascii")
+    sig = b64url(hmac.new(secret_value.encode("utf-8"), signing_input, hashlib.sha256).digest())
+    return f"{header}.{body}.{sig}"
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +147,82 @@ def list_postgres_indexes(config: dict[str, Any]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Seeding for authenticated digger scenarios
+# ---------------------------------------------------------------------------
+
+
+def seed_digger_perftest_data(postgres_url: str) -> None:
+    """Idempotently seed the rows the authenticated digger scenarios need.
+
+    Creates (or leaves untouched, via ON CONFLICT):
+      * a `users` row with the fixed perftest UUID the minted token's `sub`
+        claim points at (required NOT NULL columns: email, hashed_password),
+      * `digger.user_digger_settings` for that user with enabled = true,
+      * a `user_wantlists` row for (user, release) so GET /wantlist has metadata,
+      * `digger.user_wantlist_priorities` for (user, release) so the PUT/bulk
+        endpoints update real rows,
+      * `digger.release_scrape_state` + `digger.sellers` + a `digger.listings`
+        row with removed_at IS NULL so active_listings > 0.
+
+    Uses a synchronous psycopg3 connection — this keeps the runner free of
+    asyncio. Safe to run repeatedly.
+    """
+    import psycopg
+
+    user_id = PERFTEST_USER_ID
+    release_id = PERFTEST_RELEASE_ID
+    seller_id = 999_001
+    listing_id = 999_001
+    # A non-functional placeholder hash in the API's salt:key format. This user
+    # is for read/write digger queries only and never logs in via password.
+    hashed_password = "00" * 32 + ":" + "00" * 32
+
+    print(f"Seeding digger perftest data (user={user_id}, release={release_id}) ...")
+    with psycopg.connect(postgres_url) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO users (id, email, hashed_password, is_active, is_admin) "
+            "VALUES (%s, %s, %s, true, false) "
+            "ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, is_active = true",
+            (user_id, PERFTEST_USER_EMAIL, hashed_password),
+        )
+        cur.execute(
+            "INSERT INTO digger.user_digger_settings (user_id, enabled) VALUES (%s, true) ON CONFLICT (user_id) DO UPDATE SET enabled = true",
+            (user_id,),
+        )
+        cur.execute(
+            "INSERT INTO user_wantlists (user_id, release_id, title, artist, year) "
+            "VALUES (%s, %s, %s, %s, %s) "
+            "ON CONFLICT (user_id, release_id) DO UPDATE SET title = EXCLUDED.title, artist = EXCLUDED.artist, year = EXCLUDED.year",
+            (user_id, release_id, "Perftest Release", "Perftest Artist", 1996),
+        )
+        cur.execute(
+            "INSERT INTO digger.user_wantlist_priorities (user_id, release_id, tier) "
+            "VALUES (%s, %s, 'nice') "
+            "ON CONFLICT (user_id, release_id) DO UPDATE SET tier = EXCLUDED.tier",
+            (user_id, release_id),
+        )
+        cur.execute(
+            "INSERT INTO digger.release_scrape_state (release_id, last_scraped_at) "
+            "VALUES (%s, now()) "
+            "ON CONFLICT (release_id) DO UPDATE SET last_scraped_at = now()",
+            (release_id,),
+        )
+        cur.execute(
+            "INSERT INTO digger.sellers (seller_id, username, region) VALUES (%s, %s, 'us') ON CONFLICT (seller_id) DO NOTHING",
+            (seller_id, "perftest-seller"),
+        )
+        cur.execute(
+            "INSERT INTO digger.listings "
+            "(listing_id, release_id, seller_id, price_value, price_currency, media_condition, sleeve_condition, removed_at) "
+            "VALUES (%s, %s, %s, %s, 'USD', 'VG+', 'VG+', NULL) "
+            "ON CONFLICT (listing_id) DO UPDATE SET removed_at = NULL",
+            (listing_id, release_id, seller_id, 24.99),
+        )
+        conn.commit()
+    print("  Seed complete.")
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -96,6 +231,20 @@ def load_config(path: str) -> dict[str, Any]:
     """Load and return YAML config."""
     with Path(path).open() as f:
         return yaml.safe_load(f)
+
+
+def interpolate_path(path: str, path_params: dict[str, Any] | None) -> str:
+    """Fill `{name}` placeholders in a path from path_params.
+
+    e.g. interpolate_path("/api/digger/wantlist/{release_id}/priority",
+    {"release_id": 12345}) -> "/api/digger/wantlist/12345/priority".
+    """
+    if not path_params:
+        return path
+    out = path
+    for key, value in path_params.items():
+        out = out.replace(f"{{{key}}}", str(value))
+    return out
 
 
 def wait_for_health(url: str, retries: int, interval: int, timeout: int) -> bool:
@@ -147,11 +296,11 @@ def compute_stats(timings: list[float]) -> dict[str, float]:
 # ---------------------------------------------------------------------------
 
 
-def timed_get(client: httpx.Client, url: str, params: dict[str, str] | None = None) -> dict[str, Any]:
+def timed_get(client: httpx.Client, url: str, params: dict[str, str] | None = None, headers: dict[str, str] | None = None) -> dict[str, Any]:
     """Make a GET request and return timing + response metadata."""
     start = time.perf_counter()
     try:
-        resp = client.get(url, params=params)
+        resp = client.get(url, params=params, headers=headers)
         elapsed = time.perf_counter() - start
         return {
             "status": resp.status_code,
@@ -169,11 +318,33 @@ def timed_get(client: httpx.Client, url: str, params: dict[str, str] | None = No
         }
 
 
-def timed_post(client: httpx.Client, url: str, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
+def timed_post(client: httpx.Client, url: str, json_body: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> dict[str, Any]:
     """Make a POST request and return timing + response metadata."""
     start = time.perf_counter()
     try:
-        resp = client.post(url, json=json_body)
+        resp = client.post(url, json=json_body, headers=headers)
+        elapsed = time.perf_counter() - start
+        return {
+            "status": resp.status_code,
+            "elapsed": round(elapsed, 4),
+            "size": len(resp.content),
+            "error": None,
+        }
+    except Exception as exc:
+        elapsed = time.perf_counter() - start
+        return {
+            "status": 0,
+            "elapsed": round(elapsed, 4),
+            "size": 0,
+            "error": str(exc),
+        }
+
+
+def timed_put(client: httpx.Client, url: str, json_body: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    """Make a PUT request and return timing + response metadata."""
+    start = time.perf_counter()
+    try:
+        resp = client.put(url, json=json_body, headers=headers)
         elapsed = time.perf_counter() - start
         return {
             "status": resp.status_code,
@@ -200,6 +371,7 @@ def run_endpoint(
     *,
     method: str = "GET",
     json_body: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
     max_429_retries: int = 4,
     base_429_delay: float = 32.0,
     max_429_delay: float = 300.0,
@@ -214,7 +386,12 @@ def run_endpoint(
     for i in range(iterations):
         retries = 0
         while True:
-            result = timed_post(client, url, json_body) if method == "POST" else timed_get(client, url, params)
+            if method == "POST":
+                result = timed_post(client, url, json_body, headers)
+            elif method == "PUT":
+                result = timed_put(client, url, json_body, headers)
+            else:
+                result = timed_get(client, url, params, headers)
             if result["status"] == 429 and retries < max_429_retries:
                 retries += 1
                 delay = min(base_429_delay * (2 ** (retries - 1)), max_429_delay)
@@ -663,6 +840,22 @@ def build_test_plan(
                 }
             )
 
+    # --- Digger scenarios (authenticated; require --seed for meaningful data) ---
+    for scenario in config.get("digger_scenarios", []):
+        method = scenario.get("method", "GET").upper()
+        path = interpolate_path(scenario["path"], scenario.get("path_params"))
+        test: dict[str, Any] = {
+            "name": scenario["name"],
+            "url": f"{base}{path}",
+            "method": method,
+            "auth": bool(scenario.get("auth", False)),
+        }
+        if method in ("POST", "PUT"):
+            test["json_body"] = scenario.get("body")
+        else:
+            test["params"] = scenario.get("query_params")
+        tests.append(test)
+
     return tests
 
 
@@ -792,6 +985,16 @@ def main() -> None:
         default="/results",
         help="Output directory for results (default: /results)",
     )
+    parser.add_argument(
+        "--seed",
+        action="store_true",
+        help="Seed Postgres with perftest digger rows before running (requires a reachable database).",
+    )
+    parser.add_argument(
+        "--only",
+        default=None,
+        help="Only run tests whose name contains this substring (e.g. 'digger').",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -801,6 +1004,15 @@ def main() -> None:
 
     # Verify output directory is writable before running tests
     _verify_output_dir(Path(args.output))
+
+    # Optionally seed Postgres for authenticated digger scenarios.
+    if args.seed:
+        postgres_url = config.get("postgres_url")
+        if not postgres_url:
+            print("ERROR: --seed requires 'postgres_url' in the config. Exiting.")
+            sys.exit(1)
+        seed_digger_perftest_data(postgres_url)
+        print()
 
     # Wait for API to be healthy
     if not wait_for_health(
@@ -845,13 +1057,23 @@ def main() -> None:
 
         # Build test plan
         test_plan = build_test_plan(config, artist_ids, label_ids)
+        if args.only:
+            test_plan = [t for t in test_plan if args.only in t["name"]]
         print(f"Test plan: {len(test_plan)} endpoints")
         print()
+
+        # Mint the auth token only if the (filtered) plan actually contains an
+        # authenticated scenario — so non-digger runs never need JWT_SECRET_KEY.
+        auth_headers: dict[str, str] | None = None
+        if any(t.get("auth") for t in test_plan):
+            token = mint_perftest_jwt()
+            auth_headers = {"Authorization": f"Bearer {token}"}
 
         # Execute tests
         results: list[dict[str, Any]] = []
         for i, test in enumerate(test_plan, 1):
             print(f"[{i}/{len(test_plan)}] {test['name']}")
+            headers = auth_headers if test.get("auth") else None
             result = run_endpoint(
                 client,
                 test["name"],
@@ -860,6 +1082,7 @@ def main() -> None:
                 iterations,
                 method=test.get("method", "GET"),
                 json_body=test.get("json_body"),
+                headers=headers,
             )
             results.append(result)
             print()
