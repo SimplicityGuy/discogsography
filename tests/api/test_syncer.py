@@ -486,7 +486,10 @@ class TestSyncWantlist:
             )
 
         assert result == 1
-        mock_pg_pool._mock_cur.executemany.assert_awaited_once()
+        # 3 executemany calls: 1 wantlist upsert + 2 digger priority seeds (release_scrape_state, user_wantlist_priorities)
+        assert mock_pg_pool._mock_cur.executemany.await_count == 3
+        first_sql = mock_pg_pool._mock_cur.executemany.await_args_list[0].args[0]
+        assert "user_wantlists" in first_sql
         mock_neo4j._mock_session.run.assert_awaited_once()
 
     @pytest.mark.asyncio

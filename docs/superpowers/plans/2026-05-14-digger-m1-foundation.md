@@ -40,7 +40,7 @@
 - `explore/src/digger/types.ts` — TS mirrors of Pydantic models
 - `tests/digger/conftest.py`, `tests/digger/test_*.py` per module, `tests/digger/fixtures/*.html`
 - `tests/api/test_digger_router.py`, `tests/api/test_internal_digger_router.py`, `tests/api/test_digger_queries.py`, `tests/api/test_syncer_digger_hook.py`
-- `tests/schema_init/test_digger_schema.py`, `tests/schema_init/test_digger_schema_integration.py`, `tests/schema_init/test_digger_priority_trigger.py`
+- `tests/schema-init/test_digger_schema.py`, `tests/schema-init/test_digger_schema_integration.py`, `tests/schema-init/test_digger_priority_trigger.py`
 - `tests/explore/digger/*.test.tsx`
 - `tests/e2e/test_digger_m1_smoke.py`
 - `docs/digger-scraping-policy.md`
@@ -57,8 +57,21 @@
 - `pyproject.toml` (root) — add `digger` to workspace members
 - `.env.example` — `DIGGER_*` vars
 
-**Conventions assumed (verified against existing codebase before each task):**
-- Services use `common/AsyncPostgreSQLPool` for Postgres access. **Autocommit contract:** call `await conn.set_autocommit(False)` before any `async with conn.transaction()`. Single-statement writes don't need a transaction.
+**Conventions (VERIFIED against the codebase 2026-05-19 — these correct the original draft, which was written against asyncpg):**
+
+- **Postgres driver is async psycopg (psycopg3), NOT asyncpg.** `common.postgres_resilient.AsyncPostgreSQLPool` wraps `psycopg.AsyncConnection`. asyncpg is not a dependency. Access pattern:
+  ```python
+  async with pool.connection() as conn:          # NOT pool.acquire()
+      async with conn.cursor() as cur:           # psycopg cursor
+          await cur.execute("SELECT ... WHERE x = %s", (value,))  # %s, NOT $1; params as a tuple
+          row = await cur.fetchone()             # NOT conn.fetchval()/fetchrow()/fetch()
+  ```
+  Multi-statement DDL strings (no params) may be executed in a single `cur.execute(BIG_SQL)` call — psycopg3 supports this when no parameters are bound.
+- **Autocommit contract:** the pool sets `autocommit=True` on every connection. Single-statement writes (inserts/upserts) commit immediately — no transaction needed. Only call `await conn.set_autocommit(False)` before `async with conn.transaction()` for multi-statement atomic blocks; the pool restores autocommit on return.
+- **FK target for users is `users(id)` (UUID PK), NOT `users(user_id)`.** Every digger table that references the user table uses `REFERENCES users(id) ON DELETE CASCADE`. The column *name* on owning tables stays `user_id` (matches `user_wantlists.user_id`), but it points at `users(id)`.
+- **Wantlist table is public `user_wantlists`** (PK `id`, `user_id`, `release_id`, `UNIQUE(user_id, release_id)`) — there is no `discogs.user_wantlists`. `api/syncer.py::sync_wantlist()` inserts in a **batch**, so the digger seed hook runs over the batch's release_ids, not per-row.
+- **Import paths:** `schema-init/` is on `pythonpath` (hyphen dir), so its modules import top-level: `from digger_schema import DIGGER_SCHEMA_SQL` (NOT `from schema_init.digger_schema`). `api/` is a real package: `from api.syncer import ...` is correct.
+- **Test layout & strategy:** schema-init tests live in `tests/schema-init/` (hyphen); api tests in `tests/api/`. Unit tests are **mock-based** — there is no real-Postgres fixture, and `just test` runs `-m 'not e2e'` with a mocked pool. The existing mock pattern is `tests/schema-init/test_postgres_schema.py::mock_pool` (`pool.connection()` → `conn.cursor()` → `cur.execute`, all `AsyncMock`). **Real-DB behavioral checks** (e.g., trigger semantics) are deferred to the M1 e2e smoke (Task 28) and/or `@pytest.mark.e2e`; do NOT introduce a live-DB unit fixture.
 - `asyncio.Lock`, `asyncio.Queue`, `asyncio.Event`, `asyncio.Semaphore` must be lazily initialized in the first async method, never in `__init__` or at module scope.
 - Log lines use the emoji vocabulary in `docs/emoji-guide.md` — no ad-hoc emojis.
 - Tier-threshold comparisons use `>=` (boundary belongs to higher tier).
@@ -70,14 +83,13 @@
 
 **Files:**
 - Create: `schema-init/digger_schema.py`
-- Test: `tests/schema_init/test_digger_schema.py`
+- Test: `tests/schema-init/test_digger_schema.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/schema_init/test_digger_schema.py
-import pytest
-from schema_init.digger_schema import DIGGER_SCHEMA_SQL
+# tests/schema-init/test_digger_schema.py
+from digger_schema import DIGGER_SCHEMA_SQL
 
 
 def test_digger_schema_sql_creates_schema_and_enums():
@@ -102,8 +114,8 @@ def test_digger_schema_sql_creates_all_tables():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-`uv run pytest tests/schema_init/test_digger_schema.py -v`
-Expected: `ModuleNotFoundError: No module named 'schema_init.digger_schema'`.
+`uv run pytest tests/schema-init/test_digger_schema.py -v`
+Expected: `ModuleNotFoundError: No module named 'digger_schema'`.
 
 - [ ] **Step 3: Write the schema module**
 
@@ -208,7 +220,7 @@ CREATE INDEX IF NOT EXISTS idx_listings_seller_active
     ON digger.listings (seller_id) WHERE removed_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS digger.user_wantlist_priorities (
-    user_id              uuid                    NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    user_id              uuid                    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     release_id           bigint                  NOT NULL,
     tier                 digger.priority_tier    NOT NULL DEFAULT 'nice',
     min_media_condition  digger.condition        NOT NULL DEFAULT 'VG',
@@ -221,7 +233,7 @@ CREATE TABLE IF NOT EXISTS digger.user_wantlist_priorities (
 CREATE INDEX IF NOT EXISTS idx_uwp_release ON digger.user_wantlist_priorities (release_id);
 
 CREATE TABLE IF NOT EXISTS digger.user_digger_settings (
-    user_id                       uuid             PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+    user_id                       uuid             PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     enabled                       bool             NOT NULL DEFAULT false,
     country_code                  char(2),
     currency                      char(3)          NOT NULL DEFAULT 'USD',
@@ -234,7 +246,7 @@ CREATE TABLE IF NOT EXISTS digger.user_digger_settings (
 
 CREATE TABLE IF NOT EXISTS digger.reports (
     report_id            uuid                     PRIMARY KEY,
-    user_id              uuid                     NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    user_id              uuid                     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     kind                 digger.report_kind       NOT NULL,
     generated_at         timestamptz              NOT NULL DEFAULT now(),
     read_at              timestamptz,
@@ -251,7 +263,7 @@ CREATE INDEX IF NOT EXISTS idx_reports_user_time
 
 CREATE TABLE IF NOT EXISTS digger.proposals (
     proposal_id  uuid                     PRIMARY KEY,
-    user_id      uuid                     NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    user_id      uuid                     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     session_id   uuid,
     created_at   timestamptz              NOT NULL DEFAULT now(),
     status       digger.proposal_status   NOT NULL DEFAULT 'pending',
@@ -261,7 +273,7 @@ CREATE TABLE IF NOT EXISTS digger.proposals (
 
 CREATE TABLE IF NOT EXISTS digger.agent_sessions (
     session_id              uuid           PRIMARY KEY,
-    user_id                 uuid           NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    user_id                 uuid           NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     started_at              timestamptz    NOT NULL DEFAULT now(),
     last_active_at          timestamptz    NOT NULL DEFAULT now(),
     model                   digger.model   NOT NULL,
@@ -284,13 +296,13 @@ CREATE TABLE IF NOT EXISTS digger.agent_messages (
 
 - [ ] **Step 4: Run test to verify it passes**
 
-`uv run pytest tests/schema_init/test_digger_schema.py -v`
+`uv run pytest tests/schema-init/test_digger_schema.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add schema-init/digger_schema.py tests/schema_init/test_digger_schema.py
+git add schema-init/digger_schema.py tests/schema-init/test_digger_schema.py
 git commit -m "feat(digger): add digger Postgres schema, enums, and tables"
 ```
 
@@ -300,61 +312,89 @@ git commit -m "feat(digger): add digger Postgres schema, enums, and tables"
 
 **Files:**
 - Modify: `schema-init/postgres_schema.py`
-- Test: `tests/schema_init/test_digger_schema_integration.py`
+- Test: `tests/schema-init/test_digger_schema_integration.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/schema_init/test_digger_schema_integration.py
+# tests/schema-init/test_digger_schema_integration.py
+"""Verify create_postgres_schema applies the digger feature schema.
+
+Mock-based (repo convention) — there is no real-Postgres unit fixture, and
+`just test` runs `-m 'not e2e'`. Real behavioral verification of the applied
+schema (tables actually exist) lives in the M1 e2e smoke (Task 28).
+"""
+
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from common.postgres_pool import AsyncPostgreSQLPool
+
+from postgres_schema import create_postgres_schema
+
+
+@pytest.fixture
+def mock_pool() -> MagicMock:
+    """Mock AsyncPostgreSQLPool: pool.connection() -> conn -> conn.cursor()."""
+    pool = MagicMock()
+    conn = AsyncMock()
+    cur = AsyncMock()
+    cur.__aenter__ = AsyncMock(return_value=cur)
+    cur.__aexit__ = AsyncMock(return_value=False)
+    conn.__aenter__ = AsyncMock(return_value=conn)
+    conn.__aexit__ = AsyncMock(return_value=False)
+    conn.cursor = MagicMock(return_value=cur)  # cursor() is sync, returns an async CM
+    pool.connection.return_value = conn
+    return pool
 
 
 @pytest.mark.asyncio
-async def test_digger_schema_applies_to_db(postgres_pool: AsyncPostgreSQLPool) -> None:
-    async with postgres_pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'digger'"
-        )
-        names = {r["table_name"] for r in rows}
-        assert {
-            "release_scrape_state", "sellers", "listings",
-            "user_wantlist_priorities", "user_digger_settings",
-            "reports", "proposals", "agent_sessions", "agent_messages",
-        } <= names
+async def test_create_postgres_schema_applies_digger_schema(mock_pool: MagicMock) -> None:
+    await create_postgres_schema(mock_pool)
+    cur = mock_pool.connection.return_value.cursor.return_value
+    executed = [c.args[0] for c in cur.execute.call_args_list if c.args]
+    assert any(
+        isinstance(stmt, str) and "CREATE SCHEMA IF NOT EXISTS digger" in stmt
+        for stmt in executed
+    ), "digger schema SQL was not executed by create_postgres_schema"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-`uv run pytest tests/schema_init/test_digger_schema_integration.py -v`
-Expected: FAIL — digger tables don't exist.
+`uv run pytest tests/schema-init/test_digger_schema_integration.py -v`
+Expected: FAIL — `create_postgres_schema` does not yet execute the digger schema.
 
 - [ ] **Step 3: Wire into schema-init**
 
-In `schema-init/postgres_schema.py`, locate the function that runs ordered schema scripts and append:
+In `schema-init/postgres_schema.py`, add the import near the top (top-level module — `schema-init` is on `pythonpath`):
 
 ```python
-from schema_init.digger_schema import DIGGER_SCHEMA_SQL
-
-
-async def apply_digger_schema(conn) -> None:
-    """Apply the digger feature schema. Idempotent."""
-    logger.info("🪡 Applying digger schema")
-    await conn.execute(DIGGER_SCHEMA_SQL)
-    logger.info("✅ Digger schema applied")
+from digger_schema import DIGGER_SCHEMA_SQL
 ```
 
-Call `apply_digger_schema(conn)` in the orchestrator after the `discogs` and `musicbrainz` schema applications.
+Then, inside `create_postgres_schema`, **after** the MusicBrainz block and still inside the open `async with conn.cursor() as cursor_cm:` context (so the digger tables can FK to the already-created `users` table), apply the schema as a single multi-statement DDL string, matching the existing per-block try/except + counter style:
+
+```python
+            # ── Digger feature schema (schema, enums, tables, triggers) ───
+            try:
+                await cursor.execute(DIGGER_SCHEMA_SQL)
+                logger.info("✅ Schema: digger feature schema")
+                success_count += 1
+            except Exception as e:
+                logger.error(f"❌ Failed to create schema object 'digger feature schema': {e}")
+                failure_count += 1
+```
+
+psycopg3 runs the whole multi-statement DDL (enums, tables, indexes, triggers) in one `cursor.execute()` call because no parameters are bound. Bump the `total` count at the end of the function by `+ 1` to account for the digger schema statement so the success/failure accounting stays correct.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-`uv run pytest tests/schema_init/test_digger_schema_integration.py -v`
+`uv run pytest tests/schema-init/test_digger_schema_integration.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add schema-init/postgres_schema.py tests/schema_init/test_digger_schema_integration.py
+git add schema-init/postgres_schema.py tests/schema-init/test_digger_schema_integration.py
 git commit -m "feat(digger): apply digger schema during schema-init startup"
 ```
 
@@ -364,60 +404,44 @@ git commit -m "feat(digger): apply digger schema during schema-init startup"
 
 **Files:**
 - Modify: `schema-init/digger_schema.py` — append trigger SQL
-- Test: `tests/schema_init/test_digger_priority_trigger.py`
+- Test: `tests/schema-init/test_digger_priority_trigger.py`
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# tests/schema_init/test_digger_priority_trigger.py
-import pytest
-import uuid
+# tests/schema-init/test_digger_priority_trigger.py
+"""Structural checks for the priority-recompute trigger DDL.
+
+The trigger's runtime behavior (recompute max tier across all users wanting a
+release on INSERT/UPDATE/DELETE) needs a live Postgres and is exercised by the
+M1 e2e smoke (Task 28). These unit tests assert the DDL is present and encodes
+the must > nice > eventually precedence — no DB required.
+"""
+
+from digger_schema import DIGGER_SCHEMA_SQL
 
 
-@pytest.mark.asyncio
-async def test_priority_trigger_recomputes_max_tier(postgres_pool) -> None:
-    user_a = uuid.uuid4()
-    user_b = uuid.uuid4()
-    release_id = 999_001
-    async with postgres_pool.acquire() as conn:
-        await conn.execute("INSERT INTO users(user_id, email) VALUES ($1,$2),($3,$4)",
-                           user_a, "a@e", user_b, "b@e")
-        await conn.execute(
-            "INSERT INTO digger.release_scrape_state(release_id) VALUES ($1)", release_id
-        )
-        await conn.execute(
-            "INSERT INTO digger.user_wantlist_priorities(user_id, release_id, tier) VALUES ($1,$2,'nice')",
-            user_a, release_id,
-        )
-        tier = await conn.fetchval(
-            "SELECT priority_tier FROM digger.release_scrape_state WHERE release_id=$1",
-            release_id,
-        )
-        assert tier == "nice"
-        await conn.execute(
-            "INSERT INTO digger.user_wantlist_priorities(user_id, release_id, tier) VALUES ($1,$2,'must')",
-            user_b, release_id,
-        )
-        tier = await conn.fetchval(
-            "SELECT priority_tier FROM digger.release_scrape_state WHERE release_id=$1",
-            release_id,
-        )
-        assert tier == "must"
-        await conn.execute(
-            "DELETE FROM digger.user_wantlist_priorities WHERE user_id=$1 AND release_id=$2",
-            user_b, release_id,
-        )
-        tier = await conn.fetchval(
-            "SELECT priority_tier FROM digger.release_scrape_state WHERE release_id=$1",
-            release_id,
-        )
-        assert tier == "nice"
+def test_trigger_function_and_trigger_present() -> None:
+    sql = DIGGER_SCHEMA_SQL
+    assert "FUNCTION digger.recompute_priority_for_release" in sql
+    assert "FUNCTION digger.uwp_after_change" in sql
+    assert "CREATE TRIGGER trg_uwp_recompute" in sql
+    assert "AFTER INSERT OR UPDATE OR DELETE ON digger.user_wantlist_priorities" in sql
+
+
+def test_trigger_encodes_tier_precedence() -> None:
+    sql = DIGGER_SCHEMA_SQL
+    # must wins over nice wins over eventually in the CASE ladder
+    must_at = sql.find("bool_or(tier = 'must')")
+    nice_at = sql.find("bool_or(tier = 'nice')")
+    assert must_at != -1 and nice_at != -1
+    assert must_at < nice_at, "must must be evaluated before nice in the precedence ladder"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-`uv run pytest tests/schema_init/test_digger_priority_trigger.py -v`
-Expected: FAIL — second assertion fails because no trigger maintains `priority_tier`.
+`uv run pytest tests/schema-init/test_digger_priority_trigger.py -v`
+Expected: FAIL — the trigger DDL is not yet present in `DIGGER_SCHEMA_SQL`.
 
 - [ ] **Step 3: Append trigger SQL**
 
@@ -473,13 +497,13 @@ FOR EACH ROW EXECUTE FUNCTION digger.uwp_after_change();
 
 - [ ] **Step 4: Run test to verify it passes**
 
-`uv run pytest tests/schema_init/test_digger_priority_trigger.py -v`
+`uv run pytest tests/schema-init/test_digger_priority_trigger.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add schema-init/digger_schema.py tests/schema_init/test_digger_priority_trigger.py
+git add schema-init/digger_schema.py tests/schema-init/test_digger_priority_trigger.py
 git commit -m "feat(digger): trigger to maintain max-tier on release_scrape_state"
 ```
 
@@ -495,29 +519,57 @@ git commit -m "feat(digger): trigger to maintain max-tier on release_scrape_stat
 
 ```python
 # tests/api/test_syncer_digger_hook.py
+"""Unit test for the digger wantlist-sync seed hook (mock-based).
+
+Asserts the batch helper issues the two idempotent `executemany` INSERTs via the
+psycopg3 cursor with %s params, opening a single connection. Real-DB row creation
++ trigger recompute is covered by the M1 e2e smoke (Task 28).
+"""
+
+import uuid
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
+
+from api.syncer import _seed_digger_priorities_for_wantlist
+
+
+def _mock_pool() -> tuple[MagicMock, AsyncMock]:
+    pool = MagicMock()
+    conn = AsyncMock()
+    cur = AsyncMock()
+    cur.__aenter__ = AsyncMock(return_value=cur)
+    cur.__aexit__ = AsyncMock(return_value=False)
+    conn.__aenter__ = AsyncMock(return_value=conn)
+    conn.__aexit__ = AsyncMock(return_value=False)
+    conn.cursor = MagicMock(return_value=cur)  # cursor() is sync, returns an async CM
+    pool.connection.return_value = conn
+    return pool, cur
 
 
 @pytest.mark.asyncio
-async def test_wantlist_sync_creates_default_priority_rows(postgres_pool, api_oauth_user):
-    from api.syncer import _seed_digger_priority_for_wantlist_item
+async def test_seed_batches_scrape_state_and_priority_rows() -> None:
+    pool, cur = _mock_pool()
+    user_id = uuid.uuid4()
 
-    user_id = api_oauth_user.user_id
-    await _seed_digger_priority_for_wantlist_item(postgres_pool, user_id, release_id=12345)
+    await _seed_digger_priorities_for_wantlist(pool, user_id, [12345, 67890])
 
-    async with postgres_pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT tier, min_media_condition FROM digger.user_wantlist_priorities "
-            "WHERE user_id=$1 AND release_id=$2",
-            user_id, 12345,
-        )
-        scrape_state = await conn.fetchrow(
-            "SELECT priority_tier FROM digger.release_scrape_state WHERE release_id=$1",
-            12345,
-        )
-    assert row["tier"] == "nice"
-    assert row["min_media_condition"] == "VG"
-    assert scrape_state["priority_tier"] == "nice"
+    calls = [(c.args[0], c.args[1]) for c in cur.executemany.call_args_list]
+    assert len(calls) == 2
+    state_sql, state_rows = calls[0]
+    prio_sql, prio_rows = calls[1]
+    assert "INSERT INTO digger.release_scrape_state" in state_sql
+    assert state_rows == [(12345,), (67890,)]  # parent rows first (FK order)
+    assert "INSERT INTO digger.user_wantlist_priorities" in prio_sql
+    assert prio_rows == [(user_id, 12345), (user_id, 67890)]
+
+
+@pytest.mark.asyncio
+async def test_seed_is_noop_for_empty_release_list() -> None:
+    pool, cur = _mock_pool()
+    await _seed_digger_priorities_for_wantlist(pool, uuid.uuid4(), [])
+    cur.executemany.assert_not_called()
+    pool.connection.assert_not_called()
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -528,39 +580,43 @@ Expected: ImportError — helper not defined.
 - [ ] **Step 3: Add the helper and call it from the wantlist sync loop**
 
 ```python
-# api/syncer.py — add near the wantlist sync block
-import uuid
-from common.postgres_pool import AsyncPostgreSQLPool
+# api/syncer.py — add near the wantlist sync block.
+# Reuse the AsyncPostgreSQLPool and UUID imports already present in this module.
 
-
-async def _seed_digger_priority_for_wantlist_item(
-    pool: AsyncPostgreSQLPool, user_id: uuid.UUID, release_id: int
+async def _seed_digger_priorities_for_wantlist(
+    pool: AsyncPostgreSQLPool, user_id: UUID, release_ids: list[int]
 ) -> None:
-    """Ensure a digger.user_wantlist_priorities row exists for this user+release.
+    """Seed digger priority rows for a page of wantlist releases.
 
-    Default tier is 'nice' per design spec. The schema trigger maintains
-    digger.release_scrape_state.priority_tier as a side-effect. Idempotent.
+    For each release, ensures a digger.release_scrape_state row (parent) and a
+    digger.user_wantlist_priorities row (default tier 'nice', from the schema
+    column default). The schema trigger maintains release_scrape_state.priority_tier
+    as a side effect. Idempotent (ON CONFLICT DO NOTHING). Opens ONE pooled
+    connection per page and uses executemany; psycopg3 autocommit single-statement
+    writes — no explicit transaction needed.
     """
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "INSERT INTO digger.release_scrape_state(release_id) VALUES ($1) "
+    if not release_ids:
+        return
+    async with pool.connection() as conn, conn.cursor() as cur:
+        await cur.executemany(
+            "INSERT INTO digger.release_scrape_state (release_id) VALUES (%s) "
             "ON CONFLICT (release_id) DO NOTHING",
-            release_id,
+            [(rid,) for rid in release_ids],
         )
-        await conn.execute(
-            """
-            INSERT INTO digger.user_wantlist_priorities(user_id, release_id)
-            VALUES ($1, $2)
-            ON CONFLICT (user_id, release_id) DO NOTHING
-            """,
-            user_id, release_id,
+        await cur.executemany(
+            "INSERT INTO digger.user_wantlist_priorities (user_id, release_id) "
+            "VALUES (%s, %s) ON CONFLICT (user_id, release_id) DO NOTHING",
+            [(user_id, rid) for rid in release_ids],
         )
 ```
 
-Inside the existing `sync_wantlist()` function, after each `INSERT INTO discogs.user_wantlists ...`, append:
+Inside `sync_wantlist()` (`api/syncer.py`), the wantlist rows are upserted into the public `user_wantlists` table in a **batch** (each `batch_params` tuple has `release_id` at index 1). After the per-page upsert succeeds (`total_synced += len(batch_params)`), seed digger priorities for the whole page in one call, isolated so a seeding failure logs a warning but never aborts the already-committed wantlist sync (mirrors the non-critical cache-invalidation isolation elsewhere in the syncer):
 
 ```python
-await _seed_digger_priority_for_wantlist_item(pool, user_id, item.release_id)
+try:
+    await _seed_digger_priorities_for_wantlist(pg_pool, user_uuid, [row[1] for row in batch_params])
+except Exception as exc:  # seeding is a non-critical side-effect; never fail the sync over it
+    logger.warning("⚠️ Failed to seed digger priorities", error=str(exc))
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
