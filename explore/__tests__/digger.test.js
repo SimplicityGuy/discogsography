@@ -26,6 +26,7 @@ describe('DiggerPane', () => {
         window.apiClient = {
             getDiggerSettings: vi.fn(),
             getDiggerWantlist: vi.fn(),
+            setDiggerPriority: vi.fn(),
         };
         window.exploreApp = undefined;
         loadScript('digger.js');
@@ -177,7 +178,7 @@ describe('DiggerPane', () => {
                 title: 'OK Computer',
                 artist: 'Radiohead',
                 year: 1997,
-                tier: 'A',
+                tier: 'must',
                 min_media_condition: 'VG+',
                 min_sleeve_condition: 'VG',
                 max_price_cents: 5000,
@@ -189,9 +190,9 @@ describe('DiggerPane', () => {
                 title: 'Homogenic',
                 artist: 'Bjork',
                 year: 1997,
-                tier: 'B',
-                min_media_condition: null,
-                min_sleeve_condition: null,
+                tier: 'nice',
+                min_media_condition: 'VG',
+                min_sleeve_condition: 'G+',
                 max_price_cents: null,
                 active_listings: 0,
                 last_scraped_at: null,
@@ -247,11 +248,13 @@ describe('DiggerPane', () => {
             expect(firstRow.textContent).toContain('1997');
         });
 
-        it('should render tier in first row', async () => {
+        it('should render tier buttons (not plain text) in first row', async () => {
             await window.diggerPane.init();
             const body = document.getElementById('diggerBody');
             const firstRow = body.querySelectorAll('tbody tr')[0];
-            expect(firstRow.textContent).toContain('A');
+            // Tier is now a segmented toggle — should have tier buttons
+            const tierBtns = firstRow.querySelectorAll('.digger-tier-btn');
+            expect(tierBtns.length).toBe(3);
         });
 
         it('should render active_listings in first row', async () => {
@@ -456,9 +459,9 @@ describe('DiggerPane', () => {
                         title: 'Test Album',
                         artist: 'Test Artist',
                         year: 2000,
-                        tier: 'C',
-                        min_media_condition: null,
-                        min_sleeve_condition: null,
+                        tier: 'nice',
+                        min_media_condition: 'VG',
+                        min_sleeve_condition: 'G+',
                         max_price_cents: null,
                         active_listings: 3,
                         last_scraped_at: null,
@@ -499,6 +502,30 @@ describe('DiggerPane', () => {
             expect(headerTexts).toContain('Tier');
         });
 
+        it('should render table with Media column header', async () => {
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const headers = body.querySelectorAll('th');
+            const headerTexts = Array.from(headers).map(h => h.textContent.trim());
+            expect(headerTexts).toContain('Media');
+        });
+
+        it('should render table with Sleeve column header', async () => {
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const headers = body.querySelectorAll('th');
+            const headerTexts = Array.from(headers).map(h => h.textContent.trim());
+            expect(headerTexts).toContain('Sleeve');
+        });
+
+        it('should render table with Max price column header', async () => {
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const headers = body.querySelectorAll('th');
+            const headerTexts = Array.from(headers).map(h => h.textContent.trim());
+            expect(headerTexts.some(t => t.toLowerCase().includes('price'))).toBe(true);
+        });
+
         it('should render table with Active listings column header', async () => {
             await window.diggerPane.init();
             const body = document.getElementById('diggerBody');
@@ -513,6 +540,13 @@ describe('DiggerPane', () => {
             const headers = body.querySelectorAll('th');
             const headerTexts = Array.from(headers).map(h => h.textContent.trim());
             expect(headerTexts.some(t => t.toLowerCase().includes('scraped') || t.toLowerCase().includes('last'))).toBe(true);
+        });
+
+        it('should render exactly 9 column headers', async () => {
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const headers = body.querySelectorAll('th');
+            expect(headers).toHaveLength(9);
         });
     });
 
@@ -533,7 +567,7 @@ describe('DiggerPane', () => {
             window.apiClient.getDiggerWantlist.mockResolvedValue({
                 ok: true,
                 status: 200,
-                body: { items: [{ release_id: 1, title: 'T', artist: null, year: 2000, tier: 'A', min_media_condition: null, min_sleeve_condition: null, max_price_cents: null, active_listings: 0, last_scraped_at: null }] },
+                body: { items: [{ release_id: 1, title: 'T', artist: null, year: 2000, tier: 'nice', min_media_condition: 'VG', min_sleeve_condition: 'G+', max_price_cents: null, active_listings: 0, last_scraped_at: null }] },
             });
             await window.diggerPane.init();
             const body = document.getElementById('diggerBody');
@@ -546,7 +580,7 @@ describe('DiggerPane', () => {
             window.apiClient.getDiggerWantlist.mockResolvedValue({
                 ok: true,
                 status: 200,
-                body: { items: [{ release_id: 1, title: null, artist: 'A', year: 2000, tier: 'A', min_media_condition: null, min_sleeve_condition: null, max_price_cents: null, active_listings: 0, last_scraped_at: null }] },
+                body: { items: [{ release_id: 1, title: null, artist: 'A', year: 2000, tier: 'nice', min_media_condition: 'VG', min_sleeve_condition: 'G+', max_price_cents: null, active_listings: 0, last_scraped_at: null }] },
             });
             await window.diggerPane.init();
             const body = document.getElementById('diggerBody');
@@ -559,7 +593,7 @@ describe('DiggerPane', () => {
             window.apiClient.getDiggerWantlist.mockResolvedValue({
                 ok: true,
                 status: 200,
-                body: { items: [{ release_id: 1, title: 'T', artist: 'A', year: null, tier: 'A', min_media_condition: null, min_sleeve_condition: null, max_price_cents: null, active_listings: 0, last_scraped_at: null }] },
+                body: { items: [{ release_id: 1, title: 'T', artist: 'A', year: null, tier: 'nice', min_media_condition: 'VG', min_sleeve_condition: 'G+', max_price_cents: null, active_listings: 0, last_scraped_at: null }] },
             });
             await window.diggerPane.init();
             const body = document.getElementById('diggerBody');
@@ -586,6 +620,546 @@ describe('DiggerPane', () => {
             await Promise.all([p1, p2]);
             // Should only call once
             expect(window.apiClient.getDiggerSettings).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    // ------------------------------------------------------------------ //
+    // Tier toggle controls
+    // ------------------------------------------------------------------ //
+
+    describe('tier toggle', () => {
+        const makeItem = (tier) => ({
+            release_id: 10,
+            title: 'Test',
+            artist: 'Artist',
+            year: 2020,
+            tier,
+            min_media_condition: 'VG',
+            min_sleeve_condition: 'G+',
+            max_price_cents: null,
+            active_listings: 0,
+            last_scraped_at: null,
+        });
+
+        function setupWantlist(tier) {
+            window.apiClient.getDiggerSettings.mockResolvedValue({
+                ok: true, status: 200,
+                body: { enabled: true, country_code: 'US', currency: 'USD', scheduled_cadence: 'daily', preferred_model: 'claude-opus', daily_token_cap_interactive: 10000, daily_token_cap_scheduled: 50000 },
+            });
+            window.apiClient.getDiggerWantlist.mockResolvedValue({
+                ok: true, status: 200,
+                body: { items: [makeItem(tier)] },
+            });
+        }
+
+        it('should render 3 tier buttons', async () => {
+            setupWantlist('must');
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const row = body.querySelector('tbody tr');
+            const btns = row.querySelectorAll('.digger-tier-btn');
+            expect(btns).toHaveLength(3);
+        });
+
+        it('should label buttons must / nice / eventually', async () => {
+            setupWantlist('must');
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const btns = body.querySelectorAll('.digger-tier-btn');
+            const labels = Array.from(btns).map(b => b.textContent);
+            expect(labels).toEqual(['must', 'nice', 'eventually']);
+        });
+
+        it('should mark current tier button as active and aria-pressed=true', async () => {
+            setupWantlist('nice');
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const btns = body.querySelectorAll('.digger-tier-btn');
+            const niceBtn = Array.from(btns).find(b => b.textContent === 'nice');
+            expect(niceBtn.classList.contains('active')).toBe(true);
+            expect(niceBtn.getAttribute('aria-pressed')).toBe('true');
+        });
+
+        it('should mark non-current tier buttons as inactive and aria-pressed=false', async () => {
+            setupWantlist('must');
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const btns = body.querySelectorAll('.digger-tier-btn');
+            const niceBtn = Array.from(btns).find(b => b.textContent === 'nice');
+            const eventuallyBtn = Array.from(btns).find(b => b.textContent === 'eventually');
+            expect(niceBtn.classList.contains('active')).toBe(false);
+            expect(niceBtn.getAttribute('aria-pressed')).toBe('false');
+            expect(eventuallyBtn.classList.contains('active')).toBe(false);
+            expect(eventuallyBtn.getAttribute('aria-pressed')).toBe('false');
+        });
+
+        it('should have a role=group container with aria-label="Tier"', async () => {
+            setupWantlist('must');
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const group = body.querySelector('[role="group"][aria-label="Tier"]');
+            expect(group).not.toBeNull();
+        });
+
+        it('clicking a different tier calls setDiggerPriority with new tier', async () => {
+            setupWantlist('must');
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: true, status: 204, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const btns = body.querySelectorAll('.digger-tier-btn');
+            const niceBtn = Array.from(btns).find(b => b.textContent === 'nice');
+            niceBtn.click();
+            await new Promise(r => setTimeout(r, 0)); // flush microtasks
+            expect(window.apiClient.setDiggerPriority).toHaveBeenCalledWith(
+                'test-token', 10, { tier: 'nice' }
+            );
+        });
+
+        it('clicking the already-active tier does NOT call setDiggerPriority', async () => {
+            setupWantlist('must');
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const btns = body.querySelectorAll('.digger-tier-btn');
+            const mustBtn = Array.from(btns).find(b => b.textContent === 'must');
+            mustBtn.click();
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.apiClient.setDiggerPriority).not.toHaveBeenCalled();
+        });
+
+        it('on tier success, updates aria-pressed and active class for all buttons', async () => {
+            setupWantlist('must');
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: true, status: 204, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const btns = body.querySelectorAll('.digger-tier-btn');
+            const eventuallyBtn = Array.from(btns).find(b => b.textContent === 'eventually');
+            const mustBtn = Array.from(btns).find(b => b.textContent === 'must');
+            eventuallyBtn.click();
+            await new Promise(r => setTimeout(r, 0));
+            expect(eventuallyBtn.getAttribute('aria-pressed')).toBe('true');
+            expect(eventuallyBtn.classList.contains('active')).toBe(true);
+            expect(mustBtn.getAttribute('aria-pressed')).toBe('false');
+            expect(mustBtn.classList.contains('active')).toBe(false);
+        });
+
+        it('on tier success, updates in-memory item tier', async () => {
+            setupWantlist('must');
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: true, status: 204, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const btns = body.querySelectorAll('.digger-tier-btn');
+            const niceBtn = Array.from(btns).find(b => b.textContent === 'nice');
+            niceBtn.click();
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.diggerPane._items[0].tier).toBe('nice');
+        });
+
+        it('on tier failure, leaves buttons unchanged', async () => {
+            setupWantlist('must');
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: false, status: 400, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const btns = body.querySelectorAll('.digger-tier-btn');
+            const niceBtn = Array.from(btns).find(b => b.textContent === 'nice');
+            const mustBtn = Array.from(btns).find(b => b.textContent === 'must');
+            niceBtn.click();
+            await new Promise(r => setTimeout(r, 0));
+            // must remains active
+            expect(mustBtn.getAttribute('aria-pressed')).toBe('true');
+            expect(mustBtn.classList.contains('active')).toBe(true);
+            // nice stays inactive
+            expect(niceBtn.getAttribute('aria-pressed')).toBe('false');
+            expect(niceBtn.classList.contains('active')).toBe(false);
+        });
+
+        it('on tier failure, in-memory item tier is unchanged', async () => {
+            setupWantlist('must');
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: false, status: 500, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const btns = body.querySelectorAll('.digger-tier-btn');
+            const niceBtn = Array.from(btns).find(b => b.textContent === 'nice');
+            niceBtn.click();
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.diggerPane._items[0].tier).toBe('must');
+        });
+
+        it('tier click does nothing when no token', async () => {
+            setupWantlist('must');
+            await window.diggerPane.init();
+            window.authManager.getToken.mockReturnValue(null);
+            const body = document.getElementById('diggerBody');
+            const btns = body.querySelectorAll('.digger-tier-btn');
+            const niceBtn = Array.from(btns).find(b => b.textContent === 'nice');
+            niceBtn.click();
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.apiClient.setDiggerPriority).not.toHaveBeenCalled();
+        });
+    });
+
+    // ------------------------------------------------------------------ //
+    // Media condition select
+    // ------------------------------------------------------------------ //
+
+    describe('media condition select', () => {
+        function setupWantlistMedia(min_media_condition) {
+            window.apiClient.getDiggerSettings.mockResolvedValue({
+                ok: true, status: 200,
+                body: { enabled: true, country_code: 'US', currency: 'USD', scheduled_cadence: 'daily', preferred_model: 'claude-opus', daily_token_cap_interactive: 10000, daily_token_cap_scheduled: 50000 },
+            });
+            window.apiClient.getDiggerWantlist.mockResolvedValue({
+                ok: true, status: 200,
+                body: { items: [{
+                    release_id: 20,
+                    title: 'Media Test',
+                    artist: 'Artist',
+                    year: 2021,
+                    tier: 'nice',
+                    min_media_condition,
+                    min_sleeve_condition: 'G+',
+                    max_price_cents: null,
+                    active_listings: 0,
+                    last_scraped_at: null,
+                }] },
+            });
+        }
+
+        it('should render a media select in each row', async () => {
+            setupWantlistMedia('VG+');
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const row = body.querySelector('tbody tr');
+            // Media is the 5th cell (index 4), sleeve is 6th (index 5)
+            const cells = row.querySelectorAll('td');
+            const mediaSelect = cells[4].querySelector('select');
+            expect(mediaSelect).not.toBeNull();
+        });
+
+        it('should render all 8 media condition options (no blank)', async () => {
+            setupWantlistMedia('VG');
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const mediaSelect = cells[4].querySelector('select');
+            // Exactly 8 conditions: M, NM, VG+, VG, G+, G, F, P
+            expect(mediaSelect.options.length).toBe(8);
+            const values = Array.from(mediaSelect.options).map(o => o.value);
+            expect(values).toEqual(['M', 'NM', 'VG+', 'VG', 'G+', 'G', 'F', 'P']);
+        });
+
+        it('should pre-select the current media condition', async () => {
+            setupWantlistMedia('VG+');
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const mediaSelect = cells[4].querySelector('select');
+            expect(mediaSelect.value).toBe('VG+');
+        });
+
+        it('changing media select calls setDiggerPriority with min_media_condition', async () => {
+            setupWantlistMedia('VG');
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: true, status: 204, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const mediaSelect = cells[4].querySelector('select');
+            mediaSelect.value = 'NM';
+            mediaSelect.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.apiClient.setDiggerPriority).toHaveBeenCalledWith(
+                'test-token', 20, { min_media_condition: 'NM' }
+            );
+        });
+
+        it('on media select success, updates in-memory item', async () => {
+            setupWantlistMedia('VG');
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: true, status: 204, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const mediaSelect = cells[4].querySelector('select');
+            mediaSelect.value = 'M';
+            mediaSelect.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.diggerPane._items[0].min_media_condition).toBe('M');
+        });
+
+        it('on media select failure, reverts the select and leaves in-memory unchanged', async () => {
+            setupWantlistMedia('VG');
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: false, status: 500, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const mediaSelect = cells[4].querySelector('select');
+            mediaSelect.value = 'M';
+            mediaSelect.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 0));
+            // Reverted to original
+            expect(mediaSelect.value).toBe('VG');
+            expect(window.diggerPane._items[0].min_media_condition).toBe('VG');
+        });
+
+        it('media select change does nothing when no token', async () => {
+            setupWantlistMedia('VG');
+            await window.diggerPane.init();
+            window.authManager.getToken.mockReturnValue(null);
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const mediaSelect = cells[4].querySelector('select');
+            mediaSelect.value = 'NM';
+            mediaSelect.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.apiClient.setDiggerPriority).not.toHaveBeenCalled();
+        });
+    });
+
+    // ------------------------------------------------------------------ //
+    // Sleeve condition select
+    // ------------------------------------------------------------------ //
+
+    describe('sleeve condition select', () => {
+        function setupWantlistSleeve(min_sleeve_condition) {
+            window.apiClient.getDiggerSettings.mockResolvedValue({
+                ok: true, status: 200,
+                body: { enabled: true, country_code: 'US', currency: 'USD', scheduled_cadence: 'daily', preferred_model: 'claude-opus', daily_token_cap_interactive: 10000, daily_token_cap_scheduled: 50000 },
+            });
+            window.apiClient.getDiggerWantlist.mockResolvedValue({
+                ok: true, status: 200,
+                body: { items: [{
+                    release_id: 30,
+                    title: 'Sleeve Test',
+                    artist: 'Artist',
+                    year: 2021,
+                    tier: 'eventually',
+                    min_media_condition: 'VG',
+                    min_sleeve_condition,
+                    max_price_cents: null,
+                    active_listings: 0,
+                    last_scraped_at: null,
+                }] },
+            });
+        }
+
+        it('should render a sleeve select in each row', async () => {
+            setupWantlistSleeve('VG');
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const sleeveSelect = cells[5].querySelector('select');
+            expect(sleeveSelect).not.toBeNull();
+        });
+
+        it('should render all 10 sleeve condition options (no blank)', async () => {
+            setupWantlistSleeve('VG');
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const sleeveSelect = cells[5].querySelector('select');
+            // Exactly 10 conditions: M, NM, VG+, VG, G+, G, F, P, generic, no_cover
+            expect(sleeveSelect.options.length).toBe(10);
+            const values = Array.from(sleeveSelect.options).map(o => o.value);
+            expect(values).toEqual(['M', 'NM', 'VG+', 'VG', 'G+', 'G', 'F', 'P', 'generic', 'no_cover']);
+        });
+
+        it('should pre-select the current sleeve condition', async () => {
+            setupWantlistSleeve('generic');
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const sleeveSelect = cells[5].querySelector('select');
+            expect(sleeveSelect.value).toBe('generic');
+        });
+
+        it('changing sleeve select calls setDiggerPriority with min_sleeve_condition', async () => {
+            setupWantlistSleeve('VG');
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: true, status: 204, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const sleeveSelect = cells[5].querySelector('select');
+            sleeveSelect.value = 'no_cover';
+            sleeveSelect.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.apiClient.setDiggerPriority).toHaveBeenCalledWith(
+                'test-token', 30, { min_sleeve_condition: 'no_cover' }
+            );
+        });
+
+        it('on sleeve select failure, reverts the select and leaves in-memory unchanged', async () => {
+            setupWantlistSleeve('VG');
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: false, status: 500, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const sleeveSelect = cells[5].querySelector('select');
+            sleeveSelect.value = 'M';
+            sleeveSelect.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 0));
+            expect(sleeveSelect.value).toBe('VG');
+            expect(window.diggerPane._items[0].min_sleeve_condition).toBe('VG');
+        });
+
+        it('sleeve select change does nothing when no token', async () => {
+            setupWantlistSleeve('VG');
+            await window.diggerPane.init();
+            window.authManager.getToken.mockReturnValue(null);
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const sleeveSelect = cells[5].querySelector('select');
+            sleeveSelect.value = 'NM';
+            sleeveSelect.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.apiClient.setDiggerPriority).not.toHaveBeenCalled();
+        });
+    });
+
+    // ------------------------------------------------------------------ //
+    // Max price input
+    // ------------------------------------------------------------------ //
+
+    describe('max price input', () => {
+        function setupWantlistPrice(max_price_cents) {
+            window.apiClient.getDiggerSettings.mockResolvedValue({
+                ok: true, status: 200,
+                body: { enabled: true, country_code: 'US', currency: 'USD', scheduled_cadence: 'daily', preferred_model: 'claude-opus', daily_token_cap_interactive: 10000, daily_token_cap_scheduled: 50000 },
+            });
+            window.apiClient.getDiggerWantlist.mockResolvedValue({
+                ok: true, status: 200,
+                body: { items: [{
+                    release_id: 40,
+                    title: 'Price Test',
+                    artist: 'Artist',
+                    year: 2021,
+                    tier: 'nice',
+                    min_media_condition: 'VG',
+                    min_sleeve_condition: 'G+',
+                    max_price_cents,
+                    active_listings: 0,
+                    last_scraped_at: null,
+                }] },
+            });
+        }
+
+        it('should render a number input for max price', async () => {
+            setupWantlistPrice(1000);
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const priceInput = cells[6].querySelector('input[type="number"]');
+            expect(priceInput).not.toBeNull();
+        });
+
+        it('should display cents as dollars (5000 cents → "50")', async () => {
+            setupWantlistPrice(5000);
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const priceInput = cells[6].querySelector('input[type="number"]');
+            expect(priceInput.value).toBe('50');
+        });
+
+        it('should display empty string when max_price_cents is null', async () => {
+            setupWantlistPrice(null);
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const priceInput = cells[6].querySelector('input[type="number"]');
+            expect(priceInput.value).toBe('');
+        });
+
+        it('entering a dollar value calls setDiggerPriority with cents', async () => {
+            setupWantlistPrice(null);
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: true, status: 204, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const priceInput = cells[6].querySelector('input[type="number"]');
+            priceInput.value = '12.50';
+            priceInput.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.apiClient.setDiggerPriority).toHaveBeenCalledWith(
+                'test-token', 40, { max_price_cents: 1250 }
+            );
+        });
+
+        it('clearing the price input sends max_price_cents: null', async () => {
+            setupWantlistPrice(5000);
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: true, status: 204, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const priceInput = cells[6].querySelector('input[type="number"]');
+            priceInput.value = '';
+            priceInput.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.apiClient.setDiggerPriority).toHaveBeenCalledWith(
+                'test-token', 40, { max_price_cents: null }
+            );
+        });
+
+        it('on price success, updates in-memory item max_price_cents', async () => {
+            setupWantlistPrice(null);
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: true, status: 204, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const priceInput = cells[6].querySelector('input[type="number"]');
+            priceInput.value = '25';
+            priceInput.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.diggerPane._items[0].max_price_cents).toBe(2500);
+        });
+
+        it('on price failure, reverts input to original value and leaves in-memory unchanged', async () => {
+            setupWantlistPrice(3000);
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: false, status: 500, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const priceInput = cells[6].querySelector('input[type="number"]');
+            priceInput.value = '99';
+            priceInput.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 0));
+            expect(priceInput.value).toBe('30');
+            expect(window.diggerPane._items[0].max_price_cents).toBe(3000);
+        });
+
+        it('price input change does nothing when no token', async () => {
+            setupWantlistPrice(null);
+            await window.diggerPane.init();
+            window.authManager.getToken.mockReturnValue(null);
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const priceInput = cells[6].querySelector('input[type="number"]');
+            priceInput.value = '10';
+            priceInput.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.apiClient.setDiggerPriority).not.toHaveBeenCalled();
+        });
+
+        it('treats a non-numeric entry as a clear (number input sanitizes it to empty → null)', async () => {
+            setupWantlistPrice(5000);
+            window.apiClient.setDiggerPriority.mockResolvedValue({ ok: true, status: 204, body: null });
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const priceInput = cells[6].querySelector('input[type="number"]');
+            priceInput.value = 'abc'; // type=number sanitizes this to '' (browsers + jsdom)
+            priceInput.dispatchEvent(new Event('change'));
+            await new Promise(r => setTimeout(r, 0));
+            expect(window.apiClient.setDiggerPriority).toHaveBeenCalledWith(
+                'test-token', 40, { max_price_cents: null }
+            );
+        });
+
+        it('input has correct min and step attributes', async () => {
+            setupWantlistPrice(null);
+            await window.diggerPane.init();
+            const body = document.getElementById('diggerBody');
+            const cells = body.querySelector('tbody tr').querySelectorAll('td');
+            const priceInput = cells[6].querySelector('input[type="number"]');
+            expect(priceInput.min).toBe('0');
+            expect(priceInput.step).toBe('0.01');
         });
     });
 });

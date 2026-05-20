@@ -4,6 +4,11 @@
  * Shows an onboarding card when Digger is not enabled for the user,
  * otherwise loads and renders the user's digger wantlist as a table.
  */
+
+const DIGGER_TIERS = ['must', 'nice', 'eventually'];
+const DIGGER_CONDITIONS = ['M', 'NM', 'VG+', 'VG', 'G+', 'G', 'F', 'P'];
+const DIGGER_SLEEVE_CONDITIONS = ['M', 'NM', 'VG+', 'VG', 'G+', 'G', 'F', 'P', 'generic', 'no_cover'];
+
 class DiggerPane {
     constructor() {
         this._settings = null;
@@ -179,12 +184,15 @@ class DiggerPane {
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
         const columns = [
-            { label: 'Artist', cls: 'col-artist' },
-            { label: 'Title', cls: 'col-title' },
-            { label: 'Year', cls: 'col-year' },
-            { label: 'Tier', cls: 'col-tier' },
+            { label: 'Artist',          cls: 'col-artist' },
+            { label: 'Title',           cls: 'col-title' },
+            { label: 'Year',            cls: 'col-year' },
+            { label: 'Tier',            cls: 'col-tier' },
+            { label: 'Media',           cls: 'col-media' },
+            { label: 'Sleeve',          cls: 'col-sleeve' },
+            { label: 'Max price',       cls: 'col-price' },
             { label: 'Active listings', cls: 'col-listings' },
-            { label: 'Last scraped', cls: 'col-scraped' },
+            { label: 'Last scraped',    cls: 'col-scraped' },
         ];
         for (const { label, cls } of columns) {
             const th = document.createElement('th');
@@ -209,7 +217,6 @@ class DiggerPane {
 
     /**
      * Build a single table row for a wantlist item.
-     * Kept as a separate helper so T3 can extend it.
      * @param {Object} item - Wantlist item from API
      * @returns {HTMLTableRowElement}
      */
@@ -217,22 +224,188 @@ class DiggerPane {
         const tr = document.createElement('tr');
         tr.dataset.releaseId = String(item.release_id);
 
-        const cells = [
-            item.artist || '—',
-            item.title  || '—',
-            item.year   != null ? String(item.year) : '—',
-            item.tier   || '—',
-            item.active_listings != null ? String(item.active_listings) : '0',
-            this._formatScrapedAt(item.last_scraped_at),
-        ];
+        // Artist (plain text)
+        const tdArtist = document.createElement('td');
+        tdArtist.textContent = item.artist || '—';
+        tr.appendChild(tdArtist);
 
-        for (const text of cells) {
-            const td = document.createElement('td');
-            td.textContent = text;
-            tr.appendChild(td);
-        }
+        // Title (plain text)
+        const tdTitle = document.createElement('td');
+        tdTitle.textContent = item.title || '—';
+        tr.appendChild(tdTitle);
+
+        // Year (plain text)
+        const tdYear = document.createElement('td');
+        tdYear.textContent = item.year != null ? String(item.year) : '—';
+        tr.appendChild(tdYear);
+
+        // Tier (segmented toggle)
+        const tdTier = document.createElement('td');
+        tdTier.appendChild(this._buildTierToggle(item));
+        tr.appendChild(tdTier);
+
+        // Media condition (select)
+        const tdMedia = document.createElement('td');
+        tdMedia.appendChild(this._buildConditionSelect(item, 'media'));
+        tr.appendChild(tdMedia);
+
+        // Sleeve condition (select)
+        const tdSleeve = document.createElement('td');
+        tdSleeve.appendChild(this._buildConditionSelect(item, 'sleeve'));
+        tr.appendChild(tdSleeve);
+
+        // Max price (number input, dollars)
+        const tdPrice = document.createElement('td');
+        tdPrice.appendChild(this._buildMaxPriceInput(item));
+        tr.appendChild(tdPrice);
+
+        // Active listings (plain text)
+        const tdListings = document.createElement('td');
+        tdListings.textContent = item.active_listings != null ? String(item.active_listings) : '0';
+        tr.appendChild(tdListings);
+
+        // Last scraped (plain text)
+        const tdScraped = document.createElement('td');
+        tdScraped.textContent = this._formatScrapedAt(item.last_scraped_at);
+        tr.appendChild(tdScraped);
 
         return tr;
+    }
+
+    /**
+     * Build a segmented tier toggle for a row item.
+     * @param {Object} item
+     * @returns {HTMLDivElement}
+     */
+    _buildTierToggle(item) {
+        const group = document.createElement('div');
+        group.setAttribute('role', 'group');
+        group.setAttribute('aria-label', 'Tier');
+        group.className = 'digger-tier-group';
+
+        for (const tier of DIGGER_TIERS) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'search-chip digger-tier-btn';
+            btn.textContent = tier;
+            btn.dataset.tier = tier;
+
+            const isActive = item.tier === tier;
+            btn.setAttribute('aria-pressed', String(isActive));
+            if (isActive) btn.classList.add('active');
+
+            btn.addEventListener('click', async () => {
+                if (btn.getAttribute('aria-pressed') === 'true') return; // already active
+
+                const token = window.authManager.getToken();
+                if (!token) return;
+
+                const res = await window.apiClient.setDiggerPriority(token, item.release_id, { tier });
+
+                if (res.ok) {
+                    // Update in-memory state
+                    item.tier = tier;
+                    // Update all buttons in the group
+                    const allBtns = group.querySelectorAll('.digger-tier-btn');
+                    for (const b of allBtns) {
+                        const pressed = b.dataset.tier === tier;
+                        b.setAttribute('aria-pressed', String(pressed));
+                        b.classList.toggle('active', pressed);
+                    }
+                }
+                // On failure: leave buttons as-is (no visual change committed)
+            });
+
+            group.appendChild(btn);
+        }
+
+        return group;
+    }
+
+    /**
+     * Build a condition <select> for media or sleeve.
+     * @param {Object} item
+     * @param {'media'|'sleeve'} type
+     * @returns {HTMLSelectElement}
+     */
+    _buildConditionSelect(item, type) {
+        const isMedia = type === 'media';
+        const options = isMedia ? DIGGER_CONDITIONS : DIGGER_SLEEVE_CONDITIONS;
+        const currentValue = isMedia ? item.min_media_condition : item.min_sleeve_condition;
+
+        const sel = document.createElement('select');
+        sel.className = 'form-input-dark digger-cell-control';
+
+        for (const val of options) {
+            const opt = document.createElement('option');
+            opt.value = val;
+            opt.textContent = val;
+            if (val === currentValue) opt.selected = true;
+            sel.appendChild(opt);
+        }
+
+        sel.addEventListener('change', async () => {
+            const token = window.authManager.getToken();
+            if (!token) return;
+
+            const value = sel.value;
+            const patch = isMedia
+                ? { min_media_condition: value }
+                : { min_sleeve_condition: value };
+
+            const res = await window.apiClient.setDiggerPriority(token, item.release_id, patch);
+
+            if (res.ok) {
+                // Update in-memory state
+                if (isMedia) {
+                    item.min_media_condition = value;
+                } else {
+                    item.min_sleeve_condition = value;
+                }
+            } else {
+                // Revert the control to the item's unchanged value
+                sel.value = isMedia ? item.min_media_condition : item.min_sleeve_condition;
+            }
+        });
+
+        return sel;
+    }
+
+    /**
+     * Build a max-price number input (displays dollars, stores cents).
+     * @param {Object} item
+     * @returns {HTMLInputElement}
+     */
+    _buildMaxPriceInput(item) {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '0';
+        input.step = '0.01';
+        input.className = 'form-input-dark digger-cell-control';
+
+        input.value = item.max_price_cents != null ? String(item.max_price_cents / 100) : '';
+
+        input.addEventListener('change', async () => {
+            const token = window.authManager.getToken();
+            if (!token) return;
+
+            // Note: <input type="number"> sanitizes non-numeric text to '' (per the HTML
+            // spec, in browsers and jsdom alike), so `raw` is always either '' or a valid
+            // number string — NaN cannot reach the API here.
+            const raw = input.value.trim();
+            const max_price_cents = raw === '' ? null : Math.round(Number(raw) * 100);
+
+            const res = await window.apiClient.setDiggerPriority(token, item.release_id, { max_price_cents });
+
+            if (res.ok) {
+                item.max_price_cents = max_price_cents;
+            } else {
+                // Revert to the item's unchanged value
+                input.value = item.max_price_cents != null ? String(item.max_price_cents / 100) : '';
+            }
+        });
+
+        return input;
     }
 
     // ------------------------------------------------------------------ //

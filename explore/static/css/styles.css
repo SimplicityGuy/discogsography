@@ -2569,9 +2569,31 @@ select option {
     margin: 1rem 1.5rem 1.5rem;
 }
 
-.digger-table .col-artist { width: 20%; }
-.digger-table .col-title  { width: 28%; }
-.digger-table .col-year   { width: 8%; }
-.digger-table .col-tier   { width: 8%; }
-.digger-table .col-listings { width: 14%; }
-.digger-table .col-scraped  { width: 22%; }
+/* 9-column layout: Artist Title Year Tier Media Sleeve Price Listings Scraped */
+.digger-table .col-artist   { width: 14%; }
+.digger-table .col-title    { width: 18%; }
+.digger-table .col-year     { width: 5%; }
+.digger-table .col-tier     { width: 14%; }
+.digger-table .col-media    { width: 9%; }
+.digger-table .col-sleeve   { width: 10%; }
+.digger-table .col-price    { width: 9%; }
+.digger-table .col-listings { width: 10%; }
+.digger-table .col-scraped  { width: 11%; }
+
+/* Tier segmented control — three chips side-by-side */
+.digger-tier-group {
+    display: flex;
+    gap: 0.2rem;
+}
+
+.digger-tier-btn {
+    padding: 0.15rem 0.45rem;
+    font-size: 0.72rem;
+}
+
+/* Compact selects / number inputs inside table cells */
+.digger-cell-control {
+    width: 100%;
+    padding: 0.2rem 0.35rem;
+    font-size: 0.78rem;
+}
