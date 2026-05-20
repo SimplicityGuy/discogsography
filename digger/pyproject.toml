@@ -18,12 +18,12 @@ classifiers = [
 ]
 license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
-    "bleach>=6.1",
+    "bleach>=6.3.0",
     "common",
     "httpx>=0.28.1",
     "prometheus-client>=0.25.0",
     "redis[hiredis]>=7.4.0",
-    "selectolax>=0.3.21",
+    "selectolax>=0.4.9",
     "structlog>=25.5.0",
 ]
 
