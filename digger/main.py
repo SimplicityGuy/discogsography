@@ -33,7 +33,7 @@ ASCII_ART = r"""
 async def amain() -> None:
     """Async entrypoint for the digger worker."""
     cfg = DiggerConfig.from_env()
-    setup_logging("digger", level=cfg.log_level, log_file=Path("/logs/digger.log"))
+    setup_logging("digger", log_file=Path("/logs/digger.log"))
 
     print(ASCII_ART, flush=True)  # noqa: T201
     logger.info("🚀 Digger starting", rate_budget_per_hour=cfg.rate_budget_per_hour)
@@ -43,18 +43,13 @@ async def amain() -> None:
     health_server.start_background()
     logger.info("🏥 Health/metrics server started on port 8012")
 
-    stop_event: asyncio.Event | None = None
-
-    def _set_stop() -> None:
-        if stop_event is not None:
-            stop_event.set()
+    # Create the stop event lazily inside the running coroutine (binds to this
+    # event loop), then register signal handlers — no None window.
+    stop_event = asyncio.Event()
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _set_stop)
-
-    # Create event lazily in async context (never at module scope)
-    stop_event = asyncio.Event()
+        loop.add_signal_handler(sig, stop_event.set)
 
     tasks: list[asyncio.Task[None]] = []  # filled by future scraper tasks
 

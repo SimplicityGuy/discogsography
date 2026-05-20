@@ -179,8 +179,8 @@ class TestHealthHandlerHTTP:
         assert body["status"] == "healthy"
         assert body["service"] == "test"
 
-    def test_get_unknown_path_returns_404(self, running_server: HealthServer) -> None:
-        """Test GET to an unknown path returns 404."""
+    def test_get_metrics_returns_404_when_metrics_disabled(self, running_server: HealthServer) -> None:
+        """Test GET /metrics returns 404 when metrics are disabled (default)."""
         conn = self._connect(running_server)
         conn.request("GET", "/metrics")
         response = conn.getresponse()

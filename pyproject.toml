@@ -205,10 +205,8 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 explicit_package_bases = true
-# Exclude test files and the digger service directory from root-level type checking
-# (digger uses a nested package structure that conflicts with explicit_package_bases;
-# run mypy for digger from within digger/ using its own pyproject.toml)
-exclude = "^tests/|^digger/"
+# Exclude test files from type checking
+exclude = "^tests/"
 
 # Ignore missing imports for third-party libraries without stubs
 [[tool.mypy.overrides]]

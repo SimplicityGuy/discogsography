@@ -29,6 +29,7 @@ install-all:
     uv pip install -e brainztableinator
     uv pip install -e common
     uv pip install -e dashboard
+    uv pip install -e digger
     uv pip install -e explore
     uv pip install -e graphinator
     uv pip install -e insights

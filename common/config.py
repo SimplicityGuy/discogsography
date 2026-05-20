@@ -738,7 +738,6 @@ class DiggerConfig:
     circuit_breaker_window_seconds: int
     circuit_breaker_failure_pct: int
     circuit_breaker_cooldown_seconds: int
-    log_level: str
 
     @classmethod
     def from_env(cls) -> "DiggerConfig":
@@ -791,8 +790,6 @@ class DiggerConfig:
         except ValueError:
             circuit_breaker_cooldown_seconds = 1800
 
-        log_level = getenv("LOG_LEVEL", "INFO")
-
         return cls(
             postgres_host=_build_postgres_connstr(),
             postgres_username=cast("str", postgres_username),
@@ -804,7 +801,6 @@ class DiggerConfig:
             circuit_breaker_window_seconds=circuit_breaker_window_seconds,
             circuit_breaker_failure_pct=circuit_breaker_failure_pct,
             circuit_breaker_cooldown_seconds=circuit_breaker_cooldown_seconds,
-            log_level=log_level,
         )
 
 

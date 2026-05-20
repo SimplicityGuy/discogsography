@@ -18,4 +18,4 @@ USER digger
 EXPOSE 8012
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS http://localhost:8012/health || exit 1
-CMD ["uv", "run", "--package", "discogsography-digger", "python", "-m", "digger.main"]
+CMD ["uv", "run", "--package", "discogsography-digger", "digger"]

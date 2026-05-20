@@ -43,7 +43,6 @@ class TestDiggerConfigFromEnv:
             "DIGGER_CB_WINDOW_SECONDS",
             "DIGGER_CB_FAILURE_PCT",
             "DIGGER_CB_COOLDOWN_SECONDS",
-            "LOG_LEVEL",
         ]:
             monkeypatch.delenv(var, raising=False)
 
@@ -54,7 +53,6 @@ class TestDiggerConfigFromEnv:
         assert cfg.circuit_breaker_window_seconds == 300
         assert cfg.circuit_breaker_failure_pct == 30
         assert cfg.circuit_breaker_cooldown_seconds == 1800
-        assert cfg.log_level == "INFO"
 
     def test_from_env_custom_optional(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Optional fields are overridden by environment variables."""
@@ -64,7 +62,6 @@ class TestDiggerConfigFromEnv:
         monkeypatch.setenv("DIGGER_CB_WINDOW_SECONDS", "120")
         monkeypatch.setenv("DIGGER_CB_FAILURE_PCT", "50")
         monkeypatch.setenv("DIGGER_CB_COOLDOWN_SECONDS", "900")
-        monkeypatch.setenv("LOG_LEVEL", "DEBUG")
 
         cfg = DiggerConfig.from_env()
 
@@ -73,7 +70,6 @@ class TestDiggerConfigFromEnv:
         assert cfg.circuit_breaker_window_seconds == 120
         assert cfg.circuit_breaker_failure_pct == 50
         assert cfg.circuit_breaker_cooldown_seconds == 900
-        assert cfg.log_level == "DEBUG"
 
     def test_from_env_missing_postgres_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """ValueError raised listing POSTGRES_HOST when it is absent."""
