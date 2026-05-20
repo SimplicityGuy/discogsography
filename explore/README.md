@@ -2,7 +2,7 @@
 
 🔍 **Interactive Graph Exploration, Search, Analytics, and Collection Management**
 
-The Explore service serves the interactive frontend for navigating the Discogs knowledge graph, visualizing trends, searching entities, browsing user collections, and accessing precomputed analytics. Built with **Tailwind CSS** (dark theme), **Alpine.js** (reactive UI), **D3.js** (force-directed graph), and **Plotly.js** (charts). All data endpoints are consolidated in the **API service** (`/api/*`).
+The Explore service serves the interactive frontend for navigating the Discogs knowledge graph, visualizing trends, searching entities, browsing user collections, and accessing precomputed analytics. Built with **Tailwind CSS v4** (CSS-first config, "Deep Space" theme with light/dark/auto toggle), **Alpine.js** (reactive UI), **D3.js** (force-directed graph), and **Plotly.js** (charts). All data endpoints are consolidated in the **API service** (`/api/*`).
 
 ## 🌟 Features
 
@@ -24,6 +24,14 @@ The Explore frontend organizes functionality into tabbed panes:
 | **genre-tree**      | Interactive genre/style hierarchy browser                                | No            |
 | **credits**         | Credits & Provenance — person search, profile, timeline, connections     | No            |
 | **gaps**            | Collection gap finder — missing releases for an artist, label, or master | Yes           |
+
+### 💬 Ask Pill (Natural Language Queries)
+
+- **Global Ask pill**: A persistent input available across all panes for asking natural-language questions about the music knowledge graph
+- **Agent-driven UI actions**: The API converts questions into tool calls that drive the UI (run searches, open the graph, render tables) and returns inline answers
+- **Inline answers**: Responses render in place with Markdown (via `marked` + `DOMPurify`) and table formatting
+- **Context-aware suggestions**: Question suggestions surface as you type
+- Backed by the API's `/api/nlq/*` endpoints (status, query, streaming, suggestions)
 
 ### 🔍 Interactive Graph Explorer
 
@@ -437,23 +445,32 @@ explore/
 ├── __tests__/              # Vitest JavaScript test files
 ├── static/
 │   ├── index.html          # Single-page application shell
-│   ├── css/                # Tailwind-compiled styles
+│   ├── css/                # Tailwind build output + hand-written styles (styles.css, nlq-pill.css)
 │   └── js/
-│       ├── api-client.js   # API client (all fetch calls)
-│       ├── app.js          # Main controller + timeline scrubber
-│       ├── auth.js          # JWT auth state manager
-│       ├── autocomplete.js  # Search autocomplete
-│       ├── credits.js       # Credits & Provenance panel
-│       ├── graph.js         # D3 force-directed graph
-│       ├── insights.js      # Insights panel + auto-refresh
-│       ├── search.js        # Full-text search pane
-│       ├── theme.js         # Dark/light theme
-│       ├── trends.js        # Plotly trends charts
-│       └── user-panes.js   # Collection, wantlist, recommendations, gaps, taste fingerprint
+│       ├── api-client.js          # API client (all fetch calls)
+│       ├── app.js                 # Main controller + timeline scrubber
+│       ├── auth.js                # JWT auth state manager
+│       ├── autocomplete.js        # Search autocomplete
+│       ├── collaborators.js       # Collaborator network pane
+│       ├── credits.js             # Credits & Provenance panel
+│       ├── genre-tree.js          # Genre/style hierarchy browser
+│       ├── graph.js               # D3 force-directed graph
+│       ├── insights.js            # Insights panel + auto-refresh
+│       ├── nlq.js                 # Ask pill entry point
+│       ├── nlq-pill.js            # Ask pill UI surface
+│       ├── nlq-handlers.js        # Ask request/response handling
+│       ├── nlq-action-applier.js  # Applies agent-driven UI actions
+│       ├── nlq-suggestions.js     # Context-aware question suggestions
+│       ├── nlq-markdown.js        # Markdown/table rendering (marked + DOMPurify)
+│       ├── search.js              # Full-text search pane
+│       ├── settings.js            # Account settings (profile, 2FA)
+│       ├── theme.js               # Light/dark/auto theme toggle
+│       ├── trends.js              # Plotly trends charts
+│       └── user-panes.js          # Collection, wantlist, recommendations, gaps, taste fingerprint
 ├── explore.py              # Static file server + health endpoint
 ├── Dockerfile              # Production container
-├── package.json            # Node.js deps (Tailwind, Vitest)
+├── package.json            # Node.js test deps (Vitest, jsdom) + dompurify, marked
 ├── vitest.config.js        # Vitest configuration
-├── tailwind.config.js      # Tailwind CSS configuration
+├── tailwind.input.css      # Tailwind v4 CSS-first config (@theme, @utility, @source)
 └── pyproject.toml          # Python project metadata
 ```

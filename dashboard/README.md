@@ -178,8 +178,7 @@ The `tailwind.css` stylesheet is **generated at Docker build time** and does not
 
 Two additional files in `dashboard/` (not `static/`) drive the CSS build:
 
-- `tailwind.config.js` - Tailwind CLI configuration (content paths, forms plugin)
-- `tailwind.input.css` - Tailwind source directives (`@tailwind base/components/utilities`)
+- `tailwind.input.css` - Tailwind v4 CSS-first config: `@import "tailwindcss"`, `@plugin "@tailwindcss/forms"`, and `@source` content paths
 
 The Docker build uses a dedicated **`css-builder`** stage (Node 24) to run the Tailwind CLI, which
 scans `index.html` and emits a minified `tailwind.css` into the final image. No CDN dependency is

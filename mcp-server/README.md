@@ -19,6 +19,7 @@ All data is fetched via the Discogsography API — the MCP server has no direct 
 | `get_graph_stats`     | Database-wide node counts                                      |
 | `get_collaborators`   | Artists who share releases with a given artist                 |
 | `get_genre_tree`      | Full genre/style hierarchy with release counts                 |
+| `nlq_query`           | Ask a natural-language question about the knowledge graph (multi-entity/relationship answers) |
 
 ## Installation
 

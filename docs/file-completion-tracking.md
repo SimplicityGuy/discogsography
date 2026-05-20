@@ -134,7 +134,7 @@ No additional configuration needed - the feature works automatically with existi
 **Consumers**:
 
 - `🎉 File processing complete for {type}!` - File completion received
-- `🔌 Canceling consumer for {type}` - Cancellation scheduled
+- `🔧 Canceling consumer for {type}` - Cancellation scheduled
 - `🏁 Received extraction_complete signal` - Extraction complete received
 - `🧹 Cleaned up N stub {Label} nodes` - Graphinator stub node cleanup
 - `🧹 Purged N stale {type} rows` - Tableinator stale row purge

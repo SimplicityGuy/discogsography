@@ -35,12 +35,16 @@ Range indexes enable fast lookups by exact value and support efficient sorting.
 
 #### ID Lookups
 
-| Index Name         | Label   | Properties | Use Case                        |
-| ------------------ | ------- | ---------- | ------------------------------- |
-| `artist_id_index`  | Artist  | id         | Graph traversal, artist details |
-| `release_id_index` | Release | id         | Release lookups                 |
-| `label_id_index`   | Label   | id         | Label lookups                   |
-| `genre_id_index`   | Genre   | id         | Genre lookups                   |
+ID lookups are served by the **uniqueness constraints**, each of which implicitly creates a backing range index — so no separate ID indexes are defined:
+
+| Constraint   | Label   | Property | Use Case                          |
+| ------------ | ------- | -------- | --------------------------------- |
+| `artist_id`  | Artist  | id       | Graph traversal, artist details   |
+| `label_id`   | Label   | id       | Label lookups                     |
+| `master_id`  | Master  | id       | Master lookups                    |
+| `release_id` | Release | id       | Release lookups                   |
+| `genre_name` | Genre   | name     | Genre lookups (no `id` property)  |
+| `style_name` | Style   | name     | Style lookups (no `id` property)  |
 
 **Example Query**:
 
@@ -49,14 +53,14 @@ MATCH (a:Artist {id: $artist_id})
 RETURN a
 ```
 
-#### Sorting Indexes
+#### Name Indexes
 
-| Index Name            | Label   | Properties | Use Case                               |
-| --------------------- | ------- | ---------- | -------------------------------------- |
-| `artist_name_index`   | Artist  | name       | Alphabetical sorting in search results |
-| `release_title_index` | Release | title      | Alphabetical sorting in search results |
-| `label_name_index`    | Label   | name       | Alphabetical sorting in search results |
-| `genre_name_index`    | Genre   | name       | Alphabetical sorting in trends         |
+| Index Name    | Label  | Properties | Use Case                          |
+| ------------- | ------ | ---------- | --------------------------------- |
+| `artist_name` | Artist | name       | Name lookups / sorting in explore |
+| `label_name`  | Label  | name       | Name lookups / sorting in explore |
+
+> Release titles and Genre/Style names are searched via full-text indexes (`release_title_fulltext`, `genre_name_fulltext`, `style_name_fulltext`) rather than range indexes.
 
 **Example Query**:
 

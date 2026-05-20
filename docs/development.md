@@ -63,12 +63,12 @@ discogsography/
 ├── 📊 dashboard/           # Real-time monitoring dashboard
 │   ├── dashboard.py        # FastAPI backend with WebSocket
 │   ├── admin_proxy.py      # Admin panel proxy to API service
-│   ├── tailwind.config.js  # Tailwind CLI configuration (content paths, plugins)
-│   ├── tailwind.input.css  # Tailwind source directives (@tailwind base/…)
+│   ├── tailwind.input.css  # Tailwind v4 CSS-first config (@import, @plugin, @source)
 │   ├── static/             # Frontend HTML/CSS/JS (Tailwind, SVG gauges)
 │   │   ├── index.html
 │   │   ├── tailwind.css    # Generated at Docker build time by css-builder stage
-│   │   ├── styles.css
+│   │   ├── admin.html      # Admin panel
+│   │   ├── admin.js
 │   │   └── dashboard.js
 │   ├── README.md
 │   └── __init__.py
@@ -81,8 +81,7 @@ discogsography/
 │   └── README.md
 ├── 🔍 explore/             # Static frontend for graph exploration UI
 │   ├── explore.py          # FastAPI static file server (health check only)
-│   ├── tailwind.config.js  # Tailwind CLI configuration (content paths, plugins)
-│   ├── tailwind.input.css  # Tailwind source directives (@tailwind base/…)
+│   ├── tailwind.input.css  # Tailwind v4 CSS-first config (@theme, @utility, @source)
 │   ├── static/             # Frontend HTML/CSS/JS (Tailwind, Alpine.js, D3.js, Plotly.js)
 │   │   ├── index.html
 │   │   ├── tailwind.css    # Generated at Docker build time by css-builder stage
@@ -281,7 +280,7 @@ uv run pre-commit run --all-files
    ```bash
    just lint
    just format
-   just typecheck
+   just lint-python
    just security
    ```
 
@@ -399,8 +398,8 @@ just format
 # Check for issues
 just lint
 
-# Type check
-just typecheck
+# Type check (ruff + mypy)
+just lint-python
 ```
 
 ### Type Hints

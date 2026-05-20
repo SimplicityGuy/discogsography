@@ -38,7 +38,7 @@ Neo4j stores music industry relationships as a graph, making it ideal for:
 
 ### Data Pipeline
 
-Raw XML data from the Discogs dump is parsed by the **extractor** into JSON messages and published to RabbitMQ. Each message includes a `type` field (`"data"` or `"file_complete"`), an `id`, and a `sha256` hash. Before writing to Neo4j, the **graphinator** normalizes each message using `normalize_record()`, which flattens nested XML-dict structures, extracts IDs, and parses year values. See [Extractor Message Format](#extractor-message-format) for the raw data structure.
+Raw XML data from the Discogs dump is parsed by the **extractor**, which **normalizes** each record — flattening nested XML-dict structures, stripping `@`/`#text` prefixes, and extracting IDs — *before* computing the `sha256` content hash and publishing JSON messages to RabbitMQ. Each message includes a `type` field (`"data"` or `"file_complete"`), an `id`, and a `sha256` hash, and arrives consumer-ready. The **graphinator**'s own `normalize_record()` then performs only consumer-side year parsing before writing to Neo4j. See [Extractor Message Format](#extractor-message-format) for the published data structure.
 
 ### Node Types
 
@@ -441,7 +441,7 @@ ORDER BY r.year DESC;
 
 ## Extractor Message Format
 
-The Rust extractor parses Discogs XML dumps and publishes JSON messages to RabbitMQ. Each entity type has its own queue. Messages use xmltodict conventions: XML attributes are prefixed with `@`, text content with attributes uses `#text`, and single vs multiple child elements may be an object vs array.
+The Rust extractor parses Discogs XML dumps and publishes JSON messages to RabbitMQ. Each entity type has its own queue. Messages are **normalized by the extractor before publishing**: nested containers are flattened, `@`/`#text` prefixes are stripped, and list-like fields are coerced to consistent arrays. The raw xmltodict-shaped JSON shown in the examples below (with `@`/`#text` and single-vs-array variance) exists only *internally* during parsing — it is the input to the extractor's `normalize::normalize_record()`, not what appears on the wire. The Python consumers' `normalize_record()` adds only year parsing.
 
 ### Message Envelope
 
@@ -508,7 +508,7 @@ Source XML:
 </artist>
 ```
 
-Raw JSON message:
+Internal pre-normalization shape (during XML parsing):
 
 ```json
 {
@@ -531,7 +531,7 @@ Raw JSON message:
 }
 ```
 
-After `normalize_record("artists", ...)`:
+Published `artists` message (extractor-normalized; consumers add only year parsing):
 
 ```json
 {
@@ -563,7 +563,7 @@ Source XML:
 </label>
 ```
 
-Raw JSON message:
+Internal pre-normalization shape (during XML parsing):
 
 ```json
 {
@@ -581,7 +581,7 @@ Raw JSON message:
 }
 ```
 
-After `normalize_record("labels", ...)`:
+Published `labels` message (extractor-normalized; consumers add only year parsing):
 
 ```json
 {
@@ -620,7 +620,7 @@ Source XML:
 </master>
 ```
 
-Raw JSON message:
+Internal pre-normalization shape (during XML parsing):
 
 ```json
 {
@@ -637,7 +637,7 @@ Raw JSON message:
 }
 ```
 
-After `normalize_record("masters", ...)`:
+Published `masters` message (extractor-normalized; consumers add only year parsing):
 
 ```json
 {
@@ -686,7 +686,7 @@ Source XML:
 </release>
 ```
 
-Raw JSON message:
+Internal pre-normalization shape (during XML parsing):
 
 ```json
 {
@@ -715,7 +715,7 @@ Raw JSON message:
 }
 ```
 
-After `normalize_record("releases", ...)`:
+Published `releases` message (extractor-normalized; consumers add only year parsing):
 
 ```json
 {
@@ -750,7 +750,7 @@ Notes:
 | Multiple `<el>` children | `"el": [...]` (array)                 |
 | Single `<el>` child      | `"el": {...}` (object, not array)     |
 
-This single-vs-array ambiguity is why `normalize_record()` exists: it normalizes all list-like fields to consistent arrays.
+This single-vs-array ambiguity is resolved by the extractor's `normalize::normalize_record()` (Rust), which coerces all list-like fields to consistent arrays before publishing — so consumers never see this raw shape on the wire.
 
 ## PostgreSQL Database
 
@@ -1285,10 +1285,10 @@ graph TD
 
 ### Processing Pipeline
 
-Both graphinator and tableinator follow the same normalization pipeline:
+Both graphinator and tableinator follow the same pipeline:
 
-1. Raw JSON message received from RabbitMQ
-1. `normalize_record(data_type, data)` called to flatten XML-dict structures
+1. Pre-normalized JSON message received from RabbitMQ (structural normalization already done by the extractor)
+1. `normalize_record(data_type, data)` called for consumer-side year parsing
 1. Hash-based deduplication check (skip data rewrite if unchanged, but always refresh `updated_at`)
 1. Write to database (Neo4j nodes/relationships or PostgreSQL JSONB)
 1. Acknowledge message

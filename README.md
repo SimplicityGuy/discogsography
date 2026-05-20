@@ -1,25 +1,14 @@
 <div align="center">
 
-<img src="dashboard/static/brand/banner_dark.png" alt="discogsography" width="400" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="dashboard/static/brand/banner_dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="dashboard/static/brand/banner_light.png">
+  <img alt="discogsography" src="dashboard/static/brand/banner_dark.png" width="600">
+</picture>
 
-[![Build](https://github.com/SimplicityGuy/discogsography/actions/workflows/build.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/build.yml)
-[![Code Quality](https://github.com/SimplicityGuy/discogsography/actions/workflows/code-quality.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/code-quality.yml)
-[![Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml)
-[![E2E Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml)
-[![codecov](https://codecov.io/gh/SimplicityGuy/discogsography/branch/main/graph/badge.svg?token=K72AL2L2FY)](https://codecov.io/gh/SimplicityGuy/discogsography)
-![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm--NC--1.0.0-blue)
-![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)
-![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
-[![uv](https://img.shields.io/badge/uv-package%20manager-orange?logo=python)](https://github.com/astral-sh/uv)
-[![just](https://img.shields.io/badge/just-task%20runner-blue)](https://just.systems)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![Cargo](https://img.shields.io/badge/cargo-rust%20package%20manager-brown)](https://doc.rust-lang.org/cargo/)
-[![Clippy](https://img.shields.io/badge/clippy-rust%20linter-green)](https://github.com/rust-lang/rust-clippy)
-[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
-[![mypy](https://img.shields.io/badge/mypy-checked-blue)](http://mypy-lang.org/)
-[![Bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
-[![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-powered-orange?logo=anthropic&logoColor=white)](https://claude.ai/code)
+<br><br>
+
+[![Build](https://github.com/SimplicityGuy/discogsography/actions/workflows/build.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/build.yml) [![Code Quality](https://github.com/SimplicityGuy/discogsography/actions/workflows/code-quality.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/code-quality.yml) [![Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml) [![E2E Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml) [![codecov](https://codecov.io/gh/SimplicityGuy/discogsography/branch/main/graph/badge.svg?token=K72AL2L2FY)](https://codecov.io/gh/SimplicityGuy/discogsography) ![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm--NC--1.0.0-blue) ![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg) ![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 
 **A modern Python 3.13+ microservices platform for transforming the complete [Discogs](https://www.discogs.com/) music database into powerful, queryable knowledge graphs and analytics engines.**
 
@@ -47,8 +36,9 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 ### ⚙️ Core Services
 
+
 | Service                                                       | Purpose                                          | Key Technologies                                             |
-| ------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------ |
+| --------------------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------- |
 | **[🔐](docs/emoji-guide.md#service-identifiers) API**         | User accounts, JWT auth, and collection sync     | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0            |
 | **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**   | Real-time monitoring and admin panel             | `FastAPI`, WebSocket, reactive UI                            |
 | **[🔍](docs/emoji-guide.md#service-identifiers) Explore**     | Serves graph exploration frontend (static files) | `FastAPI`, `Tailwind CSS`, `Alpine.js`, `D3.js`, `Plotly.js` |
@@ -61,8 +51,9 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 ### 🎵 MusicBrainz Enrichment Services
 
+
 | Service                                                             | Purpose                                                          | Key Technologies       |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------- |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------ |
 | **[🧠](docs/emoji-guide.md#service-identifiers) Brainzgraphinator** | Enriches Neo4j graph with MusicBrainz metadata and relationships | `neo4j-driver`, `pika` |
 | **[🧬](docs/emoji-guide.md#service-identifiers) Brainztableinator** | Populates PostgreSQL with MusicBrainz data and external links    | `psycopg3`, `pika`     |
 
@@ -153,13 +144,14 @@ docker-compose up -d
 open http://localhost:8003
 ```
 
-| Service           | URL                    | Default Credentials                 |
-| ----------------- | ---------------------- | ----------------------------------- |
-| 🔐 **API**        | http://localhost:8004  | Register via `/api/auth/register`   |
-| 📊 **Dashboard**  | http://localhost:8003  | None                                |
-| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          |
-| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` |
-| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` |
+
+| Service          | URL                    | Default Credentials                 |
+| ------------------ | ------------------------ | ------------------------------------- |
+| 🔐**API**        | http://localhost:8004  | Register via`/api/auth/register`    |
+| 📊**Dashboard**  | http://localhost:8003  | None                                |
+| 🔗**Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          |
+| 🐘**PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` |
+| 🐰**RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` |
 
 See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local development setup, and environment configuration.
 
@@ -167,25 +159,28 @@ See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local develo
 
 ### 🚀 Getting Started
 
-| Document                                          | Purpose                                                  |
-| ------------------------------------------------- | -------------------------------------------------------- |
-| **[Quick Start Guide](docs/quick-start.md)**      | ⚡ Get Discogsography running in minutes                 |
+
+| Document                                          | Purpose                                                    |
+| --------------------------------------------------- | ------------------------------------------------------------ |
+| **[Quick Start Guide](docs/quick-start.md)**      | ⚡ Get Discogsography running in minutes                   |
 | **[Configuration Guide](docs/configuration.md)**  | ⚙️ Complete environment variable and settings reference  |
 | **[Architecture Overview](docs/architecture.md)** | 🏛️ System architecture, components, data flow, and scale |
-| **[CLAUDE.md](CLAUDE.md)**                        | 🤖 Claude Code integration guide & development standards |
+| **[CLAUDE.md](CLAUDE.md)**                        | 🤖 Claude Code integration guide & development standards   |
 
 ### 💡 Usage & Data
 
-| Document                                       | Purpose                                              |
-| ---------------------------------------------- | ---------------------------------------------------- |
-| **[Usage Examples](docs/usage-examples.md)**   | 💡 Neo4j Cypher and PostgreSQL query examples        |
-| **[Database Schema](docs/database-schema.md)** | 🗄️ Complete Neo4j graph model and PostgreSQL schema  |
-| **[Monitoring Guide](docs/monitoring.md)**     | 📊 Real-time dashboard, metrics, and debug utilities |
+
+| Document                                       | Purpose                                               |
+| ------------------------------------------------ | ------------------------------------------------------- |
+| **[Usage Examples](docs/usage-examples.md)**   | 💡 Neo4j Cypher and PostgreSQL query examples         |
+| **[Database Schema](docs/database-schema.md)** | 🗄️ Complete Neo4j graph model and PostgreSQL schema |
+| **[Monitoring Guide](docs/monitoring.md)**     | 📊 Real-time dashboard, metrics, and debug utilities  |
 
 ### 👨‍💻 Development
 
+
 | Document                                                           | Purpose                                               |
-| ------------------------------------------------------------------ | ----------------------------------------------------- |
+| -------------------------------------------------------------------- | ------------------------------------------------------- |
 | **[Development Guide](docs/development.md)**                       | 💻 Project structure, tooling, and developer workflow |
 | **[Testing Guide](docs/testing-guide.md)**                         | 🧪 Unit, integration, and E2E testing with Playwright |
 | **[Logging Guide](docs/logging-guide.md)**                         | 📊 Structured logging standards and emoji conventions |
@@ -194,8 +189,9 @@ See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local develo
 
 ### 🔧 Operations
 
+
 | Document                                               | Purpose                                              |
-| ------------------------------------------------------ | ---------------------------------------------------- |
+| -------------------------------------------------------- | ------------------------------------------------------ |
 | **[Troubleshooting Guide](docs/troubleshooting.md)**   | 🔧 Common issues, solutions, and debugging steps     |
 | **[Maintenance Guide](docs/maintenance.md)**           | 🔄 Package upgrades, dependency management           |
 | **[Performance Guide](docs/performance-guide.md)**     | ⚡ Database tuning, hardware specs, optimization     |
@@ -204,18 +200,20 @@ See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local develo
 
 ### 🐋 Infrastructure & CI/CD
 
-| Document                                                 | Purpose                                                |
-| -------------------------------------------------------- | ------------------------------------------------------ |
-| **[Dockerfile Standards](docs/dockerfile-standards.md)** | 🐋 Best practices for writing Dockerfiles              |
-| **[Docker Security](docs/docker-security.md)**           | 🔒 Container hardening & security practices            |
-| **[GitHub Actions Guide](docs/github-actions-guide.md)** | 🚀 CI/CD workflows, automation & best practices        |
-| **[Task Automation](docs/task-automation.md)**           | ⚙️ Complete `just` and `uv run task` command reference |
-| **[Monorepo Guide](docs/monorepo-guide.md)**             | 📦 Managing Python monorepo with shared dependencies   |
+
+| Document                                                 | Purpose                                                 |
+| ---------------------------------------------------------- | --------------------------------------------------------- |
+| **[Dockerfile Standards](docs/dockerfile-standards.md)** | 🐋 Best practices for writing Dockerfiles               |
+| **[Docker Security](docs/docker-security.md)**           | 🔒 Container hardening & security practices             |
+| **[GitHub Actions Guide](docs/github-actions-guide.md)** | 🚀 CI/CD workflows, automation & best practices         |
+| **[Task Automation](docs/task-automation.md)**           | ⚙️ Complete`just` and `uv run task` command reference |
+| **[Monorepo Guide](docs/monorepo-guide.md)**             | 📦 Managing Python monorepo with shared dependencies    |
 
 ### 📋 Reference
 
+
 | Document                                                                   | Purpose                                                |
-| -------------------------------------------------------------------------- | ------------------------------------------------------ |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------- |
 | **[State Marker System](docs/state-marker-system.md)**                     | 📋 Extraction progress tracking & safe restart system  |
 | **[State Marker Periodic Updates](docs/state-marker-periodic-updates.md)** | 💾 Periodic state saves and crash recovery             |
 | **[Consumer Cancellation](docs/consumer-cancellation.md)**                 | 🔄 File completion and consumer lifecycle management   |
@@ -257,7 +255,7 @@ Some other projects working with the monthly Discogs data dump.
 - 🐍 The Python community for excellent libraries and tools
 - 🦀 The Rust community for excellent libraries and amazing performance
 
-______________________________________________________________________
+---
 
 <div align="center">
 Made with ❤️ in the Pacific Northwest
