@@ -2555,3 +2555,23 @@ select option {
     font-size: 0.8125rem;
     color: var(--text-high);
 }
+
+/* ============================================================
+   Digger pane
+   ============================================================ */
+
+.digger-onboarding {
+    max-width: 36rem;
+    margin: 2rem auto;
+}
+
+.digger-table-wrap {
+    margin: 1rem 1.5rem 1.5rem;
+}
+
+.digger-table .col-artist { width: 20%; }
+.digger-table .col-title  { width: 28%; }
+.digger-table .col-year   { width: 8%; }
+.digger-table .col-tier   { width: 8%; }
+.digger-table .col-listings { width: 14%; }
+.digger-table .col-scraped  { width: 22%; }

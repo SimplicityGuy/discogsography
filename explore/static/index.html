@@ -590,6 +590,11 @@ body {
                         <span class="material-symbols-outlined">search_off</span>Missing
                     </a>
                 </li>
+                <li id="navDigger">
+                    <a class="nav-link" href="#" data-pane="digger">
+                        <span class="material-symbols-outlined">travel_explore</span>Digger
+                    </a>
+                </li>
             </ul>
         </nav>
     </header>
@@ -1084,6 +1089,21 @@ body {
             </div>
         </div>
 
+        <!-- Digger pane — AI-powered record-hunting assistant -->
+        <div class="pane" id="diggerPane">
+            <div class="user-pane-header">
+                <h5><span class="material-symbols-outlined mr-2" style="font-size:20px;vertical-align:middle">travel_explore</span>Digger</h5>
+                <div class="flex gap-2" id="diggerHeaderActions"></div>
+            </div>
+            <div class="user-pane-body">
+                <div class="loading-overlay" id="diggerLoading">
+                    <div class="spinner" role="status"></div>
+                    <p class="mt-2 text-text-mid">Loading...</p>
+                </div>
+                <div id="diggerBody"></div>
+            </div>
+        </div>
+
         <!-- Settings pane — account management (no nav tab, activated from dropdown) -->
         <div class="pane" id="settingsPane">
             <div class="settings-page">
@@ -1176,6 +1196,7 @@ body {
     <script src="js/theme.js"></script>
     <script type="module" src="js/nlq.js"></script>
     <script src="js/settings.js"></script>
+    <script src="js/digger.js"></script>
     <script src="js/app.js"></script>
     <div id="nlqPillMount"></div>
 </body>
