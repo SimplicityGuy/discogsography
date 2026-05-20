@@ -175,6 +175,7 @@ def test_client(
 
     import api.routers.admin as _admin_router
     import api.routers.collection as _collection_router
+    import api.routers.digger as _digger_router
     import api.routers.explore as _explore_router
     import api.routers.label_dna as _label_dna_router
     import api.routers.recommend as _recommend_router
@@ -185,6 +186,7 @@ def test_client(
     import api.routers.user as _user_router
 
     fake_redis = aioredis_fake.FakeRedis(server=fake_redis_server)
+    _digger_router.configure(mock_pool)
     _sync_router.configure(mock_pool, mock_neo4j, test_api_config, api_module._running_syncs, mock_redis)
     _explore_router.configure(mock_neo4j, test_api_config.jwt_secret_key, mock_redis)
     _label_dna_router.configure(mock_neo4j, mock_redis)
