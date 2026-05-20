@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -44,12 +44,12 @@ jobs:
           python-version: "3.13"
 
       - name: 🔧 Setup Just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
 
       # hadolint is required by the `just lint` pre-commit hook invoked
       # indirectly from scripts/update-project.sh. Mirrors code-quality.yml.
       - name: 🔧 Install hadolint
-        uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
+        uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03  # master
         with:
           hadolint: latest
 
@@ -137,7 +137,7 @@ jobs:
 
       - name: 📤 Upload update logs
         if: always() && steps.update.outputs.no_changes != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: update-logs
           path: |
@@ -153,7 +153,7 @@ jobs:
       - name: 📝 Create Pull Request
         if: steps.update.outputs.no_changes != 'true'
         id: create-pr
-        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v.8.1.1
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1  # v8.1.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: automation/updates
