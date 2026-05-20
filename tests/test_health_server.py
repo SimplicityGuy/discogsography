@@ -134,7 +134,7 @@ class TestHealthHandlerDoGet:
     """Test HealthHandler.do_GET for the 404 path (lines 28-30)."""
 
     def test_do_get_returns_404_for_unknown_path(self) -> None:
-        """Test that do_GET sends 404 for paths other than /health (lines 28-30)."""
+        """Test that do_GET sends 404 for an unknown path (not /health or /metrics)."""
         from common.health_server import HealthHandler
 
         class TestHandler(HealthHandler):
@@ -143,7 +143,7 @@ class TestHealthHandlerDoGet:
                 pass
 
         handler = TestHandler()
-        handler.path = "/metrics"
+        handler.path = "/unknown"
 
         mock_send_response = MagicMock()
         mock_end_headers = MagicMock()
