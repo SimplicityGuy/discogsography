@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<!--
+  SYNTHETIC FIXTURE — hand-authored to match the documented Discogs DOM structure
+  as of 2026-05. NOT captured from a live Discogs page.
+
+  Purpose: exercises seller_parser.py selector logic including seller_id extraction,
+  username, country code mapping, and shipping policy table parsing.
+
+  Deferred: verifying these selectors against live Discogs HTML is deferred to
+  the M1 e2e smoke test (Task 28) and manual QA.
+
+  Fixture contents:
+    - seller_id=54321 (embedded in /users/54321 link)
+    - username: VinylKingRecords
+    - country: United States → "US"
+    - shipping policy: 3 regions (us, europe, worldwide)
+-->
+<html lang="en">
+<head><meta charset="utf-8"><title>VinylKingRecords — Discogs</title></head>
+<body>
+<div class="profile-header">
+  <h1 class="profile-name">VinylKingRecords</h1>
+  <a href="/users/54321">VinylKingRecords</a>
+  <div class="profile-country">United States</div>
+  <div class="profile-feedback">
+    <span class="feedback-count">1523</span>
+    <span class="feedback-score">99.7</span>
+  </div>
+</div>
+
+<div class="seller-info">
+  <table class="shipping-policies">
+    <thead>
+      <tr>
+        <th>Region</th>
+        <th>First Item</th>
+        <th>Additional Items</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="region-row">
+        <td class="region-name">US</td>
+        <td class="first-item-cost">$4.00</td>
+        <td class="additional-item-cost">$1.00</td>
+      </tr>
+      <tr class="region-row">
+        <td class="region-name">Europe</td>
+        <td class="first-item-cost">$12.00</td>
+        <td class="additional-item-cost">$2.50</td>
+      </tr>
+      <tr class="region-row">
+        <td class="region-name">Worldwide</td>
+        <td class="first-item-cost">$15.00</td>
+        <td class="additional-item-cost">$3.00</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+</body>
+</html>
