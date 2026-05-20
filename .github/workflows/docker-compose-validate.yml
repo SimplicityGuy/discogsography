@@ -21,10 +21,10 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: 🔧 Install docker-compose
-        uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
+        uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03  # master
         with:
           docker-compose: ${{ env.COMPOSE_VERSION }}
 
