@@ -521,9 +521,9 @@ git commit -m "feat(digger): trigger to maintain max-tier on release_scrape_stat
 # tests/api/test_syncer_digger_hook.py
 """Unit test for the digger wantlist-sync seed hook (mock-based).
 
-Asserts the helper issues the two idempotent INSERTs via the psycopg3 cursor
-with %s params. Real-DB row creation + trigger recompute is covered by the M1
-e2e smoke (Task 28).
+Asserts the batch helper issues the two idempotent `executemany` INSERTs via the
+psycopg3 cursor with %s params, opening a single connection. Real-DB row creation
++ trigger recompute is covered by the M1 e2e smoke (Task 28).
 """
 
 import uuid
@@ -531,7 +531,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from api.syncer import _seed_digger_priority_for_wantlist_item
+from api.syncer import _seed_digger_priorities_for_wantlist
 
 
 def _mock_pool() -> tuple[MagicMock, AsyncMock]:
@@ -548,19 +548,28 @@ def _mock_pool() -> tuple[MagicMock, AsyncMock]:
 
 
 @pytest.mark.asyncio
-async def test_seed_inserts_scrape_state_and_priority_row() -> None:
+async def test_seed_batches_scrape_state_and_priority_rows() -> None:
     pool, cur = _mock_pool()
     user_id = uuid.uuid4()
 
-    await _seed_digger_priority_for_wantlist_item(pool, user_id, release_id=12345)
+    await _seed_digger_priorities_for_wantlist(pool, user_id, [12345, 67890])
 
-    executed = [(c.args[0], c.args[1] if len(c.args) > 1 else None) for c in cur.execute.call_args_list]
-    all_sql = " ".join(sql for sql, _ in executed)
-    assert "INSERT INTO digger.release_scrape_state" in all_sql
-    assert "INSERT INTO digger.user_wantlist_priorities" in all_sql
-    # psycopg3 params are positional tuples bound to %s placeholders
-    assert any(params == (12345,) for _, params in executed)
-    assert any(params == (user_id, 12345) for _, params in executed)
+    calls = [(c.args[0], c.args[1]) for c in cur.executemany.call_args_list]
+    assert len(calls) == 2
+    state_sql, state_rows = calls[0]
+    prio_sql, prio_rows = calls[1]
+    assert "INSERT INTO digger.release_scrape_state" in state_sql
+    assert state_rows == [(12345,), (67890,)]  # parent rows first (FK order)
+    assert "INSERT INTO digger.user_wantlist_priorities" in prio_sql
+    assert prio_rows == [(user_id, 12345), (user_id, 67890)]
+
+
+@pytest.mark.asyncio
+async def test_seed_is_noop_for_empty_release_list() -> None:
+    pool, cur = _mock_pool()
+    await _seed_digger_priorities_for_wantlist(pool, uuid.uuid4(), [])
+    cur.executemany.assert_not_called()
+    pool.connection.assert_not_called()
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -572,41 +581,42 @@ Expected: ImportError — helper not defined.
 
 ```python
 # api/syncer.py — add near the wantlist sync block.
-# Reuse the AsyncPostgreSQLPool import already present in this module.
-import uuid
+# Reuse the AsyncPostgreSQLPool and UUID imports already present in this module.
 
-from common.postgres_resilient import AsyncPostgreSQLPool
-
-
-async def _seed_digger_priority_for_wantlist_item(
-    pool: AsyncPostgreSQLPool, user_id: uuid.UUID, release_id: int
+async def _seed_digger_priorities_for_wantlist(
+    pool: AsyncPostgreSQLPool, user_id: UUID, release_ids: list[int]
 ) -> None:
-    """Ensure a digger.user_wantlist_priorities row exists for this user+release.
+    """Seed digger priority rows for a page of wantlist releases.
 
-    Default tier is 'nice' (schema column default). The schema trigger maintains
-    digger.release_scrape_state.priority_tier as a side effect. Idempotent and
-    safe to call repeatedly. psycopg3 autocommit single-statement writes — no
-    explicit transaction needed.
+    For each release, ensures a digger.release_scrape_state row (parent) and a
+    digger.user_wantlist_priorities row (default tier 'nice', from the schema
+    column default). The schema trigger maintains release_scrape_state.priority_tier
+    as a side effect. Idempotent (ON CONFLICT DO NOTHING). Opens ONE pooled
+    connection per page and uses executemany; psycopg3 autocommit single-statement
+    writes — no explicit transaction needed.
     """
-    async with pool.connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "INSERT INTO digger.release_scrape_state (release_id) VALUES (%s) "
-                "ON CONFLICT (release_id) DO NOTHING",
-                (release_id,),
-            )
-            await cur.execute(
-                "INSERT INTO digger.user_wantlist_priorities (user_id, release_id) "
-                "VALUES (%s, %s) ON CONFLICT (user_id, release_id) DO NOTHING",
-                (user_id, release_id),
-            )
+    if not release_ids:
+        return
+    async with pool.connection() as conn, conn.cursor() as cur:
+        await cur.executemany(
+            "INSERT INTO digger.release_scrape_state (release_id) VALUES (%s) "
+            "ON CONFLICT (release_id) DO NOTHING",
+            [(rid,) for rid in release_ids],
+        )
+        await cur.executemany(
+            "INSERT INTO digger.user_wantlist_priorities (user_id, release_id) "
+            "VALUES (%s, %s) ON CONFLICT (user_id, release_id) DO NOTHING",
+            [(user_id, rid) for rid in release_ids],
+        )
 ```
 
-Inside `sync_wantlist()` (`api/syncer.py`), the wantlist rows are upserted into the public `user_wantlists` table in a **batch** (the loop already derives `release_id = item.get("id")` and skips falsy ids). Collect those ids into a list alongside the batch params, then — after the batch upsert succeeds — seed digger priorities for the whole batch using the pool already in scope:
+Inside `sync_wantlist()` (`api/syncer.py`), the wantlist rows are upserted into the public `user_wantlists` table in a **batch** (each `batch_params` tuple has `release_id` at index 1). After the per-page upsert succeeds (`total_synced += len(batch_params)`), seed digger priorities for the whole page in one call, isolated so a seeding failure logs a warning but never aborts the already-committed wantlist sync (mirrors the non-critical cache-invalidation isolation elsewhere in the syncer):
 
 ```python
-for release_id in wantlist_release_ids:
-    await _seed_digger_priority_for_wantlist_item(pool, user_id, release_id)
+try:
+    await _seed_digger_priorities_for_wantlist(pg_pool, user_uuid, [row[1] for row in batch_params])
+except Exception as exc:  # seeding is a non-critical side-effect; never fail the sync over it
+    logger.warning("⚠️ Failed to seed digger priorities", error=str(exc))
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
