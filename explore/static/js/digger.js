@@ -15,6 +15,12 @@ class DiggerPane {
         this._items = [];
         this._isLoading = false;
 
+        // T4 — bulk-actions / filter / selection state.
+        this._selected = new Set();          // selected release_ids
+        this._tierFilter = 'all';            // 'all' | 'must' | 'nice' | 'eventually'
+        this._hideNoListings = false;        // hide items with active_listings === 0
+        this._bulkApplying = false;          // in-flight guard for bulk-tier Apply
+
         this._loading = document.getElementById('diggerLoading');
         this._body = document.getElementById('diggerBody');
     }
@@ -129,7 +135,271 @@ class DiggerPane {
             return;
         }
 
+        // Top-to-bottom: stats banner → controls (filters + bulk bar) → table.
+        this._renderStatsBanner();
+        this._renderControls();
         this._renderTable();
+    }
+
+    /**
+     * Re-fetch the wantlist and fully re-render (stats + controls + table).
+     * Reuses _loadWantlist, which sets _items and calls _renderContent.
+     */
+    async refresh() {
+        const token = window.authManager.getToken();
+        if (!token) return;
+        await this._loadWantlist(token);
+    }
+
+    // ------------------------------------------------------------------ //
+    // Stats banner
+    // ------------------------------------------------------------------ //
+
+    /**
+     * Render the stats banner. Computed from ALL items (never the filtered set).
+     *
+     * NOTE: This banner reflects state at the last FULL render (init / filter
+     * change / bulk refresh). Per-row tier edits (T3) intentionally do NOT update
+     * the banner live — those controls are kept decoupled from the banner.
+     */
+    _renderStatsBanner() {
+        const counts = { must: 0, nice: 0, eventually: 0 };
+        let mustAvailable = 0;
+        for (const item of this._items) {
+            if (counts[item.tier] != null) counts[item.tier] += 1;
+            if (item.tier === 'must' && item.active_listings > 0) mustAvailable += 1;
+        }
+
+        const row = document.createElement('div');
+        row.className = 'stats-row digger-stats';
+
+        row.appendChild(this._buildStatCard('Must', String(counts.must)));
+        row.appendChild(this._buildStatCard('Nice', String(counts.nice)));
+        row.appendChild(this._buildStatCard('Eventually', String(counts.eventually)));
+        row.appendChild(this._buildStatCard('Must available', `${mustAvailable} / ${counts.must}`));
+
+        this._body.appendChild(row);
+    }
+
+    /**
+     * Build a single stat card (label + value).
+     * @param {string} label
+     * @param {string} value
+     * @returns {HTMLDivElement}
+     */
+    _buildStatCard(label, value) {
+        const card = document.createElement('div');
+        card.className = 'stat-card';
+
+        const lbl = document.createElement('div');
+        lbl.className = 'stat-label';
+        lbl.textContent = label;
+        card.appendChild(lbl);
+
+        const val = document.createElement('div');
+        val.className = 'stat-value';
+        val.textContent = value;
+        card.appendChild(val);
+
+        return card;
+    }
+
+    // ------------------------------------------------------------------ //
+    // Controls — filters + bulk-actions bar
+    // ------------------------------------------------------------------ //
+
+    _renderControls() {
+        const controls = document.createElement('div');
+        controls.className = 'digger-controls';
+
+        controls.appendChild(this._renderFilters());
+        controls.appendChild(this._renderBulkBar());
+
+        this._body.appendChild(controls);
+    }
+
+    /**
+     * Build the filters bar (tier filter + hide-no-listings toggle).
+     * @returns {HTMLDivElement}
+     */
+    _renderFilters() {
+        const filters = document.createElement('div');
+        filters.className = 'gap-filters digger-filters';
+
+        // Tier filter select.
+        const tierSelect = document.createElement('select');
+        tierSelect.className = 'form-input-dark gap-format-select digger-filter-select';
+        tierSelect.setAttribute('aria-label', 'Filter by tier');
+        const tierOptions = [
+            { value: 'all',        label: 'All tiers' },
+            { value: 'must',       label: 'Must' },
+            { value: 'nice',       label: 'Nice' },
+            { value: 'eventually', label: 'Eventually' },
+        ];
+        for (const { value, label } of tierOptions) {
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = label;
+            if (value === this._tierFilter) opt.selected = true;
+            tierSelect.appendChild(opt);
+        }
+        tierSelect.addEventListener('change', () => {
+            this._tierFilter = tierSelect.value;
+            this._renderTable();
+        });
+        filters.appendChild(tierSelect);
+
+        // Hide-no-listings toggle.
+        const hideLabel = document.createElement('label');
+        hideLabel.className = 'gap-filter-toggle digger-filter-toggle';
+        const hideCheckbox = document.createElement('input');
+        hideCheckbox.type = 'checkbox';
+        hideCheckbox.checked = this._hideNoListings;
+        hideCheckbox.addEventListener('change', () => {
+            this._hideNoListings = hideCheckbox.checked;
+            this._renderTable();
+        });
+        hideLabel.append(hideCheckbox, ' Hide items with no listings');
+        filters.appendChild(hideLabel);
+
+        return filters;
+    }
+
+    /**
+     * Build the bulk-actions bar. Hidden when nothing is selected.
+     * @returns {HTMLDivElement}
+     */
+    _renderBulkBar() {
+        const bar = document.createElement('div');
+        bar.className = 'digger-bulk-bar';
+        this._bulkBar = bar;
+
+        // Selection count.
+        const count = document.createElement('span');
+        count.className = 'digger-bulk-count';
+        this._bulkCount = count;
+        bar.appendChild(count);
+
+        // Tier select (bulk target).
+        const tierSelect = document.createElement('select');
+        tierSelect.className = 'form-input-dark digger-bulk-tier';
+        tierSelect.setAttribute('aria-label', 'Bulk tier');
+        for (const tier of DIGGER_TIERS) {
+            const opt = document.createElement('option');
+            opt.value = tier;
+            // Title-case label to match the tier filter select (e.g. "Must").
+            opt.textContent = tier.charAt(0).toUpperCase() + tier.slice(1);
+            tierSelect.appendChild(opt);
+        }
+        this._bulkTierSelect = tierSelect;
+        bar.appendChild(tierSelect);
+
+        // Apply button.
+        const applyBtn = document.createElement('button');
+        applyBtn.type = 'button';
+        applyBtn.className = 'btn-primary digger-bulk-apply';
+        applyBtn.textContent = 'Apply';
+        applyBtn.addEventListener('click', () => this._applyBulkTier());
+        this._bulkApplyBtn = applyBtn;
+        bar.appendChild(applyBtn);
+
+        // Clear button.
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.className = 'digger-bulk-clear';
+        clearBtn.textContent = 'Clear';
+        clearBtn.addEventListener('click', () => this._clearSelection());
+        bar.appendChild(clearBtn);
+
+        this._updateBulkBar();
+        return bar;
+    }
+
+    /**
+     * Update the bulk bar's visibility and selection count to match _selected.
+     */
+    _updateBulkBar() {
+        if (!this._bulkBar) return;
+        const n = this._selected.size;
+        if (this._bulkCount) this._bulkCount.textContent = `${n} selected`;
+        this._bulkBar.classList.toggle('hidden', n === 0);
+    }
+
+    /**
+     * Apply the chosen tier to all selected releases, then refresh on success.
+     */
+    async _applyBulkTier() {
+        if (this._bulkApplying) return; // guard against double-submit while a request is in flight
+        const token = window.authManager.getToken();
+        if (!token) return;
+        if (this._selected.size === 0) return;
+
+        const tier = this._bulkTierSelect ? this._bulkTierSelect.value : DIGGER_TIERS[0];
+        const ids = Array.from(this._selected);
+
+        this._bulkApplying = true;
+        if (this._bulkApplyBtn) this._bulkApplyBtn.disabled = true;
+        try {
+            const res = await window.apiClient.bulkSetDiggerTier(token, ids, tier);
+            if (res && res.ok) {
+                // Clear selection and re-fetch so tiers + stats reflect the change.
+                this._selected.clear();
+                await this.refresh();
+            }
+            // On failure: keep selection so the user can retry.
+        } finally {
+            this._bulkApplying = false;
+            // On success, refresh() rebuilt the bar (this._bulkApplyBtn now points at the
+            // fresh, hidden button); on failure it is the same button we disabled above.
+            if (this._bulkApplyBtn) this._bulkApplyBtn.disabled = false;
+        }
+    }
+
+    /**
+     * Toggle selection for all currently visible items.
+     * @param {boolean} checked
+     */
+    _toggleSelectAll(checked) {
+        const visible = this._getVisibleItems();
+        for (const item of visible) {
+            if (checked) {
+                this._selected.add(item.release_id);
+            } else {
+                this._selected.delete(item.release_id);
+            }
+        }
+        // Reflect on the visible row checkboxes without a full re-render.
+        const rows = this._body.querySelectorAll('.digger-table tbody tr');
+        for (const tr of rows) {
+            const cb = tr.querySelector('input[type="checkbox"]');
+            if (cb) cb.checked = checked;
+        }
+        this._syncSelectAllCheckbox();
+        this._updateBulkBar();
+    }
+
+    /**
+     * Keep the header select-all checkbox in sync with row selection state.
+     */
+    _syncSelectAllCheckbox() {
+        const selectAll = this._body.querySelector('.digger-table thead input[type="checkbox"]');
+        if (!selectAll) return;
+        const visible = this._getVisibleItems();
+        selectAll.checked = visible.length > 0 && visible.every((it) => this._selected.has(it.release_id));
+    }
+
+    /**
+     * Clear the entire selection, uncheck visible rows, and hide the bulk bar.
+     */
+    _clearSelection() {
+        this._selected.clear();
+        const rows = this._body.querySelectorAll('.digger-table tbody tr');
+        for (const tr of rows) {
+            const cb = tr.querySelector('input[type="checkbox"]');
+            if (cb) cb.checked = false;
+        }
+        this._syncSelectAllCheckbox();
+        this._updateBulkBar();
     }
 
     _renderEmpty() {
@@ -170,7 +440,27 @@ class DiggerPane {
         this._body.appendChild(empty);
     }
 
+    /**
+     * Items currently visible given the active filters.
+     * @returns {Array<Object>}
+     */
+    _getVisibleItems() {
+        return this._items.filter((item) => {
+            if (this._tierFilter !== 'all' && item.tier !== this._tierFilter) return false;
+            if (this._hideNoListings && !(item.active_listings > 0)) return false;
+            return true;
+        });
+    }
+
+    /**
+     * Render (or re-render) just the table rows for the currently visible items.
+     * Removes any existing table wrap first so filter changes don't stack tables.
+     */
     _renderTable() {
+        // Drop any prior table (filter re-render) without touching banner/controls.
+        const existing = this._body.querySelector('.digger-table-wrap');
+        if (existing) existing.remove();
+
         const wrap = document.createElement('div');
         wrap.className = 'release-table-wrap digger-table-wrap';
 
@@ -183,6 +473,19 @@ class DiggerPane {
         // Header
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
+
+        // Leading select-all column.
+        const thSelect = document.createElement('th');
+        thSelect.className = 'col-select';
+        const selectAll = document.createElement('input');
+        selectAll.type = 'checkbox';
+        selectAll.setAttribute('aria-label', 'Select all');
+        const visibleNow = this._getVisibleItems();
+        selectAll.checked = visibleNow.length > 0 && visibleNow.every((it) => this._selected.has(it.release_id));
+        selectAll.addEventListener('change', () => this._toggleSelectAll(selectAll.checked));
+        thSelect.appendChild(selectAll);
+        headerRow.appendChild(thSelect);
+
         const columns = [
             { label: 'Artist',          cls: 'col-artist' },
             { label: 'Title',           cls: 'col-title' },
@@ -203,9 +506,9 @@ class DiggerPane {
         thead.appendChild(headerRow);
         table.appendChild(thead);
 
-        // Body
+        // Body — only visible items.
         const tbody = document.createElement('tbody');
-        for (const item of this._items) {
+        for (const item of visibleNow) {
             tbody.appendChild(this._buildRow(item));
         }
         table.appendChild(tbody);
@@ -223,6 +526,26 @@ class DiggerPane {
     _buildRow(item) {
         const tr = document.createElement('tr');
         tr.dataset.releaseId = String(item.release_id);
+
+        // Row-selection checkbox (leading column)
+        const tdSelect = document.createElement('td');
+        tdSelect.className = 'col-select';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = this._selected.has(item.release_id);
+        checkbox.setAttribute('aria-label', 'Select row');
+        checkbox.addEventListener('change', () => {
+            if (checkbox.checked) {
+                this._selected.add(item.release_id);
+            } else {
+                this._selected.delete(item.release_id);
+            }
+            // Single-checkbox toggle: update the bulk bar only — no full re-render.
+            this._updateBulkBar();
+            this._syncSelectAllCheckbox();
+        });
+        tdSelect.appendChild(checkbox);
+        tr.appendChild(tdSelect);
 
         // Artist (plain text)
         const tdArtist = document.createElement('td');
