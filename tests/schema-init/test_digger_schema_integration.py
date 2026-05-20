@@ -30,7 +30,7 @@ def mock_pool() -> MagicMock:
 @pytest.mark.asyncio
 async def test_create_postgres_schema_applies_digger_schema(mock_pool: MagicMock) -> None:
     await create_postgres_schema(mock_pool)
-    cur = mock_pool.connection.return_value.cursor.return_value
+    cur = mock_pool.connection.return_value.__aenter__.return_value.cursor.return_value
     executed = [c.args[0] for c in cur.execute.call_args_list if c.args]
     assert any(isinstance(stmt, str) and "CREATE SCHEMA IF NOT EXISTS digger" in stmt for stmt in executed), (
         "digger schema SQL was not executed by create_postgres_schema"

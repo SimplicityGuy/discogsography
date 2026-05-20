@@ -13,7 +13,8 @@ def test_trigger_function_and_trigger_present() -> None:
     sql = DIGGER_SCHEMA_SQL
     assert "FUNCTION digger.recompute_priority_for_release" in sql
     assert "FUNCTION digger.uwp_after_change" in sql
-    assert "CREATE TRIGGER trg_uwp_recompute" in sql
+    # CREATE OR REPLACE TRIGGER avoids the drop-then-create gap on every schema-init run
+    assert "CREATE OR REPLACE TRIGGER trg_uwp_recompute" in sql
     assert "AFTER INSERT OR UPDATE OR DELETE ON digger.user_wantlist_priorities" in sql
 
 
@@ -24,3 +25,11 @@ def test_trigger_encodes_tier_precedence() -> None:
     nice_at = sql.find("bool_or(tier = 'nice')")
     assert must_at != -1 and nice_at != -1
     assert must_at < nice_at, "must must be evaluated before nice in the precedence ladder"
+
+
+def test_recompute_resets_to_eventually_when_no_wanters() -> None:
+    sql = DIGGER_SCHEMA_SQL
+    # When the last user removes a release, max_tier IS NULL and the function must
+    # deprioritize the release to 'eventually' rather than leaving a stale tier.
+    assert "SET priority_tier = 'eventually'" in sql
+    assert "priority_tier IS DISTINCT FROM 'eventually'::digger.priority_tier" in sql

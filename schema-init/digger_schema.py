@@ -186,6 +186,10 @@ BEGIN
     WHERE release_id = p_release_id;
 
     IF max_tier IS NULL THEN
+        UPDATE digger.release_scrape_state
+           SET priority_tier = 'eventually'
+         WHERE release_id = p_release_id
+           AND priority_tier IS DISTINCT FROM 'eventually'::digger.priority_tier;
         RETURN;
     END IF;
 
@@ -210,8 +214,7 @@ BEGIN
     END IF;
 END $$;
 
-DROP TRIGGER IF EXISTS trg_uwp_recompute ON digger.user_wantlist_priorities;
-CREATE TRIGGER trg_uwp_recompute
+CREATE OR REPLACE TRIGGER trg_uwp_recompute
 AFTER INSERT OR UPDATE OR DELETE ON digger.user_wantlist_priorities
 FOR EACH ROW EXECUTE FUNCTION digger.uwp_after_change();
 """

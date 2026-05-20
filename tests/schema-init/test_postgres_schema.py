@@ -171,7 +171,12 @@ class TestCreatePostgresSchema:
         await create_postgres_schema(mock_pool)
 
         for stmt in captured:
-            assert "IF NOT EXISTS" in stmt.upper(), f"Statement is not idempotent: {stmt[:80]}..."
+            upper = stmt.upper()
+            assert "IF NOT EXISTS" in upper, f"Statement is not idempotent: {stmt[:80]}..."
+            # A multi-statement blob could still hide an un-guarded DROP that would
+            # not be idempotent — any DROP must be guarded with IF EXISTS.
+            if "DROP " in upper:
+                assert "IF EXISTS" in upper, f"Statement contains an un-guarded DROP: {stmt[:80]}..."
 
     @pytest.mark.asyncio
     async def test_all_fail_gracefully(self, mock_pool: MagicMock) -> None:
