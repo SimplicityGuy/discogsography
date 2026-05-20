@@ -126,3 +126,11 @@ def test_set_priority_204(test_client: TestClient, auth_headers: dict[str, str])
         )
     assert r.status_code == 204
     mock_set.assert_awaited_once()
+
+
+def test_set_priority_empty_body_returns_204(test_client: TestClient, auth_headers: dict[str, str]) -> None:
+    mock_set = AsyncMock()
+    with patch("api.routers.digger.q.set_wantlist_priority", mock_set):
+        r = test_client.put("/api/digger/wantlist/123/priority", headers=auth_headers, json={})
+    assert r.status_code == 204
+    mock_set.assert_awaited_once()

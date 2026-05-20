@@ -815,10 +815,20 @@ class DiggerSettingsIn(BaseModel):
     daily_token_cap_scheduled: int | None = None
 
 
-class DiggerSettingsOut(DiggerSettingsIn):
-    """Response body for a user's digger settings."""
+class DiggerSettingsOut(BaseModel):
+    """Response body for a user's digger settings.
 
-    pass
+    Token caps are always populated from NOT NULL DB columns, so they are
+    plain ints here (unlike the optional inputs on DiggerSettingsIn).
+    """
+
+    enabled: bool
+    country_code: str | None
+    currency: str
+    scheduled_cadence: DiggerCadence
+    preferred_model: DiggerModel
+    daily_token_cap_interactive: int
+    daily_token_cap_scheduled: int
 
 
 class DiggerWantlistItemOut(BaseModel):
