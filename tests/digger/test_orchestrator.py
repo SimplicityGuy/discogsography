@@ -221,3 +221,180 @@ async def test_state_loop_calls_refresh_and_stops() -> None:
         await _task
 
     assert len(refresh_calls) >= 1, "refresh_all_due_times should have been called at least once"
+
+
+# ---------------------------------------------------------------------------
+# scrape_loop — breaker open path (lines 42-47)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scrape_loop_breaker_open_stop_during_wait() -> None:
+    """Breaker is open; stop_event is set while the loop waits → loop exits cleanly (lines 42-45)."""
+    pool = _Pool(release_id=1)
+    rate = _Rate()
+    cb = _Breaker(open=True)
+    executor = _Executor(success=True)
+    stop_event = asyncio.Event()
+
+    # Set stop_event shortly after the loop enters the breaker-open wait
+    async def stopper() -> None:
+        await asyncio.sleep(0.05)
+        stop_event.set()
+
+    _task = asyncio.create_task(stopper())
+    await scrape_loop(pool=pool, executor=executor, rate=rate, breaker=cb, stop_event=stop_event)  # type: ignore[arg-type]
+    await _task
+
+    # Nothing should have been scraped — breaker was open the whole time
+    assert executor._calls == []
+
+
+@pytest.mark.asyncio
+async def test_scrape_loop_breaker_open_timeout_then_stops() -> None:
+    """Breaker is open; wait_for times out (lines 45-46: TimeoutError pass), then the breaker closes and loop runs."""
+
+    class _ToggleBreaker:
+        """Returns open=True exactly once then open=False thereafter."""
+
+        def __init__(self) -> None:
+            self._call = 0
+            self._records: list[bool] = []
+
+        async def is_open(self) -> bool:
+            self._call += 1
+            # First two calls: open (first call enters the wait_for timeout branch)
+            return self._call <= 1
+
+        async def record(self, success: bool) -> None:
+            self._records.append(success)
+
+    pool = _Pool(release_id=1)
+    rate = _Rate()
+    cb = _ToggleBreaker()
+    executor = _Executor(success=True)
+    stop_event = asyncio.Event()
+
+    # Stop quickly after a couple of loop iterations
+    async def stopper() -> None:
+        await asyncio.sleep(0.3)
+        stop_event.set()
+
+    with patch("digger.scraper.orchestrator.asyncio.wait_for", new=_fast_timeout_wait_for):
+        _task = asyncio.create_task(stopper())
+        await scrape_loop(pool=pool, executor=executor, rate=rate, breaker=cb, stop_event=stop_event)  # type: ignore[arg-type]
+        await _task
+
+    # At least one scrape ran after the breaker opened
+    assert len(executor._calls) >= 1
+
+
+async def _fast_timeout_wait_for(coro: object, *, timeout: float = 0) -> None:  # noqa: ARG001
+    """Replacement for asyncio.wait_for that raises TimeoutError immediately."""
+    coro_obj = coro  # type: ignore[assignment]
+    # Close the coroutine to avoid 'was never awaited' warnings
+    if hasattr(coro_obj, "close"):
+        coro_obj.close()  # type: ignore[union-attr]
+    raise TimeoutError
+
+
+# ---------------------------------------------------------------------------
+# scrape_loop — queue empty timeout path (lines 61-62)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scrape_loop_queue_empty_timeout_continues() -> None:
+    """When the queue is empty and the 2-s wait times out, the loop continues (lines 61-62)."""
+    pool = _Pool(release_id=None)
+    rate = _Rate()
+    cb = _Breaker(open=False)
+    executor = _Executor(success=True)
+    stop_event = asyncio.Event()
+
+    iterations = 0
+
+    async def _counting_wait_for(coro: object, *, timeout: float = 0) -> None:  # noqa: ARG001
+        """Raise TimeoutError immediately to simulate the 2 s queue-empty wait expiring."""
+        nonlocal iterations
+        coro_obj = coro  # type: ignore[assignment]
+        if hasattr(coro_obj, "close"):
+            coro_obj.close()  # type: ignore[union-attr]
+        iterations += 1
+        if iterations >= 2:
+            stop_event.set()
+        raise TimeoutError
+
+    with patch("digger.scraper.orchestrator.asyncio.wait_for", new=_counting_wait_for):
+        await scrape_loop(pool=pool, executor=executor, rate=rate, breaker=cb, stop_event=stop_event)  # type: ignore[arg-type]
+
+    assert executor._calls == [], "No scrape when queue always empty"
+    assert iterations >= 2
+
+
+# ---------------------------------------------------------------------------
+# state_loop — exception handler (lines 89-90) and interval timeout (lines 93-94)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_state_loop_handles_exception_and_continues() -> None:
+    """state_loop logs exceptions from refresh_all_due_times and continues (lines 89-90)."""
+    pool = _Pool(release_id=None)
+    stop_event = asyncio.Event()
+    call_count = 0
+
+    async def _failing_refresh(_cur: object) -> int:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError("db blew up")
+        return 0
+
+    with patch("digger.scraper.orchestrator.refresh_all_due_times", new=_failing_refresh):
+
+        async def stopper() -> None:
+            await asyncio.sleep(0.2)
+            stop_event.set()
+
+        _task = asyncio.create_task(stopper())
+        await state_loop(pool=pool, stop_event=stop_event, interval_seconds=1)  # type: ignore[arg-type]
+        await _task
+
+    # Must have been called at least once despite the exception
+    assert call_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_state_loop_interval_timeout_continues() -> None:
+    """state_loop's wait_for raises TimeoutError when stop_event is not set (lines 93-94)."""
+    pool = _Pool(release_id=None)
+    stop_event = asyncio.Event()
+    call_count = 0
+
+    async def _fast_refresh(_cur: object) -> int:
+        nonlocal call_count
+        call_count += 1
+        return 0
+
+    timeouts = 0
+
+    async def _timeout_wait_for(coro: object, *, timeout: float = 0) -> None:  # noqa: ARG001
+        """Always raise TimeoutError, then let the outer stopper end the loop."""
+        nonlocal timeouts
+        coro_obj = coro  # type: ignore[assignment]
+        if hasattr(coro_obj, "close"):
+            coro_obj.close()  # type: ignore[union-attr]
+        timeouts += 1
+        if timeouts >= 2:
+            stop_event.set()
+        raise TimeoutError
+
+    with (
+        patch("digger.scraper.orchestrator.refresh_all_due_times", new=_fast_refresh),
+        patch("digger.scraper.orchestrator.asyncio.wait_for", new=_timeout_wait_for),
+    ):
+        await state_loop(pool=pool, stop_event=stop_event, interval_seconds=1)  # type: ignore[arg-type]
+
+    assert call_count >= 2, f"refresh should have run ≥2 times; got {call_count}"
+    assert timeouts >= 2

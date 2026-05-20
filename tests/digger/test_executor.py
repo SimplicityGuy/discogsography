@@ -239,3 +239,72 @@ async def test_placeholder_id_used_in_listing_insert(monkeypatch: pytest.MonkeyP
     params = listing_insert_call[0][1]
     expected_placeholder = _placeholder_seller_id("newuser")
     assert params[2] == expected_placeholder  # seller_id is 3rd positional param
+
+
+# ---------------------------------------------------------------------------
+# scrape_release — UnknownLayoutError path (lines 61-64)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scrape_release_returns_false_on_unknown_layout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When parse_listings raises UnknownLayoutError, scrape_release returns False."""
+    from digger.scraper.listing_parser import UnknownLayoutError
+
+    def _raise_unknown(_html: str, _rid: int) -> list[ParsedListing]:
+        raise UnknownLayoutError("bad layout")
+
+    pool, _, _ = _make_pool()
+    http = AsyncMock()
+    http.get = AsyncMock(return_value=MagicMock(status_code=200, text="<html/>"))
+
+    monkeypatch.setattr("digger.scraper.executor.parse_listings", _raise_unknown)
+    exe = ScrapeExecutor(http_client=http, pool=pool)
+    result = await exe.scrape_release(42)
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# scrape_release — generic Exception path (lines 68-71)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scrape_release_returns_false_on_http_exception() -> None:
+    """When http.get raises an arbitrary exception, scrape_release returns False."""
+    pool, _, _ = _make_pool()
+    http = AsyncMock()
+    http.get = AsyncMock(side_effect=RuntimeError("network dead"))
+
+    exe = ScrapeExecutor(http_client=http, pool=pool)
+    result = await exe.scrape_release(99)
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# _persist — duplicate seller dedup (line 91: `continue` branch)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scrape_release_deduplicates_seller_queries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two listings from the same seller only issue one SELECT for that seller."""
+    release_id = 200
+    listing_a = _make_listing(listing_id=2001, release_id=release_id, seller_username="shared_seller")
+    listing_b = _make_listing(listing_id=2002, release_id=release_id, seller_username="shared_seller")
+
+    pool, _conn, cursor = _make_pool(fetchone_return=None)
+
+    monkeypatch.setattr(
+        "digger.scraper.executor.parse_listings",
+        lambda _html, _rid: [listing_a, listing_b],
+    )
+    http = AsyncMock()
+    http.get = AsyncMock(return_value=MagicMock(status_code=200, text=""))
+
+    exe = ScrapeExecutor(http_client=http, pool=pool)
+    await exe.scrape_release(release_id)
+
+    # Only one SELECT per seller — the second listing hits the `continue` branch
+    select_calls = [c for c in cursor.execute.call_args_list if "SELECT seller_id" in c[0][0]]
+    assert len(select_calls) == 1, f"Expected 1 SELECT for the shared seller, got {len(select_calls)}"

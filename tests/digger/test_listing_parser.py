@@ -107,3 +107,172 @@ def test_parser_locale_safe_price_parsing(price_text: str, expected: Decimal) ->
     parsed = parse_listings(_single_listing_html(price_text), release_id=1)
     assert len(parsed) == 1
     assert parsed[0].price_value == expected
+
+
+# ---------------------------------------------------------------------------
+# Edge / skip branches (previously uncovered)
+# ---------------------------------------------------------------------------
+
+
+def test_parser_empty_container_returns_empty_list() -> None:
+    """table#pjax_container present but no shortcut_navigable rows → [] (line 118)."""
+    html = "<html><body><table id='pjax_container'><tbody></tbody></table></body></html>"
+    assert parse_listings(html, release_id=1) == []
+
+
+def test_parser_skips_row_missing_listing_anchor() -> None:
+    """A row without an item_description_title anchor is silently skipped (line 126)."""
+    html = """<html><body>
+    <table id="pjax_container"><tbody>
+      <tr class="shortcut_navigable">
+        <td class="item_description">
+          <!-- no <a class="item_description_title"> -->
+          <p class="item_condition">
+            <span class="condition-label-desktop">Media:</span><span>NM</span>
+          </p>
+        </td>
+        <td class="seller_info"><strong><a href="/seller/x">x</a></strong></td>
+        <td class="item_price"><span class="price">USD 5.00</span></td>
+      </tr>
+    </tbody></table>
+    </body></html>"""
+    assert parse_listings(html, release_id=1) == []
+
+
+def test_parser_skips_row_with_bad_listing_href() -> None:
+    """A row whose title anchor href has no /sell/item/<id> is skipped (line 130)."""
+    html = """<html><body>
+    <table id="pjax_container"><tbody>
+      <tr class="shortcut_navigable">
+        <td class="item_description">
+          <a class="item_description_title" href="/not-a-listing-link">Rec</a>
+          <p class="item_condition">
+            <span class="condition-label-desktop">Media:</span><span>NM</span>
+          </p>
+        </td>
+        <td class="seller_info"><strong><a href="/seller/x">x</a></strong></td>
+        <td class="item_price"><span class="price">USD 5.00</span></td>
+      </tr>
+    </tbody></table>
+    </body></html>"""
+    assert parse_listings(html, release_id=1) == []
+
+
+def test_parser_skips_row_missing_seller_node() -> None:
+    """A row without td.seller_info strong a is skipped (line 136)."""
+    html = """<html><body>
+    <table id="pjax_container"><tbody>
+      <tr class="shortcut_navigable">
+        <td class="item_description">
+          <a class="item_description_title" href="/sell/item/50001">Rec</a>
+          <p class="item_condition">
+            <span class="condition-label-desktop">Media:</span><span>NM</span>
+          </p>
+        </td>
+        <td class="seller_info"><!-- no <strong><a> --></td>
+        <td class="item_price"><span class="price">USD 5.00</span></td>
+      </tr>
+    </tbody></table>
+    </body></html>"""
+    assert parse_listings(html, release_id=1) == []
+
+
+def test_parser_skips_row_with_unrecognized_condition() -> None:
+    """A row whose media condition cannot be normalized is skipped (line 147)."""
+    html = """<html><body>
+    <table id="pjax_container"><tbody>
+      <tr class="shortcut_navigable">
+        <td class="item_description">
+          <a class="item_description_title" href="/sell/item/60001">Rec</a>
+          <p class="item_condition">
+            <span class="condition-label-desktop">Media:</span>
+            <span>UNKNOWN_CONDITION_XYZ</span>
+          </p>
+        </td>
+        <td class="seller_info"><strong><a href="/seller/x">x</a></strong></td>
+        <td class="item_price"><span class="price">USD 5.00</span></td>
+      </tr>
+    </tbody></table>
+    </body></html>"""
+    assert parse_listings(html, release_id=1) == []
+
+
+def test_parser_skips_row_missing_price() -> None:
+    """A row with no price span is skipped (line 171)."""
+    html = """<html><body>
+    <table id="pjax_container"><tbody>
+      <tr class="shortcut_navigable">
+        <td class="item_description">
+          <a class="item_description_title" href="/sell/item/70001">Rec</a>
+          <p class="item_condition">
+            <span class="condition-label-desktop">Media:</span><span>NM</span>
+          </p>
+        </td>
+        <td class="seller_info"><strong><a href="/seller/x">x</a></strong></td>
+        <td class="item_price"><!-- no <span class="price"> --></td>
+      </tr>
+    </tbody></table>
+    </body></html>"""
+    assert parse_listings(html, release_id=1) == []
+
+
+def test_parser_skips_row_with_empty_seller_username() -> None:
+    """A row whose seller anchor has empty text is skipped (line 139)."""
+    html = """<html><body>
+    <table id="pjax_container"><tbody>
+      <tr class="shortcut_navigable">
+        <td class="item_description">
+          <a class="item_description_title" href="/sell/item/75001">Rec</a>
+          <p class="item_condition">
+            <span class="condition-label-desktop">Media:</span><span>NM</span>
+          </p>
+        </td>
+        <td class="seller_info"><strong><a href="/seller/empty">   </a></strong></td>
+        <td class="item_price"><span class="price">USD 5.00</span></td>
+      </tr>
+    </tbody></table>
+    </body></html>"""
+    assert parse_listings(html, release_id=1) == []
+
+
+def test_normalize_condition_exact_match_fallback() -> None:
+    """A bare valid token with no parens and no spaces uses exact-match fallback (line 62)."""
+    # "VG" is in _VALID_MEDIA; no parenthetical form, no leading-prefix split needed
+    html = """<html><body>
+    <table id="pjax_container"><tbody>
+      <tr class="shortcut_navigable">
+        <td class="item_description">
+          <a class="item_description_title" href="/sell/item/80001">Rec</a>
+          <p class="item_condition">
+            <span class="condition-label-desktop">Media:</span><span>VG</span>
+          </p>
+        </td>
+        <td class="seller_info"><strong><a href="/seller/x">x</a></strong></td>
+        <td class="item_price"><span class="price">USD 3.00</span></td>
+      </tr>
+    </tbody></table>
+    </body></html>"""
+    parsed = parse_listings(html, release_id=1)
+    assert len(parsed) == 1
+    assert parsed[0].media_condition == "VG"
+
+
+def test_parser_skips_row_with_invalid_price_decimal() -> None:
+    """A price that matches the regex but cannot be parsed as Decimal is skipped (lines 175-176)."""
+    # _PRICE_RE matches "USD ..." then _normalize_amount is called;
+    # "USD .." produces a currency match but an empty/invalid numeric part → InvalidOperation
+    html = """<html><body>
+    <table id="pjax_container"><tbody>
+      <tr class="shortcut_navigable">
+        <td class="item_description">
+          <a class="item_description_title" href="/sell/item/90001">Rec</a>
+          <p class="item_condition">
+            <span class="condition-label-desktop">Media:</span><span>NM</span>
+          </p>
+        </td>
+        <td class="seller_info"><strong><a href="/seller/x">x</a></strong></td>
+        <td class="item_price"><span class="price">USD ..</span></td>
+      </tr>
+    </tbody></table>
+    </body></html>"""
+    assert parse_listings(html, release_id=1) == []
