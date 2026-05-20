@@ -2471,6 +2471,17 @@ select option {
     color: var(--text-high);
 }
 
+/* Digger settings — enable checkbox row */
+.digger-settings-checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.digger-settings-checkbox-row .settings-label {
+    min-width: 0;
+}
+
 /* 2FA status badges */
 .twofa-badge {
     display: inline-block;
@@ -2554,4 +2565,105 @@ select option {
     margin-bottom: 1rem;
     font-size: 0.8125rem;
     color: var(--text-high);
+}
+
+/* ============================================================
+   Digger pane
+   ============================================================ */
+
+.digger-onboarding {
+    max-width: 36rem;
+    margin: 2rem auto;
+}
+
+.digger-table-wrap {
+    margin: 1rem 1.5rem 1.5rem;
+}
+
+/* Stats banner — reuses .stats-row / .stat-card tokens. */
+.digger-stats {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+/* Controls row — filters on the left, bulk-actions bar on the right. */
+.digger-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding: 0 1.5rem 0.5rem;
+}
+
+.digger-filters {
+    margin-bottom: 0; /* override .gap-filters bottom margin in this context */
+}
+
+/* Bulk-actions bar — visually distinct flex row, hidden until ≥1 selected. */
+.digger-bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.4rem 0.75rem;
+    background: var(--inner-bg);
+    border: 1px solid var(--blue-accent);
+    border-radius: 0.5rem;
+}
+
+.digger-bulk-bar.hidden {
+    display: none;
+}
+
+.digger-bulk-count {
+    font-size: 0.85rem;
+    color: var(--text-mid);
+    white-space: nowrap;
+}
+
+.digger-bulk-tier {
+    min-width: 8rem;
+}
+
+.digger-bulk-clear {
+    background: none;
+    border: none;
+    color: var(--text-mid);
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    transition: color 0.15s;
+}
+
+.digger-bulk-clear:hover {
+    color: var(--text-high);
+}
+
+/* 10-column layout: Select Artist Title Year Tier Media Sleeve Price Listings Scraped */
+.digger-table .col-select   { width: 3%; text-align: center; }
+.digger-table .col-artist   { width: 13%; }
+.digger-table .col-title    { width: 17%; }
+.digger-table .col-year     { width: 5%; }
+.digger-table .col-tier     { width: 13%; }
+.digger-table .col-media    { width: 9%; }
+.digger-table .col-sleeve   { width: 10%; }
+.digger-table .col-price    { width: 9%; }
+.digger-table .col-listings { width: 10%; }
+.digger-table .col-scraped  { width: 11%; }
+
+/* Tier segmented control — three chips side-by-side */
+.digger-tier-group {
+    display: flex;
+    gap: 0.2rem;
+}
+
+.digger-tier-btn {
+    padding: 0.15rem 0.45rem;
+    font-size: 0.72rem;
+}
+
+/* Compact selects / number inputs inside table cells */
+.digger-cell-control {
+    width: 100%;
+    padding: 0.2rem 0.35rem;
+    font-size: 0.78rem;
 }
