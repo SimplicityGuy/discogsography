@@ -2,7 +2,7 @@
 
 from datetime import datetime
 import re
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -792,3 +792,77 @@ class PersonProfileResponse(BaseModel):
     artist_id: str | None = None
     artist_name: str | None = None
     role_breakdown: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# ── Digger feature models ─────────────────────────────────────────────
+
+DiggerTier = Literal["must", "nice", "eventually"]
+DiggerCadence = Literal["off", "weekly", "biweekly", "monthly"]
+DiggerModel = Literal["haiku", "sonnet", "opus"]
+DiggerCondition = Literal["M", "NM", "VG+", "VG", "G+", "G", "F", "P"]
+DiggerSleeveCondition = Literal["M", "NM", "VG+", "VG", "G+", "G", "F", "P", "generic", "no_cover"]
+
+
+class DiggerSettingsIn(BaseModel):
+    """Request body for creating or updating a user's digger settings."""
+
+    enabled: bool
+    country_code: str | None = Field(default=None, min_length=2, max_length=2)
+    currency: str = Field(min_length=3, max_length=3)
+    scheduled_cadence: DiggerCadence
+    preferred_model: DiggerModel
+    daily_token_cap_interactive: int | None = None
+    daily_token_cap_scheduled: int | None = None
+
+
+class DiggerSettingsOut(BaseModel):
+    """Response body for a user's digger settings.
+
+    Token caps are always populated from NOT NULL DB columns, so they are
+    plain ints here (unlike the optional inputs on DiggerSettingsIn).
+    """
+
+    enabled: bool
+    country_code: str | None
+    currency: str
+    scheduled_cadence: DiggerCadence
+    preferred_model: DiggerModel
+    daily_token_cap_interactive: int
+    daily_token_cap_scheduled: int
+
+
+class DiggerWantlistItemOut(BaseModel):
+    """A single item from the user's digger wantlist."""
+
+    release_id: int
+    title: str | None
+    artist: str | None
+    year: int | None
+    tier: DiggerTier
+    min_media_condition: DiggerCondition
+    min_sleeve_condition: DiggerSleeveCondition
+    max_price_cents: int | None
+    active_listings: int
+    last_scraped_at: str | None
+
+
+class DiggerWantlistResponse(BaseModel):
+    """Response body for the user's digger wantlist."""
+
+    items: list[DiggerWantlistItemOut]
+
+
+class DiggerBulkTierIn(BaseModel):
+    """Request body for bulk-setting the tier on multiple wantlist releases."""
+
+    release_ids: list[int] = Field(min_length=1, max_length=500)
+    tier: DiggerTier
+
+
+class DiggerSetPriorityIn(BaseModel):
+    """Request body for updating priority fields on a single wantlist release."""
+
+    tier: DiggerTier | None = None
+    min_media_condition: DiggerCondition | None = None
+    min_sleeve_condition: DiggerSleeveCondition | None = None
+    max_price_cents: int | None = None
