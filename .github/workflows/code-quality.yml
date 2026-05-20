@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: 🔧 Setup Python and UV
         uses: ./.github/actions/setup-python-uv
@@ -28,12 +28,12 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 💾 Cache pre-commit
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-pre-commit-v3-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -42,7 +42,7 @@ jobs:
 
       # Tools cache (arkade)
       - name: 💾 Cache tools
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: ~/.arkade
           key: ${{ runner.os }}-tools-arkade-v1
@@ -51,17 +51,18 @@ jobs:
             ${{ runner.os }}-tools-
 
       - name: 🔧 Install arkade
-        uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
+        uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03  # master
         with:
           hadolint: latest
 
       - name: 🦀 Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
+          toolchain: stable
           components: rustfmt, clippy
 
       - name: 💾 Cache Rust dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: |
             ~/.cargo/bin/
