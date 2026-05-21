@@ -36,8 +36,15 @@ class DiggerPane {
         this._hideNoListings = false;        // hide items with active_listings === 0
         this._bulkApplying = false;          // in-flight guard for bulk-tier Apply
 
+        // M2 — reports view state.
+        this._view = 'wantlist';             // 'wantlist' | 'reports' | 'report' | 'recommend'
+        this._reports = [];                  // inbox summaries
+        this._currentReport = null;          // full report being viewed
+        this._recommending = false;          // in-flight guard for Run recommendation
+
         this._loading = document.getElementById('diggerLoading');
         this._body = document.getElementById('diggerBody');
+        this._headerActions = document.getElementById('diggerHeaderActions');
     }
 
     /**
@@ -61,8 +68,10 @@ class DiggerPane {
                 this._settings = res.body || null;
                 this._renderOnboarding();
             } else if (res.ok && res.body) {
-                // Digger enabled — load wantlist
+                // Digger enabled — render the view navigation and load the wantlist.
                 this._settings = res.body;
+                this._view = 'wantlist';
+                this._renderHeaderActions();
                 await this._loadWantlist(token);
             } else {
                 // Unexpected error
@@ -94,6 +103,9 @@ class DiggerPane {
     // ------------------------------------------------------------------ //
 
     _renderOnboarding() {
+        // No view navigation while Digger is disabled.
+        if (this._headerActions) this._headerActions.textContent = '';
+
         if (!this._body) return;
         this._body.textContent = '';
 
@@ -936,6 +948,309 @@ class DiggerPane {
         section.appendChild(list);
 
         return section;
+    }
+
+    // ------------------------------------------------------------------ //
+    // Reports — header navigation
+    // ------------------------------------------------------------------ //
+
+    /**
+     * Render the in-pane view navigation (Wantlist / Reports) into the header.
+     * Only shown when Digger is enabled.
+     */
+    _renderHeaderActions() {
+        if (!this._headerActions) return;
+        this._headerActions.textContent = '';
+
+        this._headerActions.appendChild(this._buildNavButton('Wantlist', 'wantlist'));
+        this._headerActions.appendChild(this._buildNavButton('Reports', 'reports'));
+
+        this._updateNavActiveState();
+    }
+
+    /**
+     * Build a single header navigation button.
+     * @param {string} label
+     * @param {'wantlist'|'reports'} view
+     * @returns {HTMLButtonElement}
+     */
+    _buildNavButton(label, view) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'digger-nav-btn';
+        btn.dataset.view = view;
+        btn.textContent = label;
+        btn.addEventListener('click', () => {
+            if (view === 'wantlist') {
+                this._showWantlist();
+            } else if (view === 'reports') {
+                this._showReports();
+            }
+        });
+        return btn;
+    }
+
+    /**
+     * Reflect the current view on the navigation buttons. The report viewer is
+     * part of the Reports section, so it keeps the Reports button active.
+     */
+    _updateNavActiveState() {
+        if (!this._headerActions) return;
+        const navBtns = this._headerActions.querySelectorAll('.digger-nav-btn');
+        for (const btn of navBtns) {
+            const view = btn.dataset.view;
+            const isActive =
+                (view === 'wantlist' && this._view === 'wantlist') ||
+                (view === 'reports' && (this._view === 'reports' || this._view === 'report'));
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', String(isActive));
+        }
+    }
+
+    /**
+     * Switch back to the wantlist view and reload it.
+     */
+    async _showWantlist() {
+        this._view = 'wantlist';
+        this._updateNavActiveState();
+        const token = window.authManager.getToken();
+        if (!token) return;
+        await this._loadWantlist(token);
+    }
+
+    // ------------------------------------------------------------------ //
+    // Reports — inbox
+    // ------------------------------------------------------------------ //
+
+    /**
+     * Switch to the reports inbox, fetching the latest summaries.
+     */
+    async _showReports() {
+        this._view = 'reports';
+        this._updateNavActiveState();
+        const token = window.authManager.getToken();
+        if (!token) return;
+
+        const res = await window.apiClient.getDiggerReports(token);
+        if (res.ok && res.body) {
+            this._reports = res.body.items || [];
+            this._renderReportsList();
+        } else {
+            this._renderError('Could not load your Digger reports. Please try again later.');
+        }
+    }
+
+    /**
+     * Render the reports inbox list (or an empty state).
+     */
+    _renderReportsList() {
+        if (!this._body) return;
+        this._body.textContent = '';
+
+        if (!this._reports || this._reports.length === 0) {
+            this._renderReportsEmpty();
+            return;
+        }
+
+        const list = document.createElement('ul');
+        list.className = 'digger-reports';
+        for (const item of this._reports) {
+            list.appendChild(this._buildReportListItem(item));
+        }
+        this._body.appendChild(list);
+    }
+
+    /**
+     * Render the empty-inbox placeholder.
+     */
+    _renderReportsEmpty() {
+        const empty = document.createElement('div');
+        empty.className = 'user-pane-empty';
+
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined icon-3x mb-3';
+        icon.textContent = 'inbox';
+        empty.appendChild(icon);
+
+        const msg = document.createElement('p');
+        msg.textContent = 'No reports yet — run a recommendation to generate your first one.';
+        empty.appendChild(msg);
+
+        this._body.appendChild(empty);
+    }
+
+    /**
+     * Build a single inbox list item.
+     * @param {Object} item - Report summary
+     * @returns {HTMLLIElement}
+     */
+    _buildReportListItem(item) {
+        const li = document.createElement('li');
+        li.className = `digger-report-item ${item.read_at ? 'read' : 'unread'}`;
+        li.dataset.reportId = item.report_id;
+
+        const link = document.createElement('button');
+        link.type = 'button';
+        link.className = 'digger-report-link';
+        link.addEventListener('click', () => this._openReport(item.report_id));
+
+        const title = document.createElement('div');
+        title.className = 'digger-report-title';
+        title.textContent = item.title;
+        link.appendChild(title);
+
+        const meta = document.createElement('div');
+        meta.className = 'digger-report-meta';
+
+        const when = document.createElement('span');
+        when.className = 'digger-report-when';
+        when.textContent = this._formatDateTime(item.generated_at);
+        meta.appendChild(when);
+
+        const flag = document.createElement('span');
+        flag.className = `digger-flag digger-flag-${item.change_flag}`;
+        flag.textContent = this._changeFlagLabel(item.change_flag);
+        meta.appendChild(flag);
+
+        link.appendChild(meta);
+        li.appendChild(link);
+        return li;
+    }
+
+    /**
+     * Human-readable label for a change flag.
+     * @param {string} flag
+     * @returns {string}
+     */
+    _changeFlagLabel(flag) {
+        return DIGGER_CHANGE_FLAG_LABELS[flag] || (flag || '').replace(/_/g, ' ');
+    }
+
+    /**
+     * Format an ISO timestamp as a locale date-time string, or '' on failure.
+     * @param {string|null} iso
+     * @returns {string}
+     */
+    _formatDateTime(iso) {
+        if (!iso) return '';
+        try {
+            return new Date(iso).toLocaleString();
+        } catch {
+            return '';
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Reports — viewer
+    // ------------------------------------------------------------------ //
+
+    /**
+     * Open a full report: fetch it, render the viewer, and mark it read.
+     * @param {string} reportId
+     */
+    async _openReport(reportId) {
+        this._view = 'report';
+        this._updateNavActiveState();
+        const token = window.authManager.getToken();
+        if (!token) return;
+
+        const res = await window.apiClient.getDiggerReport(token, reportId);
+        if (!res.ok || !res.body) {
+            this._renderError('Could not load this report. Please try again later.');
+            return;
+        }
+
+        this._currentReport = res.body;
+        this._renderReportViewer(this._currentReport);
+
+        // Mark unread reports read (fire-and-forget); reflect locally so the
+        // inbox shows the updated state on return.
+        if (!this._currentReport.read_at) {
+            window.apiClient
+                .markDiggerReportRead(token, reportId)
+                .then(() => {
+                    const summary = this._reports.find((r) => r.report_id === reportId);
+                    if (summary) summary.read_at = new Date().toISOString();
+                })
+                .catch(() => { /* read state is non-critical */ });
+        }
+    }
+
+    /**
+     * Render the report viewer (4 bundle cards + watching list).
+     * @param {Object} report - Full report payload
+     */
+    _renderReportViewer(report) {
+        const currency =
+            (report.summary && report.summary.currency) ||
+            (this._settings && this._settings.currency) ||
+            'USD';
+        this._renderBundlesView({
+            title: report.title,
+            generatedAt: report.generated_at,
+            shippingConfidence: report.shipping_confidence,
+            bundles: report.bundles || [],
+            watching: report.watching || [],
+            currency,
+            onBack: () => this._showReports(),
+        });
+    }
+
+    /**
+     * Shared renderer for a set of bundles + watching list. Used by both the
+     * stored-report viewer and the interactive recommendation result.
+     * @param {Object} opts
+     */
+    _renderBundlesView(opts) {
+        if (!this._body) return;
+        this._body.textContent = '';
+
+        const viewer = document.createElement('div');
+        viewer.className = 'digger-report-viewer';
+
+        if (opts.onBack) {
+            const back = document.createElement('button');
+            back.type = 'button';
+            back.className = 'digger-back-btn';
+            back.textContent = opts.backLabel || '← Back to reports';
+            back.addEventListener('click', () => opts.onBack());
+            viewer.appendChild(back);
+        }
+
+        const header = document.createElement('div');
+        header.className = 'digger-report-viewer-header';
+
+        const heading = document.createElement('h3');
+        heading.textContent = opts.title;
+        header.appendChild(heading);
+
+        const meta = document.createElement('div');
+        meta.className = 'digger-report-meta';
+        if (opts.generatedAt) {
+            const when = document.createElement('span');
+            when.textContent = this._formatDateTime(opts.generatedAt);
+            meta.appendChild(when);
+        }
+        if (opts.shippingConfidence) {
+            const conf = document.createElement('span');
+            conf.className = `badge digger-confidence-${opts.shippingConfidence}`;
+            conf.textContent = `${opts.shippingConfidence} shipping confidence`;
+            meta.appendChild(conf);
+        }
+        header.appendChild(meta);
+        viewer.appendChild(header);
+
+        const grid = document.createElement('div');
+        grid.className = 'digger-bundles-grid';
+        for (const bundle of opts.bundles || []) {
+            grid.appendChild(this._buildBundleCard(bundle, opts.currency));
+        }
+        viewer.appendChild(grid);
+
+        const watching = this._buildWatchingList(opts.watching);
+        if (watching) viewer.appendChild(watching);
+
+        this._body.appendChild(viewer);
     }
 }
 
