@@ -22,6 +22,7 @@ written with the psycopg ``Jsonb`` adapter and read back already parsed.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -77,6 +78,21 @@ async def fetch_wantlist_snapshot(
         resp.raise_for_status()
         snapshot: dict[str, Any] = resp.json()
         return snapshot
+
+
+async def fetch_users_due_for_report(
+    api_base_url: str, service_token: str
+) -> list[dict[str, Any]]:
+    """Fetch the list of users whose scheduled run is due from the API's internal endpoint."""
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        resp = await client.get(
+            f"{api_base_url}/api/internal/digger/users-due-for-report",
+            headers={"X-Service-Token": service_token},
+        )
+        resp.raise_for_status()
+        payload: dict[str, Any] = resp.json()
+        users: list[dict[str, Any]] = payload["users"]
+        return users
 
 
 def _constraints(rows: list[dict[str, Any]]) -> list[ReleaseConstraint]:
@@ -267,3 +283,39 @@ async def run_scheduled_for_user(
         "💾 generated scheduled report for user %s (change=%s)", user_id, change_flag
     )
     return report_id
+
+
+async def scheduler_loop(
+    *,
+    pool: AsyncPostgreSQLPool,
+    stop_event: asyncio.Event,
+    api_base_url: str,
+    service_token: str,
+    poll_interval: float = 300.0,
+) -> None:
+    """Poll the API for due users and run a scheduled report for each, until *stop_event* is set.
+
+    Each iteration is fully isolated: a per-user failure is logged and the loop
+    moves on to the next user; a whole-iteration failure (e.g. the API being
+    unreachable) is logged and retried on the next poll.
+    """
+    while not stop_event.is_set():
+        try:
+            users = await fetch_users_due_for_report(api_base_url, service_token)
+            for user in users:
+                try:
+                    await run_scheduled_for_user(
+                        pool,
+                        uuid.UUID(user["user_id"]),
+                        api_base_url=api_base_url,
+                        service_token=service_token,
+                        cadence=user["cadence"],
+                    )
+                except Exception:
+                    log.exception("⚠️ scheduled run failed for user %s", user["user_id"])
+        except Exception:
+            log.exception("⚠️ scheduler loop iteration failed")
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=poll_interval)
+        except asyncio.TimeoutError:
+            pass

@@ -60,6 +60,7 @@ async def amain() -> None:
     from digger.scraper.http_client import DiggerHttpClient  # noqa: PLC0415
     from digger.scraper.orchestrator import scrape_loop, state_loop  # noqa: PLC0415
     from digger.scraper.rate_budget import RateBudget  # noqa: PLC0415
+    from digger.scheduler.runner import scheduler_loop  # noqa: PLC0415
 
     # Build connection params from config (individual fields → psycopg conninfo dict).
     # cfg.postgres_host already contains "host:port" from _build_postgres_connstr().
@@ -113,6 +114,28 @@ async def amain() -> None:
         ),
     ]
     logger.info("🔄 Scraper tasks started")
+
+    # The scheduler calls the API's internal endpoints, so it only runs when the
+    # shared service token is configured; otherwise scheduled reports are disabled.
+    if cfg.digger_api_service_token:
+        tasks.append(
+            asyncio.create_task(
+                scheduler_loop(
+                    pool=pool,
+                    stop_event=stop_event,
+                    api_base_url=cfg.api_base_url,
+                    service_token=cfg.digger_api_service_token,
+                    poll_interval=cfg.scheduler_poll_interval_seconds,
+                ),
+                name="scheduler",
+            )
+        )
+        logger.info(
+            "🔄 Scheduler task started",
+            poll_interval_seconds=cfg.scheduler_poll_interval_seconds,
+        )
+    else:
+        logger.info("⚠️ Scheduler disabled — DIGGER_API_SERVICE_TOKEN not set")
 
     try:
         await stop_event.wait()
