@@ -22,6 +22,7 @@ dependencies = [
     "common",
     "httpx>=0.28.1",
     "prometheus-client>=0.25.0",
+    "psycopg[binary]>=3.3.4",
     "redis[hiredis]>=7.4.0",
     "selectolax>=0.4.9",
     "structlog>=25.5.0",
