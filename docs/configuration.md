@@ -244,11 +244,11 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 ### Redis Configuration
 
-| Variable     | Description    | Default     | Required                       |
-| ------------ | -------------- | ----------- | ------------------------------ |
-| `REDIS_HOST` | Redis hostname | `localhost` | Yes (Dashboard, API, Insights) |
+| Variable     | Description    | Default     | Required                               |
+| ------------ | -------------- | ----------- | -------------------------------------- |
+| `REDIS_HOST` | Redis hostname | `localhost` | Yes (Dashboard, API, Insights, Digger) |
 
-**Used By**: Dashboard, API, Insights
+**Used By**: Dashboard, API, Insights, Digger
 
 **Connection Details**:
 
@@ -541,6 +541,12 @@ CORS_ORIGINS="http://localhost:8003,http://localhost:8006"
 SNAPSHOT_TTL_DAYS=28     # Snapshot expiry in days (default: 28)
 SNAPSHOT_MAX_NODES=100   # Max nodes per snapshot (default: 100)
 
+# Optional — shared service token gating the internal Digger endpoints
+# (/api/internal/digger/*). The Digger worker presents this in the
+# X-Service-Token header. Omit to leave those internal endpoints disabled.
+# In production, supply via DIGGER_API_SERVICE_TOKEN_FILE (Docker secret).
+DIGGER_API_SERVICE_TOKEN="your-service-token-here"
+
 # Optional
 JWT_EXPIRE_MINUTES=1440
 LOG_LEVEL=INFO
@@ -815,6 +821,33 @@ Health check: http://localhost:8010/health
 
 **Notes**: Brainztableinator stores all MusicBrainz data in the `musicbrainz` PostgreSQL schema — including entities without Discogs matches — with relationships and external links. Consumes from the `musicbrainz-{artists,labels,release-groups,releases}` exchanges.
 
+### Digger
+
+```bash
+# Required
+POSTGRES_HOST="localhost"
+POSTGRES_USERNAME="discogsography"
+POSTGRES_PASSWORD="discogsography"
+POSTGRES_DATABASE="discogsography"
+REDIS_HOST="localhost"           # Redis hostname (rate-budget token bucket)
+
+# Optional - Scraper
+DIGGER_RATE_BUDGET_PER_HOUR=600  # Outbound request budget per hour (default: 600)
+DIGGER_SCRAPER_USER_AGENT="discogsography-digger/0.1 (github.com/SimplicityGuy/discogsography)"
+
+# Optional - Circuit Breaker
+DIGGER_CB_WINDOW_SECONDS=300     # Rolling failure-rate window (default: 300)
+DIGGER_CB_FAILURE_PCT=30         # Failure % that opens the breaker (default: 30; >= 10 events required)
+DIGGER_CB_COOLDOWN_SECONDS=1800  # Open-state cooldown before reset (default: 1800)
+
+# Optional - Logging
+LOG_LEVEL=INFO
+```
+
+Health check: http://localhost:8012/health (also exposes Prometheus `/metrics`)
+
+**Notes**: The Digger worker scrapes public Discogs marketplace listing and seller pages, persisting to the `digger.*` PostgreSQL schema and using Redis for the rate-budget token bucket. It does **not** use RabbitMQ and does **not** call the API service. Per-release retries use exponential backoff (capped at 24 h); the global circuit breaker pauses scraping when the recent failure rate is high. The `DIGGER_API_SERVICE_TOKEN` that gates `/api/internal/digger/*` is consumed by the **API service**, not by this worker — see the [API](#api) section. See [Digger Scraping Policy](digger-scraping-policy.md) for the full request and Terms-of-Service posture.
+
 ### MCP Server
 
 ```bash
@@ -999,6 +1032,7 @@ curl http://localhost:8007/health  # Explore
 curl http://localhost:8009/health  # Insights
 curl http://localhost:8010/health  # Brainztableinator
 curl http://localhost:8011/health  # Brainzgraphinator
+curl http://localhost:8012/health  # Digger (also /metrics)
 ```
 
 Expected response for all:

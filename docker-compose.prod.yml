@@ -316,6 +316,20 @@ services:
         delay: 5s
         max_attempts: 3
 
+  digger:
+    restart: always
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
+    secrets:
+      - postgres_username
+      - postgres_password
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+
   dashboard:
     restart: always
     environment:

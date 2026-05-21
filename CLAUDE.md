@@ -27,6 +27,7 @@ brainzgraphinator/    Brainzgraphinator service — MusicBrainz data → Neo4j e
 brainztableinator/    Brainztableinator service — MusicBrainz data → PostgreSQL
 common/               Shared library — config, models, utilities used by all Python services
 dashboard/            Dashboard service — real-time monitoring UI
+digger/               Digger service — Discogs marketplace scraper for wantlist listings (scheduled worker)
 explore/              Explore service — static file serving for graph exploration frontend (Vitest for JS tests)
 extractor/            Rust-based extractor — high-performance Discogs XML and MusicBrainz JSONL ingestion
 graphinator/          Graphinator service — consumes messages, builds Neo4j graph
@@ -174,6 +175,7 @@ just deep-clean           # Clean + Docker volumes (destructive)
 | Tableinator       | —                               | 8002   |
 | Brainztableinator | —                               | 8010   |
 | Brainzgraphinator | —                               | 8011   |
+| Digger            | —                               | 8012   |
 | Neo4j             | 7474 (browser), 7687 (bolt)     | —      |
 | PostgreSQL        | 5433 (mapped from 5432)         | —      |
 | RabbitMQ          | 5672 (AMQP), 15672 (management) | —      |

@@ -587,6 +587,7 @@ build:
         brainzgraphinator \
         brainztableinator \
         dashboard \
+        digger \
         explore \
         extractor-discogs \
         extractor-musicbrainz \
@@ -594,6 +595,21 @@ build:
         insights \
         schema-init \
         tableinator
+
+# Start only the digger service (with its dependencies)
+[group('docker')]
+digger-up:
+    docker compose up -d digger
+
+# Follow digger service logs
+[group('docker')]
+digger-logs:
+    docker compose logs -f digger
+
+# Fetch Prometheus metrics from the running digger container
+[group('docker')]
+digger-metrics:
+    curl -s http://localhost:8012/metrics
 
 # Build production Docker images
 [group('docker')]

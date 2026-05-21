@@ -44,6 +44,33 @@ The performance test covers all API endpoints that execute database queries (Neo
 | `GET /api/node/{id}`                     | Each artist and label                         | Neo4j      |
 | `GET /api/expand`                        | Each artist (releases), each label (releases) | Neo4j      |
 
+### Authenticated Digger Endpoints (`digger_scenarios`)
+
+The four user-facing `/api/digger/*` endpoints require a logged-in user, so the
+runner mints an HS256 JWT (claims `sub`/`email`/`exp`, signed with
+`JWT_SECRET_KEY`) for a fixed perftest user and attaches it as a `Bearer` token
+for any scenario flagged `auth: true`. Run with `--seed` first so these hit
+real, pre-seeded rows (otherwise `GET /settings` 404s and the wantlist is empty).
+
+| Endpoint                                       | Method | Database   |
+| ---------------------------------------------- | ------ | ---------- |
+| `/api/digger/settings`                         | GET    | PostgreSQL |
+| `/api/digger/wantlist`                         | GET    | PostgreSQL |
+| `/api/digger/wantlist/{release_id}/priority`   | PUT    | PostgreSQL |
+| `/api/digger/wantlist/bulk-tier`               | POST   | PostgreSQL |
+
+`--seed` inserts (idempotently) the perftest `users` row, `digger` settings, a
+`user_wantlists` entry, a `user_wantlist_priorities` row, plus scrape-state /
+seller / listing rows for release `12345` so `active_listings > 0`. Seeding uses
+a synchronous psycopg3 connection to `postgres_url` from the config.
+
+```bash
+# Seed + run only the digger scenarios (requires a running API + Postgres)
+JWT_SECRET_KEY=... uv run python tests/perftest/run_perftest.py \
+  --config tests/perftest/config.yaml --output ./perftest-results \
+  --seed --only digger
+```
+
 ## Prerequisites
 
 The Discogsography stack must be running with data loaded:

@@ -28,6 +28,7 @@ Emojis in Discogsography serve to:
 | 📊    | Dashboard         | Analytics dashboard                            |
 | 📈    | Insights          | Precomputed analytics and music trends         |
 | 🤖    | MCP Server        | AI assistant integration via knowledge graph   |
+| ⛏️    | Digger            | Discogs marketplace scraper and wantlist worker |
 | 🐰    | RabbitMQ          | Message broker                                 |
 
 ### Status Indicators
