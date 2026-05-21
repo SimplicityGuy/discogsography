@@ -1,5 +1,88 @@
 # Digger M3 — LLM Agent Implementation Plan
 
+> ## ⚠️ VERIFIED conventions (prepended 2026-05-21, before execution)
+>
+> This plan was drafted 2026-05-14 BEFORE M1/M2 were built; its code snippets assume
+> **asyncpg + React 19/Vite + real-DB pytest fixtures + `api/config.py` + `api/main.py`** —
+> ALL WRONG for this repo. Verified against origin/main (M1 #337/#341, M2 #344–#348).
+> Apply these to EVERY task below; the per-task code blocks are reference logic, not literal.
+>
+> 1. **DB = async psycopg3, not asyncpg.** `async with pool.connection() as conn,
+>    conn.cursor(row_factory=dict_row) as cur: await cur.execute(sql, (params,))` then
+>    `await cur.fetchall()/fetchone()`. `%s` placeholders (never `$1`); affected rows =
+>    `cur.rowcount` (never parse command tags). JSONB writes via
+>    `psycopg.types.json.Jsonb(x)`; JSONB reads come back already parsed under `dict_row`.
+>    `from common import AsyncPostgreSQLPool`. Pool is autocommit=True → single statements
+>    need no txn; for the proposals approve txn call `await conn.set_autocommit(False)`
+>    BEFORE `async with conn.transaction():` (autocommit restored on pool return).
+>    Affects: every tool module (Task 3), `digger_agent_queries.py` (Task 5), proposals
+>    approve/reject (Task 9). Templates: `api/queries/digger_reports.py`,
+>    `api/routers/digger_recommend.py::_identify_stale`.
+> 2. **Router DI = module-globals + `configure()`, NOT `Depends()`.** No `Depends(get_pool/
+>    get_redis/current_user)`. Use `_pool`/`_redis` module globals + `configure(pool, redis)`
+>    + `_get_pool()/_get_redis()` 503-guards, exactly like `api/routers/digger_recommend.py`.
+>    Auth = `current_user: Annotated[dict[str, Any], Depends(require_user)]` from
+>    `api/dependencies.py`; user id = `UUID(current_user["sub"])` (str claim). Register each
+>    router in **`api/api.py`** (NOT `api/main.py`): import as `_digger_agent_router`/
+>    `_digger_proposals_router`, call `.configure(...)` in the lifespan (cluster ~L254) and
+>    `app.include_router(...)` (cluster ~L404). ALSO wire both into `tests/api/conftest.py`
+>    `test_client` fixture (agent router gets the fakeredis client like digger_recommend;
+>    proposals gets `mock_pool`).
+> 3. **Config: no `api/config.py`.** Add `anthropic_api_key` (+`_FILE` variant) to `ApiConfig`
+>    in `common/config.py` (~L493); read via the `_config` instance in `api.py`. `anthropic`
+>    is ALREADY a root dep (>=0.103.1) — keep it, do NOT downgrade to >=0.40; add to
+>    `api/pyproject.toml` only if api needs it as a direct import.
+> 4. **UUID path params (Task 9 proposals)** → OMIT `from __future__ import annotations`,
+>    `from uuid import UUID` at runtime, quote forward-ref annotations (mirror
+>    `api/routers/internal_digger.py`). The agent router (no UUID path params) may keep
+>    future-annotations like `digger_recommend.py`.
+> 5. **Redis = `redis.asyncio`** (aliased `aioredis` in `api.py`). Guardrails (Task 4) type
+>    against `redis.asyncio.Redis`; `incrby/expire/get/set(nx=,ex=)/delete` work on fakeredis.
+> 6. **Tests are MOCK-BASED — the plan's fixtures DO NOT EXIST.** Real fixtures
+>    (`tests/api/conftest.py`): `mock_pool`/`mock_conn`/`mock_cur` (AsyncMock cursor with
+>    `.fetchall/.fetchone/.execute/.rowcount`), `mock_redis`, `fake_redis_server`
+>    (build an async client via `fakeredis.aioredis.FakeRedis(server=fake_redis_server)`),
+>    `test_client`, `auth_headers`, `service_token_headers`, `valid_token`, `test_api_config`.
+>    Tool/query/guardrail tests: set `mock_cur.fetchall.return_value=[{...}]` (dict rows) or
+>    patch `api.digger_agent.tools.<mod>.q.*`; guardrails use a real fakeredis async client.
+>    SSE endpoint test (Task 8): `test_client`+`auth_headers`; patch
+>    `api.routers.digger_agent.anthropic.AsyncAnthropic` to a fake streaming client (new
+>    fixture). TestClient runs the EventSourceResponse generator to completion → assert on the
+>    full body (M2 recommend-SSE precedent). Anything needing a live stack/ANTHROPIC_API_KEY
+>    → `@pytest.mark.e2e` / `@pytest.mark.eval` (deselected by `just test`).
+> 7. **Explore = vanilla classic-script JS, NOT React/Vite (Tasks 10–12 rewritten).** No
+>    `.tsx`/react-router/`explore/src`. Extend `explore/static/js/digger.js` (`class
+>    DiggerPane`, `window.diggerPane`) with a CHAT sub-view, mirroring M2 Layer D's in-pane
+>    reports inbox/viewer navigated via `#diggerHeaderActions` header buttons. SSE consumer =
+>    a new `api-client.js` method modeled on the callback-style `askNlqStream(...)` / M2's
+>    `runDiggerRecommend` (fetch + `response.body.getReader()` + `event:`/`data:` parse with
+>    `.trim()`). Proposal/cost/session UI = DOM-building methods (`createElement`+`textContent`,
+>    NEVER `innerHTML` for data). Auth = `Authorization: Bearer` from
+>    `window.authManager.getToken()` (NOT `credentials:'include'`). Tests: vitest+jsdom in
+>    `explore/__tests__/digger-*.test.js` via `loadScript()`+`createMockFetch`; `just test-js`.
+> 8. **MCP (Task 13) — single `server.py`, module-level `@mcp.tool()` fns + `AppContext`.**
+>    Tools take `ctx: Context`; `AppContext` holds `client: httpx.AsyncClient`+`base_url`
+>    (`API_BASE_URL` env); `_api_get/_api_post` return parsed JSON and RAISE on non-JSON.
+>    ⚠️ **AUTH GAP:** existing MCP tools are UNAUTHENTICATED (public graph); digger endpoints
+>    REQUIRE a per-user JWT — there is NO `get_api_token`/token config today. Adapt the plan's
+>    `register_digger_tools(mcp, api_base_url, get_api_token)`: define tools at module scope,
+>    add an `MCP_API_TOKEN` bearer env threaded through `AppContext` + an authed POST helper,
+>    and DON'T hit SSE endpoints expecting JSON (collect the stream or use a JSON surface).
+>    Resolve at Layer D planning.
+> 9. **Anthropic SDK (Tasks 1,6,7) — invoke the `claude-api` skill** when implementing the
+>    runtime/memory/SDK pieces: it confirms current model IDs at build time and ENFORCES
+>    prompt caching (`cache_control: ephemeral` on system + tool defs). `_MODEL_IDS` =
+>    `{haiku:claude-haiku-4-5-20251001, sonnet:claude-sonnet-4-6, opus:claude-opus-4-7}`
+>    (current latest; reconfirm). Worker/MCP must reach the agent only via `api/` (no cross-import).
+>
+> **Already scaffolded in M1 — do NOT recreate:** tables `digger.proposals`,
+> `digger.agent_sessions`, `digger.agent_messages`; `user_digger_settings.{preferred_model,
+> daily_token_cap_interactive(200000)/daily_token_cap_scheduled(100000)}`. `digger.model`
+> enum = {haiku,sonnet,opus}; `digger.role` enum = {system,user,assistant,tool}.
+>
+> **Execution split (approved 2026-05-21):** A=core (Tasks 1–7), B=API surface (8–9),
+> C=explore chat (10–12), D=MCP+eval (13–14), E=perf/docs/e2e/polish (15–18). One layer = one PR.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship the LLM agent layer — Anthropic SDK integration, ~9 tools, streaming chat UI in explore, MCP-server tools — so a user can chat with Digger (interactive or scheduled) to get bundle recommendations, what-if scenarios, and agent-proposed tier changes.
