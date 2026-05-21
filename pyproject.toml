@@ -278,6 +278,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     "bleach>=6.3.0",
     "fakeredis>=2.35.1",
+    "hypothesis>=6.0",
     "pillow>=12.2.0",
     "respx>=0.23.1",
     "selectolax>=0.4.9",
