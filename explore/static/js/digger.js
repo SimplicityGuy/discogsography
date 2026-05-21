@@ -965,6 +965,14 @@ class DiggerPane {
         this._headerActions.appendChild(this._buildNavButton('Wantlist', 'wantlist'));
         this._headerActions.appendChild(this._buildNavButton('Reports', 'reports'));
 
+        const runBtn = document.createElement('button');
+        runBtn.type = 'button';
+        runBtn.className = 'btn-primary digger-run-btn';
+        runBtn.textContent = 'Run recommendation';
+        runBtn.addEventListener('click', () => this._runRecommendation());
+        this._runBtn = runBtn;
+        this._headerActions.appendChild(runBtn);
+
         this._updateNavActiveState();
     }
 
@@ -1251,6 +1259,103 @@ class DiggerPane {
         if (watching) viewer.appendChild(watching);
 
         this._body.appendChild(viewer);
+    }
+
+    // ------------------------------------------------------------------ //
+    // Reports — interactive "Run recommendation" (SSE)
+    // ------------------------------------------------------------------ //
+
+    /**
+     * Run an interactive recommendation, streaming refresh progress then the
+     * resulting bundles. Guards against concurrent runs.
+     */
+    async _runRecommendation() {
+        if (this._recommending) return; // in-flight guard
+        const token = window.authManager.getToken();
+        if (!token) return;
+
+        this._recommending = true;
+        if (this._runBtn) this._runBtn.disabled = true;
+        this._view = 'recommend';
+        this._updateNavActiveState();
+        this._renderRecommendProgress('Starting recommendation…');
+
+        let staleCount = 0;
+        window.apiClient.runDiggerRecommend(token, {}, {
+            onRefreshStarted: (data) => {
+                staleCount = (data && data.stale_count) || 0;
+                this._renderRecommendProgress(
+                    staleCount === 0 ? 'Computing bundles…' : `Refreshing ${staleCount} stale listings…`,
+                );
+            },
+            onRefreshProgress: (data) => {
+                const remaining = data && data.remaining != null ? data.remaining : staleCount;
+                const done = Math.max(0, staleCount - remaining);
+                this._renderRecommendProgress(`Refreshing listings… ${done}/${staleCount}`);
+            },
+            onResult: (data) => {
+                this._renderRecommendResult(data || {});
+            },
+            onError: (err) => {
+                const reason = (err && (err.reason || err.detail)) || 'Something went wrong.';
+                this._renderError(`Recommendation failed: ${reason}`);
+                this._finishRecommendation();
+            },
+            onDone: () => {
+                this._finishRecommendation();
+            },
+        });
+    }
+
+    /**
+     * Clear the in-flight guard and re-enable the run button.
+     */
+    _finishRecommendation() {
+        this._recommending = false;
+        if (this._runBtn) this._runBtn.disabled = false;
+    }
+
+    /**
+     * Render a spinner + status line while a recommendation is in progress.
+     * @param {string} message
+     */
+    _renderRecommendProgress(message) {
+        if (!this._body) return;
+        this._body.textContent = '';
+
+        const wrap = document.createElement('div');
+        wrap.className = 'digger-recommend-progress';
+
+        const spinner = document.createElement('div');
+        spinner.className = 'spinner';
+        spinner.setAttribute('role', 'status');
+        wrap.appendChild(spinner);
+
+        const status = document.createElement('p');
+        status.className = 'digger-recommend-status';
+        status.textContent = message;
+        wrap.appendChild(status);
+
+        this._body.appendChild(wrap);
+    }
+
+    /**
+     * Render the interactive recommendation result (same layout as the report
+     * viewer), with a back control returning to the wantlist.
+     * @param {Object} out - OptimizerOutput payload
+     */
+    _renderRecommendResult(out) {
+        const currency = (this._settings && this._settings.currency) || 'USD';
+        this._renderBundlesView({
+            title: 'New recommendation',
+            generatedAt: null,
+            shippingConfidence: out.shipping_confidence,
+            bundles: out.bundles || [],
+            watching: out.watching || [],
+            currency,
+            onBack: () => this._showWantlist(),
+            backLabel: '← Back to wantlist',
+        });
     }
 }
 

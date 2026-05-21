@@ -285,6 +285,7 @@ describe('DiggerPane reports — inbox, navigation & viewer', () => {
             getDiggerReports: vi.fn().mockResolvedValue({ ok: true, status: 200, body: { items: [makeInboxItem()] } }),
             getDiggerReport: vi.fn().mockResolvedValue({ ok: true, status: 200, body: makeFullReport() }),
             markDiggerReportRead: vi.fn().mockResolvedValue({ ok: true, status: 204, body: null }),
+            runDiggerRecommend: vi.fn(),
         };
         window.exploreApp = undefined;
         loadScript('digger.js');
@@ -487,6 +488,96 @@ describe('DiggerPane reports — inbox, navigation & viewer', () => {
             back.click();
             await Promise.resolve();
             expect(window.apiClient.getDiggerReports).toHaveBeenCalled();
+        });
+    });
+
+    // ---------------------------------------------------------------- //
+    // Run recommendation (SSE-driven)
+    // ---------------------------------------------------------------- //
+
+    describe('run recommendation', () => {
+        it('renders a Run recommendation button when Digger is enabled', async () => {
+            await window.diggerPane.init();
+            const runBtn = document.getElementById('diggerHeaderActions').querySelector('.digger-run-btn');
+            expect(runBtn).not.toBeNull();
+            expect(runBtn.textContent).toContain('Run recommendation');
+        });
+
+        it('does not start a run when there is no token', async () => {
+            window.authManager.getToken.mockReturnValue(null);
+            await window.diggerPane._runRecommendation();
+            expect(window.apiClient.runDiggerRecommend).not.toHaveBeenCalled();
+        });
+
+        it('calls runDiggerRecommend with the token when the button is clicked', async () => {
+            await window.diggerPane.init();
+            document.getElementById('diggerHeaderActions').querySelector('.digger-run-btn').click();
+            await Promise.resolve();
+            expect(window.apiClient.runDiggerRecommend).toHaveBeenCalled();
+            expect(window.apiClient.runDiggerRecommend.mock.calls[0][0]).toBe('test-token');
+        });
+
+        it('shows progress while refreshing stale listings', async () => {
+            window.apiClient.runDiggerRecommend = vi.fn((token, opts, cbs) => {
+                cbs.onRefreshStarted({ stale_count: 3 });
+            });
+            await window.diggerPane.init();
+            document.getElementById('diggerHeaderActions').querySelector('.digger-run-btn').click();
+            await Promise.resolve();
+            const body = document.getElementById('diggerBody');
+            expect(body.querySelector('.digger-recommend-progress')).not.toBeNull();
+            expect(body.textContent).toContain('3');
+        });
+
+        it('renders bundle cards and watching from the result event', async () => {
+            window.apiClient.runDiggerRecommend = vi.fn((token, opts, cbs) => {
+                cbs.onRefreshStarted({ stale_count: 0 });
+                cbs.onResult({ bundles: makeFullReport().bundles, watching: [42], shipping_confidence: 'low' });
+                cbs.onDone({});
+            });
+            await window.diggerPane.init();
+            document.getElementById('diggerHeaderActions').querySelector('.digger-run-btn').click();
+            await Promise.resolve();
+            const body = document.getElementById('diggerBody');
+            expect(body.querySelectorAll('.digger-bundle-card')).toHaveLength(4);
+            expect(body.querySelector('.digger-watching-list').textContent).toContain('42');
+        });
+
+        it('renders an error when the run emits an error event', async () => {
+            window.apiClient.runDiggerRecommend = vi.fn((token, opts, cbs) => {
+                cbs.onError({ reason: 'digger not enabled' });
+            });
+            await window.diggerPane.init();
+            document.getElementById('diggerHeaderActions').querySelector('.digger-run-btn').click();
+            await Promise.resolve();
+            const body = document.getElementById('diggerBody');
+            expect(body.querySelector('.user-pane-empty')).not.toBeNull();
+            expect(body.textContent.toLowerCase()).toContain('digger not enabled');
+        });
+
+        it('re-enables the run button when the stream completes', async () => {
+            window.apiClient.runDiggerRecommend = vi.fn((token, opts, cbs) => {
+                cbs.onResult({ bundles: [], watching: [] });
+                cbs.onDone({});
+            });
+            await window.diggerPane.init();
+            const runBtn = document.getElementById('diggerHeaderActions').querySelector('.digger-run-btn');
+            runBtn.click();
+            await Promise.resolve();
+            expect(runBtn.disabled).toBe(false);
+            expect(window.diggerPane._recommending).toBe(false);
+        });
+
+        it('guards against concurrent runs', async () => {
+            // A run that never completes (no onDone) keeps the in-flight guard set.
+            window.apiClient.runDiggerRecommend = vi.fn((token, opts, cbs) => {
+                cbs.onRefreshStarted({ stale_count: 5 });
+            });
+            await window.diggerPane.init();
+            window.diggerPane._runRecommendation();
+            window.diggerPane._runRecommendation();
+            await Promise.resolve();
+            expect(window.apiClient.runDiggerRecommend).toHaveBeenCalledTimes(1);
         });
     });
 });

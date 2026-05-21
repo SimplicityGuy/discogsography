@@ -688,6 +688,78 @@ class ApiClient {
     }
 
     /**
+     * Run an interactive Digger recommendation, streaming progress over SSE.
+     * Events: refresh_started, refresh_progress, result, done, error.
+     * @param {string} token - JWT auth token
+     * @param {Object} opts - { deadline_seconds?, budget_cap_cents?, excluded_sellers? }
+     * @param {Object} callbacks - { onRefreshStarted, onRefreshProgress, onResult, onDone, onError }
+     */
+    runDiggerRecommend(token, opts = {}, callbacks = {}) {
+        const { onRefreshStarted, onRefreshProgress, onResult, onDone, onError } = callbacks;
+        const body = {
+            deadline_seconds: opts.deadline_seconds ?? 30,
+            budget_cap_cents: opts.budget_cap_cents ?? null,
+            excluded_sellers: opts.excluded_sellers ?? [],
+        };
+        fetch('/api/digger/recommend', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream',
+            },
+            body: JSON.stringify(body),
+        }).then(response => {
+            if (!response.ok) {
+                if (onError) onError({ status: response.status });
+                return;
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let eventType = null;
+            function processLines(lines) {
+                for (const line of lines) {
+                    if (line.startsWith('event:')) {
+                        eventType = line.slice(6).trim();
+                    } else if (line.startsWith('data:') && eventType) {
+                        let data = null;
+                        try {
+                            data = JSON.parse(line.slice(5).trim());
+                        } catch {
+                            data = null;
+                        }
+                        if (eventType === 'refresh_started' && onRefreshStarted) onRefreshStarted(data || {});
+                        else if (eventType === 'refresh_progress' && onRefreshProgress) onRefreshProgress(data || {});
+                        else if (eventType === 'result' && onResult) onResult(data || {});
+                        else if (eventType === 'error' && onError) onError(data || {});
+                        else if (eventType === 'done' && onDone) onDone(data || {});
+                        eventType = null;
+                    }
+                }
+            }
+            function processChunk() {
+                reader.read().then(({ done, value }) => {
+                    if (done) {
+                        if (buffer.trim()) processLines(buffer.split('\n'));
+                        return;
+                    }
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+                    processLines(lines);
+                    processChunk();
+                }).catch(err => {
+                    if (onError) onError(err);
+                });
+            }
+            processChunk();
+        }).catch(err => {
+            if (onError) onError(err);
+        });
+    }
+
+    /**
      * Send a natural language query with SSE streaming.
      * @param {string} query - Natural language question
      * @param {Object|null} context - Optional context

@@ -1777,4 +1777,155 @@ describe('ApiClient', () => {
             expect(result.status).toBe(404);
         });
     });
+
+    describe('runDiggerRecommend SSE streaming', () => {
+        function makeReadableStream(chunks) {
+            let index = 0;
+            return {
+                getReader() {
+                    return {
+                        read() {
+                            if (index < chunks.length) {
+                                const chunk = chunks[index++];
+                                return Promise.resolve({ done: false, value: new TextEncoder().encode(chunk) });
+                            }
+                            return Promise.resolve({ done: true, value: undefined });
+                        },
+                    };
+                },
+            };
+        }
+
+        it('should POST /api/digger/recommend with auth + event-stream headers', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, body: makeReadableStream([]) };
+            });
+
+            window.apiClient.runDiggerRecommend('my-token', {}, {});
+            await new Promise((r) => setTimeout(r, 30));
+
+            expect(capturedUrl).toBe('/api/digger/recommend');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-token');
+            expect(capturedOptions.headers['Accept']).toBe('text/event-stream');
+            expect(capturedOptions.headers['Content-Type']).toBe('application/json');
+        });
+
+        it('should serialize deadline, budget, and excluded sellers in the body', async () => {
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (_url, options) => {
+                capturedOptions = options;
+                return { ok: true, body: makeReadableStream([]) };
+            });
+
+            window.apiClient.runDiggerRecommend('token', { deadline_seconds: 15, budget_cap_cents: 5000, excluded_sellers: [7] }, {});
+            await new Promise((r) => setTimeout(r, 30));
+
+            expect(JSON.parse(capturedOptions.body)).toEqual({ deadline_seconds: 15, budget_cap_cents: 5000, excluded_sellers: [7] });
+        });
+
+        it('should default deadline and excluded sellers when omitted', async () => {
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (_url, options) => {
+                capturedOptions = options;
+                return { ok: true, body: makeReadableStream([]) };
+            });
+
+            window.apiClient.runDiggerRecommend('token', {}, {});
+            await new Promise((r) => setTimeout(r, 30));
+
+            const parsed = JSON.parse(capturedOptions.body);
+            expect(parsed.deadline_seconds).toBe(30);
+            expect(parsed.excluded_sellers).toEqual([]);
+        });
+
+        it('should invoke onRefreshStarted with the parsed event data', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: true, body: makeReadableStream(['event: refresh_started\ndata: {"stale_count":3}\n\n']) }));
+
+            const onRefreshStarted = vi.fn();
+            window.apiClient.runDiggerRecommend('token', {}, { onRefreshStarted });
+            await new Promise((r) => setTimeout(r, 50));
+
+            expect(onRefreshStarted).toHaveBeenCalledWith({ stale_count: 3 });
+        });
+
+        it('should invoke onRefreshProgress with the parsed event data', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: true, body: makeReadableStream(['event: refresh_progress\ndata: {"remaining":2,"status":"done"}\n\n']) }));
+
+            const onRefreshProgress = vi.fn();
+            window.apiClient.runDiggerRecommend('token', {}, { onRefreshProgress });
+            await new Promise((r) => setTimeout(r, 50));
+
+            expect(onRefreshProgress).toHaveBeenCalledWith({ remaining: 2, status: 'done' });
+        });
+
+        it('should invoke onResult with the optimizer output', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: true, body: makeReadableStream(['event: result\ndata: {"bundles":[],"watching":[1]}\n\n']) }));
+
+            const onResult = vi.fn();
+            window.apiClient.runDiggerRecommend('token', {}, { onResult });
+            await new Promise((r) => setTimeout(r, 50));
+
+            expect(onResult).toHaveBeenCalledWith({ bundles: [], watching: [1] });
+        });
+
+        it('should invoke onDone on the done event', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: true, body: makeReadableStream(['event: done\ndata: {}\n\n']) }));
+
+            const onDone = vi.fn();
+            window.apiClient.runDiggerRecommend('token', {}, { onDone });
+            await new Promise((r) => setTimeout(r, 50));
+
+            expect(onDone).toHaveBeenCalled();
+        });
+
+        it('should invoke onError with the parsed error event payload', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: true, body: makeReadableStream(['event: error\ndata: {"reason":"digger not enabled"}\n\n']) }));
+
+            const onError = vi.fn();
+            window.apiClient.runDiggerRecommend('token', {}, { onError });
+            await new Promise((r) => setTimeout(r, 50));
+
+            expect(onError).toHaveBeenCalledWith({ reason: 'digger not enabled' });
+        });
+
+        it('should invoke onError with the status when the response is not ok', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 503 }));
+
+            const onError = vi.fn();
+            window.apiClient.runDiggerRecommend('token', {}, { onError });
+            await new Promise((r) => setTimeout(r, 50));
+
+            expect(onError).toHaveBeenCalled();
+            expect(onError.mock.calls[0][0]).toMatchObject({ status: 503 });
+        });
+
+        it('should invoke onError when the reader rejects mid-stream', async () => {
+            let readCount = 0;
+            const stream = {
+                getReader() {
+                    return {
+                        read() {
+                            readCount++;
+                            if (readCount === 1) {
+                                return Promise.resolve({ done: false, value: new TextEncoder().encode('event: refresh_started\ndata: {"stale_count":1}\n\n') });
+                            }
+                            return Promise.reject(new Error('stream aborted'));
+                        },
+                    };
+                },
+            };
+            vi.stubGlobal('fetch', async () => ({ ok: true, body: stream }));
+
+            const onError = vi.fn();
+            window.apiClient.runDiggerRecommend('token', {}, { onError });
+            await new Promise((r) => setTimeout(r, 50));
+
+            expect(onError).toHaveBeenCalled();
+            expect(onError.mock.calls[0][0].message).toBe('stream aborted');
+        });
+    });
 });
