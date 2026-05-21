@@ -65,3 +65,27 @@ def test_pareto_marks_watching_when_must_unavailable() -> None:
     )
     out = pareto_bundles(inp)
     assert 99 in out.watching
+
+
+def test_pareto_falls_back_to_greedy_on_ilp_error(monkeypatch) -> None:
+    from common.digger_optimizer import pareto as pareto_mod
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("ilp exploded")
+
+    monkeypatch.setattr(pareto_mod, "solve_ilp_bundle", _boom)
+
+    inp = OptimizerInput(
+        user_id=uuid.uuid4(),
+        location="US",
+        currency="USD",
+        must_have_releases=[ReleaseConstraint(release_id=1, min_media_condition="VG", min_sleeve_condition="VG")],
+        candidate_listings=[_listing(101, 1, 1, "5")],
+        sellers={1: _seller(1)},
+    )
+    out = pareto_bundles(inp)
+
+    assert all(b.solver == "greedy" for b in out.bundles)
+    assert set(out.diagnostics.solver_used.values()) == {"greedy"}
+    cheapest = next(b for b in out.bundles if b.name == "cheapest")
+    assert cheapest.coverage.must == 1
