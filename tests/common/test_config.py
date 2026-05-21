@@ -1119,6 +1119,10 @@ class TestDiggerConfigFromEnv:
             "DIGGER_CB_WINDOW_SECONDS",
             "DIGGER_CB_FAILURE_PCT",
             "DIGGER_CB_COOLDOWN_SECONDS",
+            "API_BASE_URL",
+            "DIGGER_API_SERVICE_TOKEN",
+            "DIGGER_API_SERVICE_TOKEN_FILE",
+            "DIGGER_SCHEDULER_POLL_SECONDS",
         ):
             monkeypatch.delenv(var, raising=False)
 
@@ -1129,6 +1133,9 @@ class TestDiggerConfigFromEnv:
         assert cfg.circuit_breaker_window_seconds == 300
         assert cfg.circuit_breaker_failure_pct == 30
         assert cfg.circuit_breaker_cooldown_seconds == 1800
+        assert cfg.api_base_url == "http://api:8004"
+        assert cfg.digger_api_service_token is None
+        assert cfg.scheduler_poll_interval_seconds == 300
 
     def test_from_env_custom_optional_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Optional fields are overridden when environment variables are set."""
@@ -1146,6 +1153,42 @@ class TestDiggerConfigFromEnv:
         assert cfg.circuit_breaker_window_seconds == 120
         assert cfg.circuit_breaker_failure_pct == 50
         assert cfg.circuit_breaker_cooldown_seconds == 900
+
+    # ----- Scheduler / API-handshake fields -----
+
+    def test_scheduler_fields_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """API base URL, service token, and poll interval are read from the environment."""
+        _set_digger_env(monkeypatch)
+        monkeypatch.setenv("API_BASE_URL", "http://api.internal:9000")
+        monkeypatch.setenv("DIGGER_API_SERVICE_TOKEN", "s3cr3t")
+        monkeypatch.setenv("DIGGER_SCHEDULER_POLL_SECONDS", "60")
+
+        cfg = DiggerConfig.from_env()
+
+        assert cfg.api_base_url == "http://api.internal:9000"
+        assert cfg.digger_api_service_token == "s3cr3t"
+        assert cfg.scheduler_poll_interval_seconds == 60
+
+    def test_service_token_from_file_secret(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """DIGGER_API_SERVICE_TOKEN_FILE is honored via the _FILE secret convention."""
+        _set_digger_env(monkeypatch)
+        secret_file = tmp_path / "token"
+        secret_file.write_text("file-token\n")
+        monkeypatch.delenv("DIGGER_API_SERVICE_TOKEN", raising=False)
+        monkeypatch.setenv("DIGGER_API_SERVICE_TOKEN_FILE", str(secret_file))
+
+        cfg = DiggerConfig.from_env()
+
+        assert cfg.digger_api_service_token == "file-token"
+
+    def test_scheduler_poll_invalid_string_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Non-integer DIGGER_SCHEDULER_POLL_SECONDS falls back to 300."""
+        _set_digger_env(monkeypatch)
+        monkeypatch.setenv("DIGGER_SCHEDULER_POLL_SECONDS", "not-a-number")
+
+        cfg = DiggerConfig.from_env()
+
+        assert cfg.scheduler_poll_interval_seconds == 300
 
     # ----- Individual missing-required-var branches -----
 
