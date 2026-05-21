@@ -66,3 +66,22 @@ def test_ilp_returns_empty_bundle_when_must_unavailable() -> None:
     # Infeasible (must release with no listings) — return an empty bundle, not None.
     assert b is not None
     assert b.coverage.must == 0
+
+
+def test_ilp_excludes_seller() -> None:
+    inp = OptimizerInput(
+        user_id=uuid.uuid4(),
+        location="US",
+        currency="USD",
+        must_have_releases=[ReleaseConstraint(release_id=1, min_media_condition="VG", min_sleeve_condition="VG")],
+        candidate_listings=[
+            _listing(101, 1, 1, "5"),  # cheapest, but seller 1 is excluded
+            _listing(102, 1, 2, "10"),
+        ],
+        sellers={1: _seller(1), 2: _seller(2)},
+        excluded_sellers=frozenset({1}),
+    )
+    b = solve_ilp_bundle(inp, name="cheapest", timeout_seconds=5)
+    assert b is not None
+    assert b.coverage.must == 1
+    assert {o.seller_id for o in b.seller_orders} == {2}

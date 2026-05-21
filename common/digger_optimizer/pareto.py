@@ -17,7 +17,7 @@ from common.digger_optimizer.models import OptimizerDiagnostics, OptimizerOutput
 from common.digger_optimizer.shipping import shipping_confidence_score
 
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from typing import Literal
 
     from common.digger_optimizer.models import Bundle, BundleName, OptimizerInput

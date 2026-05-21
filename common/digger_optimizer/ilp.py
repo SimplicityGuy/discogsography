@@ -32,7 +32,7 @@ from common.digger_optimizer.models import CONDITION_RANK
 from common.digger_optimizer.shipping import estimate_shipping_cents
 
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from common.digger_optimizer.models import Bundle, BundleName, Listing, OptimizerInput
 
 
@@ -58,7 +58,7 @@ def solve_ilp_bundle(inp: OptimizerInput, *, name: BundleName, timeout_seconds: 
             listing_id_set.add(lid)
             seller_listings.setdefault(listings_by_id[lid].seller_id, []).append(lid)
 
-    if not listing_id_set:
+    if not listing_id_set:  # pragma: no cover - defensive; non-empty usable_by_release implies non-empty listing set
         return build_bundle_from_listings(name, [], inp, must_set, nice_set, eventually_set, solver="ilp")
 
     prob = pulp.LpProblem(f"digger_{name}", pulp.LpMinimize)

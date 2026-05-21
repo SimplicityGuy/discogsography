@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from common.digger_optimizer.models import Seller
 
 

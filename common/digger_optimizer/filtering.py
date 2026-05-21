@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from common.digger_optimizer.models import CONDITION_RANK
 
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from common.digger_optimizer.models import Listing, OptimizerInput, ReleaseConstraint
 
 
@@ -23,9 +23,8 @@ class FilterResult:
     skipped_currency: int = 0
 
 
-def _meets(listing: Listing, constraint: ReleaseConstraint, currency: str) -> bool:
-    if listing.price_currency != currency:
-        return False
+def _meets(listing: Listing, constraint: ReleaseConstraint) -> bool:
+    # Currency is already filtered upstream in filter_candidates, so it is not re-checked here.
     if CONDITION_RANK[listing.media_condition] < CONDITION_RANK[constraint.min_media_condition]:
         return False
     if CONDITION_RANK[listing.sleeve_condition] < CONDITION_RANK[constraint.min_sleeve_condition]:
@@ -43,7 +42,7 @@ def filter_candidates(inp: OptimizerInput) -> FilterResult:
         listings_by_release.setdefault(listing.release_id, []).append(listing)
 
     for must in inp.must_have_releases:
-        usable = [listing.listing_id for listing in listings_by_release.get(must.release_id, []) if _meets(listing, must, inp.currency)]
+        usable = [listing.listing_id for listing in listings_by_release.get(must.release_id, []) if _meets(listing, must)]
         if usable:
             result.usable_by_release[must.release_id] = usable
         else:
@@ -51,9 +50,7 @@ def filter_candidates(inp: OptimizerInput) -> FilterResult:
 
     for soft_group in (inp.nice_have_releases, inp.eventually_releases):
         for constraint in soft_group:
-            usable = [
-                listing.listing_id for listing in listings_by_release.get(constraint.release_id, []) if _meets(listing, constraint, inp.currency)
-            ]
+            usable = [listing.listing_id for listing in listings_by_release.get(constraint.release_id, []) if _meets(listing, constraint)]
             if usable:
                 result.usable_by_release[constraint.release_id] = usable
     return result

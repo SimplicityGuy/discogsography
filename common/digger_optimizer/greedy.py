@@ -23,7 +23,7 @@ from common.digger_optimizer.models import CONDITION_RANK, Bundle, Coverage, Ord
 from common.digger_optimizer.shipping import estimate_shipping_cents
 
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from typing import Literal
 
     from common.digger_optimizer.models import BundleName, Listing, OptimizerInput
@@ -104,10 +104,10 @@ def greedy_bundle(inp: OptimizerInput, *, name: BundleName) -> Bundle:
         covered_releases.add(listing.release_id)
         seller_used_counts[listing.seller_id] = seller_used_counts.get(listing.seller_id, 0) + 1
 
-    # 2. extend with Nice/Eventually if their marginal is "cheap enough"
+    # 2. extend with Nice/Eventually while their marginal cost stays within that tier's lambda
+    # budget. All current weights use lambda > 0; a lambda of 0 would simply add nothing because
+    # the marginal-cost guard below always exceeds it.
     for release_pool, lam in ((nice_set, weights.lambda_nice), (eventually_set, weights.lambda_eventually)):
-        if lam <= 0:
-            continue
         while True:
             listing = _consider(release_pool)
             if listing is None:

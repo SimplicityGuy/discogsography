@@ -54,3 +54,33 @@ def test_marks_watching_when_no_qualifying_listings() -> None:
     out = filter_candidates(_input([c], []))
     assert out.watching == [99]
     assert 99 not in out.usable_by_release
+
+
+def test_drops_below_sleeve_floor() -> None:
+    # Media passes the floor but the sleeve does not — exercises the sleeve branch.
+    c = ReleaseConstraint(release_id=1, min_media_condition="VG", min_sleeve_condition="NM", max_price_cents=None)
+    listings = [
+        Listing(
+            listing_id=10, release_id=1, seller_id=1, price_value=Decimal("5"), price_currency="USD", media_condition="NM", sleeve_condition="VG"
+        ),
+        Listing(
+            listing_id=11, release_id=1, seller_id=2, price_value=Decimal("6"), price_currency="USD", media_condition="NM", sleeve_condition="NM"
+        ),
+    ]
+    out = filter_candidates(_input([c], listings))
+    assert out.usable_by_release[1] == [11]
+
+
+def test_skips_currency_mismatched_listings() -> None:
+    c = ReleaseConstraint(release_id=1, min_media_condition="VG", min_sleeve_condition="VG", max_price_cents=None)
+    listings = [
+        Listing(
+            listing_id=10, release_id=1, seller_id=1, price_value=Decimal("5"), price_currency="EUR", media_condition="NM", sleeve_condition="NM"
+        ),
+        Listing(
+            listing_id=11, release_id=1, seller_id=2, price_value=Decimal("6"), price_currency="USD", media_condition="NM", sleeve_condition="NM"
+        ),
+    ]
+    out = filter_candidates(_input([c], listings))
+    assert out.usable_by_release[1] == [11]
+    assert out.skipped_currency == 1

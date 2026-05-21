@@ -62,3 +62,60 @@ def test_greedy_returns_zero_coverage_when_no_listings() -> None:
     b = greedy_bundle(inp, name="cheapest")
     assert b.coverage.must == 0
     assert b.grand_total_cents == 0
+
+
+def test_greedy_extends_with_cheap_nice_and_eventually() -> None:
+    inp = OptimizerInput(
+        user_id=uuid.uuid4(),
+        location="US",
+        currency="USD",
+        must_have_releases=[ReleaseConstraint(release_id=1, min_media_condition="VG", min_sleeve_condition="VG")],
+        nice_have_releases=[ReleaseConstraint(release_id=2, min_media_condition="VG", min_sleeve_condition="VG")],
+        eventually_releases=[ReleaseConstraint(release_id=3, min_media_condition="VG", min_sleeve_condition="VG")],
+        candidate_listings=[
+            _listing(101, 1, 1, "10"),  # must
+            _listing(201, 2, 1, "1"),  # cheap nice (same seller, small marginal)
+            _listing(301, 3, 1, "1"),  # cheap eventually
+        ],
+        sellers={1: _seller(1)},
+    )
+    b = greedy_bundle(inp, name="most_coverage")
+    assert b.coverage.must == 1
+    assert b.coverage.nice == 1
+    assert b.coverage.eventually == 1
+
+
+def test_greedy_skips_nice_item_above_lambda_budget() -> None:
+    inp = OptimizerInput(
+        user_id=uuid.uuid4(),
+        location="US",
+        currency="USD",
+        must_have_releases=[ReleaseConstraint(release_id=1, min_media_condition="VG", min_sleeve_condition="VG")],
+        nice_have_releases=[ReleaseConstraint(release_id=2, min_media_condition="VG", min_sleeve_condition="VG")],
+        candidate_listings=[
+            _listing(101, 1, 1, "10"),  # must
+            _listing(201, 2, 1, "99"),  # nice, far above the $5 cheapest lambda budget
+        ],
+        sellers={1: _seller(1)},
+    )
+    b = greedy_bundle(inp, name="cheapest")
+    assert b.coverage.must == 1
+    assert b.coverage.nice == 0
+
+
+def test_greedy_skips_excluded_seller() -> None:
+    inp = OptimizerInput(
+        user_id=uuid.uuid4(),
+        location="US",
+        currency="USD",
+        must_have_releases=[ReleaseConstraint(release_id=1, min_media_condition="VG", min_sleeve_condition="VG")],
+        candidate_listings=[
+            _listing(101, 1, 1, "5"),  # cheapest, but seller 1 is excluded
+            _listing(102, 1, 2, "10"),
+        ],
+        sellers={1: _seller(1), 2: _seller(2)},
+        excluded_sellers=frozenset({1}),
+    )
+    b = greedy_bundle(inp, name="cheapest")
+    assert b.coverage.must == 1
+    assert {o.seller_id for o in b.seller_orders} == {2}
