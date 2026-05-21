@@ -214,6 +214,7 @@ exclude = "^tests/"
 module = [
     "bleach",
     "pika.*",
+    "pulp",
     "selectolax.*",
 ]
 ignore_missing_imports = true
