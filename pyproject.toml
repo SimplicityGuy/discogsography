@@ -26,6 +26,7 @@ dependencies = [
     "orjson>=3.11.9",
     "pika>=1.4.0",
     "psycopg[binary]>=3.3.4",
+    "pulp>=2.8",
     "redis[hiredis]>=7.4.0",
     "structlog>=25.5.0",
     "tqdm>=4.67.3",
