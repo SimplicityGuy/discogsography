@@ -646,6 +646,48 @@ class ApiClient {
     }
 
     /**
+     * Get the Digger reports inbox for the current user (newest first).
+     * @param {string} token - JWT auth token
+     * @returns {Promise<{ok: boolean, status: number, body: Object|null}>} body = { items: [...] }
+     */
+    async getDiggerReports(token) {
+        const response = await fetch('/api/digger/reports', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const body = await response.json().catch(() => null);
+        return { ok: response.ok, status: response.status, body };
+    }
+
+    /**
+     * Get one full Digger report (bundles, watching, summary, shipping confidence).
+     * @param {string} token - JWT auth token
+     * @param {string} reportId - Report UUID
+     * @returns {Promise<{ok: boolean, status: number, body: Object|null}>}
+     */
+    async getDiggerReport(token, reportId) {
+        const response = await fetch(`/api/digger/reports/${encodeURIComponent(reportId)}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const body = await response.json().catch(() => null);
+        return { ok: response.ok, status: response.status, body };
+    }
+
+    /**
+     * Mark a Digger report read.
+     * @param {string} token - JWT auth token
+     * @param {string} reportId - Report UUID
+     * @returns {Promise<{ok: boolean, status: number, body: Object|null}>} 204 → body null
+     */
+    async markDiggerReportRead(token, reportId) {
+        const response = await fetch(`/api/digger/reports/${encodeURIComponent(reportId)}/read`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const body = await response.json().catch(() => null);
+        return { ok: response.ok, status: response.status, body };
+    }
+
+    /**
      * Send a natural language query with SSE streaming.
      * @param {string} query - Natural language question
      * @param {Object|null} context - Optional context

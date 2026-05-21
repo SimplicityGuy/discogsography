@@ -1640,4 +1640,141 @@ describe('ApiClient', () => {
             expect(result.body).toBeNull();
         });
     });
+
+    describe('getDiggerReports', () => {
+        it('should GET /api/digger/reports with Authorization header', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 200, json: async () => ({ items: [] }) };
+            });
+
+            await window.apiClient.getDiggerReports('my-token');
+            expect(capturedUrl).toBe('/api/digger/reports');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-token');
+        });
+
+        it('should return { ok:true, status:200, body } with items array on success', async () => {
+            const data = {
+                items: [
+                    {
+                        report_id: 'r1',
+                        kind: 'scheduled',
+                        generated_at: '2026-05-15T00:00:00Z',
+                        read_at: null,
+                        title: 'Weekly dig',
+                        summary: { wantlist_size: 5 },
+                        change_flag: 'significant',
+                    },
+                ],
+            };
+            vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, json: async () => data }));
+
+            const result = await window.apiClient.getDiggerReports('token');
+            expect(result.ok).toBe(true);
+            expect(result.status).toBe(200);
+            expect(result.body).toEqual(data);
+        });
+
+        it('should return { ok:false, status:401, body } on unauthorized', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 401, json: async () => ({ detail: 'Unauthorized' }) }));
+
+            const result = await window.apiClient.getDiggerReports('bad-token');
+            expect(result.ok).toBe(false);
+            expect(result.status).toBe(401);
+            expect(result.body).toEqual({ detail: 'Unauthorized' });
+        });
+
+        it('should return body:null when json() throws', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 503, json: async () => { throw new Error('no body'); } }));
+
+            const result = await window.apiClient.getDiggerReports('token');
+            expect(result.body).toBeNull();
+        });
+    });
+
+    describe('getDiggerReport', () => {
+        it('should GET /api/digger/reports/{id} with Authorization header', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 200, json: async () => ({ report_id: 'abc' }) };
+            });
+
+            await window.apiClient.getDiggerReport('my-token', 'abc');
+            expect(capturedUrl).toBe('/api/digger/reports/abc');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-token');
+        });
+
+        it('should URL-encode the report id', async () => {
+            let capturedUrl;
+            vi.stubGlobal('fetch', async (url) => {
+                capturedUrl = url;
+                return { ok: true, status: 200, json: async () => ({}) };
+            });
+
+            await window.apiClient.getDiggerReport('token', 'a/b c');
+            expect(capturedUrl).toBe('/api/digger/reports/a%2Fb%20c');
+        });
+
+        it('should return { ok:true, status:200, body } with the full report on success', async () => {
+            const report = {
+                report_id: 'abc',
+                title: 'Test report',
+                summary: { wantlist_size: 5 },
+                bundles: [{ name: 'cheapest' }],
+                watching: [42],
+                shipping_confidence: 'high',
+                generated_at: '2026-05-15T00:00:00Z',
+            };
+            vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, json: async () => report }));
+
+            const result = await window.apiClient.getDiggerReport('token', 'abc');
+            expect(result.ok).toBe(true);
+            expect(result.body).toEqual(report);
+        });
+
+        it('should return { ok:false, status:404, body } when the report is missing', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 404, json: async () => ({ detail: 'report not found' }) }));
+
+            const result = await window.apiClient.getDiggerReport('token', 'nope');
+            expect(result.ok).toBe(false);
+            expect(result.status).toBe(404);
+        });
+    });
+
+    describe('markDiggerReportRead', () => {
+        it('should POST /api/digger/reports/{id}/read with Authorization header', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 204, json: async () => { throw new Error('no body'); } };
+            });
+
+            await window.apiClient.markDiggerReportRead('my-token', 'abc');
+            expect(capturedUrl).toBe('/api/digger/reports/abc/read');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-token');
+        });
+
+        it('should return { ok:true, status:204, body:null } on 204 No Content', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: true, status: 204, json: async () => { throw new Error('no body'); } }));
+
+            const result = await window.apiClient.markDiggerReportRead('token', 'abc');
+            expect(result.ok).toBe(true);
+            expect(result.status).toBe(204);
+            expect(result.body).toBeNull();
+        });
+
+        it('should return { ok:false, status:404 } when already read or missing', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 404, json: async () => ({ detail: 'already read' }) }));
+
+            const result = await window.apiClient.markDiggerReportRead('token', 'abc');
+            expect(result.ok).toBe(false);
+            expect(result.status).toBe(404);
+        });
+    });
 });
