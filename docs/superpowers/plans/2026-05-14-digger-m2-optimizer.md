@@ -14,6 +14,38 @@
 
 ---
 
+## ⚠️ VERIFIED conventions (added 2026-05-20 during execution)
+
+This plan was written on 2026-05-14, **before** M1 was actually implemented, so its code
+snippets assume conventions the merged M1 code does **not** use. Treat the plan as the
+spec for *what* to build; the *how* below is authoritative and overrides the snippets.
+Verified against M1 on `origin/main` (`api/queries/digger_queries.py`,
+`api/routers/digger.py`, `api/routers/internal_digger.py`, `explore/static/js/digger.js`).
+
+| Plan snippet assumes | Real M1 convention (use this) |
+| --- | --- |
+| asyncpg: `pool.acquire()`, `conn.fetch()`, `$1` placeholders | **psycopg3**: `async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:` → `await cur.execute(sql, (params,))` → `await cur.fetchone()/fetchall()`; `%s` placeholders, params as tuples, `cur.rowcount` for affected rows |
+| `from common.postgres_pool import AsyncPostgreSQLPool` | `from common import AsyncPostgreSQLPool` (under `TYPE_CHECKING`) |
+| `Depends(current_user)` → `user.user_id` | `from api.dependencies import require_user`; `current_user: Annotated[dict[str, Any], Depends(require_user)]` → `uuid.UUID(current_user["sub"])` |
+| `Depends(get_pool)` / `Depends(get_redis)` in routes | Module-level `_pool` + `configure(pool)` setter, registered in `api/api.py` lifespan (`_router.configure(_pool)`) + `app.include_router(_router.router)` |
+| service-token guard ad-hoc | `from api.dependencies import service_token_required`; `APIRouter(..., dependencies=[Depends(service_token_required)])`; worker sends `X-Service-Token` header |
+| React 19 + Vite + `.tsx` + react-router-dom | **vanilla JS** classic `<script>` modules in `explore/static/js/` (extend `digger.js`), Alpine.js for view state, **vitest + jsdom** `.test.js` in `explore/__tests__/` using `loadScript()` + `createMockFetch()` helpers |
+| real-DB pytest fixtures (`postgres_pool`, `seeded_full_state`, `api_client`, `auth_headers`) | **mock-based**: `AsyncMock` pool→conn→cursor chains (see `tests/api/test_syncer_digger_hook.py`); real DB only in `@pytest.mark.e2e`. `tests/digger/conftest.py` provides a `redis_test_client` (fakeredis) |
+
+**Already exists from M1 — do not recreate:**
+- Tables `digger.reports`, `digger.user_digger_settings`, `digger.listings`, `digger.sellers`,
+  `digger.release_scrape_state`, `digger.user_wantlist_priorities` (schema-init/digger_schema.py).
+- Internal endpoints `/api/internal/digger/wantlist-snapshot/{user_id}` and
+  `/api/internal/digger/users-due-for-report` (the scheduler consumes these).
+- `sse-starlette` is already an API optional dependency; only `pulp>=2.8` (common) and
+  `hypothesis` (dev) need adding.
+
+**Execution structure:** shipped as layered PRs mirroring M1 — (A) `common/digger_optimizer/`
+library [Tasks 1–7], (B) API integration [8–12], (C) scheduler [10,13–14], (D) explore
+frontend rewritten in vanilla JS [15–18], (E) perf/docs/e2e/polish [19–22].
+
+---
+
 ## File structure
 
 **Create:**
