@@ -13,10 +13,6 @@ Submodules:
 - greedy: greedy reference implementation (also ILP warm-start)
 - ilp: pulp-based optimal solver
 - pareto: 4-variant coordinator
-
-NOTE: ``pareto_bundles`` is re-exported from this package root once the pareto
-module lands (Task 6). Until then only the model types are exported so the
-package imports cleanly while the solver modules are built up incrementally.
 """
 
 from __future__ import annotations
@@ -35,6 +31,7 @@ from common.digger_optimizer.models import (
     SellerOrder,
     ShippingPolicyRegion,
 )
+from common.digger_optimizer.pareto import pareto_bundles
 
 
 __all__ = [
@@ -50,4 +47,5 @@ __all__ = [
     "Seller",
     "SellerOrder",
     "ShippingPolicyRegion",
+    "pareto_bundles",
 ]
