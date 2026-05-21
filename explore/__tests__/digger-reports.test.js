@@ -579,5 +579,33 @@ describe('DiggerPane reports — inbox, navigation & viewer', () => {
             await Promise.resolve();
             expect(window.apiClient.runDiggerRecommend).toHaveBeenCalledTimes(1);
         });
+
+        it('updates the progress count on refresh_progress events', async () => {
+            window.apiClient.runDiggerRecommend = vi.fn((token, opts, cbs) => {
+                cbs.onRefreshStarted({ stale_count: 4 });
+                cbs.onRefreshProgress({ remaining: 1 });
+            });
+            await window.diggerPane.init();
+            document.getElementById('diggerHeaderActions').querySelector('.digger-run-btn').click();
+            await Promise.resolve();
+            const body = document.getElementById('diggerBody');
+            expect(body.querySelector('.digger-recommend-progress')).not.toBeNull();
+            expect(body.textContent).toContain('3/4');
+        });
+
+        it('returns to the wantlist from a recommendation result', async () => {
+            window.apiClient.runDiggerRecommend = vi.fn((token, opts, cbs) => {
+                cbs.onResult({ bundles: [], watching: [] });
+                cbs.onDone({});
+            });
+            await window.diggerPane.init();
+            document.getElementById('diggerHeaderActions').querySelector('.digger-run-btn').click();
+            await Promise.resolve();
+            const back = document.getElementById('diggerBody').querySelector('.digger-back-btn');
+            expect(back).not.toBeNull();
+            back.click();
+            await Promise.resolve();
+            expect(window.apiClient.getDiggerWantlist).toHaveBeenCalled();
+        });
     });
 });

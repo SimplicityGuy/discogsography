@@ -2667,3 +2667,293 @@ select option {
     padding: 0.2rem 0.35rem;
     font-size: 0.78rem;
 }
+
+/* ------------------------------------------------------------------ */
+/* Reports — header navigation                                         */
+/* ------------------------------------------------------------------ */
+
+.digger-nav-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-mid);
+    font-size: 0.85rem;
+    padding: 0.3rem 0.75rem;
+    border-radius: 0.4rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.digger-nav-btn:hover {
+    color: var(--text-high);
+    border-color: var(--blue-accent);
+}
+
+.digger-nav-btn.active {
+    color: var(--text-high);
+    border-color: var(--blue-accent);
+    background: var(--inner-bg);
+}
+
+.digger-run-btn {
+    margin-left: 0.25rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reports — inbox list                                                */
+/* ------------------------------------------------------------------ */
+
+.digger-reports {
+    list-style: none;
+    margin: 1rem 1.5rem 1.5rem;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.digger-report-item {
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--card-bg);
+}
+
+.digger-report-item.unread {
+    border-left: 3px solid var(--blue-accent);
+}
+
+.digger-report-link {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 0.75rem 1rem;
+}
+
+.digger-report-link:hover {
+    background: var(--bg-hover);
+}
+
+.digger-report-title {
+    color: var(--text-high);
+    font-weight: 600;
+    margin-bottom: 0.2rem;
+}
+
+.digger-report-item.read .digger-report-title {
+    color: var(--text-mid);
+    font-weight: 500;
+}
+
+.digger-report-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+/* Change-flag pills */
+.digger-flag {
+    padding: 0.05rem 0.45rem;
+    border-radius: 0.75rem;
+    font-size: 0.72rem;
+    border: 1px solid var(--border-color);
+}
+
+.digger-flag-significant {
+    color: var(--accent-yellow);
+    border-color: rgba(255, 171, 0, 0.4);
+    background: rgba(255, 171, 0, 0.1);
+}
+
+.digger-flag-first_run {
+    color: var(--blue-accent);
+    border-color: rgba(0, 188, 212, 0.4);
+    background: rgba(0, 188, 212, 0.1);
+}
+
+.digger-flag-none {
+    color: var(--text-dim);
+}
+
+/* ------------------------------------------------------------------ */
+/* Reports — viewer                                                    */
+/* ------------------------------------------------------------------ */
+
+.digger-report-viewer {
+    margin: 1rem 1.5rem 1.5rem;
+}
+
+.digger-back-btn {
+    background: none;
+    border: none;
+    color: var(--text-mid);
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 0.25rem 0;
+    margin-bottom: 0.75rem;
+    transition: color 0.15s;
+}
+
+.digger-back-btn:hover {
+    color: var(--text-high);
+}
+
+.digger-report-viewer-header {
+    margin-bottom: 1rem;
+}
+
+.digger-report-viewer-header h3 {
+    color: var(--text-high);
+    margin: 0 0 0.4rem;
+}
+
+.digger-confidence-high {
+    color: var(--accent-green);
+    border: 1px solid rgba(0, 230, 118, 0.3);
+    background: rgba(0, 230, 118, 0.1);
+}
+
+.digger-confidence-low {
+    color: var(--accent-yellow);
+    border: 1px solid rgba(255, 171, 0, 0.3);
+    background: rgba(255, 171, 0, 0.1);
+}
+
+/* ------------------------------------------------------------------ */
+/* Reports — bundle cards                                              */
+/* ------------------------------------------------------------------ */
+
+.digger-bundles-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 1rem;
+}
+
+.digger-bundle-card {
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--card-bg);
+    padding: 1rem;
+}
+
+.digger-bundle-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.digger-bundle-name {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--text-high);
+}
+
+.digger-solver-greedy {
+    color: var(--text-dim);
+    border: 1px solid var(--border-color);
+    background: var(--inner-bg);
+}
+
+.digger-bundle-total {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--blue-accent);
+}
+
+.digger-bundle-breakdown {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-bottom: 0.5rem;
+}
+
+.digger-bundle-coverage,
+.digger-bundle-sellers {
+    font-size: 0.82rem;
+    color: var(--text-mid);
+}
+
+.digger-bundle-hint {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin: 0.5rem 0 0;
+    font-style: italic;
+}
+
+.digger-bundle-details {
+    margin-top: 0.6rem;
+    font-size: 0.8rem;
+}
+
+.digger-bundle-details summary {
+    cursor: pointer;
+    color: var(--text-mid);
+}
+
+.digger-seller-order {
+    margin-top: 0.4rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--row-border);
+}
+
+.digger-seller-order-head {
+    color: var(--text-mid);
+    margin-bottom: 0.2rem;
+}
+
+.digger-listing-list {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 0.75rem;
+    color: var(--text-dim);
+}
+
+/* ------------------------------------------------------------------ */
+/* Reports — watching list                                            */
+/* ------------------------------------------------------------------ */
+
+.digger-watching-list {
+    margin-top: 1.5rem;
+}
+
+.digger-watching-list h4 {
+    color: var(--text-high);
+    font-size: 0.95rem;
+    margin: 0 0 0.5rem;
+}
+
+.digger-watching-list ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+}
+
+.digger-watching-list a {
+    color: var(--blue-accent);
+    font-size: 0.85rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reports — interactive run progress                                 */
+/* ------------------------------------------------------------------ */
+
+.digger-recommend-progress {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 3rem 1.5rem;
+}
+
+.digger-recommend-status {
+    color: var(--text-mid);
+    font-size: 0.9rem;
+}
