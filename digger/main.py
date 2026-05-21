@@ -103,6 +103,7 @@ async def amain() -> None:
                 rate=rate,
                 breaker=breaker,
                 stop_event=stop_event,
+                redis=redis,
             ),
             name="scrape",
         ),
