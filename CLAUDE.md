@@ -53,6 +53,7 @@ backups/              Database backups
 - **Brainztableinator** stores all MusicBrainz data in `musicbrainz` PostgreSQL schema — including entities without Discogs matches — with relationships and external links.
 - **Insights** fetches data from API internal endpoints (`/api/internal/insights/*`) over HTTP — does NOT connect to Neo4j directly. Uses Redis for caching.
 - **Explore** serves static files only — no external HTTP endpoints, no Neo4j env vars.
+- **Digger** scrapes the marketplace (writing `digger.listings`/`sellers` directly) AND runs a scheduler that generates `digger.reports` on each user's cadence. The scheduler fetches wantlist priorities from the API's internal endpoints (`/api/internal/digger/*`) over HTTP — authenticated with the shared `DIGGER_API_SERVICE_TOKEN` — but reads worker-owned tables (listings/sellers/reports) directly. It does NOT import from `api/`. The scheduler only starts when `DIGGER_API_SERVICE_TOKEN` is set. The optimizer lives in `common/digger_optimizer/` (pure functions, shared by API + worker).
 - **State markers**: The extractor uses version-specific state markers (`.extraction_status_<version>.json`) to track progress. See `docs/state-marker-system.md`.
 
 ## uv Commands

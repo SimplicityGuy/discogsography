@@ -840,13 +840,18 @@ DIGGER_CB_WINDOW_SECONDS=300     # Rolling failure-rate window (default: 300)
 DIGGER_CB_FAILURE_PCT=30         # Failure % that opens the breaker (default: 30; >= 10 events required)
 DIGGER_CB_COOLDOWN_SECONDS=1800  # Open-state cooldown before reset (default: 1800)
 
+# Optional - Scheduler (scheduled recommendation reports)
+API_BASE_URL="http://api:8004"          # API base URL the scheduler calls (default: http://api:8004)
+DIGGER_API_SERVICE_TOKEN=""             # Shared service token; scheduler runs only when set (also supports _FILE)
+DIGGER_SCHEDULER_POLL_SECONDS=300       # How often to poll for due users (default: 300)
+
 # Optional - Logging
 LOG_LEVEL=INFO
 ```
 
 Health check: http://localhost:8012/health (also exposes Prometheus `/metrics`)
 
-**Notes**: The Digger worker scrapes public Discogs marketplace listing and seller pages, persisting to the `digger.*` PostgreSQL schema and using Redis for the rate-budget token bucket. It does **not** use RabbitMQ and does **not** call the API service. Per-release retries use exponential backoff (capped at 24 h); the global circuit breaker pauses scraping when the recent failure rate is high. The `DIGGER_API_SERVICE_TOKEN` that gates `/api/internal/digger/*` is consumed by the **API service**, not by this worker — see the [API](#api) section. See [Digger Scraping Policy](digger-scraping-policy.md) for the full request and Terms-of-Service posture.
+**Notes**: The Digger worker scrapes public Discogs marketplace listing and seller pages, persisting to the `digger.*` PostgreSQL schema and using Redis for the rate-budget token bucket. It does **not** use RabbitMQ. Per-release retries use exponential backoff (capped at 24 h); the global circuit breaker pauses scraping when the recent failure rate is high. The worker also runs a **scheduler** that generates recommendation reports on each user's configured cadence: it calls the API's internal endpoints (`/api/internal/digger/wantlist-snapshot/{user_id}` and `/api/internal/digger/users-due-for-report`) over HTTP, authenticating with the **shared** `DIGGER_API_SERVICE_TOKEN` (the same token the API uses to gate those endpoints — see the [API](#api) section). The scheduler is **only started when `DIGGER_API_SERVICE_TOKEN` is set**; otherwise scheduled reports are disabled and the worker only scrapes. See [Digger Scraping Policy](digger-scraping-policy.md) for the full request and Terms-of-Service posture.
 
 ### MCP Server
 
