@@ -9,6 +9,21 @@ const DIGGER_TIERS = ['must', 'nice', 'eventually'];
 const DIGGER_CONDITIONS = ['M', 'NM', 'VG+', 'VG', 'G+', 'G', 'F', 'P'];
 const DIGGER_SLEEVE_CONDITIONS = ['M', 'NM', 'VG+', 'VG', 'G+', 'G', 'F', 'P', 'generic', 'no_cover'];
 
+// Human-readable labels for the four optimizer bundle variants.
+const DIGGER_BUNDLE_LABELS = {
+    cheapest: 'Cheapest',
+    most_coverage: 'Most Coverage',
+    best_quality: 'Best Quality',
+    fewest_sellers: 'Fewest Sellers',
+};
+
+// Human-readable labels for a report's change flag.
+const DIGGER_CHANGE_FLAG_LABELS = {
+    first_run: 'first run',
+    significant: 'significant',
+    none: 'no change',
+};
+
 class DiggerPane {
     constructor() {
         this._settings = null;
@@ -747,6 +762,180 @@ class DiggerPane {
         } catch {
             return 'never';
         }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Reports — bundle rendering helpers
+    // ------------------------------------------------------------------ //
+
+    /**
+     * Format an integer cents amount as a localized currency string.
+     * Money flows through the optimizer in cents; the UI displays currency.
+     * @param {number} cents
+     * @param {string} [currency='USD'] - ISO-4217 currency code
+     * @returns {string}
+     */
+    _formatCents(cents, currency = 'USD') {
+        const amount = (Number(cents) || 0) / 100;
+        try {
+            return new Intl.NumberFormat(undefined, {
+                style: 'currency',
+                currency,
+                currencyDisplay: 'symbol',
+            }).format(amount);
+        } catch {
+            // Invalid currency code — fall back to a plain decimal.
+            return `${currency} ${amount.toFixed(2)}`;
+        }
+    }
+
+    /**
+     * Build a single bundle card showing totals, coverage, and an expandable
+     * per-seller breakdown.
+     * @param {Object} bundle - Optimizer Bundle (cents-denominated)
+     * @param {string} currency - ISO-4217 currency code for display
+     * @returns {HTMLDivElement}
+     */
+    _buildBundleCard(bundle, currency) {
+        const card = document.createElement('div');
+        card.className = `digger-bundle-card digger-bundle-${bundle.name}`;
+        card.dataset.bundleName = bundle.name;
+
+        // Header — name label + optional greedy-solver badge.
+        const header = document.createElement('header');
+        header.className = 'digger-bundle-header';
+
+        const title = document.createElement('h4');
+        title.className = 'digger-bundle-name';
+        title.textContent = DIGGER_BUNDLE_LABELS[bundle.name] || bundle.name;
+        header.appendChild(title);
+
+        if (bundle.solver === 'greedy') {
+            const badge = document.createElement('span');
+            badge.className = 'badge digger-solver-greedy';
+            badge.textContent = 'greedy';
+            badge.title = 'Computed with the greedy fallback solver';
+            header.appendChild(badge);
+        }
+        card.appendChild(header);
+
+        // Grand total.
+        const total = document.createElement('div');
+        total.className = 'digger-bundle-total';
+        total.textContent = this._formatCents(bundle.grand_total_cents, currency);
+        card.appendChild(total);
+
+        // Item + shipping breakdown.
+        const breakdown = document.createElement('div');
+        breakdown.className = 'digger-bundle-breakdown';
+        breakdown.textContent =
+            `${this._formatCents(bundle.total_item_cost_cents, currency)} items` +
+            ` + ${this._formatCents(bundle.total_shipping_cents, currency)} shipping`;
+        card.appendChild(breakdown);
+
+        // Coverage counts.
+        const cov = bundle.coverage || { must: 0, nice: 0, eventually: 0 };
+        const coverage = document.createElement('div');
+        coverage.className = 'digger-bundle-coverage';
+        coverage.textContent = `${cov.must} must · ${cov.nice} nice · ${cov.eventually} eventually`;
+        card.appendChild(coverage);
+
+        // Seller count.
+        const orders = bundle.seller_orders || [];
+        const sellers = document.createElement('div');
+        sellers.className = 'digger-bundle-sellers';
+        sellers.textContent = `${orders.length} seller${orders.length === 1 ? '' : 's'}`;
+        card.appendChild(sellers);
+
+        // Reasoning hint.
+        if (bundle.reasoning_hint) {
+            const hint = document.createElement('p');
+            hint.className = 'digger-bundle-hint';
+            hint.textContent = bundle.reasoning_hint;
+            card.appendChild(hint);
+        }
+
+        // Expandable per-seller breakdown (only when there are orders).
+        if (orders.length > 0) {
+            card.appendChild(this._buildSellerBreakdown(bundle, currency));
+        }
+
+        return card;
+    }
+
+    /**
+     * Build the collapsible per-seller order breakdown for a bundle card.
+     * @param {Object} bundle
+     * @param {string} currency
+     * @returns {HTMLDetailsElement}
+     */
+    _buildSellerBreakdown(bundle, currency) {
+        const details = document.createElement('details');
+        details.className = 'digger-bundle-details';
+
+        const summary = document.createElement('summary');
+        summary.textContent = 'Seller breakdown';
+        details.appendChild(summary);
+
+        for (const order of bundle.seller_orders || []) {
+            const block = document.createElement('div');
+            block.className = 'digger-seller-order';
+
+            const head = document.createElement('div');
+            head.className = 'digger-seller-order-head';
+            head.textContent =
+                `Seller ${order.seller_id} — ` +
+                `${this._formatCents(order.subtotal_item_cents, currency)} items` +
+                ` + ${this._formatCents(order.shipping_cents, currency)} shipping`;
+            block.appendChild(head);
+
+            const list = document.createElement('ul');
+            list.className = 'digger-listing-list';
+            for (const line of order.listings || []) {
+                const li = document.createElement('li');
+                li.textContent =
+                    `Release ${line.release_id} — ` +
+                    `${line.media_condition}/${line.sleeve_condition} — ` +
+                    `${this._formatCents(line.price_cents, currency)}`;
+                list.appendChild(li);
+            }
+            block.appendChild(list);
+            details.appendChild(block);
+        }
+
+        return details;
+    }
+
+    /**
+     * Build the "Watching" section listing releases with no qualifying listing.
+     * Returns null when there is nothing to watch.
+     * @param {number[]} releaseIds
+     * @returns {HTMLElement|null}
+     */
+    _buildWatchingList(releaseIds) {
+        if (!releaseIds || releaseIds.length === 0) return null;
+
+        const section = document.createElement('section');
+        section.className = 'digger-watching-list';
+
+        const heading = document.createElement('h4');
+        heading.textContent = 'Watching — no qualifying listings yet';
+        section.appendChild(heading);
+
+        const list = document.createElement('ul');
+        for (const id of releaseIds) {
+            const li = document.createElement('li');
+            const link = document.createElement('a');
+            link.href = `https://www.discogs.com/release/${id}`;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = `release ${id}`;
+            li.appendChild(link);
+            list.appendChild(li);
+        }
+        section.appendChild(list);
+
+        return section;
     }
 }
 
