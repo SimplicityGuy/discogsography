@@ -109,3 +109,9 @@ digger_scenarios:
       tier: nice
     auth: true
     target_p95_ms: 300
+
+  - name: digger_reports_list
+    method: GET
+    path: /api/digger/reports
+    auth: true
+    target_p95_ms: 200
