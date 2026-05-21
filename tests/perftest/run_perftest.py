@@ -38,6 +38,11 @@ PERFTEST_USER_EMAIL = "perftest-digger@example.invalid"
 # Release id shared by the seed and the digger PUT/bulk-tier scenarios.
 PERFTEST_RELEASE_ID = 12345
 
+# Fixed report UUID shared by the seed and the digger reports get/read scenarios.
+# The seed inserts a digger.reports row carrying this id (reset to unread each run)
+# so GET /reports/{id} and POST /reports/{id}/read hit a real, owned report.
+PERFTEST_REPORT_ID = "00000000-0000-0000-0000-0000000d2222"
+
 
 def _jwt_secret() -> str:
     """Return the JWT signing secret from the environment.
@@ -162,15 +167,20 @@ def seed_digger_perftest_data(postgres_url: str) -> None:
       * `digger.user_wantlist_priorities` for (user, release) so the PUT/bulk
         endpoints update real rows,
       * `digger.release_scrape_state` + `digger.sellers` + a `digger.listings`
-        row with removed_at IS NULL so active_listings > 0.
+        row with removed_at IS NULL so active_listings > 0,
+      * a `digger.reports` row with the fixed perftest report id (reset to unread
+        on every run) so GET /reports/{id} and POST /reports/{id}/read hit a real,
+        owned report.
 
     Uses a synchronous psycopg3 connection — this keeps the runner free of
     asyncio. Safe to run repeatedly.
     """
     import psycopg
+    from psycopg.types.json import Jsonb
 
     user_id = PERFTEST_USER_ID
     release_id = PERFTEST_RELEASE_ID
+    report_id = PERFTEST_REPORT_ID
     seller_id = 999_001
     listing_id = 999_001
     # A non-functional placeholder hash in the API's salt:key format. This user
@@ -217,6 +227,24 @@ def seed_digger_perftest_data(postgres_url: str) -> None:
             "VALUES (%s, %s, %s, %s, 'USD', 'VG+', 'VG+', NULL) "
             "ON CONFLICT (listing_id) DO UPDATE SET removed_at = NULL",
             (listing_id, release_id, seller_id, 24.99),
+        )
+        # A pre-generated report so the reports get/read scenarios target a real,
+        # owned row. read_at is reset to NULL each run so the first mark-read hits
+        # the success (204) path; later iterations are 404 (already read) — both
+        # measure the same UPDATE round-trip latency.
+        cur.execute(
+            "INSERT INTO digger.reports "
+            "(report_id, user_id, kind, title, summary, bundles, watching, change_flag, shipping_confidence) "
+            "VALUES (%s, %s, 'interactive', %s, %s, %s, %s, 'first_run', 'low') "
+            "ON CONFLICT (report_id) DO UPDATE SET read_at = NULL, generated_at = now()",
+            (
+                report_id,
+                user_id,
+                "Perftest Report",
+                Jsonb({"bundle_count": 0, "watching_count": 0}),
+                Jsonb([]),
+                Jsonb([]),
+            ),
         )
         conn.commit()
     print("  Seed complete.")

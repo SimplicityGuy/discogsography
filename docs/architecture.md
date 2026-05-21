@@ -537,7 +537,7 @@ See [Brainztableinator README](../brainztableinator/README.md) for details.
 - `DIGGER_SCRAPER_USER_AGENT`: User-Agent header for scrape requests
 - `DIGGER_CB_WINDOW_SECONDS`, `DIGGER_CB_FAILURE_PCT`, `DIGGER_CB_COOLDOWN_SECONDS`: Circuit-breaker tuning
 
-See [Digger README](../digger/README.md) and the [Digger Scraping Policy](digger-scraping-policy.md) for the full request and Terms-of-Service posture.
+See [Digger README](../digger/README.md) and the [Digger Scraping Policy](digger-scraping-policy.md) for the full request and Terms-of-Service posture. The deterministic bundle optimizer that powers the interactive `POST /api/digger/recommend` endpoint and the scheduled reports is documented in [Digger Optimizer](digger-optimizer.md).
 
 ### Explore Service
 
