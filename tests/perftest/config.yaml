@@ -115,3 +115,39 @@ digger_scenarios:
     path: /api/digger/reports
     auth: true
     target_p95_ms: 200
+
+  # Fetch one report by id. The --seed step inserts a digger.reports row carrying
+  # this fixed UUID (owned by the perftest user) so this resolves a real report.
+  - name: digger_reports_get
+    method: GET
+    path: /api/digger/reports/{report_id}
+    path_params:
+      report_id: 00000000-0000-0000-0000-0000000d2222
+    auth: true
+    target_p95_ms: 100
+
+  # Mark that report read. mark_read is one-shot (UPDATE ... WHERE read_at IS NULL):
+  # the seed resets read_at to NULL each run, so the first of the N iterations is a
+  # 204 and the rest are 404 (already read). Both measure the same UPDATE round-trip;
+  # the harness reports errors informationally and does not fail on them.
+  - name: digger_reports_read
+    method: POST
+    path: /api/digger/reports/{report_id}/read
+    path_params:
+      report_id: 00000000-0000-0000-0000-0000000d2222
+    auth: true
+    target_p95_ms: 100
+
+  # Interactive recommendation. Streams Server-Sent Events (refresh_started ->
+  # refresh_progress* -> result -> done); like the NLQ scenarios above, the harness
+  # issues a plain POST and times the full response (the EventSourceResponse closes
+  # once the generator completes). The seed keeps the wantlist release fresh
+  # (last_scraped_at = now()) so there is no opportunistic-refresh wait and the
+  # deadline only caps the worst case.
+  - name: digger_recommend
+    method: POST
+    path: /api/digger/recommend
+    body:
+      deadline_seconds: 5
+    auth: true
+    target_p95_ms: 6000
