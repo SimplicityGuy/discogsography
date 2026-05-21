@@ -26,6 +26,7 @@ api/                  API service — all user-facing HTTP endpoints (auth, sear
 brainzgraphinator/    Brainzgraphinator service — MusicBrainz data → Neo4j enrichment
 brainztableinator/    Brainztableinator service — MusicBrainz data → PostgreSQL
 common/               Shared library — config, models, utilities used by all Python services
+  digger_optimizer/   Pure-function ILP bundle optimizer for Digger (shared by api + digger) — see docs/digger-optimizer.md
 dashboard/            Dashboard service — real-time monitoring UI
 digger/               Digger service — Discogs marketplace scraper for wantlist listings (scheduled worker)
 explore/              Explore service — static file serving for graph exploration frontend (Vitest for JS tests)
