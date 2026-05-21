@@ -65,3 +65,15 @@ async def test_build_optimizer_input_empty_wantlist_returns_empty(mock_pool: obj
     assert inp.must_have_releases == []
     assert inp.candidate_listings == []
     assert inp.sellers == {}
+
+
+@pytest.mark.asyncio
+async def test_build_optimizer_input_with_priorities_but_no_listings(mock_pool: object, mock_cur: AsyncMock) -> None:
+    user_id = uuid.uuid4()
+    priorities = [WantlistPriorityRow(release_id=1, tier="must", min_media_condition="VG", min_sleeve_condition="VG", max_price_cents=None)]
+    mock_cur.fetchall = AsyncMock(return_value=[])  # listings query returns nothing -> no sellers fetched
+    with patch("api.digger_refresh.input_builder.list_wantlist_priorities", AsyncMock(return_value=priorities)):
+        inp = await build_optimizer_input(mock_pool, user_id, location="US")
+    assert len(inp.must_have_releases) == 1
+    assert inp.candidate_listings == []
+    assert inp.sellers == {}

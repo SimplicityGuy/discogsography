@@ -3,7 +3,9 @@
 from unittest.mock import AsyncMock, patch
 import uuid
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+import pytest
 
 
 def test_list_reports_empty(test_client: TestClient, auth_headers: dict[str, str]) -> None:
@@ -72,3 +74,15 @@ def test_mark_read_404_when_missing(test_client: TestClient, auth_headers: dict[
 def test_reports_require_auth(test_client: TestClient) -> None:
     r = test_client.get("/api/digger/reports")
     assert r.status_code == 401
+
+
+def test_get_pool_raises_when_unconfigured() -> None:
+    import api.routers.digger_reports as mod
+
+    saved = mod._pool
+    mod._pool = None
+    try:
+        with pytest.raises(HTTPException):
+            mod._get_pool()
+    finally:
+        mod._pool = saved

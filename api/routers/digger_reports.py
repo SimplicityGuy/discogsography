@@ -17,7 +17,7 @@ from api.dependencies import require_user
 from api.queries import digger_reports as q
 
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from common import AsyncPostgreSQLPool
 
 

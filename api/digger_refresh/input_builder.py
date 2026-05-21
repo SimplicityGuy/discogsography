@@ -15,7 +15,7 @@ from api.queries.digger_queries import list_wantlist_priorities
 from common.digger_optimizer.models import Listing, OptimizerInput, ReleaseConstraint, Seller, ShippingPolicyRegion
 
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     import uuid
 
     from common import AsyncPostgreSQLPool
