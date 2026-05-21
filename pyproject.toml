@@ -26,6 +26,7 @@ dependencies = [
     "orjson>=3.11.9",
     "pika>=1.4.0",
     "psycopg[binary]>=3.3.4",
+    "pulp>=2.8",
     "redis[hiredis]>=7.4.0",
     "structlog>=25.5.0",
     "tqdm>=4.67.3",
@@ -213,6 +214,7 @@ exclude = "^tests/"
 module = [
     "bleach",
     "pika.*",
+    "pulp",
     "selectolax.*",
 ]
 ignore_missing_imports = true
@@ -276,6 +278,7 @@ dev = [
     "pytest-xdist>=3.8.0",
     "bleach>=6.3.0",
     "fakeredis>=2.35.1",
+    "hypothesis>=6.0",
     "pillow>=12.2.0",
     "respx>=0.23.1",
     "selectolax>=0.4.9",
