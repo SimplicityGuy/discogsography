@@ -743,6 +743,10 @@ class DiggerConfig:
     circuit_breaker_window_seconds: int
     circuit_breaker_failure_pct: int
     circuit_breaker_cooldown_seconds: int
+    # API handshake — the scheduler calls the API's internal digger endpoints over HTTP.
+    api_base_url: str = "http://api:8004"
+    digger_api_service_token: str | None = field(default=None, repr=False)
+    scheduler_poll_interval_seconds: int = 300
 
     @classmethod
     def from_env(cls) -> "DiggerConfig":
@@ -795,6 +799,15 @@ class DiggerConfig:
         except ValueError:
             circuit_breaker_cooldown_seconds = 1800
 
+        api_base_url = getenv("API_BASE_URL", "http://api:8004")
+        digger_api_service_token = get_secret("DIGGER_API_SERVICE_TOKEN") or None
+
+        poll_interval_str = getenv("DIGGER_SCHEDULER_POLL_SECONDS", "300")
+        try:
+            scheduler_poll_interval_seconds = int(poll_interval_str)
+        except ValueError:
+            scheduler_poll_interval_seconds = 300
+
         return cls(
             postgres_host=_build_postgres_connstr(),
             postgres_username=cast("str", postgres_username),
@@ -806,6 +819,9 @@ class DiggerConfig:
             circuit_breaker_window_seconds=circuit_breaker_window_seconds,
             circuit_breaker_failure_pct=circuit_breaker_failure_pct,
             circuit_breaker_cooldown_seconds=circuit_breaker_cooldown_seconds,
+            api_base_url=api_base_url,
+            digger_api_service_token=digger_api_service_token,
+            scheduler_poll_interval_seconds=scheduler_poll_interval_seconds,
         )
 
 

@@ -134,6 +134,51 @@ class TestAmain:
         mock_http_client._client.aclose.assert_awaited_once()
         mock_health_server.stop.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_amain_starts_scheduler_when_token_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When DIGGER_API_SERVICE_TOKEN is set, amain() also starts the scheduler task."""
+        for k, v in _DIGGER_REQUIRED.items():
+            monkeypatch.setenv(k, v)
+        monkeypatch.setenv("DIGGER_API_SERVICE_TOKEN", "svc-token")
+
+        mock_pool = AsyncMock()
+        mock_redis = AsyncMock()
+        mock_http_client = MagicMock()
+        mock_http_client._client = AsyncMock()
+        mock_health_server = MagicMock()
+        mock_health_server_cls = MagicMock(return_value=mock_health_server)
+
+        async def _noop(**_kwargs: Any) -> None:
+            pass
+
+        with (
+            patch("digger.main.setup_logging"),
+            patch("digger.main.HealthServer", mock_health_server_cls),
+            patch("common.postgres_resilient.AsyncPostgreSQLPool", return_value=mock_pool),
+            patch("redis.asyncio.from_url", return_value=mock_redis),
+            patch("digger.scraper.http_client.DiggerHttpClient", return_value=mock_http_client),
+            patch("digger.scraper.rate_budget.RateBudget", return_value=MagicMock()),
+            patch("digger.scraper.circuit_breaker.CircuitBreaker", return_value=MagicMock()),
+            patch("digger.scraper.executor.ScrapeExecutor", return_value=MagicMock()),
+            patch("digger.scraper.orchestrator.scrape_loop", side_effect=_noop),
+            patch("digger.scraper.orchestrator.state_loop", side_effect=_noop),
+            patch("digger.scheduler.runner.scheduler_loop", side_effect=_noop) as mock_scheduler,
+        ):
+            from digger.main import amain
+
+            original_event_cls = asyncio.Event
+
+            class _ImmediateEvent(original_event_cls):  # type: ignore[misc]
+                async def wait(self) -> bool:
+                    self.set()
+                    return await super().wait()
+
+            with patch("digger.main.asyncio.Event", _ImmediateEvent):
+                await amain()
+
+        mock_scheduler.assert_called_once()
+        assert mock_scheduler.call_args.kwargs["service_token"] == "svc-token"
+
 
 class TestMain:
     """Unit tests for the synchronous main() wrapper."""

@@ -10,7 +10,7 @@
 
 ## Overview
 
-**Digger** is the Discogs marketplace scraper and wantlist-intelligence worker. It tracks marketplace listings for the releases users have prioritised in their wantlist, applying each user's tier, condition, and price preferences. The worker runs on a schedule, reads and writes PostgreSQL (`digger.*` schema) and Redis directly, and exposes health plus Prometheus metrics on port **8012**. It does **not** use RabbitMQ and does **not** call the API service.
+**Digger** is the Discogs marketplace scraper and wantlist-intelligence worker. It tracks marketplace listings for the releases users have prioritised in their wantlist, applying each user's tier, condition, and price preferences. The worker runs on a schedule, reads and writes PostgreSQL (`digger.*` schema) and Redis directly, and exposes health plus Prometheus metrics on port **8012**. It does **not** use RabbitMQ. Its scheduler calls the API's internal Digger endpoints over HTTP (authenticated with the shared `DIGGER_API_SERVICE_TOKEN`) to generate scheduled recommendation reports.
 
 This document describes exactly what Digger scrapes, the controls that keep request volume low and well-behaved, and the project's posture toward Discogs' Terms of Service.
 

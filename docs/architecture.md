@@ -519,7 +519,9 @@ See [Brainztableinator README](../brainztableinator/README.md) for details.
 
 **Key Features**:
 
-- Standalone async worker — reads and writes PostgreSQL and Redis directly; does **not** use RabbitMQ and does **not** call the API service
+- Standalone async worker — reads and writes PostgreSQL and Redis directly; does **not** use RabbitMQ. Its scheduler calls the API's internal Digger endpoints over HTTP (authenticated with the shared `DIGGER_API_SERVICE_TOKEN`) to drive scheduled recommendation reports
+- Scheduler — polls for users whose cadence is due, runs the deterministic optimizer (`common.digger_optimizer`), and persists `digger.reports` rows (started only when `DIGGER_API_SERVICE_TOKEN` is configured)
+- Publishes scrape-progress updates to Redis pub/sub channels (`digger:refresh:*`) so the API's interactive refresh sees results in near real time
 - Redis token-bucket rate budget (default 600 requests/hour) enforced before every request
 - SSRF-safe HTTP client restricted to a `discogs.com` hostname allow-list, with each redirect hop re-validated
 - Per-release exponential backoff (capped at 24 h) and a global circuit breaker for sustained failures

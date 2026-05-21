@@ -49,6 +49,10 @@ write_secret "rabbitmq_password.txt" "$(openssl rand -base64 24)"
 # Neo4j password
 write_secret "neo4j_password.txt" "$(openssl rand -base64 24)"
 
+# Digger internal service token — gates /api/internal/digger/* and lets the digger
+# worker's scheduler authenticate to the API. Shared by the api and digger services.
+write_secret "digger_api_service_token.txt" "$(openssl rand -hex 32)"
+
 echo ""
 echo "✅ secrets/ is ready. Files are owner-read-only (chmod 600)."
 echo "   Never commit secrets/ to version control."

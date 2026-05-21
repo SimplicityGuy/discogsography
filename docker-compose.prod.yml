@@ -26,6 +26,10 @@ secrets:
     file: ./secrets/rabbitmq_password.txt
   rabbitmq_username:
     file: ./secrets/rabbitmq_username.txt
+  # Shared service token gating /api/internal/digger/*; consumed by both the API
+  # and the digger worker's scheduler. When absent, scheduled reports are disabled.
+  digger_api_service_token:
+    file: ./secrets/digger_api_service_token.txt
 
 services:
   rabbitmq:
@@ -198,6 +202,7 @@ services:
       NLQ_API_KEY_FILE: /run/secrets/nlq_api_key
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
       RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
+      DIGGER_API_SERVICE_TOKEN_FILE: /run/secrets/digger_api_service_token
     secrets:
       - jwt_secret_key
       - neo4j_password
@@ -208,6 +213,7 @@ services:
       - postgres_password
       - rabbitmq_username
       - rabbitmq_password
+      - digger_api_service_token
     volumes:
       - api_logs:/logs
       - discogs_data:/discogs-data:ro
@@ -321,9 +327,14 @@ services:
     environment:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
+      # Scheduler — calls the API's internal endpoints; runs only when the token is set.
+      API_BASE_URL: "http://api:8004"
+      DIGGER_API_SERVICE_TOKEN_FILE: /run/secrets/digger_api_service_token
+      DIGGER_SCHEDULER_POLL_SECONDS: "300"
     secrets:
       - postgres_username
       - postgres_password
+      - digger_api_service_token
     deploy:
       restart_policy:
         condition: any
