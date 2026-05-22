@@ -256,3 +256,27 @@ async def test_simulate_what_if_requires_token(app_ctx):
     result = await digger_simulate_what_if(ctx=ctx)
     assert "error" in result
     app_ctx.client.stream.assert_not_called()
+
+
+# --- app_lifespan wires the Digger token -----------------------------------
+
+
+@pytest.mark.asyncio
+async def test_app_lifespan_reads_mcp_api_token(monkeypatch):
+    from mcp_server.server import AppContext, app_lifespan
+
+    monkeypatch.setenv("MCP_API_TOKEN", "live-jwt")
+    monkeypatch.setenv("API_BASE_URL", "http://api:8004")
+    async with app_lifespan(MagicMock()) as ctx:
+        assert isinstance(ctx, AppContext)
+        assert ctx.api_token == "live-jwt"
+        assert ctx.base_url == "http://api:8004"
+
+
+@pytest.mark.asyncio
+async def test_app_lifespan_token_none_when_unset(monkeypatch):
+    from mcp_server.server import app_lifespan
+
+    monkeypatch.delenv("MCP_API_TOKEN", raising=False)
+    async with app_lifespan(MagicMock()) as ctx:
+        assert ctx.api_token is None
