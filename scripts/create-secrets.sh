@@ -38,6 +38,10 @@ write_secret "encryption_master_key.txt" "$(python3 -c 'import base64, os; print
 # When empty, password reset links are logged instead of emailed.
 write_secret "brevo_api_key.txt" "${BREVO_API_KEY:-}"
 
+# Anthropic API key — enables the Digger LLM agent (/api/digger/agent/*).
+# When empty, the agent endpoints return an error; the rest of the API is unaffected.
+write_secret "anthropic_api_key.txt" "${ANTHROPIC_API_KEY:-}"
+
 # PostgreSQL credentials
 write_secret "postgres_username.txt" "discogsography"
 write_secret "postgres_password.txt" "$(openssl rand -base64 24)"
