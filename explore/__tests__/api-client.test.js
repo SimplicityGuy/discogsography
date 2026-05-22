@@ -1352,6 +1352,51 @@ describe('ApiClient', () => {
         });
     });
 
+    describe('digger proposal methods', () => {
+        it('getDiggerProposals GETs /api/digger/proposals with auth header', async () => {
+            let capturedUrl;
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 200, json: async () => ({ items: [] }) };
+            });
+            const res = await window.apiClient.getDiggerProposals('tok');
+            expect(capturedUrl).toBe('/api/digger/proposals');
+            expect(capturedOptions.headers.Authorization).toBe('Bearer tok');
+            expect(res).toEqual({ ok: true, status: 200, body: { items: [] } });
+        });
+
+        it('approveDiggerProposal POSTs to the approve endpoint and returns the applied count', async () => {
+            let capturedUrl;
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 200, json: async () => ({ applied: 2 }) };
+            });
+            const res = await window.apiClient.approveDiggerProposal('tok', 'p1');
+            expect(capturedUrl).toBe('/api/digger/proposals/p1/approve');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers.Authorization).toBe('Bearer tok');
+            expect(res).toEqual({ ok: true, status: 200, body: { applied: 2 } });
+        });
+
+        it('rejectDiggerProposal POSTs to the reject endpoint (204 → body null)', async () => {
+            let capturedUrl;
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 204, json: async () => { throw new Error('no body'); } };
+            });
+            const res = await window.apiClient.rejectDiggerProposal('tok', 'p1');
+            expect(capturedUrl).toBe('/api/digger/proposals/p1/reject');
+            expect(capturedOptions.method).toBe('POST');
+            expect(res).toEqual({ ok: true, status: 204, body: null });
+        });
+    });
+
     describe('2FA methods', () => {
         it('twoFactorSetup should POST to /api/auth/2fa/setup with Authorization header', async () => {
             let capturedUrl, capturedOptions;

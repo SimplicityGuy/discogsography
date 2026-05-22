@@ -773,6 +773,49 @@ class ApiClient {
     }
 
     /**
+     * Get the current user's pending Digger tier-change proposals.
+     * @param {string} token - JWT auth token
+     * @returns {Promise<{ok: boolean, status: number, body: Object|null}>} body = { items: [...] }
+     */
+    async getDiggerProposals(token) {
+        const response = await fetch('/api/digger/proposals', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const body = await response.json().catch(() => null);
+        return { ok: response.ok, status: response.status, body };
+    }
+
+    /**
+     * Approve a Digger tier-change proposal, applying its changes.
+     * @param {string} token - JWT auth token
+     * @param {string} proposalId - Proposal UUID
+     * @returns {Promise<{ok: boolean, status: number, body: Object|null}>} body = { applied: n }
+     */
+    async approveDiggerProposal(token, proposalId) {
+        const response = await fetch(`/api/digger/proposals/${encodeURIComponent(proposalId)}/approve`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const body = await response.json().catch(() => null);
+        return { ok: response.ok, status: response.status, body };
+    }
+
+    /**
+     * Reject a Digger tier-change proposal.
+     * @param {string} token - JWT auth token
+     * @param {string} proposalId - Proposal UUID
+     * @returns {Promise<{ok: boolean, status: number, body: Object|null}>} 204 → body null
+     */
+    async rejectDiggerProposal(token, proposalId) {
+        const response = await fetch(`/api/digger/proposals/${encodeURIComponent(proposalId)}/reject`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const body = await response.json().catch(() => null);
+        return { ok: response.ok, status: response.status, body };
+    }
+
+    /**
      * Stream one Digger agent turn over SSE.
      * Events: text, tool_call, tool_result, bundle_card, proposal_card, done, error.
      * @param {string} token - JWT auth token

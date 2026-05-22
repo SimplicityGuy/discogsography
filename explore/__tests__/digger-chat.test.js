@@ -189,4 +189,83 @@ describe('DiggerPane chat', () => {
         await Promise.resolve();
         expect(window.apiClient.streamDiggerAgent).toHaveBeenCalled();
     });
+
+    // ---------------------------------------------------------------- //
+    // Proposal cards
+    // ---------------------------------------------------------------- //
+
+    function makeProposal(overrides = {}) {
+        return {
+            proposal_id: 'p1',
+            created_at: '2026-05-22T00:00:00+00:00',
+            status: 'pending',
+            payload: [{ release_id: 1, current_tier: 'nice', proposed_tier: 'must', reason: 'rare press' }],
+            ...overrides,
+        };
+    }
+
+    async function streamProposalAndSettle() {
+        window.apiClient.streamDiggerAgent = vi.fn((token, body, cbs) => {
+            cbs.onProposalCard({ proposal: { proposal_id: 'p1', count: 1 } });
+            cbs.onDone({ session_id: 's1', usage: {} });
+        });
+        await window.diggerPane.init();
+        await window.diggerPane._showChat();
+        window.diggerPane._chatInput.value = 'should I bump anything?';
+        await window.diggerPane._sendChatMessage();
+        await new Promise((r) => setTimeout(r, 0)); // let the proposal fetch + render settle
+    }
+
+    it('renders a proposal card from a proposal_card event and approves it', async () => {
+        window.apiClient.getDiggerProposals = vi.fn().mockResolvedValue({ ok: true, status: 200, body: { items: [makeProposal()] } });
+        window.apiClient.approveDiggerProposal = vi.fn().mockResolvedValue({ ok: true, status: 200, body: { applied: 1 } });
+
+        await streamProposalAndSettle();
+
+        const body = document.getElementById('diggerBody');
+        const card = body.querySelector('.digger-proposal-card[data-proposal-id="p1"]');
+        expect(card).not.toBeNull();
+        expect(card.textContent).toContain('rare press');
+        expect(card.textContent).toContain('must');
+
+        card.querySelectorAll('.digger-proposal-actions button')[0].click(); // Approve
+        await new Promise((r) => setTimeout(r, 0));
+        expect(window.apiClient.approveDiggerProposal).toHaveBeenCalledWith('test-token', 'p1');
+        expect(card.textContent).toContain('Applied 1 change');
+        expect(card.querySelector('.digger-proposal-actions')).toBeNull();
+    });
+
+    it('rejects a proposal from the card', async () => {
+        window.apiClient.getDiggerProposals = vi.fn().mockResolvedValue({ ok: true, status: 200, body: { items: [makeProposal()] } });
+        window.apiClient.rejectDiggerProposal = vi.fn().mockResolvedValue({ ok: true, status: 204, body: null });
+
+        await streamProposalAndSettle();
+
+        const card = document.getElementById('diggerBody').querySelector('.digger-proposal-card[data-proposal-id="p1"]');
+        card.querySelectorAll('.digger-proposal-actions button')[1].click(); // Reject
+        await new Promise((r) => setTimeout(r, 0));
+        expect(window.apiClient.rejectDiggerProposal).toHaveBeenCalledWith('test-token', 'p1');
+        expect(card.textContent).toContain('Rejected');
+    });
+
+    it('shows a note when the proposal is no longer available', async () => {
+        window.apiClient.getDiggerProposals = vi.fn().mockResolvedValue({ ok: true, status: 200, body: { items: [] } });
+
+        await streamProposalAndSettle();
+
+        expect(document.getElementById('diggerBody').textContent).toContain('no longer available');
+    });
+
+    it('surfaces an approve failure without collapsing the actions', async () => {
+        window.apiClient.getDiggerProposals = vi.fn().mockResolvedValue({ ok: true, status: 200, body: { items: [makeProposal()] } });
+        window.apiClient.approveDiggerProposal = vi.fn().mockResolvedValue({ ok: false, status: 404, body: null });
+
+        await streamProposalAndSettle();
+
+        const card = document.getElementById('diggerBody').querySelector('.digger-proposal-card[data-proposal-id="p1"]');
+        card.querySelectorAll('.digger-proposal-actions button')[0].click();
+        await new Promise((r) => setTimeout(r, 0));
+        expect(card.textContent).toContain('Could not approve');
+        expect(card.querySelector('.digger-proposal-actions')).not.toBeNull();
+    });
 });

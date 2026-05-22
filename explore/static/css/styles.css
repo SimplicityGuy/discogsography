@@ -3067,3 +3067,50 @@ select option {
 .digger-chat-send {
     flex: 0 0 auto;
 }
+
+.digger-proposal-card {
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--card-bg);
+    padding: 0.75rem 1rem;
+}
+
+.digger-proposal-card.approved {
+    border-color: var(--green-accent, #30a46c);
+}
+
+.digger-proposal-card.rejected {
+    border-color: var(--border-color);
+    opacity: 0.7;
+}
+
+.digger-proposal-card h4 {
+    margin: 0 0 0.5rem;
+    font-size: 0.95rem;
+    color: var(--text-high);
+}
+
+.digger-proposal-changes {
+    list-style: none;
+    margin: 0 0 0.75rem;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.digger-proposal-reason {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+.digger-proposal-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.digger-proposal-status {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-mid);
+}

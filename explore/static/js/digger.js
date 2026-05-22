@@ -1456,6 +1456,7 @@ class DiggerPane {
                 onToolCall: (data) => this._appendChatToolCall(data),
                 onToolResult: (data) => this._appendChatToolResult(data),
                 onBundleCard: (data) => this._appendChatBundleCard(data),
+                onProposalCard: (data) => this._appendChatProposalCard(data),
                 onDone: (data) => {
                     if (data && data.session_id) this._chatSessionId = data.session_id;
                     this._finishChat();
@@ -1548,6 +1549,126 @@ class DiggerPane {
         const li = this._appendChatMessageItem('digger-chat-msg-error');
         li.textContent = message;
         this._scrollChatToEnd();
+    }
+
+    /**
+     * Append a proposal card placeholder, then fill it with the fetched proposal.
+     * The stream only carries {proposal_id, count}; the full payload is fetched
+     * from the proposals endpoint so the card can show the tier changes.
+     */
+    _appendChatProposalCard(data) {
+        const proposal = (data && data.proposal) || {};
+        const li = this._appendChatMessageItem('digger-chat-msg-assistant');
+        this._populateProposalCard(li, proposal.proposal_id);
+        this._scrollChatToEnd();
+    }
+
+    async _populateProposalCard(container, proposalId) {
+        const token = window.authManager.getToken();
+        if (!token || !proposalId) return;
+        const res = await window.apiClient.getDiggerProposals(token);
+        const items = (res && res.ok && res.body && res.body.items) || [];
+        const proposal = items.find((p) => p.proposal_id === proposalId);
+        if (!proposal) {
+            const note = document.createElement('div');
+            note.className = 'digger-proposal-card';
+            note.textContent = 'Proposal no longer available.';
+            container.appendChild(note);
+            return;
+        }
+        container.appendChild(this._buildProposalCard(proposal));
+        this._scrollChatToEnd();
+    }
+
+    /**
+     * Build a tier-change proposal card with Approve / Reject actions.
+     * @param {Object} proposal - { proposal_id, payload: [{release_id,current_tier,proposed_tier,reason}] }
+     * @returns {HTMLDivElement}
+     */
+    _buildProposalCard(proposal) {
+        const card = document.createElement('div');
+        card.className = 'digger-proposal-card';
+        card.dataset.proposalId = proposal.proposal_id;
+
+        const heading = document.createElement('h4');
+        heading.textContent = 'Tier-change proposal';
+        card.appendChild(heading);
+
+        const list = document.createElement('ul');
+        list.className = 'digger-proposal-changes';
+        for (const change of proposal.payload || []) {
+            const item = document.createElement('li');
+            const desc = document.createElement('div');
+            desc.textContent = `release ${change.release_id}: ${change.current_tier} → ${change.proposed_tier}`;
+            item.appendChild(desc);
+            if (change.reason) {
+                const reason = document.createElement('div');
+                reason.className = 'digger-proposal-reason';
+                reason.textContent = change.reason;
+                item.appendChild(reason);
+            }
+            list.appendChild(item);
+        }
+        card.appendChild(list);
+
+        const actions = document.createElement('div');
+        actions.className = 'digger-proposal-actions';
+
+        const approveBtn = document.createElement('button');
+        approveBtn.type = 'button';
+        approveBtn.className = 'btn-primary';
+        approveBtn.textContent = 'Approve';
+        actions.appendChild(approveBtn);
+
+        const rejectBtn = document.createElement('button');
+        rejectBtn.type = 'button';
+        rejectBtn.className = 'btn-secondary';
+        rejectBtn.textContent = 'Reject';
+        actions.appendChild(rejectBtn);
+
+        card.appendChild(actions);
+
+        const status = document.createElement('div');
+        status.className = 'digger-proposal-status';
+        card.appendChild(status);
+
+        const setBusy = (busy) => {
+            approveBtn.disabled = busy;
+            rejectBtn.disabled = busy;
+        };
+
+        approveBtn.addEventListener('click', async () => {
+            const token = window.authManager.getToken();
+            if (!token) return;
+            setBusy(true);
+            const res = await window.apiClient.approveDiggerProposal(token, proposal.proposal_id);
+            if (res && res.ok) {
+                const applied = (res.body && res.body.applied) || 0;
+                actions.remove();
+                status.textContent = `Applied ${applied} change${applied === 1 ? '' : 's'}`;
+                card.classList.add('approved');
+            } else {
+                setBusy(false);
+                status.textContent = 'Could not approve. Please try again.';
+            }
+        });
+
+        rejectBtn.addEventListener('click', async () => {
+            const token = window.authManager.getToken();
+            if (!token) return;
+            setBusy(true);
+            const res = await window.apiClient.rejectDiggerProposal(token, proposal.proposal_id);
+            if (res && res.ok) {
+                actions.remove();
+                status.textContent = 'Rejected';
+                card.classList.add('rejected');
+            } else {
+                setBusy(false);
+                status.textContent = 'Could not reject. Please try again.';
+            }
+        });
+
+        return card;
     }
 
     /**
