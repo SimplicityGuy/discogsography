@@ -8,7 +8,7 @@ ARG GID=1000
 # ── CSS build stage ────────────────────────────────────────────────────────────
 # Builds Tailwind CSS at build time so the final image serves a minified
 # stylesheet.  Node is only needed at build time.
-FROM node:24-slim AS css-builder
+FROM node:26-slim AS css-builder
 
 WORKDIR /build
 
