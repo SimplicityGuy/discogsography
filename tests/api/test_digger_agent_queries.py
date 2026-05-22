@@ -1,5 +1,6 @@
 """Tests for the digger agent session/message persistence queries (mock-based)."""
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 import uuid
@@ -11,6 +12,7 @@ from api.queries.digger_agent_queries import (
     append_message,
     create_session,
     list_messages,
+    list_sessions,
     update_token_totals,
 )
 
@@ -75,3 +77,27 @@ async def test_update_token_totals_increments(mock_pool: MagicMock, mock_cur: As
     sql, params = mock_cur.execute.await_args.args
     assert "total_input_tokens = total_input_tokens + %s" in sql
     assert params == (10, 5, 3, Decimal("0.001"), session_id)
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_formats_rows(mock_pool: MagicMock, mock_cur: AsyncMock) -> None:
+    sid = uuid.uuid4()
+    started = datetime(2026, 5, 21, tzinfo=UTC)
+    active = datetime(2026, 5, 22, tzinfo=UTC)
+    mock_cur.fetchall.return_value = [
+        {"session_id": sid, "started_at": started, "last_active_at": active, "total_cost_usd": Decimal("0.0123")},
+    ]
+    user_id = uuid.uuid4()
+    out = await list_sessions(mock_pool, user_id)
+    assert out == [
+        {
+            "session_id": str(sid),
+            "started_at": started.isoformat(),
+            "last_active_at": active.isoformat(),
+            "total_cost_usd": 0.0123,
+        }
+    ]
+    sql, params = mock_cur.execute.await_args.args
+    assert "FROM digger.agent_sessions WHERE user_id = %s" in sql
+    assert "ORDER BY last_active_at DESC" in sql
+    assert params == (user_id, 50)

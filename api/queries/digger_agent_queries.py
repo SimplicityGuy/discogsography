@@ -66,6 +66,27 @@ async def list_messages(pool: AsyncPostgreSQLPool, session_id: uuid.UUID) -> lis
     return [{"role": r["role"], "content": r["content"]} for r in rows]
 
 
+async def list_sessions(pool: AsyncPostgreSQLPool, user_id: uuid.UUID, limit: int = 50) -> list[dict[str, Any]]:
+    """Return a user's agent sessions (most recently active first) for the session list UI."""
+    async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            "SELECT session_id, started_at, last_active_at, total_cost_usd "
+            "FROM digger.agent_sessions WHERE user_id = %s "
+            "ORDER BY last_active_at DESC LIMIT %s",
+            (user_id, limit),
+        )
+        rows = await cur.fetchall()
+    return [
+        {
+            "session_id": str(r["session_id"]),
+            "started_at": r["started_at"].isoformat(),
+            "last_active_at": r["last_active_at"].isoformat(),
+            "total_cost_usd": float(r["total_cost_usd"]),
+        }
+        for r in rows
+    ]
+
+
 async def update_token_totals(
     pool: AsyncPostgreSQLPool,
     session_id: uuid.UUID,
