@@ -37,10 +37,18 @@ class DiggerPane {
         this._bulkApplying = false;          // in-flight guard for bulk-tier Apply
 
         // M2 — reports view state.
-        this._view = 'wantlist';             // 'wantlist' | 'reports' | 'report' | 'recommend'
+        this._view = 'wantlist';             // 'wantlist' | 'reports' | 'report' | 'recommend' | 'chat'
         this._reports = [];                  // inbox summaries
         this._currentReport = null;          // full report being viewed
         this._recommending = false;          // in-flight guard for Run recommendation
+
+        // M3 — agent chat sub-view state.
+        this._chatSessionId = null;          // current agent session (null = new conversation)
+        this._chatBusy = false;              // in-flight guard for a streaming turn
+        this._chatMessages = null;           // <ul> the message bubbles are appended to
+        this._sessions = [];                 // recent agent session summaries (sidebar)
+        this._chatUsedTokens = 0;            // running token total for the cost indicator
+        this._chatCostEl = null;             // cost-indicator node (replaced on update)
 
         this._loading = document.getElementById('diggerLoading');
         this._body = document.getElementById('diggerBody');
@@ -964,6 +972,7 @@ class DiggerPane {
 
         this._headerActions.appendChild(this._buildNavButton('Wantlist', 'wantlist'));
         this._headerActions.appendChild(this._buildNavButton('Reports', 'reports'));
+        this._headerActions.appendChild(this._buildNavButton('Chat', 'chat'));
 
         const runBtn = document.createElement('button');
         runBtn.type = 'button';
@@ -979,7 +988,7 @@ class DiggerPane {
     /**
      * Build a single header navigation button.
      * @param {string} label
-     * @param {'wantlist'|'reports'} view
+     * @param {'wantlist'|'reports'|'chat'} view
      * @returns {HTMLButtonElement}
      */
     _buildNavButton(label, view) {
@@ -993,6 +1002,8 @@ class DiggerPane {
                 this._showWantlist();
             } else if (view === 'reports') {
                 this._showReports();
+            } else if (view === 'chat') {
+                this._showChat();
             }
         });
         return btn;
@@ -1009,7 +1020,8 @@ class DiggerPane {
             const view = btn.dataset.view;
             const isActive =
                 (view === 'wantlist' && this._view === 'wantlist') ||
-                (view === 'reports' && (this._view === 'reports' || this._view === 'report'));
+                (view === 'reports' && (this._view === 'reports' || this._view === 'report')) ||
+                (view === 'chat' && this._view === 'chat');
             btn.classList.toggle('active', isActive);
             btn.setAttribute('aria-pressed', String(isActive));
         }
@@ -1356,6 +1368,457 @@ class DiggerPane {
             onBack: () => this._showWantlist(),
             backLabel: '← Back to wantlist',
         });
+    }
+
+    // ------------------------------------------------------------------ //
+    // Chat — interactive agent conversation (SSE)
+    // ------------------------------------------------------------------ //
+
+    /**
+     * Switch to the chat view, load the session list, and render the chat.
+     */
+    async _showChat() {
+        this._view = 'chat';
+        this._updateNavActiveState();
+        const token = window.authManager.getToken();
+        if (token) {
+            const res = await window.apiClient.getDiggerAgentSessions(token);
+            this._sessions = (res && res.ok && res.body && res.body.items) || [];
+        }
+        this._renderChatView();
+    }
+
+    /**
+     * Render the chat sub-view: a session/cost sidebar beside a scrolling
+     * message list above a composer.
+     */
+    _renderChatView() {
+        if (!this._body) return;
+        this._body.textContent = '';
+
+        const chat = document.createElement('div');
+        chat.className = 'digger-chat';
+
+        chat.appendChild(this._buildChatSidebar());
+
+        const main = document.createElement('div');
+        main.className = 'digger-chat-main';
+
+        const messages = document.createElement('ul');
+        messages.className = 'digger-chat-messages';
+        this._chatMessages = messages;
+        main.appendChild(messages);
+
+        const composer = document.createElement('div');
+        composer.className = 'digger-chat-composer';
+
+        const input = document.createElement('textarea');
+        input.className = 'digger-chat-input';
+        input.placeholder = 'Ask Digger…';
+        input.rows = 2;
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this._sendChatMessage();
+            }
+        });
+        this._chatInput = input;
+        composer.appendChild(input);
+
+        const send = document.createElement('button');
+        send.type = 'button';
+        send.className = 'btn-primary digger-chat-send';
+        send.textContent = 'Send';
+        send.addEventListener('click', () => this._sendChatMessage());
+        this._chatSendBtn = send;
+        composer.appendChild(send);
+
+        main.appendChild(composer);
+        chat.appendChild(main);
+        this._body.appendChild(chat);
+    }
+
+    /**
+     * Send the composer draft as one agent turn, streaming the reply into the
+     * message list. Guards against empty drafts and concurrent turns.
+     */
+    async _sendChatMessage() {
+        if (this._chatBusy) return;
+        const draft = ((this._chatInput && this._chatInput.value) || '').trim();
+        if (!draft) return;
+        const token = window.authManager.getToken();
+        if (!token) return;
+
+        this._chatBusy = true;
+        if (this._chatSendBtn) this._chatSendBtn.disabled = true;
+        if (this._chatInput) this._chatInput.value = '';
+
+        this._appendChatUserMessage(draft);
+        const assistantText = this._appendChatAssistantShell();
+
+        window.apiClient.streamDiggerAgent(
+            token,
+            { user_message: draft, session_id: this._chatSessionId },
+            {
+                onText: (data) => {
+                    assistantText.textContent += (data && data.delta) || '';
+                    this._scrollChatToEnd();
+                },
+                onToolCall: (data) => this._appendChatToolCall(data),
+                onToolResult: (data) => this._appendChatToolResult(data),
+                onBundleCard: (data) => this._appendChatBundleCard(data),
+                onProposalCard: (data) => this._appendChatProposalCard(data),
+                onDone: (data) => {
+                    if (data && data.session_id) this._chatSessionId = data.session_id;
+                    if (data && data.usage) {
+                        this._chatUsedTokens += (data.usage.input || 0) + (data.usage.output || 0);
+                        this._updateCostIndicator();
+                    }
+                    this._finishChat();
+                },
+                onError: (err) => {
+                    this._appendChatError((err && (err.reason || err.detail)) || 'Something went wrong.');
+                    this._finishChat();
+                },
+            },
+        );
+    }
+
+    /**
+     * Clear the in-flight guard and re-enable the composer.
+     */
+    _finishChat() {
+        this._chatBusy = false;
+        if (this._chatSendBtn) this._chatSendBtn.disabled = false;
+    }
+
+    /**
+     * Append an empty chat bubble <li> with the given role class and return it.
+     * @param {string} roleClass
+     * @returns {HTMLLIElement}
+     */
+    _appendChatMessageItem(roleClass) {
+        const li = document.createElement('li');
+        li.className = `digger-chat-msg ${roleClass}`;
+        if (this._chatMessages) this._chatMessages.appendChild(li);
+        return li;
+    }
+
+    _appendChatUserMessage(text) {
+        const li = this._appendChatMessageItem('digger-chat-msg-user');
+        const div = document.createElement('div');
+        div.className = 'digger-chat-text';
+        div.textContent = text;
+        li.appendChild(div);
+    }
+
+    /**
+     * Append an empty assistant bubble and return its text node for streaming.
+     * @returns {HTMLDivElement}
+     */
+    _appendChatAssistantShell() {
+        const li = this._appendChatMessageItem('digger-chat-msg-assistant');
+        const div = document.createElement('div');
+        div.className = 'digger-chat-text';
+        li.appendChild(div);
+        return div;
+    }
+
+    _appendChatToolCall(data) {
+        const li = this._appendChatMessageItem('digger-chat-msg-tool');
+        const pill = document.createElement('div');
+        pill.className = 'digger-tool-pill';
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined';
+        icon.textContent = 'build';
+        pill.appendChild(icon);
+        const label = document.createElement('span');
+        label.textContent = (data && data.name) || 'tool';
+        pill.appendChild(label);
+        li.appendChild(pill);
+        this._scrollChatToEnd();
+    }
+
+    _appendChatToolResult(data) {
+        const li = this._appendChatMessageItem('digger-chat-msg-tool');
+        const details = document.createElement('details');
+        details.className = 'digger-tool-result';
+        const summary = document.createElement('summary');
+        summary.textContent = `${(data && data.name) || 'tool'} result`;
+        details.appendChild(summary);
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify((data && data.output) ?? {}, null, 2);
+        details.appendChild(pre);
+        li.appendChild(details);
+        this._scrollChatToEnd();
+    }
+
+    _appendChatBundleCard(data) {
+        const li = this._appendChatMessageItem('digger-chat-msg-assistant');
+        const currency = (this._settings && this._settings.currency) || 'USD';
+        li.appendChild(this._buildBundleCard((data && data.bundle) || {}, currency));
+        this._scrollChatToEnd();
+    }
+
+    _appendChatError(message) {
+        const li = this._appendChatMessageItem('digger-chat-msg-error');
+        li.textContent = message;
+        this._scrollChatToEnd();
+    }
+
+    /**
+     * Append a proposal card placeholder, then fill it with the fetched proposal.
+     * The stream only carries {proposal_id, count}; the full payload is fetched
+     * from the proposals endpoint so the card can show the tier changes.
+     */
+    _appendChatProposalCard(data) {
+        const proposal = (data && data.proposal) || {};
+        const li = this._appendChatMessageItem('digger-chat-msg-assistant');
+        this._populateProposalCard(li, proposal.proposal_id);
+        this._scrollChatToEnd();
+    }
+
+    async _populateProposalCard(container, proposalId) {
+        const token = window.authManager.getToken();
+        if (!token || !proposalId) return;
+        const res = await window.apiClient.getDiggerProposals(token);
+        const items = (res && res.ok && res.body && res.body.items) || [];
+        const proposal = items.find((p) => p.proposal_id === proposalId);
+        if (!proposal) {
+            const note = document.createElement('div');
+            note.className = 'digger-proposal-card';
+            note.textContent = 'Proposal no longer available.';
+            container.appendChild(note);
+            return;
+        }
+        container.appendChild(this._buildProposalCard(proposal));
+        this._scrollChatToEnd();
+    }
+
+    /**
+     * Build a tier-change proposal card with Approve / Reject actions.
+     * @param {Object} proposal - { proposal_id, payload: [{release_id,current_tier,proposed_tier,reason}] }
+     * @returns {HTMLDivElement}
+     */
+    _buildProposalCard(proposal) {
+        const card = document.createElement('div');
+        card.className = 'digger-proposal-card';
+        card.dataset.proposalId = proposal.proposal_id;
+
+        const heading = document.createElement('h4');
+        heading.textContent = 'Tier-change proposal';
+        card.appendChild(heading);
+
+        const list = document.createElement('ul');
+        list.className = 'digger-proposal-changes';
+        for (const change of proposal.payload || []) {
+            const item = document.createElement('li');
+            const desc = document.createElement('div');
+            desc.textContent = `release ${change.release_id}: ${change.current_tier} → ${change.proposed_tier}`;
+            item.appendChild(desc);
+            if (change.reason) {
+                const reason = document.createElement('div');
+                reason.className = 'digger-proposal-reason';
+                reason.textContent = change.reason;
+                item.appendChild(reason);
+            }
+            list.appendChild(item);
+        }
+        card.appendChild(list);
+
+        const actions = document.createElement('div');
+        actions.className = 'digger-proposal-actions';
+
+        const approveBtn = document.createElement('button');
+        approveBtn.type = 'button';
+        approveBtn.className = 'btn-primary';
+        approveBtn.textContent = 'Approve';
+        actions.appendChild(approveBtn);
+
+        const rejectBtn = document.createElement('button');
+        rejectBtn.type = 'button';
+        rejectBtn.className = 'btn-secondary';
+        rejectBtn.textContent = 'Reject';
+        actions.appendChild(rejectBtn);
+
+        card.appendChild(actions);
+
+        const status = document.createElement('div');
+        status.className = 'digger-proposal-status';
+        card.appendChild(status);
+
+        const setBusy = (busy) => {
+            approveBtn.disabled = busy;
+            rejectBtn.disabled = busy;
+        };
+
+        approveBtn.addEventListener('click', async () => {
+            const token = window.authManager.getToken();
+            if (!token) return;
+            setBusy(true);
+            const res = await window.apiClient.approveDiggerProposal(token, proposal.proposal_id);
+            if (res && res.ok) {
+                const applied = (res.body && res.body.applied) || 0;
+                actions.remove();
+                status.textContent = `Applied ${applied} change${applied === 1 ? '' : 's'}`;
+                card.classList.add('approved');
+            } else {
+                setBusy(false);
+                status.textContent = 'Could not approve. Please try again.';
+            }
+        });
+
+        rejectBtn.addEventListener('click', async () => {
+            const token = window.authManager.getToken();
+            if (!token) return;
+            setBusy(true);
+            const res = await window.apiClient.rejectDiggerProposal(token, proposal.proposal_id);
+            if (res && res.ok) {
+                actions.remove();
+                status.textContent = 'Rejected';
+                card.classList.add('rejected');
+            } else {
+                setBusy(false);
+                status.textContent = 'Could not reject. Please try again.';
+            }
+        });
+
+        return card;
+    }
+
+    /**
+     * Keep the newest message in view as content streams in.
+     */
+    _scrollChatToEnd() {
+        if (this._chatMessages) this._chatMessages.scrollTop = this._chatMessages.scrollHeight;
+    }
+
+    // ------------------------------------------------------------------ //
+    // Chat — sidebar (session list + cost indicator)
+    // ------------------------------------------------------------------ //
+
+    /**
+     * Build the chat sidebar: a "New chat" button, the recent-session list,
+     * and the daily-token cost indicator.
+     * @returns {HTMLElement}
+     */
+    _buildChatSidebar() {
+        const sidebar = document.createElement('nav');
+        sidebar.className = 'digger-chat-sidebar';
+
+        const newBtn = document.createElement('button');
+        newBtn.type = 'button';
+        newBtn.className = 'btn-secondary digger-chat-new';
+        newBtn.textContent = 'New chat';
+        newBtn.addEventListener('click', () => this._startNewChat());
+        sidebar.appendChild(newBtn);
+
+        const heading = document.createElement('h3');
+        heading.textContent = 'Sessions';
+        sidebar.appendChild(heading);
+
+        const list = document.createElement('ul');
+        list.className = 'digger-session-list';
+        for (const session of this._sessions || []) {
+            list.appendChild(this._buildSessionListItem(session));
+        }
+        sidebar.appendChild(list);
+
+        const cost = this._buildCostIndicator(this._chatUsedTokens, this._chatTokenCap());
+        this._chatCostEl = cost;
+        sidebar.appendChild(cost);
+
+        return sidebar;
+    }
+
+    /**
+     * Build a single session list item; clicking continues that session.
+     * @param {Object} session - { session_id, last_active_at, ... }
+     * @returns {HTMLLIElement}
+     */
+    _buildSessionListItem(session) {
+        const li = document.createElement('li');
+        li.className = 'digger-session-item';
+        li.dataset.sessionId = session.session_id;
+        if (session.session_id === this._chatSessionId) li.classList.add('active');
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'digger-session-link';
+        btn.textContent = this._formatDateTime(session.last_active_at);
+        btn.addEventListener('click', () => this._continueSession(session.session_id));
+        li.appendChild(btn);
+        return li;
+    }
+
+    /**
+     * The caller's daily interactive token cap (falls back to the default).
+     * @returns {number}
+     */
+    _chatTokenCap() {
+        return (this._settings && this._settings.daily_token_cap_interactive) || 200000;
+    }
+
+    /**
+     * Continue an existing session: adopt its id and reset the message list.
+     * @param {string} sessionId
+     */
+    _continueSession(sessionId) {
+        this._chatSessionId = sessionId;
+        this._renderChatView();
+    }
+
+    /**
+     * Start a fresh conversation: clear the session id and message list.
+     */
+    _startNewChat() {
+        this._chatSessionId = null;
+        this._renderChatView();
+    }
+
+    /**
+     * Build a token cost indicator showing used + remaining tokens for the day.
+     * @param {number} used
+     * @param {number} cap
+     * @returns {HTMLDivElement}
+     */
+    _buildCostIndicator(used, cap) {
+        const wrap = document.createElement('div');
+        wrap.className = 'digger-cost-indicator';
+
+        const safeCap = cap || 1;
+        const remaining = Math.max(0, safeCap - used);
+        const pct = Math.min(100, Math.round((used / safeCap) * 100));
+
+        const usedLine = document.createElement('span');
+        usedLine.className = 'digger-cost-used';
+        usedLine.textContent = `${used.toLocaleString()} tokens used`;
+        wrap.appendChild(usedLine);
+
+        const remainingLine = document.createElement('span');
+        remainingLine.className = 'digger-cost-remaining';
+        remainingLine.textContent = `${remaining.toLocaleString()} remaining today`;
+        wrap.appendChild(remainingLine);
+
+        const bar = document.createElement('div');
+        bar.className = 'digger-cost-bar';
+        const fill = document.createElement('div');
+        fill.className = 'digger-cost-bar-fill';
+        fill.style.width = `${pct}%`;
+        bar.appendChild(fill);
+        wrap.appendChild(bar);
+
+        return wrap;
+    }
+
+    /**
+     * Replace the cost indicator in place with one reflecting current usage.
+     */
+    _updateCostIndicator() {
+        if (!this._chatCostEl || !this._chatCostEl.parentNode) return;
+        const fresh = this._buildCostIndicator(this._chatUsedTokens, this._chatTokenCap());
+        this._chatCostEl.replaceWith(fresh);
+        this._chatCostEl = fresh;
     }
 }
 

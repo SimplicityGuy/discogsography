@@ -1215,6 +1215,188 @@ describe('ApiClient', () => {
         });
     });
 
+    describe('streamDiggerAgent SSE streaming', () => {
+        function makeReadableStream(chunks) {
+            let index = 0;
+            return {
+                getReader() {
+                    return {
+                        read() {
+                            if (index < chunks.length) {
+                                const chunk = chunks[index++];
+                                return Promise.resolve({ done: false, value: new TextEncoder().encode(chunk) });
+                            }
+                            return Promise.resolve({ done: true, value: undefined });
+                        },
+                    };
+                },
+            };
+        }
+
+        it('forwards text and done events to callbacks', async () => {
+            const stream = makeReadableStream([
+                'event: text\ndata: {"delta":"hel"}\n\n',
+                'event: text\ndata: {"delta":"lo"}\n\n',
+                'event: done\ndata: {"session_id":"s1","usage":{"input":5,"output":2,"cache_read":0}}\n\n',
+            ]);
+            let capturedUrl;
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, body: stream };
+            });
+
+            const onText = vi.fn();
+            const onDone = vi.fn();
+            window.apiClient.streamDiggerAgent('tok', { user_message: 'hi', session_id: null }, { onText, onDone });
+            await new Promise((r) => setTimeout(r, 50));
+
+            expect(capturedUrl).toBe('/api/digger/agent/message');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers.Authorization).toBe('Bearer tok');
+            expect(JSON.parse(capturedOptions.body)).toEqual({ user_message: 'hi', session_id: null });
+            expect(onText).toHaveBeenCalledTimes(2);
+            expect(onText.mock.calls[0][0]).toEqual({ delta: 'hel' });
+            expect(onDone).toHaveBeenCalledWith({ session_id: 's1', usage: { input: 5, output: 2, cache_read: 0 } });
+        });
+
+        it('forwards tool_call, tool_result, bundle_card, and proposal_card events', async () => {
+            const stream = makeReadableStream([
+                'event: tool_call\ndata: {"id":"t1","name":"compute_bundles","input":{}}\n\n',
+                'event: tool_result\ndata: {"id":"t1","name":"compute_bundles","output":{"bundles":[]}}\n\n',
+                'event: bundle_card\ndata: {"bundle":{"name":"cheapest"}}\n\n',
+                'event: proposal_card\ndata: {"proposal":{"proposal_id":"p1","count":1}}\n\n',
+                'event: done\ndata: {"session_id":"s1","usage":{"input":1,"output":1,"cache_read":0}}\n\n',
+            ]);
+            vi.stubGlobal('fetch', async () => ({ ok: true, body: stream }));
+
+            const onToolCall = vi.fn();
+            const onToolResult = vi.fn();
+            const onBundleCard = vi.fn();
+            const onProposalCard = vi.fn();
+            window.apiClient.streamDiggerAgent('tok', {}, { onToolCall, onToolResult, onBundleCard, onProposalCard });
+            await new Promise((r) => setTimeout(r, 50));
+
+            expect(onToolCall).toHaveBeenCalledWith({ id: 't1', name: 'compute_bundles', input: {} });
+            expect(onToolResult).toHaveBeenCalledWith({ id: 't1', name: 'compute_bundles', output: { bundles: [] } });
+            expect(onBundleCard).toHaveBeenCalledWith({ bundle: { name: 'cheapest' } });
+            expect(onProposalCard).toHaveBeenCalledWith({ proposal: { proposal_id: 'p1', count: 1 } });
+        });
+
+        it('forwards error events to onError', async () => {
+            const stream = makeReadableStream(['event: error\ndata: {"reason":"daily token cap exceeded"}\n\n']);
+            vi.stubGlobal('fetch', async () => ({ ok: true, body: stream }));
+
+            const onError = vi.fn();
+            window.apiClient.streamDiggerAgent('tok', {}, { onError });
+            await new Promise((r) => setTimeout(r, 50));
+
+            expect(onError).toHaveBeenCalledWith({ reason: 'daily token cap exceeded' });
+        });
+
+        it('calls onError with the status on a non-ok response', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 429, body: null }));
+            const onError = vi.fn();
+            window.apiClient.streamDiggerAgent('tok', {}, { onError });
+            await new Promise((r) => setTimeout(r, 50));
+            expect(onError).toHaveBeenCalledWith({ status: 429 });
+        });
+
+        it('calls onError when reader.read() rejects mid-stream', async () => {
+            let readCount = 0;
+            const stream = {
+                getReader() {
+                    return {
+                        read() {
+                            readCount++;
+                            if (readCount === 1) {
+                                return Promise.resolve({ done: false, value: new TextEncoder().encode('event: text\ndata: {"delta":"x"}\n\n') });
+                            }
+                            return Promise.reject(new Error('stream aborted'));
+                        },
+                    };
+                },
+            };
+            vi.stubGlobal('fetch', async () => ({ ok: true, body: stream }));
+            const onError = vi.fn();
+            window.apiClient.streamDiggerAgent('tok', {}, { onError });
+            await new Promise((r) => setTimeout(r, 50));
+            expect(onError).toHaveBeenCalled();
+            expect(onError.mock.calls[0][0].message).toBe('stream aborted');
+        });
+
+        it('flushes a trailing buffered event on stream completion', async () => {
+            const stream = makeReadableStream(['event: done\ndata: {"session_id":"s2","usage":{"input":0,"output":0,"cache_read":0}}']);
+            vi.stubGlobal('fetch', async () => ({ ok: true, body: stream }));
+            const onDone = vi.fn();
+            window.apiClient.streamDiggerAgent('tok', {}, { onDone });
+            await new Promise((r) => setTimeout(r, 50));
+            expect(onDone).toHaveBeenCalledWith({ session_id: 's2', usage: { input: 0, output: 0, cache_read: 0 } });
+        });
+    });
+
+    describe('getDiggerAgentSessions', () => {
+        it('GETs /api/digger/agent/sessions with auth header', async () => {
+            let capturedUrl;
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 200, json: async () => ({ items: [] }) };
+            });
+            const res = await window.apiClient.getDiggerAgentSessions('tok');
+            expect(capturedUrl).toBe('/api/digger/agent/sessions');
+            expect(capturedOptions.headers.Authorization).toBe('Bearer tok');
+            expect(res).toEqual({ ok: true, status: 200, body: { items: [] } });
+        });
+    });
+
+    describe('digger proposal methods', () => {
+        it('getDiggerProposals GETs /api/digger/proposals with auth header', async () => {
+            let capturedUrl;
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 200, json: async () => ({ items: [] }) };
+            });
+            const res = await window.apiClient.getDiggerProposals('tok');
+            expect(capturedUrl).toBe('/api/digger/proposals');
+            expect(capturedOptions.headers.Authorization).toBe('Bearer tok');
+            expect(res).toEqual({ ok: true, status: 200, body: { items: [] } });
+        });
+
+        it('approveDiggerProposal POSTs to the approve endpoint and returns the applied count', async () => {
+            let capturedUrl;
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 200, json: async () => ({ applied: 2 }) };
+            });
+            const res = await window.apiClient.approveDiggerProposal('tok', 'p1');
+            expect(capturedUrl).toBe('/api/digger/proposals/p1/approve');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers.Authorization).toBe('Bearer tok');
+            expect(res).toEqual({ ok: true, status: 200, body: { applied: 2 } });
+        });
+
+        it('rejectDiggerProposal POSTs to the reject endpoint (204 → body null)', async () => {
+            let capturedUrl;
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, status: 204, json: async () => { throw new Error('no body'); } };
+            });
+            const res = await window.apiClient.rejectDiggerProposal('tok', 'p1');
+            expect(capturedUrl).toBe('/api/digger/proposals/p1/reject');
+            expect(capturedOptions.method).toBe('POST');
+            expect(res).toEqual({ ok: true, status: 204, body: null });
+        });
+    });
+
     describe('2FA methods', () => {
         it('twoFactorSetup should POST to /api/auth/2fa/setup with Authorization header', async () => {
             let capturedUrl, capturedOptions;
