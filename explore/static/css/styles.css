@@ -3114,3 +3114,76 @@ select option {
     font-size: 0.85rem;
     color: var(--text-mid);
 }
+
+/* ---- Digger chat sidebar (sessions + cost) ---- */
+
+.digger-chat-sidebar {
+    flex: 0 0 14rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    border-right: 1px solid var(--border-color);
+    padding-right: 1rem;
+    overflow-y: auto;
+}
+
+.digger-chat-sidebar h3 {
+    margin: 0;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+}
+
+.digger-session-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 1 1 auto;
+}
+
+.digger-session-link {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 0.4rem;
+    color: var(--text-mid);
+    padding: 0.35rem 0.5rem;
+    font: inherit;
+    cursor: pointer;
+}
+
+.digger-session-link:hover {
+    background: var(--inner-bg);
+}
+
+.digger-session-item.active .digger-session-link {
+    border-color: var(--blue-accent);
+    color: var(--text-high);
+}
+
+.digger-cost-indicator {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border-color);
+    padding-top: 0.5rem;
+}
+
+.digger-cost-bar {
+    height: 0.35rem;
+    border-radius: 0.2rem;
+    background: var(--inner-bg);
+    overflow: hidden;
+}
+
+.digger-cost-bar-fill {
+    height: 100%;
+    background: var(--blue-accent);
+}

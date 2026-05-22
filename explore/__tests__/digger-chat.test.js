@@ -268,4 +268,88 @@ describe('DiggerPane chat', () => {
         expect(card.textContent).toContain('Could not approve');
         expect(card.querySelector('.digger-proposal-actions')).not.toBeNull();
     });
+
+    // ---------------------------------------------------------------- //
+    // Cost indicator + session list
+    // ---------------------------------------------------------------- //
+
+    it('cost indicator shows used and remaining tokens', () => {
+        const el = window.diggerPane._buildCostIndicator(5000, 200000);
+        expect(el.textContent).toContain('5,000');
+        expect(el.textContent).toContain('195,000');
+    });
+
+    it('cost indicator treats a zero cap as 1 to avoid divide-by-zero', () => {
+        const el = window.diggerPane._buildCostIndicator(0, 0);
+        expect(el.querySelector('.digger-cost-bar-fill').style.width).toBe('0%');
+    });
+
+    it('surfaces a reject failure without collapsing the actions', async () => {
+        window.apiClient.getDiggerProposals = vi.fn().mockResolvedValue({ ok: true, status: 200, body: { items: [makeProposal()] } });
+        window.apiClient.rejectDiggerProposal = vi.fn().mockResolvedValue({ ok: false, status: 404, body: null });
+
+        await streamProposalAndSettle();
+
+        const card = document.getElementById('diggerBody').querySelector('.digger-proposal-card[data-proposal-id="p1"]');
+        card.querySelectorAll('.digger-proposal-actions button')[1].click();
+        await new Promise((r) => setTimeout(r, 0));
+        expect(card.textContent).toContain('Could not reject');
+        expect(card.querySelector('.digger-proposal-actions')).not.toBeNull();
+    });
+
+    it('renders a session list, new-chat button, and cost indicator in the sidebar', async () => {
+        window.apiClient.getDiggerAgentSessions = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            body: {
+                items: [
+                    { session_id: 'sess-1', started_at: '2026-05-20T00:00:00+00:00', last_active_at: '2026-05-21T00:00:00+00:00', total_cost_usd: 0.01 },
+                ],
+            },
+        });
+        await window.diggerPane.init();
+        await window.diggerPane._showChat();
+        const body = document.getElementById('diggerBody');
+        expect(body.querySelector('.digger-chat-new')).not.toBeNull();
+        expect(body.querySelector('.digger-cost-indicator')).not.toBeNull();
+        expect(body.querySelectorAll('.digger-session-item')).toHaveLength(1);
+    });
+
+    it('continues a past session when its list item is clicked', async () => {
+        window.apiClient.getDiggerAgentSessions = vi.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            body: { items: [{ session_id: 'sess-1', started_at: '2026-05-20T00:00:00+00:00', last_active_at: '2026-05-21T00:00:00+00:00', total_cost_usd: 0 }] },
+        });
+        await window.diggerPane.init();
+        await window.diggerPane._showChat();
+        document.querySelector('.digger-session-item .digger-session-link').click();
+        await Promise.resolve();
+        expect(window.diggerPane._chatSessionId).toBe('sess-1');
+        expect(document.querySelector('.digger-session-item').classList.contains('active')).toBe(true);
+    });
+
+    it('accumulates used tokens from done events and updates the cost indicator', async () => {
+        window.apiClient.streamDiggerAgent = vi.fn((token, body, cbs) => cbs.onDone({ session_id: 's1', usage: { input: 1000, output: 500, cache_read: 0 } }));
+        await window.diggerPane.init();
+        await window.diggerPane._showChat();
+        window.diggerPane._chatInput.value = 'hi';
+        await window.diggerPane._sendChatMessage();
+        expect(window.diggerPane._chatUsedTokens).toBe(1500);
+        expect(document.querySelector('.digger-cost-indicator').textContent).toContain('1,500');
+    });
+
+    it('starts a new chat, clearing the session id and messages', async () => {
+        window.apiClient.streamDiggerAgent = vi.fn((token, body, cbs) => cbs.onDone({ session_id: 's1', usage: {} }));
+        await window.diggerPane.init();
+        await window.diggerPane._showChat();
+        window.diggerPane._chatInput.value = 'hi';
+        await window.diggerPane._sendChatMessage();
+        expect(window.diggerPane._chatSessionId).toBe('s1');
+
+        document.querySelector('.digger-chat-new').click();
+        await Promise.resolve();
+        expect(window.diggerPane._chatSessionId).toBeNull();
+        expect(document.querySelectorAll('.digger-chat-msg')).toHaveLength(0);
+    });
 });

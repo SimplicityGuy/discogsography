@@ -46,6 +46,9 @@ class DiggerPane {
         this._chatSessionId = null;          // current agent session (null = new conversation)
         this._chatBusy = false;              // in-flight guard for a streaming turn
         this._chatMessages = null;           // <ul> the message bubbles are appended to
+        this._sessions = [];                 // recent agent session summaries (sidebar)
+        this._chatUsedTokens = 0;            // running token total for the cost indicator
+        this._chatCostEl = null;             // cost-indicator node (replaced on update)
 
         this._loading = document.getElementById('diggerLoading');
         this._body = document.getElementById('diggerBody');
@@ -1372,16 +1375,22 @@ class DiggerPane {
     // ------------------------------------------------------------------ //
 
     /**
-     * Switch to the chat view and render the message list + composer.
+     * Switch to the chat view, load the session list, and render the chat.
      */
     async _showChat() {
         this._view = 'chat';
         this._updateNavActiveState();
+        const token = window.authManager.getToken();
+        if (token) {
+            const res = await window.apiClient.getDiggerAgentSessions(token);
+            this._sessions = (res && res.ok && res.body && res.body.items) || [];
+        }
         this._renderChatView();
     }
 
     /**
-     * Render the chat sub-view: a scrolling message list above a composer.
+     * Render the chat sub-view: a session/cost sidebar beside a scrolling
+     * message list above a composer.
      */
     _renderChatView() {
         if (!this._body) return;
@@ -1389,6 +1398,8 @@ class DiggerPane {
 
         const chat = document.createElement('div');
         chat.className = 'digger-chat';
+
+        chat.appendChild(this._buildChatSidebar());
 
         const main = document.createElement('div');
         main.className = 'digger-chat-main';
@@ -1459,6 +1470,10 @@ class DiggerPane {
                 onProposalCard: (data) => this._appendChatProposalCard(data),
                 onDone: (data) => {
                     if (data && data.session_id) this._chatSessionId = data.session_id;
+                    if (data && data.usage) {
+                        this._chatUsedTokens += (data.usage.input || 0) + (data.usage.output || 0);
+                        this._updateCostIndicator();
+                    }
                     this._finishChat();
                 },
                 onError: (err) => {
@@ -1676,6 +1691,134 @@ class DiggerPane {
      */
     _scrollChatToEnd() {
         if (this._chatMessages) this._chatMessages.scrollTop = this._chatMessages.scrollHeight;
+    }
+
+    // ------------------------------------------------------------------ //
+    // Chat — sidebar (session list + cost indicator)
+    // ------------------------------------------------------------------ //
+
+    /**
+     * Build the chat sidebar: a "New chat" button, the recent-session list,
+     * and the daily-token cost indicator.
+     * @returns {HTMLElement}
+     */
+    _buildChatSidebar() {
+        const sidebar = document.createElement('nav');
+        sidebar.className = 'digger-chat-sidebar';
+
+        const newBtn = document.createElement('button');
+        newBtn.type = 'button';
+        newBtn.className = 'btn-secondary digger-chat-new';
+        newBtn.textContent = 'New chat';
+        newBtn.addEventListener('click', () => this._startNewChat());
+        sidebar.appendChild(newBtn);
+
+        const heading = document.createElement('h3');
+        heading.textContent = 'Sessions';
+        sidebar.appendChild(heading);
+
+        const list = document.createElement('ul');
+        list.className = 'digger-session-list';
+        for (const session of this._sessions || []) {
+            list.appendChild(this._buildSessionListItem(session));
+        }
+        sidebar.appendChild(list);
+
+        const cost = this._buildCostIndicator(this._chatUsedTokens, this._chatTokenCap());
+        this._chatCostEl = cost;
+        sidebar.appendChild(cost);
+
+        return sidebar;
+    }
+
+    /**
+     * Build a single session list item; clicking continues that session.
+     * @param {Object} session - { session_id, last_active_at, ... }
+     * @returns {HTMLLIElement}
+     */
+    _buildSessionListItem(session) {
+        const li = document.createElement('li');
+        li.className = 'digger-session-item';
+        li.dataset.sessionId = session.session_id;
+        if (session.session_id === this._chatSessionId) li.classList.add('active');
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'digger-session-link';
+        btn.textContent = this._formatDateTime(session.last_active_at);
+        btn.addEventListener('click', () => this._continueSession(session.session_id));
+        li.appendChild(btn);
+        return li;
+    }
+
+    /**
+     * The caller's daily interactive token cap (falls back to the default).
+     * @returns {number}
+     */
+    _chatTokenCap() {
+        return (this._settings && this._settings.daily_token_cap_interactive) || 200000;
+    }
+
+    /**
+     * Continue an existing session: adopt its id and reset the message list.
+     * @param {string} sessionId
+     */
+    _continueSession(sessionId) {
+        this._chatSessionId = sessionId;
+        this._renderChatView();
+    }
+
+    /**
+     * Start a fresh conversation: clear the session id and message list.
+     */
+    _startNewChat() {
+        this._chatSessionId = null;
+        this._renderChatView();
+    }
+
+    /**
+     * Build a token cost indicator showing used + remaining tokens for the day.
+     * @param {number} used
+     * @param {number} cap
+     * @returns {HTMLDivElement}
+     */
+    _buildCostIndicator(used, cap) {
+        const wrap = document.createElement('div');
+        wrap.className = 'digger-cost-indicator';
+
+        const safeCap = cap || 1;
+        const remaining = Math.max(0, safeCap - used);
+        const pct = Math.min(100, Math.round((used / safeCap) * 100));
+
+        const usedLine = document.createElement('span');
+        usedLine.className = 'digger-cost-used';
+        usedLine.textContent = `${used.toLocaleString()} tokens used`;
+        wrap.appendChild(usedLine);
+
+        const remainingLine = document.createElement('span');
+        remainingLine.className = 'digger-cost-remaining';
+        remainingLine.textContent = `${remaining.toLocaleString()} remaining today`;
+        wrap.appendChild(remainingLine);
+
+        const bar = document.createElement('div');
+        bar.className = 'digger-cost-bar';
+        const fill = document.createElement('div');
+        fill.className = 'digger-cost-bar-fill';
+        fill.style.width = `${pct}%`;
+        bar.appendChild(fill);
+        wrap.appendChild(bar);
+
+        return wrap;
+    }
+
+    /**
+     * Replace the cost indicator in place with one reflecting current usage.
+     */
+    _updateCostIndicator() {
+        if (!this._chatCostEl || !this._chatCostEl.parentNode) return;
+        const fresh = this._buildCostIndicator(this._chatUsedTokens, this._chatTokenCap());
+        this._chatCostEl.replaceWith(fresh);
+        this._chatCostEl = fresh;
     }
 }
 
