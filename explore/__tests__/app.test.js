@@ -2327,6 +2327,10 @@ describe('TimelineScrubber event handlers', () => {
 
     describe('_onSliderInput', () => {
         it('should update currentYear and yearLabel on slider input', () => {
+            // Fake timers so the 300ms debounce scheduled by _onSliderInput is
+            // discarded by useRealTimers() rather than leaking a real setTimeout
+            // that fires _checkEmergence -> window.apiClient after env teardown.
+            vi.useFakeTimers();
             const ts = new TimelineScrubber();
             ts.slider.value = '1990';
 
@@ -2334,6 +2338,7 @@ describe('TimelineScrubber event handlers', () => {
 
             expect(ts.currentYear).toBe(1990);
             expect(ts.yearLabel.textContent).toBe('1990');
+            vi.useRealTimers();
         });
 
         it('should debounce and emit year change', () => {
