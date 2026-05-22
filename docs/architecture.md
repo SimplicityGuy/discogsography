@@ -539,6 +539,10 @@ See [Brainztableinator README](../brainztableinator/README.md) for details.
 
 See [Digger README](../digger/README.md) and the [Digger Scraping Policy](digger-scraping-policy.md) for the full request and Terms-of-Service posture. The deterministic bundle optimizer that powers the interactive `POST /api/digger/recommend` endpoint and the scheduled reports is documented in [Digger Optimizer](digger-optimizer.md).
 
+#### Digger LLM agent
+
+On top of the deterministic optimizer, the API hosts a conversational **Digger agent** (`api/digger_agent/`, built on the Anthropic SDK). A single SSE endpoint, `POST /api/digger/agent/message`, orchestrates a tool-using turn — the model calls read/compute/write tools that delegate to the same M2 optimizer, reports, and refresh services — with per-user daily token caps and a one-stream-per-user concurrency lock (both in Redis). Explore exposes it as a chat sub-view, and `mcp-server/` re-exposes four Digger tools so external Claude clients can drive the same engine. It requires `ANTHROPIC_API_KEY` on the API. See [Digger Agent](digger-agent.md) for the tool surface, guardrails, models, and MCP exposure.
+
 ### Explore Service
 
 **Responsibilities**:
