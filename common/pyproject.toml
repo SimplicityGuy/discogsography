@@ -23,7 +23,7 @@ dependencies = [
     "pika>=1.4.0",
     "prometheus-client>=0.25.0",
     "psycopg[binary]>=3.3.4",
-    "pulp>=2.8",
+    "pulp>=3.3.1",
 ]
 
 [tool.hatch.build.targets.wheel]
