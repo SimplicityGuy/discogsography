@@ -150,11 +150,13 @@ RABBITMQ_PASSWORD=mypassword
 
 ### Neo4j Configuration
 
-| Variable         | Description    | Default     | Required |
-| ---------------- | -------------- | ----------- | -------- |
-| `NEO4J_HOST`     | Neo4j hostname | `localhost` | Yes      |
-| `NEO4J_USERNAME` | Neo4j username | `neo4j`     | Yes      |
-| `NEO4J_PASSWORD` | Neo4j password | (none)      | Yes      |
+| Variable            | Description                                             | Default     | Required |
+| ------------------- | ------------------------------------------------------- | ----------- | -------- |
+| `NEO4J_HOST`        | Neo4j hostname                                          | `localhost` | Yes      |
+| `NEO4J_USERNAME`    | Neo4j username                                          | `neo4j`     | Yes      |
+| `NEO4J_PASSWORD`    | Neo4j password                                          | (none)      | Yes      |
+| `NEO4J_TLS_ENABLED` | Encrypt the Bolt connection to Neo4j (TLS)             | `false`     | No       |
+| `NEO4J_TLS_VERIFY`  | Verify the Neo4j server certificate when TLS is enabled | `true`      | No       |
 
 **Used By**: Graphinator, API, Schema-Init, Dashboard, Brainzgraphinator
 
@@ -183,7 +185,36 @@ NEO4J_PASSWORD="discogsography"
 NEO4J_HOST="xxxxx.databases.neo4j.io"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="your-secure-password"
+
+# TLS for a non-local deployment (verify a real/CA-issued certificate)
+NEO4J_HOST="neo4j.example.com"
+NEO4J_TLS_ENABLED="true"
+NEO4J_TLS_VERIFY="true"
 ```
+
+### Enabling TLS for Neo4j (production)
+
+By default, services connect to Neo4j over **unencrypted Bolt** (`bolt://host:7687`), which is
+acceptable only when the connection stays on a trusted host/network. For any deployment where
+Bolt traffic crosses an untrusted network (separate host/VM, overlay network, cloud), enable TLS:
+
+- `NEO4J_TLS_ENABLED=true` — encrypt the Bolt connection.
+- `NEO4J_TLS_VERIFY=true` (default) — verify the server certificate against the system CA bundle.
+  Set to `false` only for self-signed/internal certificates: traffic stays encrypted, but the
+  server identity is not verified (no protection against an active man-in-the-middle).
+
+> **Bolt is not HTTP.** A reverse proxy that TLS-terminates the Neo4j _Browser_ (HTTP, port 7474)
+> does **not** secure the Bolt protocol (port 7687) that these services use. To actually encrypt
+> Bolt you must terminate TLS at one of:
+>
+> 1. **Neo4j-native Bolt TLS** — configure an SSL policy + certificate on the Neo4j server
+>    (`NEO4J_dbms_ssl_policy_bolt_*`, mounted cert); services keep `bolt://neo4j:7687` and set
+>    `NEO4J_TLS_ENABLED=true`. Real/CA cert → `NEO4J_TLS_VERIFY=true`; self-signed → `false`.
+> 2. **Reverse-proxy TCP router** (e.g. Traefik TCP router / nginx `stream`) — add a dedicated
+>    **TCP** (not HTTP) router with TLS that forwards to `neo4j:7687`; point services at that
+>    endpoint with `NEO4J_HOST=<bolt-fqdn>`, `NEO4J_TLS_ENABLED=true`, `NEO4J_TLS_VERIFY=true`
+>    (the proxy's managed certificate validates via SNI). The proxy→Neo4j hop is then plaintext on
+>    the trusted internal network.
 
 **Security Notes**:
 

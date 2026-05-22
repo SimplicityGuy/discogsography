@@ -8,5 +8,3 @@
 # which remain. Only add entries here when no fix is available upstream.
 #
 # Format: VULN-ID  # package==version — short description (date added)
-
-PYSEC-2025-183  # pyjwt==2.12.1 — disputed weak-encryption advisory; key length is application-controlled (2026-05-20)

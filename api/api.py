@@ -70,7 +70,7 @@ from api.services.discogs import (
     fetch_discogs_identity,
     request_oauth_token,
 )
-from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver, HealthServer, setup_logging
+from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver, HealthServer, neo4j_security_kwargs, setup_logging
 from common.config import ApiConfig
 from common.query_debug import execute_sql
 
@@ -247,7 +247,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
             uri=_config.neo4j_host,
             auth=(_config.neo4j_username, _config.neo4j_password),
             max_retries=5,
-            encrypted=False,  # M3: Set encrypted=True in production with TLS-enabled Neo4j
+            **neo4j_security_kwargs(),
         )
         logger.info("🔗 Neo4j driver initialized")
     jwt_secret_for_neo4j = _config.jwt_secret_key if _config.neo4j_host else None

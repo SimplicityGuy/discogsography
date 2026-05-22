@@ -19,6 +19,7 @@ from common import (
     AsyncResilientRabbitMQ,
     GraphinatorConfig,
     HealthServer,
+    neo4j_security_kwargs,
     setup_logging,
 )
 from common import normalize_record
@@ -1342,7 +1343,7 @@ async def main() -> None:
         uri=config.neo4j_host,
         auth=(config.neo4j_username, config.neo4j_password),
         max_retries=5,
-        encrypted=False,
+        **neo4j_security_kwargs(),
     )
 
     # Test Neo4j connectivity using async operations

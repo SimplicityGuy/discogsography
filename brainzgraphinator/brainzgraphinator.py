@@ -20,6 +20,7 @@ from common import (
     AsyncResilientRabbitMQ,
     BrainzgraphinatorConfig,
     HealthServer,
+    neo4j_security_kwargs,
     setup_logging,
 )
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
@@ -901,7 +902,7 @@ async def main() -> None:
         uri=config.neo4j_host,
         auth=(config.neo4j_username, config.neo4j_password),
         max_retries=5,
-        encrypted=False,
+        **neo4j_security_kwargs(),
     )
 
     # Test Neo4j connectivity

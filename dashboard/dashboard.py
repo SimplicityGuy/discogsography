@@ -26,6 +26,7 @@ from common import (
     AsyncResilientPostgreSQL,
     AsyncResilientRabbitMQ,
     get_config,
+    neo4j_security_kwargs,
     setup_logging,
 )
 from dashboard.admin_proxy import configure as configure_admin_proxy, router as admin_router
@@ -160,7 +161,7 @@ class DashboardApp:
                 uri=self.config.neo4j_host,
                 auth=(self.config.neo4j_username, self.config.neo4j_password),
                 max_retries=5,
-                encrypted=False,
+                **neo4j_security_kwargs(),
             )
             logger.info("🔗 Connected to Neo4j with resilient driver")
 
