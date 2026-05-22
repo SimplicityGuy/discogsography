@@ -41,6 +41,8 @@ import api.routers.auth as _auth_router
 import api.routers.collection as _collection_router
 import api.routers.credits as _credits_router
 import api.routers.digger as _digger_router
+import api.routers.digger_agent as _digger_agent_router
+import api.routers.digger_proposals as _digger_proposals_router
 import api.routers.digger_recommend as _digger_recommend_router
 import api.routers.digger_reports as _digger_reports_router
 import api.routers.explore as _explore_router
@@ -251,6 +253,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     jwt_secret_for_neo4j = _config.jwt_secret_key if _config.neo4j_host else None
     _dependencies.configure(jwt_secret_for_neo4j, _redis, pool=_pool, digger_api_service_token=_config.digger_api_service_token)
     _digger_router.configure(_pool)
+    _digger_agent_router.configure(_pool, _redis, _config.anthropic_api_key)
+    _digger_proposals_router.configure(_pool)
     _digger_recommend_router.configure(_pool, _redis)
     _digger_reports_router.configure(_pool)
     _internal_digger_router.configure(_pool)
@@ -401,6 +405,8 @@ async def metrics_middleware(request: Request, call_next: Any) -> Any:
 
 app.include_router(_auth_router.router)
 app.include_router(_digger_router.router)
+app.include_router(_digger_agent_router.router)
+app.include_router(_digger_proposals_router.router)
 app.include_router(_digger_recommend_router.router)
 app.include_router(_digger_reports_router.router)
 app.include_router(_internal_digger_router.router)

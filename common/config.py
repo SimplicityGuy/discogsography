@@ -518,6 +518,9 @@ class ApiConfig:
     # Digger internal service token — shared secret between the API and the digger worker
     digger_api_service_token: str | None = None
 
+    # Anthropic API key for the Digger LLM agent (ANTHROPIC_API_KEY, _FILE supported)
+    anthropic_api_key: str | None = None
+
     # Admin dashboard — extractor connection
     extractor_host: str = "extractor"
     extractor_health_port: int = 8000
@@ -598,6 +601,7 @@ class ApiConfig:
         brevo_sender_email = getenv("BREVO_SENDER_EMAIL", "noreply@discogsography.com")
         brevo_sender_name = getenv("BREVO_SENDER_NAME", "Discogsography")
         digger_api_service_token = get_secret("DIGGER_API_SERVICE_TOKEN") or None
+        anthropic_api_key = get_secret("ANTHROPIC_API_KEY") or None
 
         metrics_retention_days_str = getenv("METRICS_RETENTION_DAYS", "366")
         try:
@@ -640,6 +644,7 @@ class ApiConfig:
             metrics_retention_days=metrics_retention_days,
             metrics_collection_interval=metrics_collection_interval,
             digger_api_service_token=digger_api_service_token,
+            anthropic_api_key=anthropic_api_key,
         )
 
 

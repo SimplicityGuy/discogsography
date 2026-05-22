@@ -737,6 +737,20 @@ class TestApiConfigNewFields:
         monkeypatch.setenv("ENCRYPTION_MASTER_KEY", "my-master-key")
         assert ApiConfig.from_env().encryption_master_key == "my-master-key"
 
+    def test_anthropic_api_key_none_when_not_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        assert ApiConfig.from_env().anthropic_api_key is None
+
+    def test_anthropic_api_key_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+        assert ApiConfig.from_env().anthropic_api_key == "sk-ant-test"
+
     def test_jwt_algorithm_non_hs256_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from common.config import ApiConfig
 
