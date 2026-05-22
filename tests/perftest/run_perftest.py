@@ -99,9 +99,12 @@ def list_neo4j_indexes(config: dict[str, Any]) -> list[str]:
     try:
         from neo4j import GraphDatabase
 
+        from common.config import neo4j_security_kwargs
+
         driver = GraphDatabase.driver(
             uri,
             auth=(config.get("neo4j_user", "neo4j"), config.get("neo4j_password", "")),
+            **neo4j_security_kwargs(),
         )
         with driver.session() as session:
             result = session.run("SHOW INDEXES YIELD name, type, entityType, labelsOrTypes, properties, state")

@@ -23,6 +23,7 @@ from psycopg import sql
 from common import (
     AsyncPostgreSQLPool,
     AsyncResilientNeo4jDriver,
+    neo4j_security_kwargs,
     setup_logging,
 )
 from common.config import get_secret
@@ -127,6 +128,7 @@ async def _init_neo4j() -> bool:
         driver = AsyncResilientNeo4jDriver(
             uri=NEO4J_URI,
             auth=(NEO4J_USERNAME, NEO4J_PASSWORD),
+            **neo4j_security_kwargs(),
         )
 
         # Verify connectivity first
