@@ -252,6 +252,7 @@ timeout = 60
 timeout_method = "thread"
 markers = [
     "e2e: End-to-end tests requiring external services (deselect with '-m \"not e2e\"')",
+    "eval: Digger agent evals requiring ANTHROPIC_API_KEY + a live stack (skipped in CI; run nightly)",
 ]
 
 # Package discovery for multi-service setup
