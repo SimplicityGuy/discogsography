@@ -13,6 +13,7 @@ import warnings
 if TYPE_CHECKING:
     from collections.abc import Sequence  # pragma: no cover
 
+from neo4j import TrustAll, TrustSystemCAs
 import orjson
 import structlog
 
@@ -75,6 +76,31 @@ def _build_redis_url() -> str:
     """Build Redis connection URL from plain hostname environment variable."""
     host = getenv("REDIS_HOST", "localhost")
     return f"redis://{host}:6379/0"
+
+
+def neo4j_security_kwargs() -> dict[str, Any]:
+    """Build neo4j driver TLS/security kwargs from NEO4J_TLS_* environment variables.
+
+    Controls Bolt transport encryption for every service's Neo4j driver:
+
+    - TLS disabled (default)      -> {}  (plaintext bolt://, unchanged behavior)
+    - enabled, verify (default)   -> encrypted=True + TrustSystemCAs() (verify cert vs system CAs)
+    - enabled, verify disabled    -> encrypted=True + TrustAll() (encrypted, identity unverified)
+
+    Only a case-insensitive "true" enables each flag (project boolean convention).
+    """
+    if getenv("NEO4J_TLS_ENABLED", "false").strip().lower() != "true":
+        return {}
+
+    if getenv("NEO4J_TLS_VERIFY", "true").strip().lower() == "true":
+        logger.info("🛡️ Neo4j Bolt TLS enabled (encrypted, verifying server certificate)")
+        return {"encrypted": True, "trusted_certificates": TrustSystemCAs()}
+
+    logger.warning(
+        "⚠️ Neo4j Bolt TLS enabled WITHOUT certificate verification — traffic is encrypted "
+        "but the server identity is not verified (no MITM protection)"
+    )
+    return {"encrypted": True, "trusted_certificates": TrustAll()}
 
 
 @dataclass(frozen=True)

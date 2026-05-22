@@ -21,6 +21,7 @@ from common.config import (
     InsightsConfig,
     TableinatorConfig,
     get_config,
+    neo4j_security_kwargs,
     setup_logging,
 )
 from common.data_normalizer import (
@@ -127,6 +128,7 @@ __all__ = [
     "is_debug",
     "log_cypher_query",
     "log_sql_query",
+    "neo4j_security_kwargs",
     "normalize_record",
     "process_message_with_retry",
     "resilient_connection",

@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+import structlog
 
 from common import (
     BrainzgraphinatorConfig,
@@ -11,6 +12,7 @@ from common import (
     ExtractorConfig,
     GraphinatorConfig,
     TableinatorConfig,
+    neo4j_security_kwargs,
     setup_logging,
 )
 from common.config import get_secret
@@ -1354,3 +1356,56 @@ class TestDiggerConfigFromEnv:
 
         with pytest.raises((AttributeError, TypeError)):
             cfg.rate_budget_per_hour = 999  # type: ignore[misc]
+
+
+class TestNeo4jSecurityKwargs:
+    """Tests for neo4j_security_kwargs() TLS helper."""
+
+    def test_disabled_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("NEO4J_TLS_ENABLED", raising=False)
+        monkeypatch.delenv("NEO4J_TLS_VERIFY", raising=False)
+        assert neo4j_security_kwargs() == {}
+
+    def test_explicit_disabled_ignores_verify(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEO4J_TLS_ENABLED", "false")
+        monkeypatch.setenv("NEO4J_TLS_VERIFY", "false")
+        assert neo4j_security_kwargs() == {}
+
+    def test_enabled_verify_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from neo4j import TrustSystemCAs
+
+        monkeypatch.setenv("NEO4J_TLS_ENABLED", "true")
+        monkeypatch.delenv("NEO4J_TLS_VERIFY", raising=False)
+        kwargs = neo4j_security_kwargs()
+        assert kwargs["encrypted"] is True
+        assert isinstance(kwargs["trusted_certificates"], TrustSystemCAs)
+
+    def test_enabled_verify_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from neo4j import TrustSystemCAs
+
+        monkeypatch.setenv("NEO4J_TLS_ENABLED", "true")
+        monkeypatch.setenv("NEO4J_TLS_VERIFY", "true")
+        kwargs = neo4j_security_kwargs()
+        assert kwargs["encrypted"] is True
+        assert isinstance(kwargs["trusted_certificates"], TrustSystemCAs)
+
+    def test_enabled_no_verify_uses_trust_all_and_warns(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from neo4j import TrustAll
+
+        monkeypatch.setenv("NEO4J_TLS_ENABLED", "true")
+        monkeypatch.setenv("NEO4J_TLS_VERIFY", "false")
+        with structlog.testing.capture_logs() as logs:
+            kwargs = neo4j_security_kwargs()
+        assert kwargs["encrypted"] is True
+        assert isinstance(kwargs["trusted_certificates"], TrustAll)
+        assert any(entry.get("log_level") == "warning" for entry in logs)
+
+    def test_enabled_accepts_case_and_whitespace(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for value in ["TRUE", "True", " true "]:
+            monkeypatch.setenv("NEO4J_TLS_ENABLED", value)
+            assert neo4j_security_kwargs() != {}
+
+    def test_non_true_values_stay_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for value in ["1", "yes", "on", ""]:
+            monkeypatch.setenv("NEO4J_TLS_ENABLED", value)
+            assert neo4j_security_kwargs() == {}
