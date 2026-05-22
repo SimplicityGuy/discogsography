@@ -2957,3 +2957,113 @@ select option {
     color: var(--text-mid);
     font-size: 0.9rem;
 }
+
+/* ---- Digger agent chat (M3) ---- */
+
+.digger-chat {
+    display: flex;
+    gap: 1rem;
+    height: 100%;
+    min-height: 0;
+}
+
+.digger-chat-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 0.75rem;
+}
+
+.digger-chat-messages {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    overflow-y: auto;
+    flex: 1 1 auto;
+}
+
+.digger-chat-msg {
+    max-width: 90%;
+}
+
+.digger-chat-msg-user {
+    align-self: flex-end;
+}
+
+.digger-chat-msg-user .digger-chat-text {
+    background: var(--blue-accent);
+    color: #fff;
+    border-radius: 0.75rem 0.75rem 0 0.75rem;
+    padding: 0.5rem 0.75rem;
+    white-space: pre-wrap;
+}
+
+.digger-chat-msg-assistant .digger-chat-text {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-high);
+    border-radius: 0.75rem 0.75rem 0.75rem 0;
+    padding: 0.5rem 0.75rem;
+    white-space: pre-wrap;
+}
+
+.digger-tool-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    border: 1px solid var(--border-color);
+    background: var(--inner-bg);
+    border-radius: 1rem;
+    padding: 0.15rem 0.6rem;
+}
+
+.digger-tool-pill .material-symbols-outlined {
+    font-size: 1rem;
+}
+
+.digger-tool-result {
+    font-size: 0.8rem;
+    color: var(--text-mid);
+}
+
+.digger-tool-result pre {
+    overflow-x: auto;
+    background: var(--inner-bg);
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+}
+
+.digger-chat-msg-error {
+    color: var(--red-accent, #e5484d);
+    border: 1px solid var(--red-accent, #e5484d);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+}
+
+.digger-chat-composer {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+
+.digger-chat-input {
+    flex: 1 1 auto;
+    resize: vertical;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--inner-bg);
+    color: var(--text-high);
+    padding: 0.5rem 0.75rem;
+    font: inherit;
+}
+
+.digger-chat-send {
+    flex: 0 0 auto;
+}

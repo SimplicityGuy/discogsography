@@ -37,10 +37,15 @@ class DiggerPane {
         this._bulkApplying = false;          // in-flight guard for bulk-tier Apply
 
         // M2 — reports view state.
-        this._view = 'wantlist';             // 'wantlist' | 'reports' | 'report' | 'recommend'
+        this._view = 'wantlist';             // 'wantlist' | 'reports' | 'report' | 'recommend' | 'chat'
         this._reports = [];                  // inbox summaries
         this._currentReport = null;          // full report being viewed
         this._recommending = false;          // in-flight guard for Run recommendation
+
+        // M3 — agent chat sub-view state.
+        this._chatSessionId = null;          // current agent session (null = new conversation)
+        this._chatBusy = false;              // in-flight guard for a streaming turn
+        this._chatMessages = null;           // <ul> the message bubbles are appended to
 
         this._loading = document.getElementById('diggerLoading');
         this._body = document.getElementById('diggerBody');
@@ -964,6 +969,7 @@ class DiggerPane {
 
         this._headerActions.appendChild(this._buildNavButton('Wantlist', 'wantlist'));
         this._headerActions.appendChild(this._buildNavButton('Reports', 'reports'));
+        this._headerActions.appendChild(this._buildNavButton('Chat', 'chat'));
 
         const runBtn = document.createElement('button');
         runBtn.type = 'button';
@@ -979,7 +985,7 @@ class DiggerPane {
     /**
      * Build a single header navigation button.
      * @param {string} label
-     * @param {'wantlist'|'reports'} view
+     * @param {'wantlist'|'reports'|'chat'} view
      * @returns {HTMLButtonElement}
      */
     _buildNavButton(label, view) {
@@ -993,6 +999,8 @@ class DiggerPane {
                 this._showWantlist();
             } else if (view === 'reports') {
                 this._showReports();
+            } else if (view === 'chat') {
+                this._showChat();
             }
         });
         return btn;
@@ -1009,7 +1017,8 @@ class DiggerPane {
             const view = btn.dataset.view;
             const isActive =
                 (view === 'wantlist' && this._view === 'wantlist') ||
-                (view === 'reports' && (this._view === 'reports' || this._view === 'report'));
+                (view === 'reports' && (this._view === 'reports' || this._view === 'report')) ||
+                (view === 'chat' && this._view === 'chat');
             btn.classList.toggle('active', isActive);
             btn.setAttribute('aria-pressed', String(isActive));
         }
@@ -1356,6 +1365,196 @@ class DiggerPane {
             onBack: () => this._showWantlist(),
             backLabel: '← Back to wantlist',
         });
+    }
+
+    // ------------------------------------------------------------------ //
+    // Chat — interactive agent conversation (SSE)
+    // ------------------------------------------------------------------ //
+
+    /**
+     * Switch to the chat view and render the message list + composer.
+     */
+    async _showChat() {
+        this._view = 'chat';
+        this._updateNavActiveState();
+        this._renderChatView();
+    }
+
+    /**
+     * Render the chat sub-view: a scrolling message list above a composer.
+     */
+    _renderChatView() {
+        if (!this._body) return;
+        this._body.textContent = '';
+
+        const chat = document.createElement('div');
+        chat.className = 'digger-chat';
+
+        const main = document.createElement('div');
+        main.className = 'digger-chat-main';
+
+        const messages = document.createElement('ul');
+        messages.className = 'digger-chat-messages';
+        this._chatMessages = messages;
+        main.appendChild(messages);
+
+        const composer = document.createElement('div');
+        composer.className = 'digger-chat-composer';
+
+        const input = document.createElement('textarea');
+        input.className = 'digger-chat-input';
+        input.placeholder = 'Ask Digger…';
+        input.rows = 2;
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this._sendChatMessage();
+            }
+        });
+        this._chatInput = input;
+        composer.appendChild(input);
+
+        const send = document.createElement('button');
+        send.type = 'button';
+        send.className = 'btn-primary digger-chat-send';
+        send.textContent = 'Send';
+        send.addEventListener('click', () => this._sendChatMessage());
+        this._chatSendBtn = send;
+        composer.appendChild(send);
+
+        main.appendChild(composer);
+        chat.appendChild(main);
+        this._body.appendChild(chat);
+    }
+
+    /**
+     * Send the composer draft as one agent turn, streaming the reply into the
+     * message list. Guards against empty drafts and concurrent turns.
+     */
+    async _sendChatMessage() {
+        if (this._chatBusy) return;
+        const draft = ((this._chatInput && this._chatInput.value) || '').trim();
+        if (!draft) return;
+        const token = window.authManager.getToken();
+        if (!token) return;
+
+        this._chatBusy = true;
+        if (this._chatSendBtn) this._chatSendBtn.disabled = true;
+        if (this._chatInput) this._chatInput.value = '';
+
+        this._appendChatUserMessage(draft);
+        const assistantText = this._appendChatAssistantShell();
+
+        window.apiClient.streamDiggerAgent(
+            token,
+            { user_message: draft, session_id: this._chatSessionId },
+            {
+                onText: (data) => {
+                    assistantText.textContent += (data && data.delta) || '';
+                    this._scrollChatToEnd();
+                },
+                onToolCall: (data) => this._appendChatToolCall(data),
+                onToolResult: (data) => this._appendChatToolResult(data),
+                onBundleCard: (data) => this._appendChatBundleCard(data),
+                onDone: (data) => {
+                    if (data && data.session_id) this._chatSessionId = data.session_id;
+                    this._finishChat();
+                },
+                onError: (err) => {
+                    this._appendChatError((err && (err.reason || err.detail)) || 'Something went wrong.');
+                    this._finishChat();
+                },
+            },
+        );
+    }
+
+    /**
+     * Clear the in-flight guard and re-enable the composer.
+     */
+    _finishChat() {
+        this._chatBusy = false;
+        if (this._chatSendBtn) this._chatSendBtn.disabled = false;
+    }
+
+    /**
+     * Append an empty chat bubble <li> with the given role class and return it.
+     * @param {string} roleClass
+     * @returns {HTMLLIElement}
+     */
+    _appendChatMessageItem(roleClass) {
+        const li = document.createElement('li');
+        li.className = `digger-chat-msg ${roleClass}`;
+        if (this._chatMessages) this._chatMessages.appendChild(li);
+        return li;
+    }
+
+    _appendChatUserMessage(text) {
+        const li = this._appendChatMessageItem('digger-chat-msg-user');
+        const div = document.createElement('div');
+        div.className = 'digger-chat-text';
+        div.textContent = text;
+        li.appendChild(div);
+    }
+
+    /**
+     * Append an empty assistant bubble and return its text node for streaming.
+     * @returns {HTMLDivElement}
+     */
+    _appendChatAssistantShell() {
+        const li = this._appendChatMessageItem('digger-chat-msg-assistant');
+        const div = document.createElement('div');
+        div.className = 'digger-chat-text';
+        li.appendChild(div);
+        return div;
+    }
+
+    _appendChatToolCall(data) {
+        const li = this._appendChatMessageItem('digger-chat-msg-tool');
+        const pill = document.createElement('div');
+        pill.className = 'digger-tool-pill';
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined';
+        icon.textContent = 'build';
+        pill.appendChild(icon);
+        const label = document.createElement('span');
+        label.textContent = (data && data.name) || 'tool';
+        pill.appendChild(label);
+        li.appendChild(pill);
+        this._scrollChatToEnd();
+    }
+
+    _appendChatToolResult(data) {
+        const li = this._appendChatMessageItem('digger-chat-msg-tool');
+        const details = document.createElement('details');
+        details.className = 'digger-tool-result';
+        const summary = document.createElement('summary');
+        summary.textContent = `${(data && data.name) || 'tool'} result`;
+        details.appendChild(summary);
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify((data && data.output) ?? {}, null, 2);
+        details.appendChild(pre);
+        li.appendChild(details);
+        this._scrollChatToEnd();
+    }
+
+    _appendChatBundleCard(data) {
+        const li = this._appendChatMessageItem('digger-chat-msg-assistant');
+        const currency = (this._settings && this._settings.currency) || 'USD';
+        li.appendChild(this._buildBundleCard((data && data.bundle) || {}, currency));
+        this._scrollChatToEnd();
+    }
+
+    _appendChatError(message) {
+        const li = this._appendChatMessageItem('digger-chat-msg-error');
+        li.textContent = message;
+        this._scrollChatToEnd();
+    }
+
+    /**
+     * Keep the newest message in view as content streams in.
+     */
+    _scrollChatToEnd() {
+        if (this._chatMessages) this._chatMessages.scrollTop = this._chatMessages.scrollHeight;
     }
 }
 

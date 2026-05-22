@@ -760,6 +760,88 @@ class ApiClient {
     }
 
     /**
+     * Get the Digger agent session list for the current user (most recently active first).
+     * @param {string} token - JWT auth token
+     * @returns {Promise<{ok: boolean, status: number, body: Object|null}>} body = { items: [...] }
+     */
+    async getDiggerAgentSessions(token) {
+        const response = await fetch('/api/digger/agent/sessions', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const body = await response.json().catch(() => null);
+        return { ok: response.ok, status: response.status, body };
+    }
+
+    /**
+     * Stream one Digger agent turn over SSE.
+     * Events: text, tool_call, tool_result, bundle_card, proposal_card, done, error.
+     * @param {string} token - JWT auth token
+     * @param {Object} body - { user_message, session_id?, model_override? }
+     * @param {Object} callbacks - { onText, onToolCall, onToolResult, onBundleCard, onProposalCard, onDone, onError }
+     */
+    streamDiggerAgent(token, body, callbacks = {}) {
+        const { onText, onToolCall, onToolResult, onBundleCard, onProposalCard, onDone, onError } = callbacks;
+        fetch('/api/digger/agent/message', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream',
+            },
+            body: JSON.stringify(body),
+        }).then(response => {
+            if (!response.ok) {
+                if (onError) onError({ status: response.status });
+                return;
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let eventType = null;
+            function processLines(lines) {
+                for (const line of lines) {
+                    if (line.startsWith('event:')) {
+                        eventType = line.slice(6).trim();
+                    } else if (line.startsWith('data:') && eventType) {
+                        let data = null;
+                        try {
+                            data = JSON.parse(line.slice(5).trim());
+                        } catch {
+                            data = null;
+                        }
+                        if (eventType === 'text' && onText) onText(data || {});
+                        else if (eventType === 'tool_call' && onToolCall) onToolCall(data || {});
+                        else if (eventType === 'tool_result' && onToolResult) onToolResult(data || {});
+                        else if (eventType === 'bundle_card' && onBundleCard) onBundleCard(data || {});
+                        else if (eventType === 'proposal_card' && onProposalCard) onProposalCard(data || {});
+                        else if (eventType === 'error' && onError) onError(data || {});
+                        else if (eventType === 'done' && onDone) onDone(data || {});
+                        eventType = null;
+                    }
+                }
+            }
+            function processChunk() {
+                reader.read().then(({ done, value }) => {
+                    if (done) {
+                        if (buffer.trim()) processLines(buffer.split('\n'));
+                        return;
+                    }
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+                    processLines(lines);
+                    processChunk();
+                }).catch(err => {
+                    if (onError) onError(err);
+                });
+            }
+            processChunk();
+        }).catch(err => {
+            if (onError) onError(err);
+        });
+    }
+
+    /**
      * Send a natural language query with SSE streaming.
      * @param {string} query - Natural language question
      * @param {Object|null} context - Optional context
