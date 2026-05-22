@@ -188,6 +188,7 @@ just deep-clean           # Clean + Docker volumes (destructive)
 Core variables used across services (individual components, not composite URLs):
 
 - `NEO4J_HOST`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` — Neo4j connection
+- `NEO4J_TLS_ENABLED`, `NEO4J_TLS_VERIFY` — opt-in Bolt TLS (default off; certificate verification on when enabled)
 - `POSTGRES_HOST`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` — PostgreSQL connection
 - `RABBITMQ_HOST`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD` — RabbitMQ connection
 - `REDIS_HOST` — Redis hostname
