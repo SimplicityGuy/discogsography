@@ -23,6 +23,7 @@
 
 ```
 api/                  API service — all user-facing HTTP endpoints (auth, search, graph, OAuth, insights proxy, MusicBrainz)
+  digger_agent/       Digger LLM agent — Anthropic SDK, system prompt, 9 tools, SSE chat endpoint — see docs/digger-agent.md
 brainzgraphinator/    Brainzgraphinator service — MusicBrainz data → Neo4j enrichment
 brainztableinator/    Brainztableinator service — MusicBrainz data → PostgreSQL
 common/               Shared library — config, models, utilities used by all Python services

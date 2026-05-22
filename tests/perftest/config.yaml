@@ -151,3 +151,33 @@ digger_scenarios:
       deadline_seconds: 5
     auth: true
     target_p95_ms: 6000
+
+  # Agent session list — a cheap authenticated GET (newest sessions first).
+  - name: digger_agent_sessions
+    method: GET
+    path: /api/digger/agent/sessions
+    auth: true
+    target_p95_ms: 200
+
+  # Pending tier-change proposals — a cheap authenticated GET.
+  - name: digger_proposals_list
+    method: GET
+    path: /api/digger/proposals
+    auth: true
+    target_p95_ms: 200
+
+  # Interactive agent chat turn (LLM-backed). Streams typed SSE events
+  # (text/tool_call/tool_result/bundle_card/proposal_card/done); like the NLQ +
+  # recommend scenarios the harness issues a plain POST and times the full
+  # response. Requires the API to be configured with ANTHROPIC_API_KEY and the
+  # seeded user to be digger-enabled; without a key the turn errors, which the
+  # harness reports informationally (it does not gate on errors). Operators may
+  # exclude this from routine runs with --only / --skip since each turn calls the
+  # model and incurs cost.
+  - name: digger_agent_message
+    method: POST
+    path: /api/digger/agent/message
+    body:
+      user_message: "summarize my wantlist"
+    auth: true
+    target_p95_ms: 12000

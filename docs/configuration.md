@@ -547,6 +547,11 @@ SNAPSHOT_MAX_NODES=100   # Max nodes per snapshot (default: 100)
 # In production, supply via DIGGER_API_SERVICE_TOKEN_FILE (Docker secret).
 DIGGER_API_SERVICE_TOKEN="your-service-token-here"
 
+# Optional — Anthropic API key enabling the Digger LLM agent (/api/digger/agent/*).
+# When unset, the agent endpoints return an error; the rest of the API is unaffected.
+# In production, supply via ANTHROPIC_API_KEY_FILE (Docker secret).
+ANTHROPIC_API_KEY="sk-ant-..."
+
 # Optional
 JWT_EXPIRE_MINUTES=1440
 LOG_LEVEL=INFO
@@ -858,9 +863,15 @@ Health check: http://localhost:8012/health (also exposes Prometheus `/metrics`)
 ```bash
 # Required
 API_BASE_URL="http://api:8004"   # Base URL for the Discogsography API
+
+# Optional — per-user JWT enabling the authenticated Digger tools
+# (digger_get_wantlist_status, digger_run_recommendation, digger_explain_bundle,
+# digger_simulate_what_if). The public knowledge-graph tools need no token; the
+# Digger tools return a clear error when it is unset. See docs/digger-agent.md.
+MCP_API_TOKEN="<a-user-jwt>"
 ```
 
-**Notes**: The MCP server has no direct database dependencies — all data is fetched via the API service over HTTP. It supports `stdio` (default, for local use with Claude Desktop/Cursor/Zed) and `streamable-http` (for hosted deployments) transports.
+**Notes**: The MCP server has no direct database dependencies — all data is fetched via the API service over HTTP. It supports `stdio` (default, for local use with Claude Desktop/Cursor/Zed) and `streamable-http` (for hosted deployments) transports. The Digger tools act on behalf of the single user whose JWT is supplied in `MCP_API_TOKEN`.
 
 ## Environment Templates
 
