@@ -200,4 +200,26 @@ def test_real_config_yaml_includes_m2_digger_scenarios() -> None:
 
     assert by_name["digger_reports_get"]["url"].endswith(f"/api/digger/reports/{rp.PERFTEST_REPORT_ID}")
     assert by_name["digger_reports_read"]["url"].endswith(f"/api/digger/reports/{rp.PERFTEST_REPORT_ID}/read")
+
+
+def test_real_config_yaml_includes_m3_digger_scenarios() -> None:
+    """The shipped config.yaml wires the M3 agent + proposals endpoints.
+
+    Guards against config<->runner drift for the agent chat turn, the agent
+    session list, and the proposals list — all authenticated, and the chat turn
+    carrying a user_message body.
+    """
+    config_path = Path(__file__).parent / "config.yaml"
+    config = rp.load_config(str(config_path))
+    plan = rp.build_test_plan(config, artist_ids={}, label_ids={})
+    by_name = {t["name"]: t for t in plan}
+
+    for name in ("digger_agent_sessions", "digger_proposals_list", "digger_agent_message"):
+        assert name in by_name, f"{name} missing from the shipped config plan"
+        assert by_name[name]["auth"] is True
+
+    msg = by_name["digger_agent_message"]
+    assert msg["method"] == "POST"
+    assert msg["url"].endswith("/api/digger/agent/message")
+    assert msg["json_body"] == {"user_message": "summarize my wantlist"}
     assert by_name["digger_recommend"]["json_body"] == {"deadline_seconds": 5}
