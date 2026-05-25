@@ -533,6 +533,71 @@ class TestApiConfig:
         assert config.jwt_expire_minutes == 60
         assert config.discogs_user_agent == "CustomAgent/2.0"
 
+    def test_redis_password_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """REDIS_PASSWORD is embedded in the redis_host URL for authenticated Redis."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("REDIS_HOST", "myredis")
+        monkeypatch.setenv("REDIS_PASSWORD", "s3cr3t")
+
+        config = ApiConfig.from_env()
+
+        assert config.redis_host == "redis://:s3cr3t@myredis:6379/0"
+
+    def test_redis_password_from_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """REDIS_PASSWORD_FILE is read via the _FILE secret convention (Docker secrets)."""
+        from common.config import ApiConfig
+
+        pass_file = tmp_path / "redis_password"
+        pass_file.write_text("file-secret\n")
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("REDIS_HOST", "myredis")
+        monkeypatch.setenv("REDIS_PASSWORD_FILE", str(pass_file))
+        monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+
+        config = ApiConfig.from_env()
+
+        assert config.redis_host == "redis://:file-secret@myredis:6379/0"
+
+    def test_redis_password_url_encoded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Special characters in REDIS_PASSWORD are URL-encoded so the URL stays valid."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("REDIS_HOST", "myredis")
+        monkeypatch.setenv("REDIS_PASSWORD", "p@ss:w/rd")
+
+        config = ApiConfig.from_env()
+
+        assert config.redis_host == "redis://:p%40ss%3Aw%2Frd@myredis:6379/0"
+
+    def test_redis_port_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """REDIS_PORT overrides the default 6379."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("REDIS_HOST", "myredis")
+        monkeypatch.setenv("REDIS_PORT", "6380")
+        monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+
+        config = ApiConfig.from_env()
+
+        assert config.redis_host == "redis://myredis:6380/0"
+
+    def test_redis_no_password_omits_auth(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Without REDIS_PASSWORD the URL has no auth segment (password-less local Redis)."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("REDIS_HOST", "myredis")
+        monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+        monkeypatch.delenv("REDIS_PASSWORD_FILE", raising=False)
+
+        config = ApiConfig.from_env()
+
+        assert config.redis_host == "redis://myredis:6379/0"
+
     def test_from_env_invalid_jwt_expire_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that invalid JWT_EXPIRE_MINUTES falls back to 30."""
         from common.config import ApiConfig
