@@ -191,7 +191,7 @@ Core variables used across services (individual components, not composite URLs):
 - `NEO4J_TLS_ENABLED`, `NEO4J_TLS_VERIFY` — opt-in Bolt TLS (default off; certificate verification on when enabled)
 - `POSTGRES_HOST`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` — PostgreSQL connection
 - `RABBITMQ_HOST`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD` — RabbitMQ connection
-- `REDIS_HOST` — Redis hostname
+- `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` — Redis connection (`REDIS_PASSWORD` optional; only needed when Redis enforces `requirepass`)
 - `JWT_SECRET_KEY` — HMAC-SHA256 signing secret (API only)
 - `ENCRYPTION_MASTER_KEY` — HKDF master key for OAuth + TOTP encryption (API only)
 - `API_BASE_URL` — API service URL (used by Explore, Insights, MCP Server)

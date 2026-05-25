@@ -275,28 +275,37 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 ### Redis Configuration
 
-| Variable     | Description    | Default     | Required                               |
-| ------------ | -------------- | ----------- | -------------------------------------- |
-| `REDIS_HOST` | Redis hostname | `localhost` | Yes (Dashboard, API, Insights, Digger) |
+| Variable         | Description                            | Default     | Required                               |
+| ---------------- | -------------------------------------- | ----------- | -------------------------------------- |
+| `REDIS_HOST`     | Redis hostname                         | `localhost` | Yes (Dashboard, API, Insights, Digger) |
+| `REDIS_PORT`     | Redis port                             | `6379`      | No                                     |
+| `REDIS_PASSWORD` | Redis password (`requirepass`)         | _(none)_    | No (required if Redis enforces auth)   |
 
 **Used By**: Dashboard, API, Insights, Digger
 
 **Connection Details**:
 
 - Protocol: Redis protocol
-- Default port: 6379
+- Default port: 6379 (override with `REDIS_PORT`)
 - Database: 0 (default)
+- Authentication: when `REDIS_PASSWORD` is set it is embedded in the connection URL (`redis://:<password>@host:port/0`); omitted entirely when unset. Supports the `_FILE` secret convention (`REDIS_PASSWORD_FILE`).
 - Connection pool: Automatic
 - Retry logic: Exponential backoff
 
 **Examples**:
 
 ```bash
-# Local development
+# Local development (no auth)
 REDIS_HOST="localhost"
 
 # Docker Compose
 REDIS_HOST="redis"
+
+# Authenticated Redis (e.g. requirepass enabled)
+REDIS_HOST="redis"
+REDIS_PASSWORD="<password>"
+# or, via Docker secret:
+REDIS_PASSWORD_FILE="/run/secrets/redis_password"
 ```
 
 **Cache Configuration**:
