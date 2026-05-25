@@ -24,9 +24,9 @@ dependencies = [
     "multidict>=6.7.1",
     "neo4j-rust-ext>=6.2.0.0",
     "orjson>=3.11.9",
-    "pika>=1.4.0",
+    "pika>=1.4.1",
     "psycopg[binary]>=3.3.4",
-    "pulp>=3.3.1",
+    "pulp>=3.3.2",
     "redis[hiredis]>=7.4.0",
     "structlog>=25.5.0",
     "tqdm>=4.67.3",
@@ -34,11 +34,11 @@ dependencies = [
 
 [project.optional-dependencies]
 api = [
-    "anthropic>=0.104.0",
+    "anthropic>=0.104.1",
     "brevo-python>=4.0.10",
     "cryptography>=48.0.0",
     "defusedxml>=0.7.1",
-    "fastapi>=0.136.1",
+    "fastapi>=0.136.3",
     "httpx>=0.28.1",
     "neo4j-rust-ext>=6.2.0.0",
     "orjson>=3.11.9",
@@ -50,17 +50,17 @@ api = [
     "slowapi>=0.1.9",
     "sse-starlette>=3.4.4",
     "structlog>=25.5.0",
-    "uvicorn[standard]>=0.47.0",
+    "uvicorn[standard]>=0.48.0",
 ]
 dashboard = [
-    "fastapi>=0.136.1",
+    "fastapi>=0.136.3",
     "httpx>=0.28.1",
     "neo4j-rust-ext>=6.2.0.0",
     "prometheus-client>=0.25.0",
     "psycopg[binary]>=3.3.4",
     "pydantic>=2.13.4",
     "python-multipart>=0.0.29",
-    "uvicorn[standard]>=0.47.0",
+    "uvicorn[standard]>=0.48.0",
     "websockets>=16.0",
 ]
 brainzgraphinator = [
@@ -70,9 +70,9 @@ graphinator = [
     "neo4j-rust-ext>=6.2.0.0",
 ]
 insights = [
-    "fastapi>=0.136.1",
+    "fastapi>=0.136.3",
     "httpx>=0.28.1",
-    "uvicorn[standard]>=0.47.0",
+    "uvicorn[standard]>=0.48.0",
 ]
 tableinator = [
     "psycopg[binary]>=3.3.4",
@@ -101,13 +101,13 @@ utilities = [
     "requests>=2.34.2",
 ]
 explore = [
-    "fastapi>=0.136.1",
+    "fastapi>=0.136.3",
     "httpx>=0.28.1",
     "orjson>=3.11.9",
     "pydantic>=2.13.4",
     "python-multipart>=0.0.29",
     "structlog>=25.5.0",
-    "uvicorn[standard]>=0.47.0",
+    "uvicorn[standard]>=0.48.0",
 ]
 schema-init = [
     "neo4j-rust-ext>=6.2.0.0",

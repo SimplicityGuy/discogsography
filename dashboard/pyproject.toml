@@ -19,17 +19,17 @@ classifiers = [
 license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
     "aio-pika>=9.6.2",
-    "fastapi>=0.136.1",
+    "fastapi>=0.136.3",
     "httpx>=0.28.1",
     "neo4j-rust-ext>=6.2.0.0",
     "orjson>=3.11.9",
-    "pika>=1.4.0",
+    "pika>=1.4.1",
     "prometheus-client>=0.25.0",
     "psycopg[binary]>=3.3.4",
     "pydantic>=2.13.4",
     "python-multipart>=0.0.29",
     "structlog>=25.5.0",
-    "uvicorn[standard]>=0.47.0",
+    "uvicorn[standard]>=0.48.0",
     "websockets>=16.0",
 ]
 

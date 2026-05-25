@@ -81,7 +81,7 @@ wheels = [
 
 [[package]]
 name = "anthropic"
-version = "0.104.0"
+version = "0.104.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
@@ -93,9 +93,9 @@ dependencies = [
     { name = "sniffio", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "typing-extensions", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0f/01/8bfa68b886aa436775325a108700f7da39e290870199ce9251934de3e4aa/anthropic-0.104.0.tar.gz", hash = "sha256:1ae8ef4709e90cc2068c8e8a63c1ecb63cc5360d325a4bef8b296aad76148be3", size = 849329, upload-time = "2026-05-21T20:02:05.346Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/22/c7/7a655b948916f777354648ce979f68b94d5b8dbdb5f61fed1f37fad9378c/anthropic-0.104.1.tar.gz", hash = "sha256:17362b6c45f527afcc9b0fdf62011ffd359726ab2ebcb1978ea0cc41bd8d8d40", size = 850081, upload-time = "2026-05-22T15:36:57.432Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/72/6c/595f1893352dbb4d88f1c2f0983296638783936b2063564aca9abb189990/anthropic-0.104.0-py3-none-any.whl", hash = "sha256:18f73ba3429aab237cdd146a486d20b4da3c008fb4a3ba83f237b27793e884c7", size = 832920, upload-time = "2026-05-21T20:02:07.853Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/12/d9ab42790494d7c428391a46cd28492395566a6a8ccb138d681978594455/anthropic-0.104.1-py3-none-any.whl", hash = "sha256:35c8cb456f5a4405aafe1f10f03f6fcc54fa51fa8ec01d655cc4b437d120e9b7", size = 832996, upload-time = "2026-05-22T15:36:59.519Z" },
 ]
 
 [[package]]
@@ -587,17 +587,17 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aio-pika", specifier = ">=9.6.2" },
-    { name = "anthropic", marker = "extra == 'api'", specifier = ">=0.104.0" },
+    { name = "anthropic", marker = "extra == 'api'", specifier = ">=0.104.1" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.9.4" },
     { name = "brevo-python", marker = "extra == 'api'", specifier = ">=4.0.10" },
     { name = "cryptography", marker = "extra == 'api'", specifier = ">=48.0.0" },
     { name = "defusedxml", marker = "extra == 'api'", specifier = ">=0.7.1" },
     { name = "dict-hash", specifier = ">=1.3.7" },
     { name = "discogsography", extras = ["api", "brainzgraphinator", "brainztableinator", "dashboard", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator", "dev", "utilities"], marker = "extra == 'all'" },
-    { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.136.1" },
-    { name = "fastapi", marker = "extra == 'dashboard'", specifier = ">=0.136.1" },
-    { name = "fastapi", marker = "extra == 'explore'", specifier = ">=0.136.1" },
-    { name = "fastapi", marker = "extra == 'insights'", specifier = ">=0.136.1" },
+    { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.136.3" },
+    { name = "fastapi", marker = "extra == 'dashboard'", specifier = ">=0.136.3" },
+    { name = "fastapi", marker = "extra == 'explore'", specifier = ">=0.136.3" },
+    { name = "fastapi", marker = "extra == 'insights'", specifier = ">=0.136.3" },
     { name = "httpx", marker = "extra == 'api'", specifier = ">=0.28.1" },
     { name = "httpx", marker = "extra == 'dashboard'", specifier = ">=0.28.1" },
     { name = "httpx", marker = "extra == 'explore'", specifier = ">=0.28.1" },
@@ -614,7 +614,7 @@ requires-dist = [
     { name = "orjson", specifier = ">=3.11.9" },
     { name = "orjson", marker = "extra == 'api'", specifier = ">=3.11.9" },
     { name = "orjson", marker = "extra == 'explore'", specifier = ">=3.11.9" },
-    { name = "pika", specifier = ">=1.4.0" },
+    { name = "pika", specifier = ">=1.4.1" },
     { name = "playwright", marker = "extra == 'dev'", specifier = ">=1.60.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.6.0" },
     { name = "prometheus-client", marker = "extra == 'dashboard'", specifier = ">=0.25.0" },
@@ -625,7 +625,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], marker = "extra == 'dashboard'", specifier = ">=3.3.4" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'schema-init'", specifier = ">=3.3.4" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'tableinator'", specifier = ">=3.3.4" },
-    { name = "pulp", specifier = ">=3.3.1" },
+    { name = "pulp", specifier = ">=3.3.2" },
     { name = "pydantic", marker = "extra == 'api'", specifier = ">=2.13.4" },
     { name = "pydantic", marker = "extra == 'dashboard'", specifier = ">=2.13.4" },
     { name = "pydantic", marker = "extra == 'explore'", specifier = ">=2.13.4" },
@@ -654,10 +654,10 @@ requires-dist = [
     { name = "types-psutil", marker = "extra == 'dev'", specifier = ">=7.2.2.20260518" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.12.20260518" },
     { name = "types-tqdm", marker = "extra == 'dev'", specifier = ">=4.67.3.20260518" },
-    { name = "uvicorn", extras = ["standard"], marker = "extra == 'api'", specifier = ">=0.47.0" },
-    { name = "uvicorn", extras = ["standard"], marker = "extra == 'dashboard'", specifier = ">=0.47.0" },
-    { name = "uvicorn", extras = ["standard"], marker = "extra == 'explore'", specifier = ">=0.47.0" },
-    { name = "uvicorn", extras = ["standard"], marker = "extra == 'insights'", specifier = ">=0.47.0" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'api'", specifier = ">=0.48.0" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'dashboard'", specifier = ">=0.48.0" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'explore'", specifier = ">=0.48.0" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'insights'", specifier = ">=0.48.0" },
     { name = "websockets", marker = "extra == 'dashboard'", specifier = ">=16.0" },
 ]
 provides-extras = ["api", "dashboard", "brainzgraphinator", "graphinator", "insights", "tableinator", "brainztableinator", "dev", "utilities", "explore", "schema-init", "mcp-server", "all"]
@@ -710,10 +710,10 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "anthropic", specifier = ">=0.104.0" },
+    { name = "anthropic", specifier = ">=0.104.1" },
     { name = "brevo-python", specifier = ">=4.0.10" },
     { name = "cryptography", specifier = ">=48.0.0" },
-    { name = "fastapi", specifier = ">=0.136.1" },
+    { name = "fastapi", specifier = ">=0.136.3" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "neo4j-rust-ext", specifier = ">=6.2.0.0" },
     { name = "orjson", specifier = ">=3.11.9" },
@@ -723,7 +723,7 @@ requires-dist = [
     { name = "redis", extras = ["hiredis"], specifier = ">=7.4.0" },
     { name = "slowapi", specifier = ">=0.1.9" },
     { name = "structlog", specifier = ">=25.5.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.47.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.48.0" },
 ]
 
 [[package]]
@@ -781,10 +781,10 @@ dependencies = [
 requires-dist = [
     { name = "aio-pika", specifier = ">=9.6.2" },
     { name = "neo4j-rust-ext", specifier = ">=6.2.0.0" },
-    { name = "pika", specifier = ">=1.4.0" },
+    { name = "pika", specifier = ">=1.4.1" },
     { name = "prometheus-client", specifier = ">=0.25.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
-    { name = "pulp", specifier = ">=3.3.1" },
+    { name = "pulp", specifier = ">=3.3.2" },
 ]
 
 [[package]]
@@ -810,17 +810,17 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "aio-pika", specifier = ">=9.6.2" },
-    { name = "fastapi", specifier = ">=0.136.1" },
+    { name = "fastapi", specifier = ">=0.136.3" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "neo4j-rust-ext", specifier = ">=6.2.0.0" },
     { name = "orjson", specifier = ">=3.11.9" },
-    { name = "pika", specifier = ">=1.4.0" },
+    { name = "pika", specifier = ">=1.4.1" },
     { name = "prometheus-client", specifier = ">=0.25.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "python-multipart", specifier = ">=0.0.29" },
     { name = "structlog", specifier = ">=25.5.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.47.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.48.0" },
     { name = "websockets", specifier = ">=16.0" },
 ]
 
@@ -867,13 +867,13 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", specifier = ">=0.136.1" },
+    { name = "fastapi", specifier = ">=0.136.3" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "orjson", specifier = ">=3.11.9" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "python-multipart", specifier = ">=0.0.29" },
     { name = "structlog", specifier = ">=25.5.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.47.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.48.0" },
 ]
 
 [[package]]
@@ -895,7 +895,7 @@ requires-dist = [
     { name = "dict-hash", specifier = ">=1.3.7" },
     { name = "neo4j-rust-ext", specifier = ">=6.2.0.0" },
     { name = "orjson", specifier = ">=3.11.9" },
-    { name = "pika", specifier = ">=1.4.0" },
+    { name = "pika", specifier = ">=1.4.1" },
     { name = "structlog", specifier = ">=25.5.0" },
 ]
 
@@ -951,7 +951,7 @@ requires-dist = [
     { name = "aio-pika", specifier = ">=9.6.2" },
     { name = "dict-hash", specifier = ">=1.3.7" },
     { name = "orjson", specifier = ">=3.11.9" },
-    { name = "pika", specifier = ">=1.4.0" },
+    { name = "pika", specifier = ">=1.4.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "structlog", specifier = ">=25.5.0" },
 ]
@@ -1007,7 +1007,7 @@ wheels = [
 
 [[package]]
 name = "fastapi"
-version = "0.136.1"
+version = "0.136.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-doc", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
@@ -1016,9 +1016,9 @@ dependencies = [
     { name = "typing-extensions", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "typing-inspection", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5d/45/c130091c2dfa061bbfe3150f2a5091ef1adf149f2a8d2ae769ecaf6e99a2/fastapi-0.136.1.tar.gz", hash = "sha256:7af665ad7acfa0a3baf8983d393b6b471b9da10ede59c60045f49fbc89a0fa7f", size = 397448, upload-time = "2026-04-23T16:49:44.046Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/2d/ff8d91d7b564d464629a0fd50a4489c97fcb836ac230bf3a7269232a9b1f/fastapi-0.136.3.tar.gz", hash = "sha256:e487fae93ad408e6f47641ee4dfe389864fd7bec92e547ea8498fc13f43e83ab", size = 396410, upload-time = "2026-05-23T18:53:15.192Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5a/ff/2e4eca3ade2c22fe1dea7043b8ee9dabe47753349eb1b56a202de8af6349/fastapi-0.136.1-py3-none-any.whl", hash = "sha256:a6e9d7eeada96c93a4d69cb03836b44fa34e2854accb7244a1ece36cd4781c3f", size = 117683, upload-time = "2026-04-23T16:49:42.437Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/82/45359b62a067409bd929ae8a56b8ed13e5a8c8a61194b3c236920999ab83/fastapi-0.136.3-py3-none-any.whl", hash = "sha256:3d2a69bdf04b7e9f3afa292c3bc7a98816bbfafa10bc9b45f3f3700d2f761620", size = 117481, upload-time = "2026-05-23T18:53:16.924Z" },
 ]
 
 [[package]]
@@ -1602,11 +1602,11 @@ wheels = [
 
 [[package]]
 name = "pika"
-version = "1.4.0"
+version = "1.4.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/4b/15/b6a706f1e886335aedc1e21d23913fe1a0fdaadd597d7721b26f11fe306a/pika-1.4.0.tar.gz", hash = "sha256:84aa6d0cf60bbdb79d5780544a4a4e1799392760127bf9de2a03d3c3b92f5f1a", size = 154264, upload-time = "2026-05-06T18:04:32.569Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f7/09/8c42dd00c4b3e09ebd174455d30823c261eefef9d2b7e94ae9ca779704c1/pika-1.4.1.tar.gz", hash = "sha256:e851f3e4992adfbf8eb64e9b86d94e3382f92ba0200055abedbb29676b8e713b", size = 154268, upload-time = "2026-05-22T18:01:24.855Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/dd/07/b7269c5367995648897a40ae37054780fc68b71afcc51c169a739c653d4b/pika-1.4.0-py3-none-any.whl", hash = "sha256:937d8576f92a1ce3673d442161fefef614ac557583e10b9d84c14a6e228ed6a7", size = 164964, upload-time = "2026-05-06T18:04:31.343Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/7b/a09c0d378ee8604220902c58103104b2304ef99744c4b7fc45312d280484/pika-1.4.1-py3-none-any.whl", hash = "sha256:2daae7bd422a0fc4f4879fd48c9a1932ed74a0bc7172e1e5f9bde63a101ed074", size = 164962, upload-time = "2026-05-22T18:01:23.429Z" },
 ]
 
 [[package]]
@@ -1863,11 +1863,11 @@ wheels = [
 
 [[package]]
 name = "pulp"
-version = "3.3.1"
+version = "3.3.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/58/a8/6e63330798761e0c903091786681651168fda7365f029b8b5d66160861f2/pulp-3.3.1.tar.gz", hash = "sha256:a9ec237a56981b11c2096e8ba6bb72006833410ba5b400aa257426f85df5e293", size = 16304830, upload-time = "2026-05-05T12:25:43.123Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4e/70/69be07a67621ad804d6cf347965eb4e0d7786a97330d99c31d735aaa6c5a/pulp-3.3.2.tar.gz", hash = "sha256:d0904700c207ac11e25e3b1213b70eae1d6fb25faa719d75f3f15054901258c0", size = 16305346, upload-time = "2026-05-25T09:41:26.207Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9f/23/5a77fe2b50d962213338ae0fdd9832960186ebc423388fff1a56680e5114/pulp-3.3.1-py3-none-any.whl", hash = "sha256:45aa73db3368eb13b156564e092784c8fa0c1feefa64c2afb0410d9dc0bb5cd9", size = 16390866, upload-time = "2026-05-05T12:25:39.83Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/6e/d674f1dde91c71e2ac19e5e5cf1ee6d5845e3aefecd9c39ed9c4b0c9a696/pulp-3.3.2-py3-none-any.whl", hash = "sha256:631b166f72086971a9597f7a0233ababa99bb8d50a01cd543f7758be5a9f86c0", size = 16391742, upload-time = "2026-05-25T09:41:22.2Z" },
 ]
 
 [[package]]
@@ -2367,14 +2367,14 @@ wheels = [
 
 [[package]]
 name = "starlette"
-version = "1.0.1"
+version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/08/a3/84e821cc54b4ab50ae6dbc6ac3800a651b65ec35f045cc73785380654057/starlette-1.0.1.tar.gz", hash = "sha256:512399c5f1de7fac99c88572212ded9ddeddef2fb32afa82d724000e88b38f4f", size = 2659596, upload-time = "2026-05-21T21:58:58.433Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/66/4d20cdf39a8d6a51e663b7038e3b828ff211d3891a43a713fe7e4643f3a8/starlette-1.1.0.tar.gz", hash = "sha256:e83c7fe0ddecd8719c5b840080325aec0260acec86e9832899e377b91d65e90f", size = 2660060, upload-time = "2026-05-23T16:55:41.376Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ec/e1/b2df4bc09a1e51ff664c1e17018a4274b42e5e9352e4a478ea540512dc88/starlette-1.0.1-py3-none-any.whl", hash = "sha256:7c0e69b2ee1c848bd54669d908500117a3ee13de603a21427e5c6fc1adf98dcd", size = 72802, upload-time = "2026-05-21T21:58:56.551Z" },
+    { url = "https://files.pythonhosted.org/packages/93/79/920b8e0a8b20f793e8d64855095cb8febabf6175b8550b6f7a547d813891/starlette-1.1.0-py3-none-any.whl", hash = "sha256:7f0dfd38e428aad5cb6f9f667f0ca1d2d8ca3f3385dccac8305f79ec98458382", size = 72899, upload-time = "2026-05-23T16:55:39.201Z" },
 ]
 
 [[package]]
@@ -2556,15 +2556,15 @@ wheels = [
 
 [[package]]
 name = "uvicorn"
-version = "0.47.0"
+version = "0.48.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "h11", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f6/b1/8e7077a8641086aea449e1b5752a570f1b5906c64e0a33cd6d93b63a066b/uvicorn-0.47.0.tar.gz", hash = "sha256:7c9a0ea1a9414106bbab7324609c162d8fa0cdcdcb703060987269d77c7bb533", size = 90582, upload-time = "2026-05-14T18:16:54.455Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/bf/f6544ba992ddb9a6077343a576f9844f7f8f06ab819aefd00206e9255f18/uvicorn-0.48.0.tar.gz", hash = "sha256:a5504207195d08c2511bf9125ede5ac4a4b71725d519e758d01dcf0bc2d31c37", size = 91074, upload-time = "2026-05-24T12:08:41.925Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/15/41/ac2dfdbc1f60c7af4f994c7a335cfa7040c01642b605d65f611cecc2a1e4/uvicorn-0.47.0-py3-none-any.whl", hash = "sha256:2c5715bc12d1892d84752049f400cd1c3cb018514967fdfeb97640443a6a9432", size = 71301, upload-time = "2026-05-14T18:16:51.762Z" },
+    { url = "https://files.pythonhosted.org/packages/01/be/72532be3da7acc5fdfbccdb95215cd04f995a0886532a5b423f929cda4cc/uvicorn-0.48.0-py3-none-any.whl", hash = "sha256:48097851328b87ec36117d3d575234519eb58c2b22d79666e9bbc6c49a761dad", size = 71410, upload-time = "2026-05-24T12:08:40.258Z" },
 ]
 
 [package.optional-dependencies]

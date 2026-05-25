@@ -20,10 +20,10 @@ license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
     "aio-pika>=9.6.2",
     "neo4j-rust-ext>=6.2.0.0",
-    "pika>=1.4.0",
+    "pika>=1.4.1",
     "prometheus-client>=0.25.0",
     "psycopg[binary]>=3.3.4",
-    "pulp>=3.3.1",
+    "pulp>=3.3.2",
 ]
 
 [tool.hatch.build.targets.wheel]
