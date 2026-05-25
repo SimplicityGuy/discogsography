@@ -73,9 +73,18 @@ def _build_postgres_connstr() -> str:
 
 
 def _build_redis_url() -> str:
-    """Build Redis connection URL from plain hostname environment variable."""
+    """Build Redis connection URL from component secrets and environment variables.
+
+    Reads the password via the standard _FILE secret convention (Docker secrets),
+    falling back to the plain REDIS_PASSWORD environment variable. The auth segment
+    is omitted when no password is set so password-less local Redis keeps working.
+    """
+    password = get_secret("REDIS_PASSWORD")
     host = getenv("REDIS_HOST", "localhost")
-    return f"redis://{host}:6379/0"
+    port = getenv("REDIS_PORT", "6379")
+    if password:
+        return f"redis://:{_url_quote(password, safe='')}@{host}:{port}/0"
+    return f"redis://{host}:{port}/0"
 
 
 def neo4j_security_kwargs() -> dict[str, Any]:
