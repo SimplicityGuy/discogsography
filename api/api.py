@@ -38,6 +38,7 @@ from api.metrics_collector import MetricsBuffer, normalize_path, run_collector
 from api.notifications import BrevoNotificationChannel, LogNotificationChannel
 from api.queries.search_queries import ALL_TYPES, execute_search
 import api.routers.admin as _admin_router
+import api.routers.app_tokens as _app_tokens_router
 import api.routers.auth as _auth_router
 import api.routers.collection as _collection_router
 import api.routers.credits as _credits_router
@@ -430,6 +431,7 @@ app.include_router(_nlq_router.router)
 app.include_router(_rarity_router.router)
 app.include_router(_network_router.router)
 app.include_router(_musicbrainz_router.router)
+app.include_router(_app_tokens_router.router)
 
 
 @app.get("/health")

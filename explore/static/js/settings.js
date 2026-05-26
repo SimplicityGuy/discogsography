@@ -10,6 +10,12 @@ class SettingsPane {
         this._twoFaState = 'disabled'; // disabled | setup | recovery | enabled | disableConfirm
         this._setupData = null;        // { secret, otpauth_uri } from /api/auth/2fa/setup
         this._recoveryCodes = null;    // string[] from /api/auth/2fa/confirm
+        // App tokens (third-party app authorization)
+        this._appTokensView = 'list';   // list | minting | revealing
+        this._activeTokens = [];
+        this._revokedTokens = [];
+        this._mintedPlaintext = null;   // held only while view === 'revealing'
+        this._mintedTokenMeta = null;   // { name, scopes } shown alongside plaintext
     }
 
     /** Called when pane activates. Loads profile, renders 2FA, binds events once. */
@@ -17,6 +23,7 @@ class SettingsPane {
         this._loadProfile();
         this._loadDiggerSettings();
         this._renderTwoFaState();
+        this._loadAppTokens();
 
         if (!this._initialized) {
             this._bindEvents();
@@ -729,6 +736,424 @@ class SettingsPane {
     /** Convert camelCase data attribute name to kebab-case for querySelector. */
     _camelToKebab(str) {
         return str.replace(/([A-Z])/g, '-$1').toLowerCase();
+    }
+
+    // ------------------------------------------------------------------ //
+    // App tokens (third-party app authorization) — Connected Apps card
+    //
+    // All DOM is built with createElement + textContent — no innerHTML —
+    // so token names and metadata cannot be interpreted as HTML even if
+    // a future endpoint forgets to sanitize.
+    // ------------------------------------------------------------------ //
+
+    _appTokensClear(container) {
+        while (container.firstChild) container.removeChild(container.firstChild);
+    }
+
+    async _loadAppTokens() {
+        const container = document.getElementById('appTokensContent');
+        if (!container) return;
+        const token = window.authManager && window.authManager.getToken && window.authManager.getToken();
+        if (!token) {
+            this._appTokensClear(container);
+            const msg = document.createElement('div');
+            msg.className = 'settings-empty';
+            msg.textContent = 'Sign in to manage connected apps.';
+            container.appendChild(msg);
+            return;
+        }
+        let res = null;
+        try {
+            res = await window.apiClient.listAppTokens(token);
+        } catch {
+            res = null;
+        }
+        this._activeTokens = (res && Array.isArray(res.active)) ? res.active : [];
+        this._revokedTokens = (res && Array.isArray(res.revoked)) ? res.revoked : [];
+        if (this._appTokensView !== 'revealing') {
+            this._appTokensView = 'list';
+        }
+        this._renderAppTokensView();
+    }
+
+    _renderAppTokensView() {
+        const container = document.getElementById('appTokensContent');
+        if (!container) return;
+        switch (this._appTokensView) {
+            case 'minting':   this._renderMintForm(container); break;
+            case 'revealing': this._renderRevealScreen(container); break;
+            case 'list':
+            default:          this._renderAppTokensList(container); break;
+        }
+    }
+
+    _fmtDate(iso) {
+        if (!iso) return '—';
+        try {
+            const d = new Date(iso);
+            return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+        } catch {
+            return String(iso);
+        }
+    }
+
+    _renderAppTokensList(container) {
+        this._appTokensClear(container);
+
+        const intro = document.createElement('p');
+        intro.className = 'app-tokens-intro';
+        intro.textContent = 'Authorize third-party apps (e.g. GRUVAX kiosk) to read your data. Each app gets a unique token you can revoke at any time.';
+        container.appendChild(intro);
+
+        const activeWrap = document.createElement('div');
+        activeWrap.className = 'app-tokens-active';
+        if (!this._activeTokens.length) {
+            const empty = document.createElement('div');
+            empty.className = 'app-tokens-empty';
+            empty.textContent = 'No connected apps yet.';
+            activeWrap.appendChild(empty);
+        } else {
+            for (const t of this._activeTokens) {
+                activeWrap.appendChild(this._buildActiveTokenRow(t));
+            }
+        }
+        container.appendChild(activeWrap);
+
+        if (this._revokedTokens.length) {
+            const header = document.createElement('div');
+            header.className = 'app-tokens-revoked-header';
+            header.textContent = 'Revoked (audit trail)';
+            container.appendChild(header);
+
+            const revokedList = document.createElement('div');
+            revokedList.className = 'app-tokens-revoked-list';
+            for (const t of this._revokedTokens) {
+                const row = document.createElement('div');
+                row.className = 'app-token-revoked-row';
+
+                const name = document.createElement('span');
+                name.className = 'app-token-name app-token-name-revoked';
+                name.textContent = t.name || '';
+                row.appendChild(name);
+
+                const meta = document.createElement('span');
+                meta.className = 'app-token-meta';
+                meta.textContent = `Revoked: ${this._fmtDate(t.revoked_at)}`;
+                row.appendChild(meta);
+
+                revokedList.appendChild(row);
+            }
+            container.appendChild(revokedList);
+        }
+
+        const mintBtn = document.createElement('button');
+        mintBtn.id = 'appTokenMintBtn';
+        mintBtn.type = 'button';
+        mintBtn.className = 'btn-primary mt-3';
+        const mintIcon = document.createElement('span');
+        mintIcon.className = 'material-symbols-outlined mr-1';
+        mintIcon.style.fontSize = '18px';
+        mintIcon.textContent = 'add';
+        mintBtn.appendChild(mintIcon);
+        mintBtn.appendChild(document.createTextNode('Connect an app'));
+        mintBtn.addEventListener('click', () => this._handleStartMint());
+        container.appendChild(mintBtn);
+    }
+
+    _buildActiveTokenRow(t) {
+        const row = document.createElement('div');
+        row.className = 'app-token-row';
+        row.setAttribute('data-token-id', t.id || '');
+
+        const mainCol = document.createElement('div');
+        mainCol.className = 'app-token-row-main';
+
+        const name = document.createElement('div');
+        name.className = 'app-token-name';
+        name.textContent = t.name || '';
+        mainCol.appendChild(name);
+
+        const meta = document.createElement('div');
+        meta.className = 'app-token-meta';
+        const scopeSpan = document.createElement('span');
+        scopeSpan.textContent = `Scope: ${(t.scopes || []).join(', ')}`;
+        const createdSpan = document.createElement('span');
+        createdSpan.textContent = `Created: ${this._fmtDate(t.created_at)}`;
+        const usedSpan = document.createElement('span');
+        usedSpan.textContent = `Last used: ${this._fmtDate(t.last_used_at)}`;
+        meta.appendChild(scopeSpan);
+        meta.appendChild(createdSpan);
+        meta.appendChild(usedSpan);
+        mainCol.appendChild(meta);
+
+        row.appendChild(mainCol);
+
+        const revokeBtn = document.createElement('button');
+        revokeBtn.type = 'button';
+        revokeBtn.className = 'btn-secondary app-token-revoke';
+        revokeBtn.textContent = 'Revoke';
+        revokeBtn.addEventListener('click', () => this._handleRevoke(t.id, t.name));
+        row.appendChild(revokeBtn);
+
+        return row;
+    }
+
+    _renderMintForm(container) {
+        this._appTokensClear(container);
+
+        const form = document.createElement('div');
+        form.className = 'app-token-mint-form';
+
+        // Name field
+        const nameWrap = document.createElement('div');
+        nameWrap.className = 'mb-3';
+        const nameLabel = document.createElement('label');
+        nameLabel.className = 'settings-label';
+        nameLabel.htmlFor = 'appTokenName';
+        nameLabel.textContent = 'App name';
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.id = 'appTokenName';
+        nameInput.className = 'form-input-dark';
+        nameInput.maxLength = 255;
+        nameInput.placeholder = 'e.g. GRUVAX kiosk';
+        nameInput.autocomplete = 'off';
+        nameWrap.appendChild(nameLabel);
+        nameWrap.appendChild(nameInput);
+        form.appendChild(nameWrap);
+
+        // Scopes
+        const scopesWrap = document.createElement('div');
+        scopesWrap.className = 'mb-3';
+        const scopesLabel = document.createElement('label');
+        scopesLabel.className = 'settings-label';
+        scopesLabel.textContent = 'Permissions';
+        scopesWrap.appendChild(scopesLabel);
+
+        const scopeRow = document.createElement('div');
+        scopeRow.className = 'app-token-scope-row';
+        const scopeChk = document.createElement('input');
+        scopeChk.type = 'checkbox';
+        scopeChk.id = 'appTokenScope_collectionRead';
+        scopeChk.checked = true;
+        const scopeChkLabel = document.createElement('label');
+        scopeChkLabel.className = 'settings-label-inline';
+        scopeChkLabel.htmlFor = 'appTokenScope_collectionRead';
+        const scopeBold = document.createElement('strong');
+        scopeBold.textContent = 'collection:read';
+        const scopeDesc = document.createElement('span');
+        scopeDesc.className = 'app-token-scope-desc';
+        scopeDesc.textContent = 'Read your collection, stats, and timeline';
+        scopeChkLabel.appendChild(scopeBold);
+        scopeChkLabel.appendChild(document.createTextNode(' '));
+        scopeChkLabel.appendChild(scopeDesc);
+        scopeRow.appendChild(scopeChk);
+        scopeRow.appendChild(scopeChkLabel);
+        scopesWrap.appendChild(scopeRow);
+        form.appendChild(scopesWrap);
+
+        // Error region
+        const err = document.createElement('div');
+        err.id = 'appTokenMintError';
+        err.className = 'mb-2 min-h-[1.2rem] text-sm text-accent-red';
+        form.appendChild(err);
+
+        // Buttons
+        const actions = document.createElement('div');
+        actions.className = 'app-token-mint-actions';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.id = 'appTokenCancelMint';
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'btn-secondary';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.addEventListener('click', () => this._handleCancelMint());
+        const submitBtn = document.createElement('button');
+        submitBtn.id = 'appTokenSubmitMint';
+        submitBtn.type = 'button';
+        submitBtn.className = 'btn-primary';
+        const submitIcon = document.createElement('span');
+        submitIcon.className = 'material-symbols-outlined mr-1';
+        submitIcon.style.fontSize = '18px';
+        submitIcon.textContent = 'vpn_key';
+        submitBtn.appendChild(submitIcon);
+        submitBtn.appendChild(document.createTextNode('Mint token'));
+        submitBtn.addEventListener('click', () => this._handleSubmitMint());
+        actions.appendChild(cancelBtn);
+        actions.appendChild(submitBtn);
+        form.appendChild(actions);
+
+        container.appendChild(form);
+        nameInput.focus();
+    }
+
+    _renderRevealScreen(container) {
+        this._appTokensClear(container);
+
+        const wrap = document.createElement('div');
+        wrap.className = 'app-token-reveal';
+
+        const warn = document.createElement('div');
+        warn.className = 'app-token-reveal-warning';
+        const warnIcon = document.createElement('span');
+        warnIcon.className = 'material-symbols-outlined';
+        warnIcon.style.fontSize = '20px';
+        warnIcon.textContent = 'warning';
+        const warnStrong = document.createElement('strong');
+        warnStrong.textContent = 'This is the only time you will see this token.';
+        warn.appendChild(warnIcon);
+        warn.appendChild(warnStrong);
+        warn.appendChild(document.createTextNode(' Copy it now and store it somewhere safe — it cannot be recovered.'));
+        wrap.appendChild(warn);
+
+        const meta = this._mintedTokenMeta || { name: '', scopes: [] };
+
+        const metaBlock = document.createElement('div');
+        metaBlock.className = 'app-token-reveal-meta';
+        const appDiv = document.createElement('div');
+        const appLbl = document.createElement('span');
+        appLbl.className = 'settings-label';
+        appLbl.textContent = 'App:';
+        appDiv.appendChild(appLbl);
+        appDiv.appendChild(document.createTextNode(' ' + (meta.name || '')));
+        const permDiv = document.createElement('div');
+        const permLbl = document.createElement('span');
+        permLbl.className = 'settings-label';
+        permLbl.textContent = 'Permissions:';
+        permDiv.appendChild(permLbl);
+        permDiv.appendChild(document.createTextNode(' ' + (meta.scopes || []).join(', ')));
+        metaBlock.appendChild(appDiv);
+        metaBlock.appendChild(permDiv);
+        wrap.appendChild(metaBlock);
+
+        const tokenLabel = document.createElement('label');
+        tokenLabel.className = 'settings-label';
+        tokenLabel.textContent = 'Token';
+        wrap.appendChild(tokenLabel);
+
+        const pre = document.createElement('pre');
+        pre.id = 'appTokenPlaintext';
+        pre.className = 'app-token-plaintext';
+        // textContent is the only safe sink — the plaintext is opaque random data,
+        // but even so, never interpolate it as HTML.
+        pre.textContent = this._mintedPlaintext || '';
+        wrap.appendChild(pre);
+
+        const actions = document.createElement('div');
+        actions.className = 'app-token-reveal-actions';
+        const copyBtn = document.createElement('button');
+        copyBtn.id = 'appTokenCopy';
+        copyBtn.type = 'button';
+        copyBtn.className = 'btn-secondary';
+        const copyIcon = document.createElement('span');
+        copyIcon.className = 'material-symbols-outlined mr-1';
+        copyIcon.style.fontSize = '18px';
+        copyIcon.textContent = 'content_copy';
+        copyBtn.appendChild(copyIcon);
+        copyBtn.appendChild(document.createTextNode('Copy'));
+        copyBtn.addEventListener('click', () => this._handleCopyToken());
+        const doneBtn = document.createElement('button');
+        doneBtn.id = 'appTokenDoneReveal';
+        doneBtn.type = 'button';
+        doneBtn.className = 'btn-primary';
+        doneBtn.textContent = 'Done';
+        doneBtn.addEventListener('click', () => this._handleDoneReveal());
+        actions.appendChild(copyBtn);
+        actions.appendChild(doneBtn);
+        wrap.appendChild(actions);
+
+        const note = document.createElement('div');
+        note.id = 'appTokenCopiedNote';
+        note.className = 'mb-2 min-h-[1.2rem] text-sm text-accent-green hidden';
+        note.textContent = 'Copied to clipboard';
+        wrap.appendChild(note);
+
+        container.appendChild(wrap);
+    }
+
+    _handleStartMint() {
+        this._appTokensView = 'minting';
+        this._renderAppTokensView();
+    }
+
+    _handleCancelMint() {
+        this._appTokensView = 'list';
+        this._renderAppTokensView();
+    }
+
+    async _handleSubmitMint() {
+        const errorEl = document.getElementById('appTokenMintError');
+        if (errorEl) errorEl.textContent = '';
+
+        const nameEl = document.getElementById('appTokenName');
+        const collectionReadEl = document.getElementById('appTokenScope_collectionRead');
+        const name = nameEl ? nameEl.value.trim() : '';
+        if (!name) {
+            if (errorEl) errorEl.textContent = 'App name is required';
+            return;
+        }
+
+        const scopes = [];
+        if (collectionReadEl && collectionReadEl.checked) scopes.push('collection:read');
+        if (scopes.length === 0) {
+            if (errorEl) errorEl.textContent = 'Select at least one permission';
+            return;
+        }
+
+        const token = window.authManager && window.authManager.getToken && window.authManager.getToken();
+        if (!token) {
+            if (errorEl) errorEl.textContent = 'You are not signed in';
+            return;
+        }
+
+        const res = await window.apiClient.mintAppToken(token, name, scopes);
+        if (!res || !res.ok || !res.body || !res.body.token) {
+            const detail = (res && res.body && res.body.detail) ? res.body.detail : 'Failed to mint token';
+            if (errorEl) errorEl.textContent = detail;
+            return;
+        }
+
+        this._mintedPlaintext = res.body.token;
+        this._mintedTokenMeta = { name: res.body.name, scopes: res.body.scopes };
+        this._appTokensView = 'revealing';
+        this._renderAppTokensView();
+    }
+
+    async _handleCopyToken() {
+        if (!this._mintedPlaintext) return;
+        try {
+            await navigator.clipboard.writeText(this._mintedPlaintext);
+            const note = document.getElementById('appTokenCopiedNote');
+            if (note) {
+                note.classList.remove('hidden');
+                setTimeout(() => note.classList.add('hidden'), 2000);
+            }
+        } catch {
+            // Clipboard write may be unavailable in some browsers/contexts.
+        }
+    }
+
+    _handleDoneReveal() {
+        this._mintedPlaintext = null;
+        this._mintedTokenMeta = null;
+        const plaintextEl = document.getElementById('appTokenPlaintext');
+        if (plaintextEl) plaintextEl.textContent = '';
+        this._appTokensView = 'list';
+        this._loadAppTokens();
+    }
+
+    async _handleRevoke(tokenId, tokenName) {
+        if (!tokenId) return;
+        const confirmed = window.confirm(`Revoke the token "${tokenName}"?\n\nThis cannot be undone. Any app using it will lose access immediately.`);
+        if (!confirmed) return;
+
+        const token = window.authManager && window.authManager.getToken && window.authManager.getToken();
+        if (!token) return;
+
+        const ok = await window.apiClient.revokeAppToken(token, tokenId);
+        if (!ok) {
+            window.alert('Failed to revoke token. It may have already been revoked.');
+        }
+        this._loadAppTokens();
     }
 }
 
