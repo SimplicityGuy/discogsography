@@ -1786,3 +1786,130 @@ class TestFlushQueuePublicMethod:
 
         # _flush_queue should never be called since queue is empty
         processor._flush_queue.assert_not_called()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# catalog_number on Release node (P6 — GRUVAX integration)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class TestReleaseCatalogNumber:
+    """Verify the bulk graphinator pipeline propagates labels[0].catno → Release.catalog_number."""
+
+    def _capture_tx_runs(self, mock_session: AsyncMock) -> list[tuple[str, dict[str, Any]]]:
+        """Wire mock_session.execute_write so we can inspect every tx.run call inside batch_write."""
+        captured: list[tuple[str, dict[str, Any]]] = []
+
+        mock_tx = AsyncMock()
+
+        async def capture(cypher: str, **kwargs: Any) -> AsyncMock:
+            captured.append((cypher, kwargs))
+            return AsyncMock()
+
+        mock_tx.run = capture
+
+        async def call_tx_func(tx_func: Any) -> None:
+            await tx_func(mock_tx)
+
+        mock_session.execute_write.side_effect = call_tx_func
+        return captured
+
+    def _make_release_msg(self, release_id: str, labels: list[dict[str, Any]] | None) -> PendingMessage:
+        data: dict[str, Any] = {
+            "id": release_id,
+            "title": f"Release {release_id}",
+            "year": 2020,
+            "sha256": f"hash-{release_id}",
+        }
+        if labels is not None:
+            data["labels"] = labels
+        return PendingMessage("releases", data, AsyncMock(), AsyncMock())
+
+    @pytest.mark.asyncio
+    async def test_release_cypher_uses_metadata_bag(self) -> None:
+        """The MERGE cypher must merge `r += release.metadata`; the bag carries catalog_number."""
+        mock_driver, mock_session = create_async_session_mock()
+        # Hash check returns no existing release → needs processing
+        mock_result = create_async_result_mock([{"id": "R1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        captured = self._capture_tx_runs(mock_session)
+        processor = Neo4jBatchProcessor(mock_driver)
+        msg = self._make_release_msg("R1", [{"id": "L1", "name": "Some Label", "catno": "ABC-123"}])
+
+        await processor._process_releases_batch([msg])
+
+        # First tx.run is the MERGE on Release nodes
+        first_cypher, first_kwargs = captured[0]
+        assert "r += release.metadata" in first_cypher
+        assert first_kwargs["releases"][0]["metadata"] == {"catalog_number": "ABC-123"}
+
+    @pytest.mark.asyncio
+    async def test_release_metadata_empty_when_labels_empty(self) -> None:
+        """labels=[] → metadata is {} on the payload (SET r += {} is a no-op)."""
+        mock_driver, mock_session = create_async_session_mock()
+        mock_result = create_async_result_mock([{"id": "R2", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        captured = self._capture_tx_runs(mock_session)
+        processor = Neo4jBatchProcessor(mock_driver)
+        msg = self._make_release_msg("R2", [])
+
+        await processor._process_releases_batch([msg])
+
+        _, first_kwargs = captured[0]
+        assert first_kwargs["releases"][0]["metadata"] == {}
+
+    @pytest.mark.asyncio
+    async def test_release_metadata_empty_when_labels_missing(self) -> None:
+        """`labels` key entirely absent → metadata is {} on the payload."""
+        mock_driver, mock_session = create_async_session_mock()
+        mock_result = create_async_result_mock([{"id": "R3", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        captured = self._capture_tx_runs(mock_session)
+        processor = Neo4jBatchProcessor(mock_driver)
+        msg = self._make_release_msg("R3", None)
+
+        await processor._process_releases_batch([msg])
+
+        _, first_kwargs = captured[0]
+        assert first_kwargs["releases"][0]["metadata"] == {}
+
+    @pytest.mark.asyncio
+    async def test_release_metadata_empty_when_first_label_lacks_catno(self) -> None:
+        """labels[0] without `catno` key → metadata is {} (no KeyError, catalog_number key absent)."""
+        mock_driver, mock_session = create_async_session_mock()
+        mock_result = create_async_result_mock([{"id": "R4", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        captured = self._capture_tx_runs(mock_session)
+        processor = Neo4jBatchProcessor(mock_driver)
+        msg = self._make_release_msg("R4", [{"id": "L1", "name": "Catno-less Label"}])
+
+        await processor._process_releases_batch([msg])
+
+        _, first_kwargs = captured[0]
+        assert first_kwargs["releases"][0]["metadata"] == {}
+
+    @pytest.mark.asyncio
+    async def test_release_uses_first_label_catno(self) -> None:
+        """Multiple labels — only labels[0].catno is taken (canonical pressing)."""
+        mock_driver, mock_session = create_async_session_mock()
+        mock_result = create_async_result_mock([{"id": "R5", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        captured = self._capture_tx_runs(mock_session)
+        processor = Neo4jBatchProcessor(mock_driver)
+        msg = self._make_release_msg(
+            "R5",
+            [
+                {"id": "L1", "name": "Primary", "catno": "PRI-001"},
+                {"id": "L2", "name": "Reissue", "catno": "REI-999"},
+            ],
+        )
+
+        await processor._process_releases_batch([msg])
+
+        _, first_kwargs = captured[0]
+        assert first_kwargs["releases"][0]["metadata"] == {"catalog_number": "PRI-001"}

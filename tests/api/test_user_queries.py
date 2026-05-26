@@ -189,6 +189,53 @@ class TestGetUserCollection:
         assert len(results) == 1
         assert total == 10
 
+    @pytest.mark.asyncio
+    async def test_query_returns_catalog_number_field(self) -> None:
+        """The collection RETURN clause must surface r.catalog_number — required by the GRUVAX contract."""
+        from api.queries.user_queries import get_user_collection
+
+        releases = [
+            {
+                "id": "r1",
+                "title": "OK Computer",
+                "year": 1997,
+                "artist": "Radiohead",
+                "label": "Parlophone",
+                "catalog_number": "NODATA 02",
+                "rating": 5,
+                "date_added": "2023-01-01",
+                "folder_id": 1,
+            }
+        ]
+        driver = _make_driver_with_results([_MockResult(records=releases), _MockResult(single={"total": 1})])
+        results, _ = await get_user_collection(driver, "user-1")
+        assert results[0]["catalog_number"] == "NODATA 02"
+
+    @pytest.mark.asyncio
+    async def test_query_cypher_includes_catalog_number(self) -> None:
+        """Inspect the cypher passed to session.run — must include r.catalog_number AS catalog_number."""
+        from api.queries.user_queries import get_user_collection
+
+        seen_cypher: list[str] = []
+
+        async def _capture_run(*args: Any, **_kw: Any) -> _MockResult:
+            seen_cypher.append(args[0] if args else "")
+            if "count(r)" in seen_cypher[-1]:
+                return _MockResult(single={"total": 0})
+            return _MockResult(records=[])
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.run = AsyncMock(side_effect=_capture_run)
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=mock_session)
+
+        await get_user_collection(driver, "user-1")
+
+        main_cypher = next((c for c in seen_cypher if "RETURN" in c and "r.catalog_number" in c), None)
+        assert main_cypher is not None, f"Expected r.catalog_number in cypher; saw: {seen_cypher!r}"
+
 
 # ---------------------------------------------------------------------------
 # get_user_wantlist

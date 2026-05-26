@@ -864,3 +864,219 @@ class TestRunFullSync:
         )
 
         assert set(result.keys()) == {"sync_id", "status", "collection_count", "wantlist_count", "error"}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# catalog_number extraction (P6 — GRUVAX integration)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class TestCatalogNumberCapture:
+    """Verify catno from labels[0].catno is propagated to both PG metadata and Neo4j cypher params."""
+
+    @pytest.mark.asyncio
+    async def test_collection_persists_catalog_number_to_pg_metadata(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """labels[0].catno → user_collections.metadata as {"catalog_number": "..."}."""
+        release = _make_release_item(123)
+        release["basic_information"]["labels"] = [{"name": "Some Label", "catno": "ABC-123"}]
+        resp = _make_collection_response([release])
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = resp
+
+        with patch("api.syncer.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            await sync_collection(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        # executemany batch_params: tuple position 11 (0-indexed) is metadata_json
+        call_args = mock_pg_pool._mock_cur.executemany.await_args
+        batch_params = call_args[0][1]
+        assert len(batch_params) == 1
+        metadata_json = batch_params[0][11]
+        assert metadata_json is not None
+        assert '"catalog_number": "ABC-123"' in metadata_json
+
+    @pytest.mark.asyncio
+    async def test_collection_persists_metadata_to_neo4j_params(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """labels[0].catno → cypher UNWIND payload entry's `metadata` bag."""
+        release = _make_release_item(123)
+        release["basic_information"]["labels"] = [{"name": "Lbl", "catno": "ZYX-987"}]
+        resp = _make_collection_response([release])
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = resp
+
+        with patch("api.syncer.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            await sync_collection(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        # Cypher params live in the second positional arg of session.run(cypher, params)
+        run_call = mock_neo4j._mock_session.run.await_args
+        cypher_text = run_call[0][0]
+        cypher_params = run_call[0][1]
+        assert "r += rel.metadata" in cypher_text
+        assert cypher_params["releases"][0]["metadata"] == {"catalog_number": "ZYX-987"}
+
+    @pytest.mark.asyncio
+    async def test_collection_empty_metadata_when_labels_empty(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """labels=[] → metadata_json is None, cypher metadata is {} (SET r += {} is a no-op)."""
+        release = _make_release_item(123)
+        release["basic_information"]["labels"] = []
+        resp = _make_collection_response([release])
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = resp
+
+        with patch("api.syncer.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            await sync_collection(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        batch_params = mock_pg_pool._mock_cur.executemany.await_args[0][1]
+        assert batch_params[0][11] is None
+        cypher_params = mock_neo4j._mock_session.run.await_args[0][1]
+        assert cypher_params["releases"][0]["metadata"] == {}
+
+    @pytest.mark.asyncio
+    async def test_collection_empty_metadata_when_label_lacks_catno(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """labels[0] missing 'catno' key → metadata_json is None, cypher metadata is {}."""
+        release = _make_release_item(123)
+        release["basic_information"]["labels"] = [{"name": "No-Catno Label"}]
+        resp = _make_collection_response([release])
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = resp
+
+        with patch("api.syncer.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            await sync_collection(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        batch_params = mock_pg_pool._mock_cur.executemany.await_args[0][1]
+        assert batch_params[0][11] is None
+
+    @pytest.mark.asyncio
+    async def test_wantlist_persists_metadata_to_neo4j_params(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """labels[0].catno from basic_information is propagated to the WANTS cypher payload's metadata bag."""
+        want = _make_want_item(456)
+        want["basic_information"]["labels"] = [{"name": "Lbl", "catno": "WNT-001"}]
+        resp = _make_wantlist_response([want])
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = resp
+
+        with patch("api.syncer.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            await sync_wantlist(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        run_call = mock_neo4j._mock_session.run.await_args
+        cypher_text = run_call[0][0]
+        cypher_params = run_call[0][1]
+        assert "r += w.metadata" in cypher_text
+        assert cypher_params["wants"][0]["metadata"] == {"catalog_number": "WNT-001"}
+
+    @pytest.mark.asyncio
+    async def test_wantlist_empty_metadata_when_labels_missing(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """basic_information missing 'labels' entirely → metadata is {} on the cypher payload."""
+        want = _make_want_item(456)
+        # basic_information.labels intentionally absent
+        want["basic_information"].pop("labels", None)
+        resp = _make_wantlist_response([want])
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = resp
+
+        with patch("api.syncer.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            await sync_wantlist(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        cypher_params = mock_neo4j._mock_session.run.await_args[0][1]
+        assert cypher_params["wants"][0]["metadata"] == {}

@@ -835,6 +835,26 @@ class Neo4jBatchProcessor:
                         for f in msg.data.get("formats", [])
                         if isinstance(f, dict) and "name" in f
                     ]
+                    # Per-release metadata bag — populated only with non-null
+                    # keys. The cypher uses `SET r += release.metadata`, which
+                    # merges only the keys present, so absent fields don't wipe
+                    # an existing value (in Neo4j, SET k = null deletes the
+                    # property). Future per-release fields just add a key here.
+                    raw_labels = msg.data.get("labels") or []
+                    first_label = (
+                        raw_labels[0]
+                        if isinstance(raw_labels, list) and raw_labels
+                        else {}
+                    )
+                    catno = (
+                        first_label.get("catno")
+                        if isinstance(first_label, dict)
+                        else None
+                    )
+                    release_metadata: dict[str, Any] = {}
+                    if catno:
+                        release_metadata["catalog_number"] = catno
+                    release_data["metadata"] = release_metadata
                     releases_to_process.append(release_data)
 
             if not releases_to_process:
@@ -842,7 +862,11 @@ class Neo4jBatchProcessor:
                 return nack_indices
 
             async def batch_write(tx: Any) -> None:
-                # Create/update all release nodes
+                # Create/update all release nodes. `r += release.metadata`
+                # merges the per-release metadata bag (catalog_number today,
+                # potentially more fields tomorrow). Only keys present in the
+                # bag are written — absent keys don't wipe existing values
+                # that the per-user sync pipeline may have set.
                 await tx.run(
                     """
                     UNWIND $releases AS release
@@ -850,7 +874,8 @@ class Neo4jBatchProcessor:
                     SET r.title = release.title,
                         r.year = release.year,
                         r.formats = release.format_names,
-                        r.sha256 = release.sha256
+                        r.sha256 = release.sha256,
+                        r += release.metadata
                     """,
                     releases=releases_to_process,
                 )
