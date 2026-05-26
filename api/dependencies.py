@@ -7,6 +7,7 @@ from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
 
+from api.app_tokens import AppTokenAuth, require_app_token  # noqa: F401  — re-exported for callers
 from api.auth import decode_token
 
 

@@ -24,6 +24,7 @@ from slowapi.errors import RateLimitExceeded
 import structlog
 import uvicorn
 
+import api.app_tokens as _app_tokens
 from api.auth import (
     b64url_encode,
     decode_token,
@@ -252,6 +253,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         logger.info("🔗 Neo4j driver initialized")
     jwt_secret_for_neo4j = _config.jwt_secret_key if _config.neo4j_host else None
     _dependencies.configure(jwt_secret_for_neo4j, _redis, pool=_pool, digger_api_service_token=_config.digger_api_service_token)
+    _app_tokens.configure(_pool)
     _digger_router.configure(_pool)
     _digger_agent_router.configure(_pool, _redis, _config.anthropic_api_key)
     _digger_proposals_router.configure(_pool)
