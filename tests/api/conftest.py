@@ -236,6 +236,10 @@ def test_client(
 
     _deps.configure(TEST_JWT_SECRET, mock_redis, pool=_admin_verify_pool, digger_api_service_token=test_api_config.digger_api_service_token)
 
+    import api.app_tokens as _app_tokens_module
+
+    _app_tokens_module.configure(mock_pool)
+
     from api.nlq.config import NLQConfig
     import api.routers.nlq as _nlq_router
 

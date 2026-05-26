@@ -2110,4 +2110,111 @@ describe('ApiClient', () => {
             expect(onError.mock.calls[0][0].message).toBe('stream aborted');
         });
     });
+
+    describe('listAppTokens', () => {
+        it('returns parsed body on 200', async () => {
+            const expected = { active: [{ id: 'a' }], revoked: [] };
+            vi.stubGlobal('fetch', createMockFetch({ '/api/user/app-tokens': { data: expected } }));
+            const result = await window.apiClient.listAppTokens('jwt-tok');
+            expect(result).toEqual(expected);
+        });
+
+        it('returns null when token is falsy', async () => {
+            const result = await window.apiClient.listAppTokens(null);
+            expect(result).toBeNull();
+        });
+
+        it('returns null on non-2xx', async () => {
+            vi.stubGlobal('fetch', createMockFetch({ '/api/user/app-tokens': { status: 401 } }));
+            const result = await window.apiClient.listAppTokens('jwt-tok');
+            expect(result).toBeNull();
+        });
+
+        it('sends Authorization header', async () => {
+            const fetchSpy = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ active: [], revoked: [] }) }));
+            vi.stubGlobal('fetch', fetchSpy);
+            await window.apiClient.listAppTokens('jwt-tok');
+            expect(fetchSpy.mock.calls[0][0]).toContain('/api/user/app-tokens');
+            expect(fetchSpy.mock.calls[0][1].headers.Authorization).toBe('Bearer jwt-tok');
+        });
+    });
+
+    describe('mintAppToken', () => {
+        it('returns wrapped {ok, status, body} on 201', async () => {
+            const body = { id: 'tok-1', name: 'kiosk', scopes: ['collection:read'], token: 'dscg_secret', created_at: '2026-05-26T00:00:00Z' };
+            vi.stubGlobal('fetch', createMockFetch({ '/api/user/app-tokens': { status: 201, data: body } }));
+            const result = await window.apiClient.mintAppToken('jwt-tok', 'kiosk', ['collection:read']);
+            expect(result.ok).toBe(true);
+            expect(result.status).toBe(201);
+            expect(result.body).toEqual(body);
+        });
+
+        it('returns {ok:false, status:0, body:null} when token is falsy', async () => {
+            const result = await window.apiClient.mintAppToken('', 'kiosk', ['collection:read']);
+            expect(result).toEqual({ ok: false, status: 0, body: null });
+        });
+
+        it('returns wrapped error body on 4xx', async () => {
+            const body = { detail: 'Unknown scope(s): foo' };
+            vi.stubGlobal('fetch', createMockFetch({ '/api/user/app-tokens': { status: 400, data: body } }));
+            const result = await window.apiClient.mintAppToken('jwt-tok', 'kiosk', ['foo']);
+            expect(result.ok).toBe(false);
+            expect(result.status).toBe(400);
+            expect(result.body).toEqual(body);
+        });
+
+        it('sets body to null and still returns wrapper when JSON parsing throws', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: false, status: 500,
+                json: async () => { throw new Error('bad json'); },
+            }));
+            const result = await window.apiClient.mintAppToken('jwt-tok', 'kiosk', ['collection:read']);
+            expect(result.ok).toBe(false);
+            expect(result.status).toBe(500);
+            expect(result.body).toBeNull();
+        });
+
+        it('sends JSON body and Authorization header', async () => {
+            const fetchSpy = vi.fn(async () => ({ ok: true, status: 201, json: async () => ({}) }));
+            vi.stubGlobal('fetch', fetchSpy);
+            await window.apiClient.mintAppToken('jwt-tok', 'GRUVAX kiosk', ['collection:read']);
+            const [, opts] = fetchSpy.mock.calls[0];
+            expect(opts.method).toBe('POST');
+            expect(opts.headers.Authorization).toBe('Bearer jwt-tok');
+            expect(opts.headers['Content-Type']).toBe('application/json');
+            expect(JSON.parse(opts.body)).toEqual({ name: 'GRUVAX kiosk', scopes: ['collection:read'] });
+        });
+    });
+
+    describe('revokeAppToken', () => {
+        it('returns true on 204', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: true, status: 204, json: async () => ({}) }));
+            const result = await window.apiClient.revokeAppToken('jwt-tok', 'tok-1');
+            expect(result).toBe(true);
+        });
+
+        it('returns false on 404', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 404, json: async () => ({}) }));
+            const result = await window.apiClient.revokeAppToken('jwt-tok', 'tok-1');
+            expect(result).toBe(false);
+        });
+
+        it('returns false when token is falsy', async () => {
+            const result = await window.apiClient.revokeAppToken(null, 'tok-1');
+            expect(result).toBe(false);
+        });
+
+        it('returns false when tokenId is falsy', async () => {
+            const result = await window.apiClient.revokeAppToken('jwt-tok', '');
+            expect(result).toBe(false);
+        });
+
+        it('uri-encodes the tokenId path segment', async () => {
+            const fetchSpy = vi.fn(async () => ({ ok: true, status: 204 }));
+            vi.stubGlobal('fetch', fetchSpy);
+            await window.apiClient.revokeAppToken('jwt-tok', 'has space & slash/?');
+            expect(fetchSpy.mock.calls[0][0]).toContain('has%20space%20%26%20slash%2F%3F');
+            expect(fetchSpy.mock.calls[0][1].method).toBe('DELETE');
+        });
+    });
 });

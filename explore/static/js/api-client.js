@@ -323,6 +323,50 @@ class ApiClient {
         return response.json();
     }
 
+    // --- App tokens (third-party app authorization) ---
+
+    /**
+     * List the current user's active and revoked app tokens.
+     * @returns {Promise<{active: object[], revoked: object[]} | null>}
+     */
+    async listAppTokens(token) {
+        if (!token) return null;
+        const response = await fetch('/api/user/app-tokens', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    /**
+     * Mint a new app token. Plaintext is returned ONCE and never recoverable.
+     * @returns {Promise<{ok: boolean, status: number, body: object | null}>}
+     */
+    async mintAppToken(token, name, scopes) {
+        if (!token) return { ok: false, status: 0, body: null };
+        const response = await fetch('/api/user/app-tokens', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, scopes }),
+        });
+        let body = null;
+        try { body = await response.json(); } catch { /* no-op */ }
+        return { ok: response.ok, status: response.status, body };
+    }
+
+    /**
+     * Revoke (tombstone) an existing app token. Returns true on 204.
+     * @returns {Promise<boolean>}
+     */
+    async revokeAppToken(token, tokenId) {
+        if (!token || !tokenId) return false;
+        const response = await fetch(`/api/user/app-tokens/${encodeURIComponent(tokenId)}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        return response.status === 204;
+    }
+
     // --- User data ---
 
     async getUserCollection(token, limit = 50, offset = 0) {

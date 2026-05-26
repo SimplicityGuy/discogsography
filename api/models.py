@@ -413,6 +413,51 @@ class ChallengeResponse(BaseModel):
     challenge_token: str
 
 
+# ── App tokens (third-party app authorization) ────────────────────────────────
+
+
+class MintAppTokenRequest(BaseModel):
+    """Request body for POST /api/user/app-tokens."""
+
+    name: str = Field(min_length=1, max_length=255, description='Human label, e.g. "GRUVAX kiosk"')
+    scopes: list[str] = Field(min_length=1, description='Permission scopes, e.g. ["collection:read"]')
+
+
+class MintAppTokenResponse(BaseModel):
+    """Response from POST /api/user/app-tokens — plaintext returned ONCE."""
+
+    id: UUID
+    name: str
+    scopes: list[str]
+    token: str = Field(description="Plaintext token (dscg_…) — never recoverable")
+    created_at: datetime
+
+
+class AppTokenActive(BaseModel):
+    """One active row from GET /api/user/app-tokens.active."""
+
+    id: UUID
+    name: str
+    scopes: list[str]
+    created_at: datetime
+    last_used_at: datetime | None
+
+
+class AppTokenRevoked(BaseModel):
+    """Tombstone row from GET /api/user/app-tokens.revoked."""
+
+    id: UUID
+    name: str
+    revoked_at: datetime
+
+
+class ListAppTokensResponse(BaseModel):
+    """Response from GET /api/user/app-tokens."""
+
+    active: list[AppTokenActive]
+    revoked: list[AppTokenRevoked]
+
+
 class ExtractionHistoryResponse(BaseModel):
     id: UUID
     triggered_by: UUID
