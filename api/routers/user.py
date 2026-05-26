@@ -5,11 +5,12 @@ from collections import OrderedDict
 import time
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 import structlog
 
-from api.dependencies import get_optional_user, require_user
+from api.dependencies import UnifiedAuth, get_optional_user, require_user, require_user_or_app_token
+from api.limiter import bearer_token_key_func, limiter
 from api.queries.recommend_queries import (
     get_blindspot_candidates,
     get_collector_counts,
@@ -67,16 +68,28 @@ def _set_cached(key: str, data: dict[str, Any]) -> None:
 
 
 @router.get("/api/user/collection")
+@limiter.limit("60/minute", key_func=bearer_token_key_func)
+@limiter.limit("600/hour", key_func=bearer_token_key_func)
 async def user_collection(
-    current_user: Annotated[dict[str, Any], Depends(require_user)],
+    request: Request,  # noqa: ARG001 — required by slowapi rate limiter
+    auth: Annotated[UnifiedAuth, Depends(require_user_or_app_token(["collection:read"]))],
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> JSONResponse:
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
-    user_id: str = current_user.get("sub", "")
+    user_id = auth.user_id
     results, total = await get_user_collection(_neo4j_driver, user_id, limit, offset)
-    return JSONResponse(content={"releases": results, "total": total, "offset": offset, "limit": limit, "has_more": offset + len(results) < total})
+    return JSONResponse(
+        content={
+            "user_id": user_id,
+            "releases": results,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + len(results) < total,
+        }
+    )
 
 
 @router.get("/api/user/wantlist")
@@ -156,24 +169,31 @@ async def user_recommendations(
 
 
 @router.get("/api/user/collection/stats")
+@limiter.limit("60/minute", key_func=bearer_token_key_func)
+@limiter.limit("600/hour", key_func=bearer_token_key_func)
 async def user_collection_stats(
-    current_user: Annotated[dict[str, Any], Depends(require_user)],
+    request: Request,  # noqa: ARG001 — required by slowapi rate limiter
+    auth: Annotated[UnifiedAuth, Depends(require_user_or_app_token(["collection:read"]))],
 ) -> JSONResponse:
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
-    user_id: str = current_user.get("sub", "")
+    user_id = auth.user_id
     stats = await get_user_collection_stats(_neo4j_driver, user_id)
-    return JSONResponse(content=stats)
+    # stats is a dict from the query layer (contract); merge user_id at the top level.
+    return JSONResponse(content={"user_id": user_id, **stats})
 
 
 @router.get("/api/user/collection/timeline")
+@limiter.limit("60/minute", key_func=bearer_token_key_func)
+@limiter.limit("600/hour", key_func=bearer_token_key_func)
 async def user_collection_timeline(
-    current_user: Annotated[dict[str, Any], Depends(require_user)],
+    request: Request,  # noqa: ARG001 — required by slowapi rate limiter
+    auth: Annotated[UnifiedAuth, Depends(require_user_or_app_token(["collection:read"]))],
     bucket: str = Query("year", pattern="^(year|decade)$"),
 ) -> JSONResponse:
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
-    user_id: str = current_user.get("sub", "")
+    user_id = auth.user_id
     global _timeline_cache_lock
     if _timeline_cache_lock is None:
         _timeline_cache_lock = asyncio.Lock()
@@ -181,11 +201,13 @@ async def user_collection_timeline(
     async with _timeline_cache_lock:
         cached = _get_cached(cache_key)
     if cached is not None:
+        # cached value already includes user_id (we put it there on first write).
         return JSONResponse(content=cached)
     result = await get_user_collection_timeline(_neo4j_driver, user_id, bucket)
+    payload: dict[str, Any] = {"user_id": user_id, **result}
     async with _timeline_cache_lock:
-        _set_cached(cache_key, result)
-    return JSONResponse(content=result)
+        _set_cached(cache_key, payload)
+    return JSONResponse(content=payload)
 
 
 @router.get("/api/user/collection/evolution")

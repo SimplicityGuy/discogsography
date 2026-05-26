@@ -8,3 +8,4 @@
 # which remain. Only add entries here when no fix is available upstream.
 #
 # Format: VULN-ID  # package==version — short description (date added)
+MAL-2026-4750  # fastapi==0.136.3 — typosquat advisory against fastapi[standard]; this project does not install the [standard] extra (2026-05-26)

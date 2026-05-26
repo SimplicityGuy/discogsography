@@ -1,13 +1,20 @@
 """Shared FastAPI dependency functions for API routers."""
 
+from dataclasses import dataclass
 import hmac
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
 
-from api.app_tokens import AppTokenAuth, require_app_token  # noqa: F401  — re-exported for callers
+from api.app_tokens import (
+    TOKEN_PREFIX as _APP_TOKEN_PREFIX,
+    AppTokenAuth,  # noqa: F401  — re-exported for callers
+    _lookup_active_token,
+    hash_token,
+    require_app_token,  # noqa: F401  — re-exported for callers
+)
 from api.auth import decode_token
 
 
@@ -98,6 +105,88 @@ def service_token_required(x_service_token: Annotated[str | None, Header()] = No
             detail="missing or invalid service token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+@dataclass(frozen=True, slots=True)
+class UnifiedAuth:
+    """Resolved authentication context — populated by either JWT or app-token path.
+
+    Endpoints that accept both first-party and third-party tokens consume this
+    so they don't need to branch on auth path in the handler body.
+    """
+
+    user_id: str
+    via: Literal["jwt", "app_token"]
+    token_id: str | None  # set only when via == "app_token"
+    scopes: list[str]  # empty for JWT (no scope vocabulary on first-party auth)
+
+
+def require_user_or_app_token(scopes: list[str]) -> Any:
+    """Dependency factory that accepts EITHER a first-party JWT OR an app token.
+
+    Used by endpoints exposed to third-party apps (GRUVAX, MCP) where the same
+    behavior should be reachable via the user's own login session OR via a
+    delegated, scoped app token.
+
+    Routing rule: if the Bearer credential starts with the app-token prefix
+    (`dscg_`), it goes through app-token auth + scope check. Otherwise it goes
+    through the existing `require_user` flow. This keeps the JWT path
+    1:1 with the existing behavior — no surprise drift for existing clients.
+
+    Returns a `UnifiedAuth` so the handler reads `auth.user_id` regardless of path.
+    """
+    required_scopes = list(scopes)
+
+    async def dependency(
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_security)],
+    ) -> UnifiedAuth:
+        # ─── App-token path ─────────────────────────────────────────────────
+        # Only routes here when the caller explicitly presents an app token.
+        # No credentials, JWT, or anything else falls through to require_user
+        # so the JWT path's 503/401 ordering and revocation checks are preserved
+        # byte-for-byte for existing clients.
+        if credentials is not None and credentials.credentials.startswith(_APP_TOKEN_PREFIX):
+            row = await _lookup_active_token(hash_token(credentials.credentials))
+            if row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or revoked app token",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            granted = list(row.get("scope") or [])
+            missing = [s for s in required_scopes if s not in granted]
+            if missing:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"App token missing required scope(s): {', '.join(missing)}",
+                )
+            return UnifiedAuth(
+                user_id=str(row["user_id"]),
+                via="app_token",
+                token_id=str(row["id"]),
+                scopes=granted,
+            )
+
+        # ─── JWT path ───────────────────────────────────────────────────────
+        # Delegated entirely to require_user so behavior is identical to before:
+        # _jwt_secret is None → 503; missing credentials → 401; invalid → 401;
+        # admin token → 403; jti / password-changed revocation → 401.
+        payload = await require_user(credentials)
+        user_id_value = payload.get("sub")
+        if not user_id_value:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return UnifiedAuth(
+            user_id=str(user_id_value),
+            via="jwt",
+            token_id=None,
+            scopes=[],
+        )
+
+    return dependency
 
 
 async def require_admin(
