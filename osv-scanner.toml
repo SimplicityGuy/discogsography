@@ -5,7 +5,3 @@
 # re-tests each entry after dependency upgrades and removes resolved ones.
 #
 # Only add entries when no fix is available upstream.
-
-[[IgnoredVulns]]
-id = "PYSEC-2025-183"
-reason = "pyjwt==2.12.1 — disputed weak-encryption advisory; the key length is chosen by the calling application, and there is no upstream fix (2026-05-20)"
