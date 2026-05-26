@@ -107,6 +107,69 @@ class TestInsightsSchema:
         assert "insights.computation_log table" in table_names
 
 
+class TestAppTokensTable:
+    """Schema-shape tests for the app_tokens third-party auth table."""
+
+    def _user_tables_dict(self) -> dict[str, str]:
+        return dict(_USER_TABLES)
+
+    def test_app_tokens_table_defined(self) -> None:
+        assert "app_tokens table" in self._user_tables_dict()
+
+    def test_app_tokens_required_columns(self) -> None:
+        stmt = self._user_tables_dict()["app_tokens table"]
+        for column in (
+            "id",
+            "user_id",
+            "name",
+            "scope",
+            "token_hash",
+            "created_at",
+            "last_used_at",
+            "revoked_at",
+        ):
+            assert column in stmt, f"Missing column '{column}' in app_tokens schema"
+
+    def test_app_tokens_token_hash_is_sha256_sized(self) -> None:
+        """SHA-256 hex digests are exactly 64 chars; VARCHAR(64) prevents accidental other-algorithm storage."""
+        stmt = self._user_tables_dict()["app_tokens table"]
+        assert "token_hash   VARCHAR(64)" in stmt or "token_hash VARCHAR(64)" in stmt
+
+    def test_app_tokens_cascade_on_user_delete(self) -> None:
+        stmt = self._user_tables_dict()["app_tokens table"]
+        assert "REFERENCES users(id) ON DELETE CASCADE" in stmt
+
+    def test_app_tokens_scope_is_text_array(self) -> None:
+        stmt = self._user_tables_dict()["app_tokens table"]
+        assert "scope        TEXT[] NOT NULL" in stmt or "scope TEXT[] NOT NULL" in stmt
+
+    def test_app_tokens_partial_indexes_defined(self) -> None:
+        names = {name for name, _ in _USER_TABLES}
+        assert "idx_app_tokens_user_active" in names
+        assert "idx_app_tokens_token_lookup" in names
+
+    def test_app_tokens_indexes_are_partial_on_active_rows(self) -> None:
+        """Both indexes must skip revoked rows to keep lookups fast as tombstones accumulate."""
+        idx_stmts = {name: stmt for name, stmt in _USER_TABLES if name.startswith("idx_app_tokens_")}
+        for name, stmt in idx_stmts.items():
+            assert "WHERE revoked_at IS NULL" in stmt, f"{name} is not a partial index on active rows"
+
+    def test_app_tokens_token_lookup_index_keyed_by_hash(self) -> None:
+        """The lookup index must be on token_hash — this is the hot path for require_app_token."""
+        stmt = dict(_USER_TABLES)["idx_app_tokens_token_lookup"]
+        assert "ON app_tokens (token_hash)" in stmt
+
+    def test_app_tokens_user_active_index_keyed_by_user_id(self) -> None:
+        """The user-active index serves the settings page list view."""
+        stmt = dict(_USER_TABLES)["idx_app_tokens_user_active"]
+        assert "ON app_tokens (user_id)" in stmt
+
+    def test_app_tokens_no_drop_in_schema(self) -> None:
+        """Tombstone semantics: revoked rows are NEVER deleted; the schema must never drop the table."""
+        stmt = self._user_tables_dict()["app_tokens table"]
+        assert "DROP" not in stmt.upper()
+
+
 class TestCreatePostgresSchema:
     """Test create_postgres_schema with a mock pool."""
 
