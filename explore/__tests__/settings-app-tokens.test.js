@@ -201,6 +201,34 @@ describe('SettingsPane — App Tokens card', () => {
             expect(container.querySelector('#appTokenPlaintext')).toBeNull();
         });
 
+        it('rejects when no permission scope is checked', async () => {
+            window.settingsPane.init();
+            await flush();
+            container.querySelector('#appTokenMintBtn').click();
+            container.querySelector('#appTokenName').value = 'kiosk';
+            container.querySelector('#appTokenScope_collectionRead').checked = false;
+            container.querySelector('#appTokenSubmitMint').click();
+            await flush();
+
+            expect(container.querySelector('#appTokenMintError').textContent).toContain('Select at least one permission');
+            expect(window.apiClient.mintAppToken).not.toHaveBeenCalled();
+        });
+
+        it('shows "not signed in" error if token disappears between form open and submit', async () => {
+            window.settingsPane.init();
+            await flush();
+            container.querySelector('#appTokenMintBtn').click();
+            container.querySelector('#appTokenName').value = 'kiosk';
+
+            // Simulate sign-out after the form is open
+            window.authManager.getToken = vi.fn().mockReturnValue(null);
+            container.querySelector('#appTokenSubmitMint').click();
+            await flush();
+
+            expect(container.querySelector('#appTokenMintError').textContent).toContain('not signed in');
+            expect(window.apiClient.mintAppToken).not.toHaveBeenCalled();
+        });
+
         it('Cancel returns to list without minting', async () => {
             window.settingsPane.init();
             await flush();
@@ -251,6 +279,38 @@ describe('SettingsPane — App Tokens card', () => {
 
             expect(writeText).toHaveBeenCalledWith('dscg_secret_plaintext_value');
         });
+
+        it('Copy shows then hides the "Copied" note after 2s', async () => {
+            const writeText = vi.fn().mockResolvedValue(undefined);
+            Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+            await reachRevealScreen();
+            container.querySelector('#appTokenCopy').click();
+            // Resolve the writeText promise + scheduling
+            await flush();
+
+            const note = container.querySelector('#appTokenCopiedNote');
+            expect(note).toBeTruthy();
+            expect(note.classList.contains('hidden')).toBe(false);
+
+            // Advance fake timers by 2s → the setTimeout callback re-adds 'hidden'
+            vi.advanceTimersByTime(2000);
+            expect(note.classList.contains('hidden')).toBe(true);
+        });
+
+        it('Copy silently swallows a clipboard write rejection', async () => {
+            const writeText = vi.fn().mockRejectedValue(new Error('clipboard unavailable'));
+            Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+            await reachRevealScreen();
+            // Must not throw, must not exit reveal view
+            container.querySelector('#appTokenCopy').click();
+            await flush();
+
+            expect(writeText).toHaveBeenCalled();
+            // Still on the reveal screen
+            expect(container.querySelector('#appTokenPlaintext')).toBeTruthy();
+        });
     });
 
     describe('revoke flow', () => {
@@ -283,6 +343,72 @@ describe('SettingsPane — App Tokens card', () => {
             await flush();
 
             expect(window.apiClient.revokeAppToken).not.toHaveBeenCalled();
+        });
+
+        it('alerts the user when the revoke API call fails', async () => {
+            window.apiClient.listAppTokens.mockResolvedValue({
+                active: [{ id: 'tok-a', name: 'kiosk', scopes: ['collection:read'], created_at: null, last_used_at: null }],
+                revoked: [],
+            });
+            window.apiClient.revokeAppToken.mockResolvedValue(false);
+            window.confirm = vi.fn().mockReturnValue(true);
+            const alertSpy = vi.fn();
+            window.alert = alertSpy;
+
+            window.settingsPane.init();
+            await flush();
+            container.querySelector('.app-token-revoke').click();
+            await flush();
+
+            expect(alertSpy).toHaveBeenCalled();
+            // Subsequent _loadAppTokens still runs
+            expect(window.apiClient.listAppTokens).toHaveBeenCalledTimes(2);
+        });
+
+        it('is a no-op when the token row has no id', async () => {
+            window.confirm = vi.fn();
+            // Reach the revoke handler with an empty id directly
+            window.settingsPane._handleRevoke('', 'kiosk');
+            await flush();
+            expect(window.confirm).not.toHaveBeenCalled();
+            expect(window.apiClient.revokeAppToken).not.toHaveBeenCalled();
+        });
+
+        it('is a no-op when user is signed out at revoke time', async () => {
+            // Sign user out between list-load and revoke-click
+            window.apiClient.listAppTokens.mockResolvedValue({
+                active: [{ id: 'tok-a', name: 'kiosk', scopes: ['collection:read'], created_at: null, last_used_at: null }],
+                revoked: [],
+            });
+            window.confirm = vi.fn().mockReturnValue(true);
+            window.settingsPane.init();
+            await flush();
+
+            // After list loads, simulate sign-out
+            window.authManager.getToken = vi.fn().mockReturnValue(null);
+            container.querySelector('.app-token-revoke').click();
+            await flush();
+
+            expect(window.apiClient.revokeAppToken).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('listAppTokens error handling', () => {
+        it('falls back to empty arrays when listAppTokens throws', async () => {
+            window.apiClient.listAppTokens.mockRejectedValue(new Error('network down'));
+            window.settingsPane.init();
+            await flush();
+
+            // List view still rendered, no thrown error reaches the user
+            expect(container.textContent).toContain('No connected apps yet');
+        });
+
+        it('falls back to empty arrays when listAppTokens returns malformed shape', async () => {
+            window.apiClient.listAppTokens.mockResolvedValue({ not_active: 'oops' });
+            window.settingsPane.init();
+            await flush();
+
+            expect(container.textContent).toContain('No connected apps yet');
         });
     });
 });
