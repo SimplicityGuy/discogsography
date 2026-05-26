@@ -140,18 +140,13 @@ def require_user_or_app_token(scopes: list[str]) -> Any:
     async def dependency(
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_security)],
     ) -> UnifiedAuth:
-        if credentials is None or not credentials.credentials:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        plaintext = credentials.credentials
-
         # ─── App-token path ─────────────────────────────────────────────────
-        if plaintext.startswith(_APP_TOKEN_PREFIX):
-            row = await _lookup_active_token(hash_token(plaintext))
+        # Only routes here when the caller explicitly presents an app token.
+        # No credentials, JWT, or anything else falls through to require_user
+        # so the JWT path's 503/401 ordering and revocation checks are preserved
+        # byte-for-byte for existing clients.
+        if credentials is not None and credentials.credentials.startswith(_APP_TOKEN_PREFIX):
+            row = await _lookup_active_token(hash_token(credentials.credentials))
             if row is None:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -173,6 +168,9 @@ def require_user_or_app_token(scopes: list[str]) -> Any:
             )
 
         # ─── JWT path ───────────────────────────────────────────────────────
+        # Delegated entirely to require_user so behavior is identical to before:
+        # _jwt_secret is None → 503; missing credentials → 401; invalid → 401;
+        # admin token → 403; jti / password-changed revocation → 401.
         payload = await require_user(credentials)
         user_id_value = payload.get("sub")
         if not user_id_value:
