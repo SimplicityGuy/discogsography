@@ -149,6 +149,33 @@ _USER_TABLES: list[tuple[str, str]] = [
         )
         """,
     ),
+    # app_tokens: revocable Bearer tokens for third-party app authorization
+    # (e.g. GRUVAX kiosk). Plaintext shown ONCE at mint time; only the SHA-256
+    # hex hash is persisted. Revoked rows are tombstones — never deleted, so
+    # the audit trail is preserved. See docs/specs/v2-gruvax-integration.md.
+    (
+        "app_tokens table",
+        """
+        CREATE TABLE IF NOT EXISTS app_tokens (
+            id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name         VARCHAR(255) NOT NULL,
+            scope        TEXT[] NOT NULL,
+            token_hash   VARCHAR(64) NOT NULL,
+            created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            last_used_at TIMESTAMP WITH TIME ZONE,
+            revoked_at   TIMESTAMP WITH TIME ZONE
+        )
+        """,
+    ),
+    (
+        "idx_app_tokens_user_active",
+        "CREATE INDEX IF NOT EXISTS idx_app_tokens_user_active ON app_tokens (user_id) WHERE revoked_at IS NULL",
+    ),
+    (
+        "idx_app_tokens_token_lookup",
+        "CREATE INDEX IF NOT EXISTS idx_app_tokens_token_lookup ON app_tokens (token_hash) WHERE revoked_at IS NULL",
+    ),
     (
         "app_config table",
         """
