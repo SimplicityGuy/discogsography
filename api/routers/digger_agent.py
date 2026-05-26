@@ -151,8 +151,14 @@ async def message(body: MessageIn, current_user: Annotated[dict[str, Any], Depen
                         cost_usd=cost,
                     )
                     await budget.record(user_id, input_tokens=final_usage["input"], output_tokens=final_usage["output"])
-        except RuntimeError as exc:
-            yield {"event": "error", "data": json.dumps({"reason": str(exc)})}
+        except Exception as exc:
+            # Catch broadly so the SSE stream always yields a typed error event instead
+            # of aborting mid-response (which surfaces as ERR_HTTP2_PROTOCOL_ERROR in the
+            # browser while the access log shows 200). RuntimeError covers ConcurrencyLock
+            # contention; the rest — DB hiccups, Anthropic SDK errors, serialization
+            # failures — would otherwise tear down the HTTP/2 stream.
+            log.exception("agent turn failed for session %s", session_id)
+            yield {"event": "error", "data": json.dumps({"reason": str(exc) or type(exc).__name__})}
 
     return EventSourceResponse(stream_events())
 

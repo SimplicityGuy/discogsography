@@ -166,6 +166,27 @@ def test_message_emits_error_event_when_lock_held(test_client: TestClient, auth_
     assert "already running" in r.text
 
 
+def test_message_emits_error_event_on_unexpected_exception(test_client: TestClient, auth_headers: dict[str, str]) -> None:
+    """Non-RuntimeError raised inside the stream must surface as an SSE error event, not abort the response."""
+
+    def _raising_run(**_kwargs: Any) -> Any:
+        async def _gen() -> Any:
+            raise ValueError("boom from inside the agent loop")
+            yield  # pragma: no cover
+
+        return _gen()
+
+    with (
+        patch("api.routers.digger_agent.q.get_user_settings", AsyncMock(return_value=_enabled_settings())),
+        patch("api.routers.digger_agent.run_agent_turn", _raising_run),
+        patch("api.routers.digger_agent.anthropic.AsyncAnthropic", _fake_anthropic([])),
+    ):
+        r = test_client.post("/api/digger/agent/message", headers=auth_headers, json={"user_message": "hi"})
+    assert r.status_code == 200
+    assert "event: error" in r.text
+    assert "boom from inside the agent loop" in r.text
+
+
 def test_message_without_done_skips_persistence(test_client: TestClient, auth_headers: dict[str, str]) -> None:
     with (
         patch("api.routers.digger_agent.q.get_user_settings", AsyncMock(return_value=_enabled_settings())),
