@@ -40,6 +40,7 @@ async def get_user_collection(
          collect(DISTINCT g.name) AS genres,
          collect(DISTINCT s.name) AS styles
     RETURN r.id AS id, r.title AS title, r.year AS year,
+           r.catalog_number AS catalog_number,
            artist_name AS artist, label_name AS label,
            genres, styles,
            c.rating AS rating, c.date_added AS date_added,
@@ -80,6 +81,7 @@ async def get_user_wantlist(
          collect(DISTINCT g.name) AS genres,
          collect(DISTINCT s.name) AS styles
     RETURN r.id AS id, r.title AS title, r.year AS year,
+           r.catalog_number AS catalog_number,
            artist_name AS artist, label_name AS label,
            genres, styles,
            w.rating AS rating, w.date_added AS date_added
