@@ -2,12 +2,25 @@
 
 import asyncio
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 import pytest
 
 from tests.api.conftest import TEST_JWT_SECRET, TEST_USER_EMAIL, TEST_USER_ID, make_test_jwt
+
+
+def _close_coro_and_return(task_mock: Any) -> Any:
+    """Return a side_effect for patched asyncio.create_task that closes the
+    coroutine argument (preventing 'never awaited' warnings) and returns the
+    provided task mock."""
+
+    def _side_effect(coro: Any) -> Any:
+        coro.close()
+        return task_mock
+
+    return _side_effect
 
 
 class TestTriggerSyncEndpoint:
@@ -29,9 +42,9 @@ class TestTriggerSyncEndpoint:
     ) -> None:
         mock_cur.fetchone.return_value = {"id": "new-sync-id"}
 
-        with patch("api.routers.sync.asyncio.create_task") as mock_task:
-            mock_task.return_value = MagicMock(spec=asyncio.Task)
-            mock_task.return_value.done.return_value = False
+        fake_task = MagicMock(spec=asyncio.Task)
+        fake_task.done.return_value = False
+        with patch("api.routers.sync.asyncio.create_task", side_effect=_close_coro_and_return(fake_task)):
             response = test_client.post("/api/sync", headers=auth_headers)
 
         assert response.status_code == 202
@@ -344,9 +357,9 @@ class TestSyncRedisCooldown:
 
         mock_redis.get.return_value = None  # not in cooldown
         mock_cur.fetchone.return_value = {"id": "new-sync-id"}
-        with patch("api.routers.sync.asyncio.create_task") as mock_task:
-            mock_task.return_value = MagicMock(spec=asyncio.Task)
-            mock_task.return_value.done.return_value = False
+        fake_task = MagicMock(spec=asyncio.Task)
+        fake_task.done.return_value = False
+        with patch("api.routers.sync.asyncio.create_task", side_effect=_close_coro_and_return(fake_task)):
             test_client.post("/api/sync", headers=auth_headers)
         mock_redis.setex.assert_awaited_once()
         setex_args = mock_redis.setex.call_args[0]
@@ -363,9 +376,9 @@ class TestSyncRedisCooldown:
         sync_module._redis = None
         mock_cur.fetchone.return_value = {"id": "sync-id"}
         try:
-            with patch("api.routers.sync.asyncio.create_task") as mock_task:
-                mock_task.return_value = MagicMock(spec=asyncio.Task)
-                mock_task.return_value.done.return_value = False
+            fake_task = MagicMock(spec=asyncio.Task)
+            fake_task.done.return_value = False
+            with patch("api.routers.sync.asyncio.create_task", side_effect=_close_coro_and_return(fake_task)):
                 response = test_client.post("/api/sync", headers=auth_headers)
             assert response.status_code == 202
         finally:
@@ -378,16 +391,20 @@ class TestSyncRedisCooldown:
         import api.routers.sync as sync_module
 
         mock_cur.fetchone.return_value = {"id": "sync-id"}
-        with patch("api.routers.sync.asyncio.create_task") as mock_task:
-            mock_task.return_value = MagicMock(spec=asyncio.Task)
-            mock_task.return_value.done.return_value = False
+        fake_task = MagicMock(spec=asyncio.Task)
+        fake_task.done.return_value = False
+        captured: dict[str, Any] = {}
+
+        def _capture_and_close(coro: Any) -> Any:
+            captured["coro"] = coro
+            coro.close()
+            return fake_task
+
+        with patch("api.routers.sync.asyncio.create_task", side_effect=_capture_and_close):
             test_client.post("/api/sync", headers=auth_headers)
 
-        create_task_call = mock_task.call_args
-        # The coroutine is run_full_sync(...) — check kwargs contain oauth_encryption_key
-        coroutine = create_task_call[0][0]
-        assert coroutine is not None
-        coroutine.close()  # clean up unawaited coroutine
+        # The coroutine passed to create_task was run_full_sync(...)
+        assert captured["coro"] is not None
 
         # Verify getattr used on config with oauth_encryption_key
         assert hasattr(sync_module._config, "jwt_secret_key")

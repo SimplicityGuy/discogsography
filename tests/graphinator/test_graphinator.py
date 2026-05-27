@@ -406,10 +406,11 @@ class TestMain:
 
             with patch("asyncio.create_task", side_effect=mock_create_task):
                 # Make the main loop exit after setup
-                async def mock_wait_for(_coro: Any, **_kwargs: Any) -> None:
+                async def mock_wait_for(coro: Any, **_kwargs: Any) -> None:
                     # First call times out, second call sets shutdown_requested
                     import graphinator.graphinator
 
+                    coro.close()
                     graphinator.graphinator.shutdown_requested = True
                     raise TimeoutError()
 
@@ -1183,7 +1184,7 @@ class TestScheduleConsumerCancellation:
     async def test_cancels_existing_scheduled_task(self) -> None:
         """Test cancels existing scheduled task before creating new one."""
         mock_queue = AsyncMock()
-        mock_existing_task = AsyncMock()
+        mock_existing_task = MagicMock()
 
         import graphinator.graphinator
 
@@ -3086,9 +3087,10 @@ class TestMainBatchProcessorFlushError:
                 patch("asyncio.create_task", side_effect=mock_create_task),
             ):
 
-                async def mock_wait_for(_coro: Any, **_kwargs: Any) -> None:
+                async def mock_wait_for(coro: Any, **_kwargs: Any) -> None:
                     import graphinator.graphinator as _gm
 
+                    coro.close()
                     _gm.shutdown_requested = True
                     raise TimeoutError()
 
@@ -3206,9 +3208,10 @@ class TestMainNeo4jCloseError:
                 patch("asyncio.create_task", side_effect=mock_create_task),
             ):
 
-                async def mock_wait_for(_coro: Any, **_kwargs: Any) -> None:
+                async def mock_wait_for(coro: Any, **_kwargs: Any) -> None:
                     import graphinator.graphinator as _gm
 
+                    coro.close()
                     _gm.shutdown_requested = True
                     raise TimeoutError()
 

@@ -410,7 +410,10 @@ class TestInitNeo4jPartialFailure:
         mock_result = AsyncMock()
         mock_result.single = AsyncMock(return_value={"health": 1})
         mock_session.run = AsyncMock(return_value=mock_result)
-        mock_driver.session = AsyncMock(return_value=mock_session)
+        # driver.session(...) is called synchronously and the returned object
+        # must support `async with` — so use MagicMock (sync) wrapping the
+        # AsyncMock context manager, not AsyncMock which returns a coroutine.
+        mock_driver.session = MagicMock(return_value=mock_session)
         mock_driver.close = AsyncMock()
 
         with (

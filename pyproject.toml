@@ -219,10 +219,6 @@ module = [
 ]
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_decorators = false
-
 
 [tool.coverage.run]
 source = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard", "digger", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator"]
@@ -253,6 +249,7 @@ timeout_method = "thread"
 markers = [
     "e2e: End-to-end tests requiring external services (deselect with '-m \"not e2e\"')",
     "eval: Digger agent evals requiring ANTHROPIC_API_KEY + a live stack (skipped in CI; run nightly)",
+    "benchmark: Performance regression benchmarks (informational; run separately)",
 ]
 
 # Package discovery for multi-service setup

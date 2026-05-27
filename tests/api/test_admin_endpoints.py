@@ -792,6 +792,17 @@ class TestTrackExtraction:
         import api.routers.admin as admin_mod
 
         mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        mock_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=conn_ctx)
+
         mock_config = MagicMock()
         mock_config.extractor_host = "localhost"
         mock_config.extractor_health_port = 8000

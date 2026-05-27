@@ -195,9 +195,13 @@ class TestMain:
         async def _fake_amain() -> None:
             pass
 
+        def _capture_and_close(coro: Any) -> None:
+            run_calls.append(coro)
+            coro.close()
+
         with (
             patch("digger.main.amain", _fake_amain),
-            patch("digger.main.asyncio.run", side_effect=run_calls.append),
+            patch("digger.main.asyncio.run", side_effect=_capture_and_close),
         ):
             from digger.main import main
 
@@ -210,8 +214,12 @@ class TestMain:
         for k, v in _DIGGER_REQUIRED.items():
             monkeypatch.setenv(k, v)
 
+        def _close_and_raise(coro: Any) -> None:
+            coro.close()
+            raise KeyboardInterrupt
+
         with (
-            patch("digger.main.asyncio.run", side_effect=KeyboardInterrupt),
+            patch("digger.main.asyncio.run", side_effect=_close_and_raise),
             patch("digger.main.sys.exit") as mock_exit,
         ):
             from digger.main import main

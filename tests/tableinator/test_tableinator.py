@@ -405,8 +405,8 @@ class TestScheduleConsumerCancellation:
         """Test that existing scheduled task is cancelled."""
         import tableinator.tableinator
 
-        # Create a mock existing task
-        existing_task = AsyncMock()
+        # Create a mock existing task (Task.cancel() is synchronous)
+        existing_task = MagicMock()
         tableinator.tableinator.consumer_cancel_tasks = {"artists": existing_task}
         tableinator.tableinator.consumer_tags = {"artists": "consumer-tag-1"}
         tableinator.tableinator.shutdown_requested = False

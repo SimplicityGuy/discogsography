@@ -12,6 +12,13 @@ import pytest
 from dashboard.dashboard import PIPELINE_CONFIGS, DashboardApp, DatabaseInfo, QueueInfo, ServiceStatus, SystemMetrics
 
 
+def _close_and_mock_task(coro: Any) -> MagicMock:
+    """Stand-in for asyncio.create_task that closes the coroutine to prevent
+    "coroutine was never awaited" warnings, then returns a sentinel mock task."""
+    coro.close()
+    return MagicMock()
+
+
 class TestDashboardAppInit:
     """Test DashboardApp initialization."""
 
@@ -55,7 +62,7 @@ class TestDashboardAppStartup:
             patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=mock_rabbitmq),
             patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j),
             patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_postgres),
-            patch("asyncio.create_task") as mock_create_task,
+            patch("asyncio.create_task", side_effect=_close_and_mock_task) as mock_create_task,
             patch.object(DashboardApp, "collect_metrics_loop", new_callable=AsyncMock),
         ):
             app = DashboardApp()
@@ -88,7 +95,7 @@ class TestDashboardAppStartup:
             patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=AsyncMock()),
             patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=AsyncMock()),
             patch("dashboard.dashboard.AsyncResilientPostgreSQL") as mock_postgres_class,
-            patch("asyncio.create_task"),
+            patch("asyncio.create_task", side_effect=_close_and_mock_task),
             patch.object(DashboardApp, "collect_metrics_loop", new_callable=AsyncMock),
         ):
             app = DashboardApp()
@@ -1303,7 +1310,7 @@ class TestPostgresAddressParsing:
                 patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=mock_rabbitmq),
                 patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j),
                 patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_postgres),
-                patch("asyncio.create_task") as _mock_create_task,
+                patch("asyncio.create_task", side_effect=_close_and_mock_task) as _mock_create_task,
             ):
                 await app.startup()
 
@@ -1414,7 +1421,7 @@ class TestLifespanFunction:
             patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=mock_rabbitmq),
             patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j),
             patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_postgres),
-            patch("asyncio.create_task"),
+            patch("asyncio.create_task", side_effect=_close_and_mock_task),
             patch.object(DashboardApp, "collect_metrics_loop", new_callable=AsyncMock),
         ):
             from dashboard.dashboard import app

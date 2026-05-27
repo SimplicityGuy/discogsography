@@ -757,7 +757,7 @@ class TestScheduleConsumerCancellation:
     async def test_cancels_existing_scheduled_task(self) -> None:
         """Test cancels existing scheduled task before creating new one."""
         mock_queue = AsyncMock()
-        mock_existing_task = AsyncMock()
+        mock_existing_task = MagicMock()
 
         bgmod.consumer_tags = {"artists": "consumer-tag-123"}
         bgmod.consumer_cancel_tasks = {"artists": mock_existing_task}
