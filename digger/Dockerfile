@@ -20,23 +20,25 @@ ENV UV_SYSTEM_PYTHON=1 \
 
 WORKDIR /app
 
-# Copy workspace lockfile and source for the editable workspace install.
-# uv sync --package does an editable install of the digger workspace member,
-# so its source must be present before the sync step.
-COPY pyproject.toml uv.lock ./
-COPY common/ ./common/
-COPY digger/ ./digger/
+# Copy dependency files first for better caching
+COPY pyproject.toml uv.lock README.md ./
+COPY common/pyproject.toml ./common/
+COPY digger/pyproject.toml ./digger/
 
 # Install dependencies and clean up
 # hadolint ignore=SC2015
 RUN --mount=type=cache,target=/tmp/.cache/uv \
-    uv sync --frozen --no-dev --package discogsography-digger && \
+    uv sync --frozen --no-dev --extra digger && \
     find /app/.venv -type f -name "*.pyc" -delete && \
     find /app/.venv -type f -name "*.pyo" -delete && \
     find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
     find /app/.venv -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true && \
     find /app/.venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
     find /app/.venv -name "*.so" -exec strip --strip-unneeded {} \; 2>/dev/null || true
+
+# Copy source files
+COPY common/ ./common/
+COPY digger/ ./digger/
 
 # Final stage
 FROM python:${PYTHON_VERSION}-slim
