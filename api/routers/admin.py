@@ -308,7 +308,7 @@ async def admin_queue_history(
     try:
         data = await get_queue_history(_pool, range)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     return JSONResponse(content=data)
 
 
@@ -323,7 +323,7 @@ async def admin_health_history(
     try:
         data = await get_health_history(_pool, range)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     return JSONResponse(content=data)
 
 

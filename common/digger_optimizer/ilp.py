@@ -63,14 +63,14 @@ def solve_ilp_bundle(inp: OptimizerInput, *, name: BundleName, timeout_seconds: 
 
     prob = pulp.LpProblem(f"digger_{name}", pulp.LpMinimize)
 
-    x = {lid: pulp.LpVariable(f"x_{lid}", cat="Binary") for lid in listing_id_set}
-    y = {sid: pulp.LpVariable(f"y_{sid}", cat="Binary") for sid in seller_listings}
+    x = {lid: prob.add_variable(f"x_{lid}", cat="Binary") for lid in listing_id_set}
+    y = {sid: prob.add_variable(f"y_{sid}", cat="Binary") for sid in seller_listings}
 
     max_k_per_seller: dict[int, int] = {sid: len(lids) for sid, lids in seller_listings.items()}
     z: dict[tuple[int, int], pulp.LpVariable] = {}
     for sid, k_max in max_k_per_seller.items():
         for k in range(1, k_max + 1):
-            z[(sid, k)] = pulp.LpVariable(f"z_{sid}_{k}", cat="Binary")
+            z[(sid, k)] = prob.add_variable(f"z_{sid}_{k}", cat="Binary")
 
     # Must-have: each Must release covered exactly once if any usable listing exists.
     for must in inp.must_have_releases:
@@ -114,7 +114,7 @@ def solve_ilp_bundle(inp: OptimizerInput, *, name: BundleName, timeout_seconds: 
     obj_ev = -weights.lambda_eventually * pulp.lpSum(x[lid] for lid in listing_id_set if listings_by_id[lid].release_id in eventually_set)
     prob += obj_item + obj_ship + obj_seller_penalty + obj_quality + obj_nice + obj_ev
 
-    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=timeout_seconds, options=["randomSeed 42"])
+    solver = pulp.COIN_CMD(path=pulp.PULP_CBC_CMD.pulp_cbc_path, msg=False, timeLimit=timeout_seconds, options=["randomSeed 42"])
     status = prob.solve(solver)
     status_label = pulp.LpStatus[status]
     if status not in (pulp.LpStatusOptimal, pulp.LpStatusNotSolved):

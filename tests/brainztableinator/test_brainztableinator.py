@@ -628,6 +628,8 @@ class TestOnDataMessage:
 
         mock_pool = MagicMock()
         mock_conn = AsyncMock()
+        # conn.transaction() is called synchronously; mock the returned async context manager
+        mock_conn.transaction = MagicMock(return_value=AsyncMock())
         mock_conn_cm = AsyncMock()
         mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
         mock_conn_cm.__aexit__ = AsyncMock(return_value=None)
@@ -884,7 +886,7 @@ class TestScheduleConsumerCancellation:
         """Test that existing scheduled task is cancelled."""
         import brainztableinator.brainztableinator as bt
 
-        existing_task = AsyncMock()
+        existing_task = MagicMock()
         bt.consumer_cancel_tasks = {"artists": existing_task}
         bt.consumer_tags = {"artists": "consumer-tag-1"}
         bt.shutdown_requested = False
@@ -1801,9 +1803,10 @@ class TestMain:
 
             with patch("asyncio.create_task", side_effect=mock_create_task):
 
-                async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+                async def mock_wait_for(coro: Any, timeout: float) -> None:  # noqa: ARG001
                     import brainztableinator.brainztableinator
 
+                    coro.close()
                     brainztableinator.brainztableinator.shutdown_requested = True
                     raise TimeoutError()
 
@@ -2746,10 +2749,16 @@ class TestMainEdgeCases:
         import brainztableinator.brainztableinator as bt
 
         bt.shutdown_requested = False
-        bt.consumer_cancel_tasks = {"artists": AsyncMock()}
-        bt.connection_check_task = AsyncMock()
+        # Tasks: .cancel() is sync, but the task itself is awaitable
+        _cancel_task = AsyncMock()
+        _cancel_task.cancel = MagicMock()
+        _check_task = AsyncMock()
+        _check_task.cancel = MagicMock()
+        bt.consumer_cancel_tasks = {"artists": _cancel_task}
+        bt.connection_check_task = _check_task
 
-        async def raise_keyboard_interrupt(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+        async def raise_keyboard_interrupt(coro: Any, timeout: float) -> None:  # noqa: ARG001
+            coro.close()
             raise KeyboardInterrupt()
 
         original_sleep = asyncio.sleep
@@ -2807,9 +2816,10 @@ class TestMainEdgeCases:
         mock_queue = AsyncMock()
         mock_channel.declare_queue.return_value = mock_queue
 
-        async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+        async def mock_wait_for(coro: Any, timeout: float) -> None:  # noqa: ARG001
             import brainztableinator.brainztableinator
 
+            coro.close()
             brainztableinator.brainztableinator.shutdown_requested = True
             raise TimeoutError()
 
