@@ -94,7 +94,7 @@ COPY --from=builder --chown=digger:digger /app/digger /app/digger
 
 # Create startup script
 # hadolint ignore=SC2016
-RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/digger "$@"\n' > /app/start.sh && \
+RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/python -m digger.main "$@"\n' > /app/start.sh && \
     chmod +x /app/start.sh
 
 EXPOSE 8012
