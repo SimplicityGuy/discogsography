@@ -118,8 +118,17 @@ mcp-server = [
     "mcp[cli]>=1.27.1",
     "structlog>=25.5.0",
 ]
+digger = [
+    "bleach>=6.3.0",
+    "httpx>=0.28.1",
+    "prometheus-client>=0.25.0",
+    "psycopg[binary]>=3.3.4",
+    "redis[hiredis]>=7.4.0",
+    "selectolax>=0.4.10",
+    "structlog>=25.5.0",
+]
 all = [
-    "discogsography[api,brainzgraphinator,brainztableinator,dashboard,explore,graphinator,insights,mcp-server,schema-init,tableinator,dev,utilities]",
+    "discogsography[api,brainzgraphinator,brainztableinator,dashboard,digger,explore,graphinator,insights,mcp-server,schema-init,tableinator,dev,utilities]",
 ]
 
 [tool.ruff]
