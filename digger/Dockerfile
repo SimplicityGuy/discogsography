@@ -65,7 +65,7 @@ LABEL org.opencontainers.image.title="Discogsography Digger" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.base.name="docker.io/library/python:${PYTHON_VERSION}-slim" \
       com.discogsography.service="digger" \
-      com.discogsography.dependencies="httpx,psycopg[binary],redis,selectolax,bleach" \
+      com.discogsography.dependencies="httpx,psycopg[binary],pydantic,redis,selectolax,bleach" \
       com.discogsography.python.version="${PYTHON_VERSION}" \
       com.discogsography.database="postgresql"
 
