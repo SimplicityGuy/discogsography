@@ -1,8 +1,8 @@
 # Milestone: App Tokens + Collection API for GRUVAX v2.0
 
-**Status:** Drafting (P1 spike complete — catalog# decision pending user input)
+**Status:** SHIPPED 2026-05-26 — all 6 PRs merged (#362 schema, #363 dependency, #364 settings UI, #365 collection auth + rate limits, #366 catalog_number, plus the present P7 contract artifact).
 **Origin brief:** External (GRUVAX repo, 2026-05-26) — pasted into session, not checked into either repo
-**Cross-repo contract artifact (deliverable):** `docs/specs/v2-gruvax-integration.md` (written in P7)
+**Cross-repo contract artifact (deliverable):** [docs/specs/v2-gruvax-integration.md](../../docs/specs/v2-gruvax-integration.md) ✅
 **Scope:** Self-contained discogsography milestone. After it ships, GRUVAX v2.0 work begins (GRUVAX agrees to wait).
 
 ---

@@ -72,6 +72,14 @@
 | **[Digger Scraping Policy](digger-scraping-policy.md)**                    | ⛏️ Discogs marketplace scraping policy, rate limits, and ToS posture  |
 | **[Recent Improvements](recent-improvements.md)**                         | 🚀 Latest platform enhancements and changelog                         |
 
+### 🔗 Integration Contracts
+
+Specifications for cross-repo / third-party integrations. These are **contracts**: changes here require coordinated rollout with downstream consumers.
+
+| Document                                                          | Description                                                                                  |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **[GRUVAX v2.0 Integration](specs/v2-gruvax-integration.md)**     | 🔌 App tokens (`dscg_…`) + `/api/user/collection` for third-party app authorization (v1)     |
+
 ## 🎯 Documentation by Role
 
 ### For New Users
