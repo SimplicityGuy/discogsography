@@ -292,11 +292,70 @@ class UserPanes {
 
         this._discogsOAuthState = data.state;
 
-        // Open Discogs auth page in a new tab
-        window.open(data.authorize_url, '_blank', 'noopener,noreferrer');
+        // When the server has a public callback registered, Discogs will redirect
+        // the user back to our /oauth-discogs-callback.html page, which posts the
+        // verifier code to us via window.postMessage. Otherwise we fall back to
+        // the OOB modal where the user pastes the code by hand.
+        const useCallback = data.callback_mode === 'callback';
 
-        // Show verifier modal
-        Alpine.store('modals').discogsOpen = true;
+        const popup = window.open(
+            data.authorize_url,
+            useCallback ? 'discogsOAuth' : '_blank',
+            useCallback ? 'popup=yes,width=720,height=820' : 'noopener,noreferrer',
+        );
+
+        if (useCallback) {
+            this._registerDiscogsOAuthMessageListener(popup);
+        } else {
+            Alpine.store('modals').discogsOpen = true;
+        }
+    }
+
+    _registerDiscogsOAuthMessageListener(popup) {
+        // Tear down any previous listener so repeated attempts don't stack up
+        if (this._discogsOAuthMessageHandler) {
+            window.removeEventListener('message', this._discogsOAuthMessageHandler);
+            this._discogsOAuthMessageHandler = null;
+        }
+
+        const handler = async (event) => {
+            if (event.origin !== window.location.origin) return;
+            if (popup && event.source && event.source !== popup) return;
+            const data = event.data;
+            if (!data || data.type !== 'discogs-oauth') return;
+
+            window.removeEventListener('message', handler);
+            this._discogsOAuthMessageHandler = null;
+
+            if (data.error) {
+                this._discogsOAuthState = null;
+                alert(data.error === 'denied'
+                    ? 'Discogs authorization was cancelled.'
+                    : 'Discogs authorization failed. Please try again.');
+                return;
+            }
+
+            const token = window.authManager.getToken();
+            if (!token || data.oauth_token !== this._discogsOAuthState) {
+                this._discogsOAuthState = null;
+                return;
+            }
+
+            const result = await window.apiClient.verifyDiscogs(token, data.oauth_token, data.oauth_verifier);
+            if (!result || !result.connected) {
+                this._discogsOAuthState = null;
+                alert('Discogs verification failed. Please try again.');
+                return;
+            }
+
+            const status = await window.apiClient.getDiscogsStatus(token);
+            window.authManager.setDiscogsStatus(status);
+            this._discogsOAuthState = null;
+            window.authManager.notify();
+        };
+
+        this._discogsOAuthMessageHandler = handler;
+        window.addEventListener('message', handler);
     }
 
     async submitDiscogsVerifier() {

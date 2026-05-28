@@ -501,6 +501,7 @@ async def authorize_discogs(
             consumer_key=consumer_key,
             consumer_secret=consumer_secret,
             user_agent=_config.discogs_user_agent,
+            callback_url=_config.discogs_oauth_callback_url,
         )
     except DiscogsOAuthError as exc:
         logger.error("❌ Failed to get Discogs request token", error=str(exc))
@@ -518,13 +519,15 @@ async def authorize_discogs(
     await _redis.setex(redis_key, REDIS_OAUTH_STATE_TTL, state_data)
 
     authorize_url = f"{DISCOGS_AUTHORIZE_URL}?oauth_token={state}"
-    logger.info("🔐 Discogs OAuth flow started", user_id=current_user.get("sub"))
+    callback_mode = "callback" if _config.discogs_oauth_callback_url else "oob"
+    logger.info("🔐 Discogs OAuth flow started", user_id=current_user.get("sub"), callback_mode=callback_mode)
 
     return JSONResponse(
         content={
             "authorize_url": authorize_url,
             "state": state,
             "expires_in": REDIS_OAUTH_STATE_TTL,
+            "callback_mode": callback_mode,
         }
     )
 

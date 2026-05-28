@@ -317,11 +317,12 @@ REDIS_PASSWORD_FILE="/run/secrets/redis_password"
 
 ## JWT Configuration
 
-| Variable             | Description                         | Default | Required  |
-| -------------------- | ----------------------------------- | ------- | --------- |
-| `JWT_SECRET_KEY`     | HMAC-SHA256 signing secret          | (none)  | Yes (API) |
-| `JWT_EXPIRE_MINUTES` | Token lifetime in minutes           | `30`    | No        |
-| `DISCOGS_USER_AGENT` | User-Agent for Discogs API requests | (none)  | Yes (API) |
+| Variable                       | Description                                                       | Default | Required  |
+| ------------------------------ | ----------------------------------------------------------------- | ------- | --------- |
+| `JWT_SECRET_KEY`               | HMAC-SHA256 signing secret                                        | (none)  | Yes (API) |
+| `JWT_EXPIRE_MINUTES`           | Token lifetime in minutes                                         | `30`    | No        |
+| `DISCOGS_USER_AGENT`           | User-Agent for Discogs API requests                               | (none)  | Yes (API) |
+| `DISCOGS_OAUTH_CALLBACK_URL`   | Public callback URL Discogs redirects to after the user authorizes the app. When unset, the OAuth flow falls back to the out-of-band (OOB) mode where the user copy/pastes a verifier code into the app. When set, the value must exactly match the **Callback URL** field on your Discogs developer app settings page and point at `oauth-discogs-callback.html` on the Explore frontend (e.g. `https://your-host/oauth-discogs-callback.html`). | (none)  | No        |
 
 **Used By**: API
 
@@ -351,6 +352,12 @@ JWT_EXPIRE_MINUTES=1440   # 24 hours
 
 # Discogs User-Agent (required for Discogs API)
 DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
+
+# Optional — public Discogs OAuth callback URL. When set, end users no longer
+# have to copy/paste a verifier code; Discogs redirects directly back to the
+# app. The URL must also be registered as the "Callback URL" on the Discogs
+# developer app settings page.
+DISCOGS_OAUTH_CALLBACK_URL="https://your-host/oauth-discogs-callback.html"
 ```
 
 ## Logging Configuration

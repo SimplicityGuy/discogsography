@@ -190,6 +190,59 @@ class TestRequestOauthToken:
         ):
             await request_oauth_token("ckey", "csecret", "TestAgent/1.0")
 
+    @pytest.mark.asyncio
+    async def test_default_callback_is_oob(self) -> None:
+        """When no callback_url is supplied, oauth_callback must default to 'oob'."""
+        response_text = "oauth_token=reqtok&oauth_token_secret=reqsec&oauth_callback_confirmed=true"
+        mock_client, _ = _make_mock_httpx_client(200, response_text)
+
+        with patch("api.services.discogs.httpx.AsyncClient", return_value=mock_client):
+            await request_oauth_token("ckey", "csecret", "TestAgent/1.0")
+
+        auth_header = mock_client.get.call_args.kwargs["headers"]["Authorization"]
+        assert 'oauth_callback="oob"' in auth_header
+
+    @pytest.mark.asyncio
+    async def test_explicit_callback_url_used(self) -> None:
+        """When a callback_url is supplied, it must be percent-encoded into oauth_callback."""
+        response_text = "oauth_token=reqtok&oauth_token_secret=reqsec&oauth_callback_confirmed=true"
+        mock_client, _ = _make_mock_httpx_client(200, response_text)
+        callback_url = "https://example.com/oauth-discogs-callback.html"
+
+        with patch("api.services.discogs.httpx.AsyncClient", return_value=mock_client):
+            await request_oauth_token("ckey", "csecret", "TestAgent/1.0", callback_url=callback_url)
+
+        auth_header = mock_client.get.call_args.kwargs["headers"]["Authorization"]
+        # Percent-encoded value of the URL appears in the OAuth header
+        encoded = "https%3A%2F%2Fexample.com%2Foauth-discogs-callback.html"
+        assert f'oauth_callback="{encoded}"' in auth_header
+        # And the literal "oob" is NOT present as the callback value
+        assert 'oauth_callback="oob"' not in auth_header
+
+    @pytest.mark.asyncio
+    async def test_callback_url_changes_signature(self) -> None:
+        """oauth_callback is part of the signature base string, so the signature must differ."""
+        response_text = "oauth_token=reqtok&oauth_token_secret=reqsec&oauth_callback_confirmed=true"
+
+        sigs: list[str] = []
+        for callback in (None, "https://example.com/cb"):
+            mock_client, _ = _make_mock_httpx_client(200, response_text)
+            # Pin nonce + timestamp so that the only varying input is oauth_callback
+            with (
+                patch("api.services.discogs.os.urandom", return_value=b"\x00" * 16),
+                patch("api.services.discogs.time.time", return_value=1_700_000_000),
+                patch("api.services.discogs.httpx.AsyncClient", return_value=mock_client),
+            ):
+                await request_oauth_token("ckey", "csecret", "TestAgent/1.0", callback_url=callback)
+            header = mock_client.get.call_args.kwargs["headers"]["Authorization"]
+            # Extract oauth_signature="..." value
+            marker = 'oauth_signature="'
+            start = header.index(marker) + len(marker)
+            end = header.index('"', start)
+            sigs.append(header[start:end])
+
+        assert sigs[0] != sigs[1], "Signature must change when oauth_callback changes"
+
 
 class TestExchangeOauthVerifier:
     """Tests for exchange_oauth_verifier."""

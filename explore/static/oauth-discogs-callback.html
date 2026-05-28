@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <title>Connecting Discogs…</title>
+    <link href="tailwind.css" rel="stylesheet">
+</head>
+<body class="bg-bg-base text-text-high flex h-screen items-center justify-center">
+    <main class="text-center px-6">
+        <h1 class="text-xl font-semibold mb-2">Connecting your Discogs account…</h1>
+        <p id="status" class="text-text-mid">You can close this window if it doesn't close automatically.</p>
+    </main>
+    <script>
+        (function () {
+            'use strict';
+
+            const params = new URLSearchParams(window.location.search);
+            const oauthToken = params.get('oauth_token');
+            const oauthVerifier = params.get('oauth_verifier');
+            const denied = params.get('denied') === 'true';
+            const statusEl = document.getElementById('status');
+
+            function reportToOpener(payload) {
+                if (!window.opener || window.opener.closed) {
+                    statusEl.textContent = 'No parent window found. Please return to Discogsography and try again.';
+                    return false;
+                }
+                try {
+                    window.opener.postMessage(payload, window.location.origin);
+                    return true;
+                } catch (err) {
+                    statusEl.textContent = 'Could not communicate with the main window.';
+                    return false;
+                }
+            }
+
+            if (denied) {
+                reportToOpener({ type: 'discogs-oauth', error: 'denied' });
+                window.close();
+                return;
+            }
+
+            if (!oauthToken || !oauthVerifier) {
+                statusEl.textContent = 'Missing oauth_token or oauth_verifier in the callback URL.';
+                reportToOpener({ type: 'discogs-oauth', error: 'missing-params' });
+                return;
+            }
+
+            if (reportToOpener({ type: 'discogs-oauth', oauth_token: oauthToken, oauth_verifier: oauthVerifier })) {
+                window.close();
+            }
+        }());
+    </script>
+</body>
+</html>
