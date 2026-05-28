@@ -533,6 +533,39 @@ class TestApiConfig:
         assert config.jwt_expire_minutes == 60
         assert config.discogs_user_agent == "CustomAgent/2.0"
 
+    def test_discogs_oauth_callback_url_defaults_to_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When DISCOGS_OAUTH_CALLBACK_URL is unset, the field is None (OOB fallback)."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.delenv("DISCOGS_OAUTH_CALLBACK_URL", raising=False)
+
+        config = ApiConfig.from_env()
+
+        assert config.discogs_oauth_callback_url is None
+
+    def test_discogs_oauth_callback_url_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """DISCOGS_OAUTH_CALLBACK_URL is read into the config."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("DISCOGS_OAUTH_CALLBACK_URL", "https://example.com/oauth-discogs-callback.html")
+
+        config = ApiConfig.from_env()
+
+        assert config.discogs_oauth_callback_url == "https://example.com/oauth-discogs-callback.html"
+
+    def test_discogs_oauth_callback_url_empty_string_treated_as_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An empty DISCOGS_OAUTH_CALLBACK_URL collapses to None, preserving OOB fallback."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("DISCOGS_OAUTH_CALLBACK_URL", "")
+
+        config = ApiConfig.from_env()
+
+        assert config.discogs_oauth_callback_url is None
+
     def test_redis_password_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """REDIS_PASSWORD is embedded in the redis_host URL for authenticated Redis."""
         from common.config import ApiConfig

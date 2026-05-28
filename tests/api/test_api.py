@@ -472,6 +472,97 @@ class TestDiscogsOAuthEndpoints:
 
         assert response.status_code == 502
 
+    def test_authorize_discogs_passes_configured_callback_url(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,  # noqa: ARG002
+        auth_headers: dict[str, str],
+    ) -> None:
+        """When DISCOGS_OAUTH_CALLBACK_URL is set, the endpoint forwards it to request_oauth_token."""
+        import dataclasses
+
+        import api.api as api_module
+
+        mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "consumer_key_value"},
+            {"key": "discogs_consumer_secret", "value": "consumer_secret_value"},
+        ]
+
+        callback = "https://example.com/oauth-discogs-callback.html"
+        original_config = api_module._config
+        api_module._config = dataclasses.replace(api_module._config, discogs_oauth_callback_url=callback)
+
+        mock_request = AsyncMock(return_value={"oauth_token": "reqtok", "oauth_token_secret": "reqsec"})
+        try:
+            with patch("api.api.request_oauth_token", new=mock_request):
+                response = test_client.get("/api/oauth/authorize/discogs", headers=auth_headers)
+        finally:
+            api_module._config = original_config
+
+        assert response.status_code == 200
+        assert mock_request.await_args.kwargs.get("callback_url") == callback
+
+    def test_authorize_discogs_omits_callback_when_unset(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,  # noqa: ARG002
+        auth_headers: dict[str, str],
+    ) -> None:
+        """When DISCOGS_OAUTH_CALLBACK_URL is None, the OOB fallback (callback_url=None) is used."""
+        mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "consumer_key_value"},
+            {"key": "discogs_consumer_secret", "value": "consumer_secret_value"},
+        ]
+
+        mock_request = AsyncMock(return_value={"oauth_token": "reqtok", "oauth_token_secret": "reqsec"})
+        with patch("api.api.request_oauth_token", new=mock_request):
+            response = test_client.get("/api/oauth/authorize/discogs", headers=auth_headers)
+
+        assert response.status_code == 200
+        assert mock_request.await_args.kwargs.get("callback_url") is None
+
+    def test_authorize_discogs_response_signals_callback_mode(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,  # noqa: ARG002
+        auth_headers: dict[str, str],
+    ) -> None:
+        """The authorize response includes callback_mode so the frontend knows which flow to use."""
+        import dataclasses
+
+        import api.api as api_module
+
+        mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ckey"},
+            {"key": "discogs_consumer_secret", "value": "csecret"},
+        ]
+
+        # With callback URL configured → "callback" mode
+        original_config = api_module._config
+        api_module._config = dataclasses.replace(api_module._config, discogs_oauth_callback_url="https://example.com/cb.html")
+        try:
+            with patch(
+                "api.api.request_oauth_token",
+                new=AsyncMock(return_value={"oauth_token": "reqtok", "oauth_token_secret": "reqsec"}),
+            ):
+                response = test_client.get("/api/oauth/authorize/discogs", headers=auth_headers)
+            assert response.status_code == 200
+            assert response.json()["callback_mode"] == "callback"
+        finally:
+            api_module._config = original_config
+
+        # Without callback URL → "oob" mode
+        with patch(
+            "api.api.request_oauth_token",
+            new=AsyncMock(return_value={"oauth_token": "reqtok2", "oauth_token_secret": "reqsec2"}),
+        ):
+            response = test_client.get("/api/oauth/authorize/discogs", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["callback_mode"] == "oob"
+
     def test_verify_discogs_success(
         self,
         test_client: TestClient,

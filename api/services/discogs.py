@@ -39,8 +39,17 @@ async def request_oauth_token(
     consumer_key: str,
     consumer_secret: str,
     user_agent: str,
+    callback_url: str | None = None,
 ) -> dict[str, str]:
     """Request an OAuth request token from Discogs.
+
+    Args:
+        consumer_key: Discogs app consumer key
+        consumer_secret: Discogs app consumer secret
+        user_agent: User-Agent string for Discogs API
+        callback_url: Public URL Discogs should redirect to after authorization.
+            When None, falls back to OAuth 1.0a "out-of-band" mode and Discogs
+            displays a verifier code for the user to copy back into the app.
 
     Returns:
         dict with 'oauth_token' and 'oauth_token_secret'
@@ -53,7 +62,7 @@ async def request_oauth_token(
     url = DISCOGS_REQUEST_TOKEN_URL
 
     oauth_params = {
-        "oauth_callback": "oob",
+        "oauth_callback": callback_url if callback_url else "oob",
         "oauth_consumer_key": consumer_key,
         "oauth_nonce": nonce,
         "oauth_signature_method": "HMAC-SHA1",

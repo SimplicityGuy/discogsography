@@ -540,6 +540,10 @@ class ApiConfig:
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 30
     discogs_user_agent: str = "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
+    # Public URL Discogs should redirect to after the user authorizes the app.
+    # When unset, the OAuth 1.0a "out-of-band" flow is used and the user has to
+    # paste a verifier code shown by Discogs back into the app.
+    discogs_oauth_callback_url: str | None = None
     cors_origins: list[str] | None = None
     snapshot_ttl_days: int = 28
     snapshot_max_nodes: int = 100
@@ -615,6 +619,7 @@ class ApiConfig:
             "DISCOGS_USER_AGENT",
             "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography",
         )
+        discogs_oauth_callback_url = getenv("DISCOGS_OAUTH_CALLBACK_URL") or None
 
         cors_origins_env = getenv("CORS_ORIGINS")
         cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] if cors_origins_env else None
@@ -660,6 +665,7 @@ class ApiConfig:
             jwt_algorithm=jwt_algorithm,
             jwt_expire_minutes=jwt_expire_minutes,
             discogs_user_agent=discogs_user_agent,
+            discogs_oauth_callback_url=discogs_oauth_callback_url,
             neo4j_host=_build_neo4j_uri(),
             neo4j_username=cast("str", neo4j_username),
             neo4j_password=cast("str", neo4j_password),
