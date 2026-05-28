@@ -926,6 +926,209 @@ describe('UserPanes', () => {
 
             expect(window.apiClient.verifyDiscogs).not.toHaveBeenCalled();
         });
+
+        it('should ignore null data on a message event', async () => {
+            window.apiClient.authorizeDiscogs.mockResolvedValue({
+                authorize_url: 'https://discogs.com/oauth', state: 's', callback_mode: 'callback',
+            });
+            const popup = { closed: false, close: vi.fn() };
+            window.open = vi.fn().mockReturnValue(popup);
+
+            await userPanes.startDiscogsOAuth();
+
+            window.dispatchEvent(new MessageEvent('message', {
+                data: null,
+                origin: window.location.origin,
+                source: popup,
+            }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.apiClient.verifyDiscogs).not.toHaveBeenCalled();
+        });
+
+        it('should ignore messages from a foreign window source', async () => {
+            window.apiClient.authorizeDiscogs.mockResolvedValue({
+                authorize_url: 'https://discogs.com/oauth', state: 's', callback_mode: 'callback',
+            });
+            const popup = { closed: false, close: vi.fn() };
+            const otherWindow = { closed: false, close: vi.fn() };
+            window.open = vi.fn().mockReturnValue(popup);
+
+            await userPanes.startDiscogsOAuth();
+
+            window.dispatchEvent(new MessageEvent('message', {
+                data: { type: 'discogs-oauth', oauth_token: 's', oauth_verifier: 'v' },
+                origin: window.location.origin,
+                source: otherWindow,
+            }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.apiClient.verifyDiscogs).not.toHaveBeenCalled();
+        });
+
+        it('should alert and clear state when the popup reports "denied"', async () => {
+            window.apiClient.authorizeDiscogs.mockResolvedValue({
+                authorize_url: 'https://discogs.com/oauth', state: 's', callback_mode: 'callback',
+            });
+            const popup = { closed: false, close: vi.fn() };
+            window.open = vi.fn().mockReturnValue(popup);
+            window.alert = vi.fn();
+
+            await userPanes.startDiscogsOAuth();
+
+            window.dispatchEvent(new MessageEvent('message', {
+                data: { type: 'discogs-oauth', error: 'denied' },
+                origin: window.location.origin,
+                source: popup,
+            }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.alert).toHaveBeenCalledWith(expect.stringMatching(/cancelled/i));
+            expect(userPanes._discogsOAuthState).toBeNull();
+            expect(window.apiClient.verifyDiscogs).not.toHaveBeenCalled();
+        });
+
+        it('should alert and clear state on a non-denied error from the popup', async () => {
+            window.apiClient.authorizeDiscogs.mockResolvedValue({
+                authorize_url: 'https://discogs.com/oauth', state: 's', callback_mode: 'callback',
+            });
+            const popup = { closed: false, close: vi.fn() };
+            window.open = vi.fn().mockReturnValue(popup);
+            window.alert = vi.fn();
+
+            await userPanes.startDiscogsOAuth();
+
+            window.dispatchEvent(new MessageEvent('message', {
+                data: { type: 'discogs-oauth', error: 'missing-params' },
+                origin: window.location.origin,
+                source: popup,
+            }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.alert).toHaveBeenCalledWith(expect.stringMatching(/failed/i));
+            expect(userPanes._discogsOAuthState).toBeNull();
+        });
+
+        it('should bail without verifying when the message oauth_token does not match stored state', async () => {
+            window.apiClient.authorizeDiscogs.mockResolvedValue({
+                authorize_url: 'https://discogs.com/oauth', state: 'expected-state', callback_mode: 'callback',
+            });
+            const popup = { closed: false, close: vi.fn() };
+            window.open = vi.fn().mockReturnValue(popup);
+
+            await userPanes.startDiscogsOAuth();
+
+            window.dispatchEvent(new MessageEvent('message', {
+                data: { type: 'discogs-oauth', oauth_token: 'mismatched-state', oauth_verifier: 'v' },
+                origin: window.location.origin,
+                source: popup,
+            }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.apiClient.verifyDiscogs).not.toHaveBeenCalled();
+            expect(userPanes._discogsOAuthState).toBeNull();
+        });
+
+        it('should bail without verifying when the user is no longer authenticated', async () => {
+            window.apiClient.authorizeDiscogs.mockResolvedValue({
+                authorize_url: 'https://discogs.com/oauth', state: 's', callback_mode: 'callback',
+            });
+            const popup = { closed: false, close: vi.fn() };
+            window.open = vi.fn().mockReturnValue(popup);
+
+            await userPanes.startDiscogsOAuth();
+
+            // Token disappears between popup open and message arrival
+            window.authManager.getToken.mockReturnValue(null);
+
+            window.dispatchEvent(new MessageEvent('message', {
+                data: { type: 'discogs-oauth', oauth_token: 's', oauth_verifier: 'v' },
+                origin: window.location.origin,
+                source: popup,
+            }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.apiClient.verifyDiscogs).not.toHaveBeenCalled();
+            expect(userPanes._discogsOAuthState).toBeNull();
+        });
+
+        it('should alert when the verify call returns not-connected', async () => {
+            window.apiClient.authorizeDiscogs.mockResolvedValue({
+                authorize_url: 'https://discogs.com/oauth', state: 's', callback_mode: 'callback',
+            });
+            const popup = { closed: false, close: vi.fn() };
+            window.open = vi.fn().mockReturnValue(popup);
+            window.alert = vi.fn();
+            window.apiClient.verifyDiscogs.mockResolvedValue({ connected: false });
+
+            await userPanes.startDiscogsOAuth();
+
+            window.dispatchEvent(new MessageEvent('message', {
+                data: { type: 'discogs-oauth', oauth_token: 's', oauth_verifier: 'v' },
+                origin: window.location.origin,
+                source: popup,
+            }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.apiClient.verifyDiscogs).toHaveBeenCalled();
+            expect(window.alert).toHaveBeenCalledWith(expect.stringMatching(/failed/i));
+            expect(userPanes._discogsOAuthState).toBeNull();
+            expect(window.authManager.setDiscogsStatus).not.toHaveBeenCalled();
+        });
+
+        it('should alert when the verify call returns null', async () => {
+            window.apiClient.authorizeDiscogs.mockResolvedValue({
+                authorize_url: 'https://discogs.com/oauth', state: 's', callback_mode: 'callback',
+            });
+            const popup = { closed: false, close: vi.fn() };
+            window.open = vi.fn().mockReturnValue(popup);
+            window.alert = vi.fn();
+            window.apiClient.verifyDiscogs.mockResolvedValue(null);
+
+            await userPanes.startDiscogsOAuth();
+
+            window.dispatchEvent(new MessageEvent('message', {
+                data: { type: 'discogs-oauth', oauth_token: 's', oauth_verifier: 'v' },
+                origin: window.location.origin,
+                source: popup,
+            }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.alert).toHaveBeenCalledWith(expect.stringMatching(/failed/i));
+            expect(userPanes._discogsOAuthState).toBeNull();
+        });
+
+        it('should tear down the previous listener when called twice in a row', async () => {
+            window.apiClient.authorizeDiscogs.mockResolvedValue({
+                authorize_url: 'https://discogs.com/oauth', state: 'state-a', callback_mode: 'callback',
+            });
+            const popupA = { closed: false, close: vi.fn() };
+            window.open = vi.fn().mockReturnValue(popupA);
+
+            await userPanes.startDiscogsOAuth();
+
+            // Second click — new state, new popup. The first listener must be removed so
+            // a stray late-arriving message from popupA cannot verify against state-a anymore.
+            window.apiClient.authorizeDiscogs.mockResolvedValue({
+                authorize_url: 'https://discogs.com/oauth', state: 'state-b', callback_mode: 'callback',
+            });
+            const popupB = { closed: false, close: vi.fn() };
+            window.open = vi.fn().mockReturnValue(popupB);
+
+            await userPanes.startDiscogsOAuth();
+
+            // Stray message from the first popup should be ignored by the new (only) listener
+            // because event.source !== popupB.
+            window.dispatchEvent(new MessageEvent('message', {
+                data: { type: 'discogs-oauth', oauth_token: 'state-a', oauth_verifier: 'v' },
+                origin: window.location.origin,
+                source: popupA,
+            }));
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.apiClient.verifyDiscogs).not.toHaveBeenCalled();
+            expect(userPanes._discogsOAuthState).toBe('state-b');
+        });
     });
 
     describe('submitDiscogsVerifier', () => {
