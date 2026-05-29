@@ -17,7 +17,7 @@ classifiers = [
 ]
 license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
-    "anthropic>=0.104.1",
+    "anthropic>=0.105.2",
     "brevo-python>=4.0.10",
     "cryptography>=48.0.0",
     "fastapi>=0.136.3",
@@ -27,7 +27,7 @@ dependencies = [
     "psycopg[binary]>=3.3.4",
     "pydantic>=2.13.4",
     "pyotp>=2.9.0",
-    "redis[hiredis]>=7.4.0",
+    "redis[hiredis]>=8.0.0",
     "slowapi>=0.1.9",
     "structlog>=25.5.0",
     "uvicorn[standard]>=0.48.0",

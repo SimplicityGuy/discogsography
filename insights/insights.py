@@ -138,7 +138,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # Initialize Redis cache
     try:
         _redis = await aioredis.from_url(_config.redis_host, decode_responses=True)
-        await _redis.ping()  # type: ignore[misc]  # redis.asyncio typing limitation
+        await _redis.ping()
         ttl_seconds = _config.schedule_hours * 3600
         _cache = InsightsCache(_redis, ttl_seconds=ttl_seconds)
         logger.info("✅ Redis cache initialized", ttl_hours=_config.schedule_hours)
