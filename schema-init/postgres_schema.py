@@ -10,9 +10,6 @@ from typing import Any, cast
 
 from psycopg import sql
 
-from digger_schema import DIGGER_SCHEMA_SQL
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -785,17 +782,6 @@ async def create_postgres_schema(pool: Any) -> int:
                     logger.error(f"❌ Failed to create schema object '{name}': {e}")
                     failure_count += 1
 
-            # ── Digger feature schema (schema, enums, tables, triggers) ───
-            try:
-                await cursor.execute(DIGGER_SCHEMA_SQL)
-                logger.info("✅ Schema: digger feature schema")
-                success_count += 1
-            except Exception as e:
-                logger.error(
-                    f"❌ Failed to create schema object 'digger feature schema': {e}"
-                )
-                failure_count += 1
-
     total = (
         len(_ENTITY_TABLES) * 3
         + len(_SPECIFIC_INDEXES)
@@ -803,7 +789,6 @@ async def create_postgres_schema(pool: Any) -> int:
         + len(_INSIGHTS_TABLES)
         + len(_MUSICBRAINZ_TABLES)
         + len(_MUSICBRAINZ_INDEXES)
-        + 1  # digger feature schema
     )
     logger.info(
         f"✅ PostgreSQL schema creation complete: "
