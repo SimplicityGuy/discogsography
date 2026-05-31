@@ -245,6 +245,19 @@ class TestRarityScoresEndpoint:
         finally:
             ic_router._neo4j = original
 
+    def test_503_on_transient_neo4j_error(self, test_client: TestClient) -> None:
+        """A transient Neo4j error (e.g. out-of-memory) returns 503, not 500."""
+        from neo4j.exceptions import TransientError
+
+        err = TransientError("MemoryPoolOutOfMemoryError")
+        with patch(
+            "api.routers.insights_compute.fetch_all_rarity_signals",
+            new=AsyncMock(side_effect=err),
+        ):
+            response = test_client.get("/api/internal/insights/rarity-scores")
+        assert response.status_code == 503
+        assert "error" in response.json()
+
 
 class TestAnniversariesValidation:
     """Tests for milestones query parameter validation (lines 82-83)."""

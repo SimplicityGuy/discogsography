@@ -119,6 +119,24 @@ class TestFetchFromApi:
         assert result == []
 
 
+class TestDescribeError:
+    """Tests for _describe_error — guards against blank error log lines."""
+
+    def test_includes_type_when_message_empty(self) -> None:
+        """An exception with an empty str() (e.g. httpx.ReadTimeout) still names its type."""
+        import httpx
+
+        from insights.computations import _describe_error
+
+        # httpx.ReadTimeout("") has an empty str(), which previously logged as error="".
+        assert _describe_error(httpx.ReadTimeout("")) == "ReadTimeout"
+
+    def test_includes_type_and_message_when_present(self) -> None:
+        from insights.computations import _describe_error
+
+        assert _describe_error(ValueError("boom")) == "ValueError: boom"
+
+
 class TestComputeAndStoreArtistCentrality:
     @pytest.mark.asyncio
     async def test_fetches_from_api_and_stores_results(self) -> None:

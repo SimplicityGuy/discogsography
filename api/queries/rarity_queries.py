@@ -11,7 +11,6 @@ Graph model:
   (Release)-[:DERIVED_FROM]->(Master)
 """
 
-import asyncio
 import bisect
 from datetime import UTC, datetime
 from typing import Any
@@ -218,10 +217,14 @@ async def fetch_all_rarity_signals(driver: Any, pool: Any = None) -> list[dict[s
     RETURN release_id, year, latest_sibling_year
     """
 
-    # 5. Graph degree per release
+    # 5. Graph degree per release.
+    # Use COUNT {} rather than size([(r)-[]-() | 1]): the list comprehension
+    # materialises a list element per relationship for every Release, which over
+    # the full graph exhausts the Neo4j transaction memory pool. COUNT {} counts
+    # without building the intermediate list.
     degree_query = """
     MATCH (r:Release)
-    WITH r, size([(r)-[]-() | 1]) AS degree
+    WITH r, COUNT { (r)--() } AS degree
     RETURN r.id AS release_id, degree
     """
 
@@ -229,7 +232,7 @@ async def fetch_all_rarity_signals(driver: Any, pool: Any = None) -> list[dict[s
     # 6. Max artist degree per release
     artist_degree_query = """
     MATCH (r:Release)-[:BY]->(a:Artist)
-    WITH r.id AS release_id, max(size([(a)-[]-() | 1])) AS artist_max_degree
+    WITH r.id AS release_id, max(COUNT { (a)--() }) AS artist_max_degree
     RETURN release_id, artist_max_degree
     """
 
@@ -249,25 +252,20 @@ async def fetch_all_rarity_signals(driver: Any, pool: Any = None) -> list[dict[s
 
     logger.info("🔍 Fetching rarity signals from Neo4j...")
 
-    (
-        pressing_rows,
-        label_rows,
-        format_rows,
-        temporal_rows,
-        degree_rows,
-        artist_degree_rows,
-        label_size_rows,
-        genre_count_rows,
-    ) = await asyncio.gather(
-        run_query(driver, pressing_query, database="neo4j"),
-        run_query(driver, label_query, database="neo4j"),
-        run_query(driver, format_query, database="neo4j"),
-        run_query(driver, temporal_query, database="neo4j"),
-        run_query(driver, degree_query, database="neo4j"),
-        run_query(driver, artist_degree_query, database="neo4j"),
-        run_query(driver, label_size_query, database="neo4j"),
-        run_query(driver, genre_count_query, database="neo4j"),
-    )
+    # Run sequentially, not via asyncio.gather: each of these is a full-graph
+    # scan, and running all eight concurrently sums their working sets against
+    # the single dbms.memory.transaction.total.max pool — which tips it into a
+    # TransientError MemoryPoolOutOfMemoryError. Sequential execution caps peak
+    # transaction memory at one query at a time. This runs in a daily background
+    # computation, so the extra wall-clock time is acceptable.
+    pressing_rows = await run_query(driver, pressing_query, database="neo4j")
+    label_rows = await run_query(driver, label_query, database="neo4j")
+    format_rows = await run_query(driver, format_query, database="neo4j")
+    temporal_rows = await run_query(driver, temporal_query, database="neo4j")
+    degree_rows = await run_query(driver, degree_query, database="neo4j")
+    artist_degree_rows = await run_query(driver, artist_degree_query, database="neo4j")
+    label_size_rows = await run_query(driver, label_size_query, database="neo4j")
+    genre_count_rows = await run_query(driver, genre_count_query, database="neo4j")
 
     logger.info(
         "📊 Rarity signal data fetched",
