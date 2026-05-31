@@ -462,7 +462,7 @@ class ExploreApp {
         }
 
         // If we just logged out and were on a personal pane, switch to explore
-        if (!loggedIn && ['collection', 'wantlist', 'recommendations', 'digger'].includes(this.activePane)) {
+        if (!loggedIn && ['collection', 'wantlist', 'recommendations'].includes(this.activePane)) {
             this._switchPane('explore');
         }
     }
@@ -911,8 +911,6 @@ class ExploreApp {
             window.genreTreeView.load();
         } else if (pane === 'credits' && window.creditsPanel) {
             window.creditsPanel.load();
-        } else if (pane === 'digger' && window.authManager.isLoggedIn()) {
-            window.diggerPane.init();
         } else if (pane === 'settings') {
             window.settingsPane.init();
         }

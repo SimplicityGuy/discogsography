@@ -34,7 +34,6 @@ jobs:
             {"name": "brainzgraphinator", "use_cache": true},
             {"name": "brainztableinator", "use_cache": true},
             {"name": "dashboard", "use_cache": true},
-            {"name": "digger", "use_cache": true},
             {"name": "explore", "use_cache": true},
             {"name": "extractor", "use_cache": true},
             {"name": "graphinator", "use_cache": true},

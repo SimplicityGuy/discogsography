@@ -1,10 +1,9 @@
 """Shared FastAPI dependency functions for API routers."""
 
 from dataclasses import dataclass
-import hmac
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
 
@@ -22,15 +21,13 @@ _security = HTTPBearer(auto_error=False)
 _jwt_secret: str | None = None
 _redis: Any = None
 _pool: Any = None
-_digger_api_service_token: str | None = None
 
 
-def configure(jwt_secret: str | None, redis: Any = None, pool: Any = None, digger_api_service_token: str | None = None) -> None:
-    global _jwt_secret, _redis, _pool, _digger_api_service_token
+def configure(jwt_secret: str | None, redis: Any = None, pool: Any = None) -> None:
+    global _jwt_secret, _redis, _pool
     _jwt_secret = jwt_secret
     _redis = redis
     _pool = pool
-    _digger_api_service_token = digger_api_service_token
 
 
 async def get_optional_user(
@@ -94,17 +91,6 @@ async def require_user(
                     status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalidated by password change", headers={"WWW-Authenticate": "Bearer"}
                 )
     return payload
-
-
-def service_token_required(x_service_token: Annotated[str | None, Header()] = None) -> None:
-    """Gate internal endpoints behind the shared digger service token (constant-time check, fail-closed)."""
-    expected = _digger_api_service_token
-    if not expected or not x_service_token or not hmac.compare_digest(x_service_token, expected):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="missing or invalid service token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
 
 
 @dataclass(frozen=True, slots=True)

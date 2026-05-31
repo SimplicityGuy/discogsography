@@ -79,9 +79,6 @@ CLAUDE.md
 # Exclude all markdown files except README.md
 **/*.md
 !README.md
-# Runtime prompt assets (e.g. api/digger_agent/prompts/system.md) are read at
-# import time — keep them in the build context or the image crash-loops.
-!**/prompts/*.md
 
 # Temporary files
 *.tmp

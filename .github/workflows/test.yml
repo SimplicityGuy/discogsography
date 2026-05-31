@@ -466,48 +466,6 @@ jobs:
           verbose: false
 
   # ============================================================================
-  # DIGGER SERVICE TESTS - Runs in parallel with all other test jobs
-  # ============================================================================
-  test-digger:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: "🔀 Checkout repository"
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-
-      - name: "🔧 Setup Python and UV"
-        uses: ./.github/actions/setup-python-uv
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: "🔧 Setup Just"
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: "📦 Install dependencies"
-        run: just install
-
-      - name: "🧪 Run digger tests"
-        run: just test-digger
-
-      - name: "📊 Upload coverage (digger)"
-        if: always()
-        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: SimplicityGuy/discogsography
-          files: ./coverage.xml
-          flags: digger
-          name: digger-tests
-          fail_ci_if_error: false
-          disable_search: true
-          verbose: false
-
-  # ============================================================================
-  # EXPLORE JAVASCRIPT TESTS - Runs in parallel with all other test jobs
-  # ============================================================================
   test-js:
     runs-on: ubuntu-latest
     timeout-minutes: 10

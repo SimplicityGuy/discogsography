@@ -38,10 +38,6 @@ write_secret "encryption_master_key.txt" "$(python3 -c 'import base64, os; print
 # When empty, password reset links are logged instead of emailed.
 write_secret "brevo_api_key.txt" "${BREVO_API_KEY:-}"
 
-# Anthropic API key — enables the Digger LLM agent (/api/digger/agent/*).
-# When empty, the agent endpoints return an error; the rest of the API is unaffected.
-write_secret "anthropic_api_key.txt" "${ANTHROPIC_API_KEY:-}"
-
 # PostgreSQL credentials
 write_secret "postgres_username.txt" "discogsography"
 write_secret "postgres_password.txt" "$(openssl rand -base64 24)"
@@ -52,10 +48,6 @@ write_secret "rabbitmq_password.txt" "$(openssl rand -base64 24)"
 
 # Neo4j password
 write_secret "neo4j_password.txt" "$(openssl rand -base64 24)"
-
-# Digger internal service token — gates /api/internal/digger/* and lets the digger
-# worker's scheduler authenticate to the API. Shared by the api and digger services.
-write_secret "digger_api_service_token.txt" "$(openssl rand -hex 32)"
 
 echo ""
 echo "✅ secrets/ is ready. Files are owner-read-only (chmod 600)."

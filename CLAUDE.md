@@ -23,13 +23,10 @@
 
 ```
 api/                  API service — all user-facing HTTP endpoints (auth, search, graph, OAuth, insights proxy, MusicBrainz)
-  digger_agent/       Digger LLM agent — Anthropic SDK, system prompt, 9 tools, SSE chat endpoint — see docs/digger-agent.md
 brainzgraphinator/    Brainzgraphinator service — MusicBrainz data → Neo4j enrichment
 brainztableinator/    Brainztableinator service — MusicBrainz data → PostgreSQL
 common/               Shared library — config, models, utilities used by all Python services
-  digger_optimizer/   Pure-function ILP bundle optimizer for Digger (shared by api + digger) — see docs/digger-optimizer.md
 dashboard/            Dashboard service — real-time monitoring UI
-digger/               Digger service — Discogs marketplace scraper for wantlist listings (scheduled worker)
 explore/              Explore service — static file serving for graph exploration frontend (Vitest for JS tests)
 extractor/            Rust-based extractor — high-performance Discogs XML and MusicBrainz JSONL ingestion
 graphinator/          Graphinator service — consumes messages, builds Neo4j graph
@@ -55,7 +52,6 @@ backups/              Database backups
 - **Brainztableinator** stores all MusicBrainz data in `musicbrainz` PostgreSQL schema — including entities without Discogs matches — with relationships and external links.
 - **Insights** fetches data from API internal endpoints (`/api/internal/insights/*`) over HTTP — does NOT connect to Neo4j directly. Uses Redis for caching.
 - **Explore** serves static files only — no external HTTP endpoints, no Neo4j env vars.
-- **Digger** scrapes the marketplace (writing `digger.listings`/`sellers` directly) AND runs a scheduler that generates `digger.reports` on each user's cadence. The scheduler fetches wantlist priorities from the API's internal endpoints (`/api/internal/digger/*`) over HTTP — authenticated with the shared `DIGGER_API_SERVICE_TOKEN` — but reads worker-owned tables (listings/sellers/reports) directly. It does NOT import from `api/`. The scheduler only starts when `DIGGER_API_SERVICE_TOKEN` is set. The optimizer lives in `common/digger_optimizer/` (pure functions, shared by API + worker).
 - **State markers**: The extractor uses version-specific state markers (`.extraction_status_<version>.json`) to track progress. See `docs/state-marker-system.md`.
 
 ## uv Commands
@@ -178,7 +174,6 @@ just deep-clean           # Clean + Docker volumes (destructive)
 | Tableinator       | —                               | 8002   |
 | Brainztableinator | —                               | 8010   |
 | Brainzgraphinator | —                               | 8011   |
-| Digger            | —                               | 8012   |
 | Neo4j             | 7474 (browser), 7687 (bolt)     | —      |
 | PostgreSQL        | 5433 (mapped from 5432)         | —      |
 | RabbitMQ          | 5672 (AMQP), 15672 (management) | —      |

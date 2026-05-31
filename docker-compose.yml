@@ -228,9 +228,6 @@ services:
     hostname: api
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      # Shared service token gating /api/internal/digger/*. Must match the digger
-      # worker's value so its scheduler can authenticate. Override in production!
-      DIGGER_API_SERVICE_TOKEN: "dev-digger-service-token-change-in-production"
       JWT_ALGORITHM: HS256
       JWT_EXPIRE_MINUTES: "60"
       # IMPORTANT: Override JWT_SECRET_KEY with a random 256-bit key in production!
@@ -256,8 +253,6 @@ services:
       NLQ_ENABLED: "${NLQ_ENABLED:-false}"
       NLQ_API_KEY: "${NLQ_API_KEY:-}"
       NLQ_MODEL: "${NLQ_MODEL:-claude-sonnet-4-20250514}"
-      # Digger LLM agent — Anthropic API key enabling /api/digger/agent/*
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       # Email notifications (optional — when not set, reset links are logged instead)
       # BREVO_API_KEY: "${BREVO_API_KEY:-}"
       # BREVO_SENDER_EMAIL: "${BREVO_SENDER_EMAIL:-noreply@discogsography.com}"
@@ -602,60 +597,6 @@ services:
     volumes:
       - brainztableinator_logs:/logs
 
-  # Digger service — Discogs marketplace scraper
-  digger:
-    build:
-      context: .
-      dockerfile: digger/Dockerfile
-    image: discogsography/digger:latest
-    container_name: discogsography-digger
-    hostname: digger
-    user: "1001:1001"
-    environment:
-      API_BASE_URL: "http://api:8004"
-      # Shared service token gating /api/internal/digger/*. Must match the API
-      # service's value for the scheduler to run. Override in production!
-      DIGGER_API_SERVICE_TOKEN: "dev-digger-service-token-change-in-production"
-      DIGGER_CB_COOLDOWN_SECONDS: "1800"
-      DIGGER_CB_FAILURE_PCT: "30"
-      DIGGER_CB_WINDOW_SECONDS: "300"
-      DIGGER_RATE_BUDGET_PER_HOUR: "600"
-      DIGGER_SCHEDULER_POLL_SECONDS: "300"
-      DIGGER_SCRAPER_USER_AGENT: "discogsography-digger/0.1 (github.com/SimplicityGuy/discogsography)"
-      LOG_LEVEL: INFO
-      POSTGRES_DATABASE: discogsography
-      POSTGRES_HOST: postgres
-      POSTGRES_PASSWORD: discogsography
-      POSTGRES_USERNAME: discogsography
-      PYTHONUNBUFFERED: "1"
-      REDIS_HOST: redis
-    depends_on:
-      schema-init:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - discogsography
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8012/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    restart: on-failure
-    logging: *default-logging
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    read_only: true
-    tmpfs:
-      - /tmp
-    volumes:
-      - digger_logs:/logs
-
   # Dashboard service
   dashboard:
     build:
@@ -840,6 +781,5 @@ volumes:
   dashboard_logs:
   explore_logs:
   brainztableinator_logs:
-  digger_logs:
   insights_logs:
   musicbrainz_data:

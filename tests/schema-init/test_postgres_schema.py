@@ -180,7 +180,6 @@ class TestCreatePostgresSchema:
         cursor = mock_pool.connection.return_value.__aenter__.return_value.cursor.return_value
         # 3 statements per entity table (CREATE TABLE + hash index + updated_at index)
         # + specific indexes + user tables + insights tables + musicbrainz tables/indexes
-        # + 1 for the digger feature schema (single multi-statement DDL call)
         expected_calls = (
             len(_ENTITY_TABLES) * 3
             + len(_SPECIFIC_INDEXES)
@@ -188,7 +187,6 @@ class TestCreatePostgresSchema:
             + len(_INSIGHTS_TABLES)
             + len(_MUSICBRAINZ_TABLES)
             + len(_MUSICBRAINZ_INDEXES)
-            + 1  # digger feature schema
         )
         assert cursor.execute.await_count == expected_calls
 
@@ -216,7 +214,6 @@ class TestCreatePostgresSchema:
             + len(_INSIGHTS_TABLES)
             + len(_MUSICBRAINZ_TABLES)
             + len(_MUSICBRAINZ_INDEXES)
-            + 1  # digger feature schema
         )
         assert cursor.execute.await_count == expected_calls
 
@@ -257,7 +254,6 @@ class TestCreatePostgresSchema:
             + len(_INSIGHTS_TABLES)
             + len(_MUSICBRAINZ_TABLES)
             + len(_MUSICBRAINZ_INDEXES)
-            + 1  # digger feature schema
         )
         assert cursor.execute.await_count == expected_calls
 
