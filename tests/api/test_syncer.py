@@ -486,8 +486,8 @@ class TestSyncWantlist:
             )
 
         assert result == 1
-        # 3 executemany calls: 1 wantlist upsert + 2 digger priority seeds (release_scrape_state, user_wantlist_priorities)
-        assert mock_pg_pool._mock_cur.executemany.await_count == 3
+        # 1 executemany call: the wantlist upsert.
+        assert mock_pg_pool._mock_cur.executemany.await_count == 1
         first_sql = mock_pg_pool._mock_cur.executemany.await_args_list[0].args[0]
         assert "user_wantlists" in first_sql
         mock_neo4j._mock_session.run.assert_awaited_once()

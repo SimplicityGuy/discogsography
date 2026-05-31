@@ -27,7 +27,6 @@ Discogsography is built as a microservices platform that processes large-scale m
 | **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time monitoring and admin panel                                                                            | `FastAPI`, WebSocket, reactive UI, `httpx`                   | 8003 (ext)              |
 | **[📈](emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends                                                                          | `FastAPI`, `psycopg3`, `httpx`                               | 8008, 8009 (internal)   |
 | **[🤖](emoji-guide.md#service-identifiers) MCP Server**  | Exposes knowledge graph to AI assistants                                                                        | `FastMCP`, `httpx`                                           | stdio / streamable-http |
-| **[⛏️](emoji-guide.md#service-identifiers) Digger**      | Scrapes Discogs marketplace listings for wantlist items (scheduled worker)                                      | `httpx`, `selectolax`, `psycopg3`, `redis`                  | 8012 (health/metrics)   |
 
 ### MusicBrainz Enrichment Services
 
@@ -508,41 +507,6 @@ See [Brainzgraphinator README](../brainzgraphinator/README.md) for details.
 
 See [Brainztableinator README](../brainztableinator/README.md) for details.
 
-### Digger
-
-**Responsibilities**:
-
-- Scrape public Discogs marketplace listing pages for releases users have prioritised in their wantlist (seller-profile parsing is implemented, but the seller-profile fetch is not yet wired in M1)
-- Persist listings, sellers, and per-release scrape state to the `digger.*` PostgreSQL schema
-- Apply each user's tier, condition, and price preferences (`digger.user_wantlist_priorities`, `digger.user_digger_settings`)
-- Run on a schedule, adapting per-release scrape cadence to recent listing churn
-
-**Key Features**:
-
-- Standalone async worker — reads and writes PostgreSQL and Redis directly; does **not** use RabbitMQ. Its scheduler calls the API's internal Digger endpoints over HTTP (authenticated with the shared `DIGGER_API_SERVICE_TOKEN`) to drive scheduled recommendation reports
-- Scheduler — polls for users whose cadence is due, runs the deterministic optimizer (`common.digger_optimizer`), and persists `digger.reports` rows (started only when `DIGGER_API_SERVICE_TOKEN` is configured)
-- Publishes scrape-progress updates to Redis pub/sub channels (`digger:refresh:*`) so the API's interactive refresh sees results in near real time
-- Redis token-bucket rate budget (default 600 requests/hour) enforced before every request
-- SSRF-safe HTTP client restricted to a `discogs.com` hostname allow-list, with each redirect hop re-validated
-- Per-release exponential backoff (capped at 24 h) and a global circuit breaker for sustained failures
-- Listings soft-delete lifecycle: upsert on `listing_id`, soft-delete vanished listings (`removed_at`), preserve full history
-- Health and Prometheus metrics endpoints on port 8012
-- HTML parsed with `selectolax`; seller-supplied text sanitised before storage
-
-**Configuration**:
-
-- `POSTGRES_HOST`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`: PostgreSQL connection
-- `REDIS_HOST`: Redis hostname (rate budget)
-- `DIGGER_RATE_BUDGET_PER_HOUR`: Request budget per hour (default: 600)
-- `DIGGER_SCRAPER_USER_AGENT`: User-Agent header for scrape requests
-- `DIGGER_CB_WINDOW_SECONDS`, `DIGGER_CB_FAILURE_PCT`, `DIGGER_CB_COOLDOWN_SECONDS`: Circuit-breaker tuning
-
-See [Digger README](../digger/README.md) and the [Digger Scraping Policy](digger-scraping-policy.md) for the full request and Terms-of-Service posture. The deterministic bundle optimizer that powers the interactive `POST /api/digger/recommend` endpoint and the scheduled reports is documented in [Digger Optimizer](digger-optimizer.md).
-
-#### Digger LLM agent
-
-On top of the deterministic optimizer, the API hosts a conversational **Digger agent** (`api/digger_agent/`, built on the Anthropic SDK). A single SSE endpoint, `POST /api/digger/agent/message`, orchestrates a tool-using turn — the model calls read/compute/write tools that delegate to the same M2 optimizer, reports, and refresh services — with per-user daily token caps and a one-stream-per-user concurrency lock (both in Redis). Explore exposes it as a chat sub-view, and `mcp-server/` re-exposes four Digger tools so external Claude clients can drive the same engine. It requires `ANTHROPIC_API_KEY` on the API. See [Digger Agent](digger-agent.md) for the tool surface, guardrails, models, and MCP exposure.
-
 ### Explore Service
 
 **Responsibilities**:
@@ -857,15 +821,6 @@ See [Database Schema](database-schema.md) for details.
 - `musicbrainz.relationships`: Source/target MBIDs, relationship type, direction, attributes
 - `musicbrainz.external_links`: MBID, service name, URL (Wikipedia, Wikidata, AllMusic, etc.)
 
-**Digger Schema** (`digger.*`) — marketplace scraper data:
-
-- `digger.sellers`: Discogs seller profile, region, feedback, shipping policy
-- `digger.release_scrape_state`: Per-release priority tier, scrape scheduling, failure tracking
-- `digger.listings`: Marketplace listings with soft-delete lifecycle (`first_seen_at` / `last_seen_at` / `removed_at`)
-- `digger.user_wantlist_priorities`: Per-user tier/condition/price preferences (trigger recomputes scrape priority)
-- `digger.user_digger_settings`: Per-user enable flag, cadence, model, and token caps
-- `digger.reports`, `digger.proposals`, `digger.agent_sessions`, `digger.agent_messages`: M2/M3 scaffolding
-
 **Indexes**:
 
 - B-tree indexes on common query fields
@@ -950,7 +905,6 @@ curl http://localhost:8007/health  # Explore
 curl http://localhost:8009/health  # Insights
 curl http://localhost:8010/health  # Brainztableinator
 curl http://localhost:8011/health  # Brainzgraphinator
-curl http://localhost:8012/health  # Digger (also /metrics)
 ```
 
 ### Logging

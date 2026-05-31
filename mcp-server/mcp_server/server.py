@@ -25,8 +25,6 @@ import httpx
 from mcp.server.fastmcp import Context, FastMCP
 import structlog
 
-from mcp_server.digger_tools import register_digger_tools
-
 
 logger = structlog.get_logger(__name__)
 
@@ -52,18 +50,16 @@ class AppContext:
 
     client: httpx.AsyncClient
     base_url: str  # nosemgrep: path-traversal — base_url comes from env var, not user input
-    api_token: str | None = None  # per-user JWT for authenticated Digger endpoints (MCP_API_TOKEN)
 
 
 @asynccontextmanager
 async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:  # noqa: ARG001
     """Initialize HTTP client on startup, close on shutdown."""
     base_url = getenv("API_BASE_URL", "http://localhost:8004")
-    api_token = getenv("MCP_API_TOKEN") or None
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        logger.info("🚀 MCP server ready", api_base_url=base_url, digger_enabled=bool(api_token))
-        yield AppContext(client=client, base_url=base_url, api_token=api_token)
+        logger.info("🚀 MCP server ready", api_base_url=base_url)
+        yield AppContext(client=client, base_url=base_url)
         logger.info("👋 MCP server shut down")
 
 
@@ -82,9 +78,6 @@ mcp = FastMCP(
         "'get_genre_tree' for the full genre/style hierarchy."
     ),
 )
-
-# Register the Digger record-hunting tools (authenticated via MCP_API_TOKEN).
-register_digger_tools(mcp)
 
 
 # ---------------------------------------------------------------------------

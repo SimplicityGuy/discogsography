@@ -69,7 +69,6 @@
 | **[Neo4j Indexing](neo4j-indexing.md)**                                   | 🔗 Advanced Neo4j indexing strategies                                 |
 | **[Query Performance Optimizations](query-performance-optimizations.md)** | ⚡ Comprehensive query optimization report (249x overall improvement) |
 | **[MusicBrainz Sync Guide](musicbrainz-sync.md)**                         | 🎵 MusicBrainz data import, enrichment, and pipeline operations       |
-| **[Digger Scraping Policy](digger-scraping-policy.md)**                    | ⛏️ Discogs marketplace scraping policy, rate limits, and ToS posture  |
 | **[Recent Improvements](recent-improvements.md)**                         | 🚀 Latest platform enhancements and changelog                         |
 
 ### 🔗 Integration Contracts

@@ -17,10 +17,7 @@ function setupDOM() {
         'settingsEmail', 'settingsCreatedAt', 'settingsDiscogsStatus',
         'settingsCurrentPassword', 'settingsNewPassword', 'settingsConfirmPassword',
         'passwordChangeError', 'passwordChangeSuccess', 'changePasswordBtn',
-        'twoFactorContent', 'diggerEnabled', 'diggerCountry', 'diggerCurrency',
-        'diggerCadence', 'diggerModel', 'diggerCapInteractive', 'diggerCapScheduled',
-        'diggerSettingsError', 'diggerSettingsSuccess', 'diggerSettingsSaveBtn',
-        'settingsDiggerCard', 'settingsAppTokensCard',
+        'twoFactorContent', 'settingsAppTokensCard',
     ]) {
         const el = document.createElement('div');
         el.id = id;
@@ -48,8 +45,6 @@ function setupMocks(opts = {}) {
         twoFactorVerify: vi.fn(),
         twoFactorRecovery: vi.fn(),
         twoFactorDisable: vi.fn(),
-        getDiggerSettings: vi.fn().mockResolvedValue({ ok: false, status: 404 }),
-        putDiggerSettings: vi.fn(),
         // The actual app token surface
         listAppTokens: vi.fn().mockResolvedValue(opts.listResponse ?? { active: [], revoked: [] }),
         mintAppToken: vi.fn().mockResolvedValue({

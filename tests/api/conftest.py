@@ -130,7 +130,6 @@ def test_api_config() -> ApiConfig:
         neo4j_host="bolt://localhost:7687",
         neo4j_username="neo4j",
         neo4j_password="testpassword",  # noqa: S106
-        digger_api_service_token="test-service-token",  # noqa: S106
     )
 
 
@@ -176,13 +175,7 @@ def test_client(
 
     import api.routers.admin as _admin_router
     import api.routers.collection as _collection_router
-    import api.routers.digger as _digger_router
-    import api.routers.digger_agent as _digger_agent_router
-    import api.routers.digger_proposals as _digger_proposals_router
-    import api.routers.digger_recommend as _digger_recommend_router
-    import api.routers.digger_reports as _digger_reports_router
     import api.routers.explore as _explore_router
-    import api.routers.internal_digger as _internal_digger_router
     import api.routers.label_dna as _label_dna_router
     import api.routers.recommend as _recommend_router
     import api.routers.search as _search_router
@@ -192,12 +185,6 @@ def test_client(
     import api.routers.user as _user_router
 
     fake_redis = aioredis_fake.FakeRedis(server=fake_redis_server)
-    _digger_router.configure(mock_pool)
-    _digger_agent_router.configure(mock_pool, fake_redis)
-    _digger_proposals_router.configure(mock_pool)
-    _digger_recommend_router.configure(mock_pool, fake_redis)
-    _digger_reports_router.configure(mock_pool)
-    _internal_digger_router.configure(mock_pool)
     _sync_router.configure(mock_pool, mock_neo4j, test_api_config, api_module._running_syncs, mock_redis)
     _explore_router.configure(mock_neo4j, test_api_config.jwt_secret_key, mock_redis)
     _label_dna_router.configure(mock_neo4j, mock_redis)
@@ -234,7 +221,7 @@ def test_client(
 
     import api.dependencies as _deps
 
-    _deps.configure(TEST_JWT_SECRET, mock_redis, pool=_admin_verify_pool, digger_api_service_token=test_api_config.digger_api_service_token)
+    _deps.configure(TEST_JWT_SECRET, mock_redis, pool=_admin_verify_pool)
 
     import api.app_tokens as _app_tokens_module
 
