@@ -63,6 +63,18 @@ async def _fetch_from_api(
     return items
 
 
+def _describe_error(exc: Exception) -> str:
+    """Return a non-empty, diagnosable description of *exc*.
+
+    ``str(exc)`` is empty for several exceptions raised here — notably
+    ``httpx.ReadTimeout`` — which previously produced blank ``error=""`` log
+    lines that were impossible to triage. Always prefix the exception type so
+    the failure mode is identifiable even when the message is empty.
+    """
+    detail = str(exc)
+    return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+
+
 async def compute_and_store_artist_centrality(client: httpx.AsyncClient, pool: Any, limit: int = 100) -> int:
     """Compute artist centrality and store results."""
     started_at = datetime.now(UTC)
@@ -260,9 +272,11 @@ async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: A
     """Compute data completeness and store results."""
     started_at = datetime.now(UTC)
     try:
-        # Data completeness does full sequential scans (~400s for releases table alone);
-        # use a longer timeout than the client default to avoid ReadTimeout errors.
-        results = await _fetch_from_api(client, "/api/internal/insights/data-completeness", timeout=600.0)
+        # Data completeness does full sequential scans whose duration varies widely
+        # (observed ~230s on a warm day, but exceeding 600s on others). The endpoint
+        # caches results in Redis for 6h, so only the cold path is slow; give the
+        # cold path generous headroom to avoid spurious ReadTimeouts.
+        results = await _fetch_from_api(client, "/api/internal/insights/data-completeness", timeout=1200.0)
         if not results:
             await _log_computation(pool, "data_completeness", "completed", started_at, 0)
             return 0
@@ -294,11 +308,11 @@ async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: A
         await _log_computation(pool, "data_completeness", "completed", started_at, len(results))
         return len(results)
     except Exception as e:
-        logger.error("❌ Data completeness computation failed", error=str(e))
+        logger.error("❌ Data completeness computation failed", error=_describe_error(e))
         try:
-            await _log_computation(pool, "data_completeness", "failed", started_at, error_message=str(e))
+            await _log_computation(pool, "data_completeness", "failed", started_at, error_message=_describe_error(e))
         except Exception as log_err:
-            logger.warning("⚠️ Failed to log computation error", error=str(log_err))
+            logger.warning("⚠️ Failed to log computation error", error=_describe_error(log_err))
         raise
 
 
@@ -326,7 +340,9 @@ async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
     """Compute release rarity scores and store results."""
     started_at = datetime.now(UTC)
     try:
-        results = await _fetch_from_api(client, "/api/internal/insights/rarity-scores", timeout=600.0)
+        # The API runs eight full-graph Neo4j scans sequentially (to cap transaction
+        # memory), so allow generous headroom over the client default.
+        results = await _fetch_from_api(client, "/api/internal/insights/rarity-scores", timeout=1200.0)
         if not results:
             logger.info("📊 No rarity score results to store")
             await _log_computation(pool, "release_rarity", "completed", started_at, 0)
@@ -367,11 +383,11 @@ async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
         await _log_computation(pool, "release_rarity", "completed", started_at, len(results))
         return len(results)
     except Exception as e:
-        logger.error("❌ Release rarity computation failed", error=str(e))
+        logger.error("❌ Release rarity computation failed", error=_describe_error(e))
         try:
-            await _log_computation(pool, "release_rarity", "failed", started_at, error_message=str(e))
+            await _log_computation(pool, "release_rarity", "failed", started_at, error_message=_describe_error(e))
         except Exception as log_err:
-            logger.warning("⚠️ Failed to log computation error", error=str(log_err))
+            logger.warning("⚠️ Failed to log computation error", error=_describe_error(log_err))
         raise
 
 

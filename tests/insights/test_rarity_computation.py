@@ -61,7 +61,7 @@ class TestComputeAndStoreRarity:
         mock_fetch.assert_called_once_with(
             mock_client,
             "/api/internal/insights/rarity-scores",
-            timeout=600.0,
+            timeout=1200.0,
         )
 
     @pytest.mark.asyncio

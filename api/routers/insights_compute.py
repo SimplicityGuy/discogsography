@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 import httpx
+from neo4j.exceptions import TransientError
 from psycopg.rows import dict_row
 import structlog
 
@@ -139,7 +140,17 @@ async def rarity_scores(request: Request) -> JSONResponse:  # noqa: ARG001
     """Return computed rarity scores for all releases from Neo4j."""
     if not _neo4j:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
-    results = await fetch_all_rarity_signals(_neo4j, _pool)
+    try:
+        results = await fetch_all_rarity_signals(_neo4j, _pool)
+    except TransientError:
+        # e.g. MemoryPoolOutOfMemoryError under DB pressure — transient, not a
+        # server bug. Return 503 so the caller logs a meaningful, retryable
+        # failure instead of a bare 500.
+        logger.warning("⚠️ Rarity computation hit a transient Neo4j error", exc_info=True)
+        return JSONResponse(
+            content={"error": "Neo4j temporarily unavailable (transient error)"},
+            status_code=503,
+        )
     return JSONResponse(content={"items": results})
 
 
