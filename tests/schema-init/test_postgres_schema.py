@@ -232,6 +232,10 @@ class TestCreatePostgresSchema:
 
         for stmt in captured:
             upper = stmt.upper()
+            # ALTER COLUMN ... TYPE is inherently idempotent (re-applying the same
+            # target type is a no-op), so it needs no IF NOT EXISTS guard.
+            if "ALTER COLUMN" in upper and "TYPE " in upper:
+                continue
             assert "IF NOT EXISTS" in upper, f"Statement is not idempotent: {stmt[:80]}..."
             # A multi-statement blob could still hide an un-guarded DROP that would
             # not be idempotent — any DROP must be guarded with IF EXISTS.

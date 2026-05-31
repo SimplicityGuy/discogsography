@@ -539,7 +539,7 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
             begin_area TEXT,
             end_area TEXT,
             disambiguation TEXT,
-            discogs_artist_id INTEGER,
+            discogs_artist_id BIGINT,
             aliases JSONB,
             tags JSONB,
             data JSONB,
@@ -559,7 +559,7 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
             ended BOOLEAN DEFAULT FALSE,
             area TEXT,
             disambiguation TEXT,
-            discogs_label_id INTEGER,
+            discogs_label_id BIGINT,
             data JSONB,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -573,7 +573,7 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
             barcode TEXT,
             status TEXT,
             release_group_mbid UUID,
-            discogs_release_id INTEGER,
+            discogs_release_id BIGINT,
             data JSONB,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -588,7 +588,7 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
             secondary_types JSONB,
             first_release_date TEXT,
             disambiguation TEXT,
-            discogs_master_id INTEGER,
+            discogs_master_id BIGINT,
             data JSONB,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -622,6 +622,27 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
             created_at TIMESTAMPTZ DEFAULT NOW(),
             UNIQUE (mbid, entity_type, service_name, url)
         )""",
+    ),
+    # Widen Discogs cross-reference IDs from INTEGER (int4, max 2,147,483,647)
+    # to BIGINT. Discogs IDs are emitted as i64 by the extractor and release IDs
+    # now exceed 2.1B, causing "integer out of range" on INSERT. CREATE TABLE
+    # IF NOT EXISTS above won't alter pre-existing tables, so widen explicitly.
+    # ALTER COLUMN ... TYPE BIGINT is a no-op when the column is already BIGINT.
+    (
+        "musicbrainz.artists.discogs_artist_id widen to BIGINT",
+        "ALTER TABLE musicbrainz.artists ALTER COLUMN discogs_artist_id TYPE BIGINT",
+    ),
+    (
+        "musicbrainz.labels.discogs_label_id widen to BIGINT",
+        "ALTER TABLE musicbrainz.labels ALTER COLUMN discogs_label_id TYPE BIGINT",
+    ),
+    (
+        "musicbrainz.releases.discogs_release_id widen to BIGINT",
+        "ALTER TABLE musicbrainz.releases ALTER COLUMN discogs_release_id TYPE BIGINT",
+    ),
+    (
+        "musicbrainz.release_groups.discogs_master_id widen to BIGINT",
+        "ALTER TABLE musicbrainz.release_groups ALTER COLUMN discogs_master_id TYPE BIGINT",
     ),
 ]
 
