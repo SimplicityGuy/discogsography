@@ -6,6 +6,7 @@ only consumer-side concerns: year parsing and the normalize_record() entry
 point that consumers call.
 """
 
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -13,31 +14,49 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+#: Earliest plausible release year.  Sound recording predates this only
+#: marginally (Scott de Martinville's phonautograms, 1857), so anything
+#: earlier is a data error — typos, sentinels, or mis-parsed dates.
+#: Must stay in sync with the year bounds in ``extractor/extraction-rules.yaml``.
+MIN_RELEASE_YEAR = 1860
+
+
+def _max_release_year() -> int:
+    """Latest plausible release year: next calendar year (allows pre-orders/announcements)."""
+    return datetime.now(UTC).year + 1
+
 
 def _parse_year_int(value: Any) -> int | None:
-    """Parse a Discogs year value into an integer.
+    """Parse a Discogs year value into a *plausible* integer year.
 
     Handles both plain year strings ("1969", as used in Master.<year>) and
     full/partial date strings ("1969-09-26", "1969-00-00", as used in
-    Release.<released>).  Returns None when no valid year is found.
+    Release.<released>).  Returns None when no valid year is found **or** when
+    the year falls outside ``[MIN_RELEASE_YEAR, current_year + 1]``.
 
-    Note: The extractor's ``nullify_when`` filter now converts sentinel years
-    (year < 1860, including 0) to null before messages reach consumers.  The
-    ``year == 0`` check below is a defensive fallback for extractions run
-    without the updated rules config.
+    This is the authoritative year gate for releases.  The extractor's
+    ``nullify_when`` / ``year-out-of-range`` rules key on a record's ``year``
+    field, but a Discogs *release* carries its date in ``released`` (a date
+    string) and has no ``year`` field at extraction time — so those rules are
+    no-ops for releases.  Release (and master) years are derived here, so the
+    plausibility bound must be enforced here too; otherwise dates like
+    ``"0400-01-01"`` leak into the graph as year 400.
     """
     if value is None:
         return None
     if isinstance(value, int):
-        return value if value != 0 else None
-    s = str(value).strip()
-    if not s:
-        return None
-    try:
-        year = int(s[:4])
-        return year if year != 0 else None
-    except ValueError:
-        return None
+        year = value
+    else:
+        s = str(value).strip()
+        if not s:
+            return None
+        try:
+            year = int(s[:4])
+        except ValueError:
+            return None
+    if MIN_RELEASE_YEAR <= year <= _max_release_year():
+        return year
+    return None
 
 
 def normalize_record(data_type: str, data: dict[str, Any]) -> dict[str, Any]:

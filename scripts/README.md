@@ -182,6 +182,33 @@ NEO4J_CONTAINER=my-neo4j NEO4J_PASSWORD=secret ./scripts/migrate-master-year-to-
 - `NEO4J_USER`: Neo4j username (default: `neo4j`)
 - `NEO4J_PASSWORD`: Neo4j password (default: `discogsography`)
 
+## 📅 cleanup-implausible-years.sh
+
+One-time cleanup that nulls out implausible release/master years (outside `[1860, current_year + 1]`) from existing data in **both** Neo4j and PostgreSQL.
+
+Discogs *releases* carry their date in `<released>` (a date string), not `<year>`, so the extractor's year-range rules — which key on the `year` field — never fired for releases. Before the `common/data_normalizer.py` fix, a release dated `"0400-01-01"` was stored as year `400`, polluting the Insights "Genre Trends" chart. The code fix stops new bad years at ingest; this script aligns historical data without a full re-ingest. MusicBrainz entities use a different ingest path and are out of scope.
+
+The script defaults to a **dry run** (counts only). Pass `--apply` to make changes.
+
+### Usage
+
+```bash
+# Dry run — report how many records would be affected, no changes
+./scripts/cleanup-implausible-years.sh
+
+# Perform the cleanup
+./scripts/cleanup-implausible-years.sh --apply
+```
+
+### Environment Variables
+
+- `NEO4J_CONTAINER`: Neo4j container name (default: `discogsography-neo4j`)
+- `NEO4J_USER`: Neo4j username (default: `neo4j`)
+- `NEO4J_PASSWORD`: Neo4j password (default: `discogsography`)
+- `POSTGRES_CONTAINER`: PostgreSQL container name (default: `discogsography-postgres`)
+- `POSTGRES_USER`: PostgreSQL username (default: `discogsography`)
+- `POSTGRES_DB`: PostgreSQL database (default: `discogsography`)
+
 ## 🐳 neo4j-entrypoint.sh
 
 Thin wrapper for the Neo4j Docker container entrypoint. Reads the password from `/run/secrets/neo4j_password` and sets `NEO4J_AUTH` before delegating to the official Neo4j entrypoint. This is needed because Neo4j does not natively support the Docker `_FILE` secret convention.
