@@ -23,7 +23,7 @@ dependencies = [
     "neo4j-rust-ext>=6.2.0.0",
     "orjson>=3.11.9",
     "pika>=1.4.1",
-    "structlog>=25.5.0",
+    "structlog>=26.1.0",
 ]
 
 [project.scripts]

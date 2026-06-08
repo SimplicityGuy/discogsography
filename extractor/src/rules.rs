@@ -385,6 +385,22 @@ pub struct FilterAction {
     pub reason: String,
 }
 
+/// Extract a numeric year from a date-like string for range comparison.
+///
+/// `nullify_when` range filters compare numerically, but a Discogs *release*
+/// stores its date in `released` as a string like `"1969-09-26"` (or the
+/// implausible `"0400-01-01"`). Such values don't parse as a single number, so
+/// callers fall back to this — the leading date component (the year) — so the
+/// year-range filter can catch bad release dates the same way it catches bad
+/// master years.
+fn parse_leading_year(value: &str) -> Option<f64> {
+    let token = value.split(['-', '/', '.', ' ', 'T']).next()?.trim();
+    if token.is_empty() {
+        return None;
+    }
+    token.parse::<f64>().ok()
+}
+
 pub fn apply_filters(config: &CompiledRulesConfig, data_type: &str, record: &mut Value) -> Vec<FilterAction> {
     let conditions = config.filters_for(data_type);
     let mut actions = Vec::new();
@@ -450,14 +466,18 @@ pub fn apply_filters(config: &CompiledRulesConfig, data_type: &str, record: &mut
                     Value::Null => continue, // already null — no action
                     _ => continue,
                 };
-                if let Ok(num) = str_val.parse::<f64>() {
+                // Compare numerically. A plain number ("1969") parses directly;
+                // a date string ("1969-09-26", "0400-01-01") falls back to its
+                // leading year component so date fields like `released` can be
+                // range-checked too.
+                if let Some(num) = str_val.parse::<f64>().ok().or_else(|| parse_leading_year(&str_val)) {
                     let should_nullify = below.is_some_and(|b| num < b) || above.is_some_and(|a| num > a);
                     if should_nullify {
                         obj.insert(field.clone(), Value::Null);
                         actions.push(FilterAction { field: field.clone(), removed_count: 1, removed_values: vec![str_val], reason: reason.clone() });
                     }
                 }
-                // Non-numeric string: leave unchanged
+                // Non-numeric, non-date string: leave unchanged
             }
         }
     }

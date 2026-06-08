@@ -1547,6 +1547,51 @@ rules: {}
 }
 
 #[test]
+fn test_nullify_when_released_date_string_year_out_of_range() {
+    // A Discogs release stores its date in `released` (a date string), not `year`.
+    // The range filter must parse the leading year out of the date so implausible
+    // release dates are nullified at the extractor.
+    let config = compile_yaml(
+        r#"
+filters:
+  releases:
+    - field: released
+      nullify_when:
+        type: range
+        below: 1860
+        above: 2027
+      reason: "Implausible release date"
+rules: {}
+"#,
+    );
+
+    // Antiquity date -> null (this is the bug: "0400-01-01" was stored as year 400)
+    let mut record = json!({"released": "0400-01-01", "title": "Test"});
+    let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(record["released"], json!(null));
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].removed_values, vec!["0400-01-01"]);
+
+    // Far-future date -> null
+    let mut record2 = json!({"released": "9999-12-31", "title": "Test"});
+    let actions2 = apply_filters(&config, "releases", &mut record2);
+    assert_eq!(record2["released"], json!(null));
+    assert_eq!(actions2.len(), 1);
+
+    // Plausible full date -> preserved
+    let mut record3 = json!({"released": "1969-09-26", "title": "Test"});
+    let actions3 = apply_filters(&config, "releases", &mut record3);
+    assert_eq!(record3["released"], json!("1969-09-26"));
+    assert!(actions3.is_empty());
+
+    // Partial date (year only, zeroed month/day) -> preserved
+    let mut record4 = json!({"released": "1987-00-00", "title": "Test"});
+    let actions4 = apply_filters(&config, "releases", &mut record4);
+    assert_eq!(record4["released"], json!("1987-00-00"));
+    assert!(actions4.is_empty());
+}
+
+#[test]
 fn test_nullify_when_non_numeric_unchanged() {
     let config = compile_yaml(
         r#"

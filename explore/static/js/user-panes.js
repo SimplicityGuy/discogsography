@@ -507,12 +507,8 @@ class UserPanes {
         h1.textContent = 'Fingerprint';
         col1.appendChild(h1);
 
-        // Obscurity
-        col1.appendChild(this._tasteStat(
-            'Obscurity',
-            data.obscurity?.score != null ? data.obscurity.score.toFixed(2) : '—',
-            'purple',
-        ));
+        // Obscurity (mainstream → obscure scale with a marker)
+        col1.appendChild(this._obscurityScale(data.obscurity?.score ?? null));
 
         // Peak decade
         const peakText = data.peak_decade != null ? `${data.peak_decade}s` : '—';
@@ -596,6 +592,61 @@ class UserPanes {
         valueEl.textContent = value;
         row.append(labelEl, valueEl);
         return row;
+    }
+
+    // Obscurity tiers (mainstream → obscure). Boundary inclusive on the upper
+    // tier. Keep in sync with api/taste_card.py (_OBSCURITY_TIERS).
+    _obscurityTier(score) {
+        if (score >= 0.75) return { name: 'Deep Cuts', color: '#f43f5e' };
+        if (score >= 0.5) return { name: 'Obscure', color: '#a855f7' };
+        if (score >= 0.25) return { name: 'Eclectic', color: '#818cf8' };
+        return { name: 'Mainstream', color: '#38bdf8' };
+    }
+
+    _obscurityScale(score) {
+        const wrap = document.createElement('div');
+        wrap.className = 'taste-obscurity';
+
+        const head = document.createElement('div');
+        head.className = 'taste-obscurity-head';
+        const label = document.createElement('span');
+        label.className = 'taste-obscurity-label';
+        label.textContent = 'Obscurity';
+        const value = document.createElement('span');
+        value.className = 'taste-obscurity-value';
+        head.append(label, value);
+        wrap.appendChild(head);
+
+        if (score == null) {
+            value.textContent = '—';
+            return wrap;
+        }
+
+        const s = Math.max(0, Math.min(1, score));
+        const tier = this._obscurityTier(s);
+        value.textContent = `${tier.name} · ${Math.round(score * 100)}%`;
+        value.style.color = tier.color;
+
+        const track = document.createElement('div');
+        track.className = 'taste-obscurity-track';
+        const marker = document.createElement('div');
+        marker.className = 'taste-obscurity-marker';
+        marker.style.left = `${s * 100}%`;
+        marker.style.borderColor = tier.color;
+        marker.style.boxShadow = `0 0 8px ${tier.color}`;
+        track.appendChild(marker);
+        wrap.appendChild(track);
+
+        const ends = document.createElement('div');
+        ends.className = 'taste-obscurity-ends';
+        const lo = document.createElement('span');
+        lo.textContent = 'Mainstream';
+        const hi = document.createElement('span');
+        hi.textContent = 'Obscure';
+        ends.append(lo, hi);
+        wrap.appendChild(ends);
+
+        return wrap;
     }
 
     _formatDrift(drift) {

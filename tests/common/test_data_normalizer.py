@@ -1,4 +1,7 @@
+from datetime import UTC, datetime
+
 from common.data_normalizer import (
+    MIN_RELEASE_YEAR,
     _parse_year_int,
     normalize_record,
 )
@@ -36,6 +39,32 @@ class TestParseYearInt:
 
     def test_whitespace_string(self) -> None:
         assert _parse_year_int("   ") is None
+
+    def test_implausibly_early_year_int_returns_none(self) -> None:
+        """Years before the minimum plausible release year are rejected."""
+        assert _parse_year_int(400) is None
+        assert _parse_year_int(MIN_RELEASE_YEAR - 1) is None
+
+    def test_implausibly_early_date_string_returns_none(self) -> None:
+        """A release dated in antiquity (e.g. '0400-01-01') is rejected, not kept as 400."""
+        assert _parse_year_int("0400-01-01") is None
+        assert _parse_year_int("0997") is None
+
+    def test_min_boundary_inclusive(self) -> None:
+        """The minimum plausible year itself is accepted."""
+        assert _parse_year_int(MIN_RELEASE_YEAR) == MIN_RELEASE_YEAR
+        assert _parse_year_int(str(MIN_RELEASE_YEAR)) == MIN_RELEASE_YEAR
+
+    def test_far_future_year_returns_none(self) -> None:
+        """Implausible future years are rejected."""
+        assert _parse_year_int(9999) is None
+        assert _parse_year_int("3000-01-01") is None
+
+    def test_next_year_inclusive_but_beyond_rejected(self) -> None:
+        """Next calendar year is allowed (pre-orders); two years out is not."""
+        current_year = datetime.now(UTC).year
+        assert _parse_year_int(current_year + 1) == current_year + 1
+        assert _parse_year_int(current_year + 2) is None
 
 
 class TestNormalizeRecord:
@@ -76,6 +105,18 @@ class TestNormalizeRecord:
         """Releases with no released field get year=None."""
         data = {"id": "1", "title": "Test", "sha256": "abc"}
         result = normalize_record("releases", data)
+        assert result["year"] is None
+
+    def test_releases_implausibly_early_released_is_nulled(self) -> None:
+        """A release with an antiquity 'released' date must not leak year=400 into the graph."""
+        data = {"id": "1", "title": "Test", "released": "0400-01-01", "sha256": "abc"}
+        result = normalize_record("releases", data)
+        assert result["year"] is None
+
+    def test_masters_implausibly_early_year_is_nulled(self) -> None:
+        """Masters with an out-of-range year are nulled too."""
+        data = {"id": "1", "title": "Test", "year": "997", "sha256": "abc"}
+        result = normalize_record("masters", data)
         assert result["year"] is None
 
     def test_unknown_type_passthrough(self) -> None:
