@@ -1892,24 +1892,41 @@ select option {
 
 .taste-download-btn {
     margin-top: auto;
-    padding: 6px 12px;
-    background: var(--purple-accent);
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 20px;
+    background: linear-gradient(135deg, #6c5ce7, #a855f7);
     color: #fff;
     border: none;
-    border-radius: 4px;
-    font-size: 11px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
     cursor: pointer;
-    text-align: center;
-    transition: opacity 0.15s;
+    box-shadow: 0 2px 8px rgba(108, 92, 231, 0.35);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
 .taste-download-btn:hover {
-    opacity: 0.85;
+    transform: translateY(-1px);
+    filter: brightness(1.08);
+    box-shadow: 0 6px 18px rgba(108, 92, 231, 0.55);
+}
+
+.taste-download-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(108, 92, 231, 0.4);
 }
 
 .taste-download-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+    transform: none;
+    filter: none;
+    box-shadow: none;
 }
 
 .taste-empty {

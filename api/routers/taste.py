@@ -172,12 +172,12 @@ async def taste_card(
     for c in cells:
         g = c["genre"]
         genre_counts[g] = genre_counts.get(g, 0) + c.get("count", 1)
-    top_genres = sorted(genre_counts, key=genre_counts.get, reverse=True)[:5]  # type: ignore[arg-type]
+    top_genres = sorted(genre_counts.items(), key=lambda kv: kv[1], reverse=True)[:5]
     svg = render_taste_card(
         peak_decade=_peak_decade(cells),
         obscurity_score=obscurity_result["score"],
         top_genres=top_genres,
-        top_labels=[lb["label"] for lb in labels_result],
+        top_labels=[(lb["label"], lb["count"]) for lb in labels_result],
         drift=[TasteDriftYear(**d) for d in drift_result],
     )
     return Response(content=svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
