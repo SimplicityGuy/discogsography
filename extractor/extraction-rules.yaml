@@ -27,15 +27,24 @@ filters:
     - field: genres.genre
       remove_matching: "^\\d+$"
       reason: "Strip legacy numeric genre IDs from upstream data"
-    # NOTE: A Discogs *release* has no `year` field at extraction — its date
-    # lives in `released` (a date string like "1969-09-26"). This `year` filter
-    # is therefore a no-op for releases; the release year is derived and bounded
-    # consumer-side in common/data_normalizer.py (_parse_year_int). Kept for
-    # parity/robustness in case upstream ever emits a release `year`.
+    # A Discogs *release* has no `year` field at extraction — its date lives in
+    # `released` (a date string like "1969-09-26"). The nullify_when range filter
+    # parses the leading year out of such date strings, so an implausible date
+    # like "0400-01-01" is nullified here, at the extractor, before it reaches
+    # any consumer. (data_normalizer._parse_year_int re-checks the bound as a
+    # defensive backstop.)
+    - field: released
+      nullify_when:
+        type: range
+        below: 1860
+        above: 2027
+      reason: "Treat sentinel and implausible release dates as unknown"
+    # Kept for robustness in case upstream ever emits a release `year` field.
     - field: year
       nullify_when:
         type: range
         below: 1860
+        above: 2027
       reason: "Treat sentinel and implausible years as unknown"
   masters:
     - field: genres.genre
@@ -45,6 +54,7 @@ filters:
       nullify_when:
         type: range
         below: 1860
+        above: 2027
       reason: "Treat sentinel and implausible years as unknown"
 
 rules:
