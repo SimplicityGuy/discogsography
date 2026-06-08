@@ -1843,6 +1843,55 @@ select option {
 .taste-stat-value.blue { color: var(--blue-accent); }
 .taste-stat-value.green { color: var(--accent-green); }
 
+/* Obscurity scale: mainstream → obscure gradient with a marker. */
+.taste-obscurity {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 10px;
+}
+
+.taste-obscurity-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.taste-obscurity-label {
+    font-size: 12px;
+    color: var(--text-mid);
+}
+
+.taste-obscurity-value {
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.taste-obscurity-track {
+    position: relative;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #38bdf8 0%, #818cf8 33%, #a855f7 66%, #f43f5e 100%);
+}
+
+.taste-obscurity-marker {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: #fff;
+    transform: translate(-50%, -50%);
+}
+
+.taste-obscurity-ends {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: var(--text-dim);
+}
+
 .taste-heatmap-grid {
     display: grid;
     gap: 2px;

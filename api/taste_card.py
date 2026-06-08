@@ -1,12 +1,11 @@
 """SVG taste card generator.
 
 Produces a 1200x630 (social-share aspect) SVG summarising a user's taste
-fingerprint: an obscurity ring, ranked genre/label bars, and a drift sparkline.
+fingerprint: an obscurity scale, ranked genre/label bars, and a drift sparkline.
 All user-supplied strings are escaped via ``html.escape`` to prevent XSS.
 """
 
 import html
-import math
 
 from api.models import TasteDriftYear
 
@@ -26,22 +25,48 @@ _TEXT = "#f5f5fa"
 _MUTED = "#8b8ba7"
 _FAINT = "#6b6b85"
 
+# Obscurity tiers (mainstream -> obscure). Boundary is inclusive on the upper
+# tier (``score >= threshold``), matching the project's tier convention.
+# Keep in sync with the Explore strip (explore/static/js/user-panes.js).
+_OBSCURITY_TIERS = [
+    (0.75, "Deep Cuts", "#f43f5e"),
+    (0.50, "Obscure", "#a855f7"),
+    (0.25, "Eclectic", "#818cf8"),
+    (0.0, "Mainstream", "#38bdf8"),
+]
+
 
 def _esc(value: str) -> str:
     return html.escape(value)
 
 
-def _obscurity_ring(cx: int, cy: int, r: int, score: float) -> str:
-    """A circular gauge showing the obscurity percentage."""
-    circ = 2 * math.pi * r
-    on = max(0.0, min(1.0, score)) * circ
+def _obscurity_tier(score: float) -> tuple[str, str]:
+    """Return the (name, color) tier for an obscurity score in [0, 1]."""
+    for threshold, name, color in _OBSCURITY_TIERS:
+        if score >= threshold:
+            return name, color
+    return _OBSCURITY_TIERS[-1][1], _OBSCURITY_TIERS[-1][2]
+
+
+def _obscurity_scale(score: float, x: int, y: int, w: int) -> str:
+    """A mainstream->obscure gradient track with a glowing marker at ``score``."""
+    s = max(0.0, min(1.0, score))
+    name, color = _obscurity_tier(s)
     pct = f"{score:.0%}"
-    return (
-        f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="#ffffff26" stroke-width="10"/>'
-        f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="url(#ringGrad)" stroke-width="10"'
-        f' stroke-linecap="round" stroke-dasharray="{on:.1f} {circ:.1f}" transform="rotate(-90 {cx} {cy})"/>'
-        f'<text x="{cx}" y="{cy}" font-size="28" font-weight="bold" fill="#fff" text-anchor="middle"'
-        f' dominant-baseline="central">{pct}</text>'
+    mx = x + s * w
+    track_y = y + 15
+    h = 12
+    dot_cy = track_y + h / 2
+    return "\n  ".join(
+        [
+            f'<text x="{x}" y="{y}" font-size="16" font-weight="bold" fill="{_MUTED}" letter-spacing="2">OBSCURITY</text>',
+            f'<text x="{x + w}" y="{y}" font-size="18" font-weight="bold" fill="{color}" text-anchor="end">{_esc(name)} · {pct}</text>',
+            f'<rect x="{x}" y="{track_y}" width="{w}" height="{h}" rx="6" fill="url(#obscGrad)"/>',
+            f'<circle cx="{mx:.1f}" cy="{dot_cy:.1f}" r="16" fill="{color}" opacity="0.35"/>',
+            f'<circle cx="{mx:.1f}" cy="{dot_cy:.1f}" r="9" fill="#fff" stroke="{color}" stroke-width="3"/>',
+            f'<text x="{x}" y="{track_y + h + 22}" font-size="13" fill="{_FAINT}">Mainstream</text>',
+            f'<text x="{x + w}" y="{track_y + h + 22}" font-size="13" fill="{_FAINT}" text-anchor="end">Obscure</text>',
+        ]
     )
 
 
@@ -102,9 +127,10 @@ def render_taste_card(
     """Return a 1200x630 SVG string summarising the user's taste fingerprint."""
     decade_text = f"{_esc(str(peak_decade))}s" if peak_decade is not None else "N/A"
 
-    genre_bars = _ranked_bars(top_genres, x0=50, y_start=250, col_w=480, row_h=56)
-    label_bars = _ranked_bars(top_labels, x0=640, y_start=250, col_w=480, row_h=56)
-    sparkline = _drift_sparkline(drift, x=360, y=560, w=560, h=34)
+    obscurity = _obscurity_scale(obscurity_score, x=50, y=190, w=1100)
+    genre_bars = _ranked_bars(top_genres, x0=50, y_start=330, col_w=480, row_h=48)
+    label_bars = _ranked_bars(top_labels, x0=640, y_start=330, col_w=480, row_h=48)
+    sparkline = _drift_sparkline(drift, x=360, y=584, w=560, h=26)
 
     return f"""\
 <svg xmlns="http://www.w3.org/2000/svg" width="{_W}" height="{_H}" viewBox="0 0 {_W} {_H}">
@@ -121,9 +147,11 @@ def render_taste_card(
       <stop offset="0" stop-color="{_ACCENT_FROM}"/>
       <stop offset="1" stop-color="{_ACCENT_TO}"/>
     </linearGradient>
-    <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#d8b4fe"/>
+    <linearGradient id="obscGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="0.33" stop-color="#818cf8"/>
+      <stop offset="0.66" stop-color="#a855f7"/>
+      <stop offset="1" stop-color="#f43f5e"/>
     </linearGradient>
     <clipPath id="card"><rect x="0" y="0" width="{_W}" height="{_H}" rx="28"/></clipPath>
   </defs>
@@ -136,20 +164,21 @@ def render_taste_card(
   <!-- Header -->
   <text x="50" y="70" font-size="40" font-weight="bold" fill="#ffffff" letter-spacing="1">TASTE FINGERPRINT</text>
   <text x="50" y="108" font-size="20" fill="#ffffffcc">Peak decade <tspan font-weight="bold" fill="#ffffff">{decade_text}</tspan></text>
-  <text x="1095" y="38" font-size="14" fill="#ffffffcc" text-anchor="middle" letter-spacing="1">OBSCURITY</text>
-  {_obscurity_ring(1095, 90, 44, obscurity_score)}
+
+  <!-- Obscurity scale -->
+  {obscurity}
 
   <!-- Section headers -->
-  <text x="50" y="210" font-size="18" font-weight="bold" fill="{_MUTED}" letter-spacing="2">TOP GENRES</text>
-  <text x="640" y="210" font-size="18" font-weight="bold" fill="{_MUTED}" letter-spacing="2">TOP LABELS</text>
+  <text x="50" y="300" font-size="18" font-weight="bold" fill="{_MUTED}" letter-spacing="2">TOP GENRES</text>
+  <text x="640" y="300" font-size="18" font-weight="bold" fill="{_MUTED}" letter-spacing="2">TOP LABELS</text>
 
   <!-- Ranked bars -->
   {genre_bars}
   {label_bars}
 
   <!-- Footer band: drift sparkline + branding -->
-  <line x1="50" y1="520" x2="1150" y2="520" stroke="#ffffff14" stroke-width="1"/>
-  <text x="50" y="560" font-size="14" font-weight="bold" fill="{_MUTED}" letter-spacing="2">TASTE DRIFT</text>
+  <line x1="50" y1="556" x2="1150" y2="556" stroke="#ffffff14" stroke-width="1"/>
+  <text x="50" y="586" font-size="14" font-weight="bold" fill="{_MUTED}" letter-spacing="2">TASTE DRIFT</text>
   {sparkline}
-  <text x="50" y="600" font-size="20" font-weight="bold" fill="url(#barGrad)">discogsography</text>
+  <text x="1150" y="604" font-size="20" font-weight="bold" fill="url(#barGrad)" text-anchor="end">discogsography</text>
 </svg>"""

@@ -1371,7 +1371,7 @@ describe('UserPanes', () => {
             expect(cols).toHaveLength(3);
         });
 
-        it('should render obscurity score', () => {
+        it('should render obscurity score as a tier + percentage scale', () => {
             const strip = document.getElementById('tasteStrip');
             userPanes._renderTasteStrip({
                 obscurity: { score: 0.42 },
@@ -1381,7 +1381,13 @@ describe('UserPanes', () => {
                 blind_spots: [],
             });
 
-            expect(strip.textContent).toContain('0.42');
+            // 0.42 → "Eclectic" tier (0.25–0.5), shown with the percentage.
+            expect(strip.textContent).toContain('Eclectic');
+            expect(strip.textContent).toContain('42%');
+            expect(strip.querySelector('.taste-obscurity-track')).not.toBeNull();
+            const marker = strip.querySelector('.taste-obscurity-marker');
+            expect(marker).not.toBeNull();
+            expect(marker.style.left).toBe('42%');
         });
 
         it('should render dash for null obscurity', () => {
