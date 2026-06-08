@@ -27,6 +27,11 @@ filters:
     - field: genres.genre
       remove_matching: "^\\d+$"
       reason: "Strip legacy numeric genre IDs from upstream data"
+    # NOTE: A Discogs *release* has no `year` field at extraction — its date
+    # lives in `released` (a date string like "1969-09-26"). This `year` filter
+    # is therefore a no-op for releases; the release year is derived and bounded
+    # consumer-side in common/data_normalizer.py (_parse_year_int). Kept for
+    # parity/robustness in case upstream ever emits a release `year`.
     - field: year
       nullify_when:
         type: range
