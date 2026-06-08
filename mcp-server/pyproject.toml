@@ -19,7 +19,7 @@ license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
     "httpx>=0.28.1",
     "mcp[cli]>=1.27.2",
-    "structlog>=25.5.0",
+    "structlog>=26.1.0",
 ]
 
 [project.scripts]

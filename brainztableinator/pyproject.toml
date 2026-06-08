@@ -20,7 +20,7 @@ dependencies = [
     "aio-pika>=9.6.2",
     "orjson>=3.11.9",
     "psycopg[binary]>=3.3.4",
-    "structlog>=25.5.0",
+    "structlog>=26.1.0",
 ]
 
 [project.scripts]
