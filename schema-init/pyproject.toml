@@ -20,7 +20,7 @@ license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
     "neo4j-rust-ext>=6.2.0.0",
     "psycopg[binary]>=3.3.4",
-    "structlog>=25.5.0",
+    "structlog>=26.1.0",
 ]
 
 [tool.hatch.build.targets.wheel]
