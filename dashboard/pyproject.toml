@@ -19,7 +19,7 @@ classifiers = [
 license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
     "aio-pika>=9.6.2",
-    "fastapi>=0.136.3",
+    "fastapi>=0.137.1",
     "httpx>=0.28.1",
     "neo4j-rust-ext>=6.2.0.0",
     "orjson>=3.11.9",
