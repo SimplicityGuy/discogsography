@@ -646,6 +646,10 @@ clean:
     @find . -type f -name '*.swp' ! -path './.claude/*' -delete 2>/dev/null || true
     @find . -type f -name '*.swo' ! -path './.claude/*' -delete 2>/dev/null || true
     @find . -type f -name '*~' ! -path './.claude/*' -delete 2>/dev/null || true
+    @echo '🦀 Running cargo clean for the Rust workspace...'
+    @if command -v cargo >/dev/null 2>&1 && [ -f 'Cargo.toml' ]; then \
+        cargo clean 2>/dev/null || true; \
+    fi
     @if [ -d 'extractor/target' ]; then \
         rm -rf extractor/target; \
     fi
@@ -666,6 +670,10 @@ clean:
     fi
     @if [ -d 'rust-version/target' ]; then \
         rm -rf rust-version/target; \
+    fi
+    @if [ -d '.worktrees' ]; then \
+        echo '🌳 Removing target/ directories in git worktrees under .worktrees/...'; \
+        find .worktrees -type d -name target -prune -exec rm -rf {} + 2>/dev/null || true; \
     fi
     @if [ -d 'data' ]; then \
         rm -rf data; \
