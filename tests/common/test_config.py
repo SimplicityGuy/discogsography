@@ -14,7 +14,7 @@ from common import (
     neo4j_security_kwargs,
     setup_logging,
 )
-from common.config import _build_postgres_connstr, get_secret, parse_postgres_host_port
+from common.config import _build_postgres_connstr, get_secret, parse_postgres_host_port, resolve_postgres_pool_sizes
 
 
 class TestExtractorConfig:
@@ -115,6 +115,23 @@ class TestTableinatorConfig:
         assert config.postgres_username == "pguser"
         assert config.postgres_password == "pgpass"
         assert config.postgres_database == "mydb"
+        # Budget-aware pool defaults (no POSTGRES_POOL_* override set).
+        assert config.postgres_pool_min_size == 2
+        assert config.postgres_pool_max_size == 12
+
+    def test_pool_size_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """POSTGRES_POOL_* overrides let an operator clamp the fleet without code changes."""
+        monkeypatch.setenv("POSTGRES_HOST", "pghost")
+        monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
+        monkeypatch.setenv("POSTGRES_POOL_MIN_SIZE", "3")
+        monkeypatch.setenv("POSTGRES_POOL_MAX_SIZE", "6")
+
+        config = TableinatorConfig.from_env()
+
+        assert config.postgres_pool_min_size == 3
+        assert config.postgres_pool_max_size == 6
 
     def test_from_env_missing_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration loading with missing required variables."""
@@ -1329,3 +1346,31 @@ class TestBuildPostgresConnstr:
         monkeypatch.delenv("POSTGRES_HOST", raising=False)
         monkeypatch.delenv("POSTGRES_PORT", raising=False)
         assert _build_postgres_connstr() == "localhost:5432"
+
+
+class TestResolvePostgresPoolSizes:
+    """Test resolve_postgres_pool_sizes — the shared PgBouncer-budget pool sizer."""
+
+    def test_defaults_used_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """With no env overrides, the per-service defaults are returned verbatim."""
+        monkeypatch.delenv("POSTGRES_POOL_MIN_SIZE", raising=False)
+        monkeypatch.delenv("POSTGRES_POOL_MAX_SIZE", raising=False)
+        assert resolve_postgres_pool_sizes(default_min=2, default_max=12) == (2, 12)
+
+    def test_env_overrides_win(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Both overrides are honored when set."""
+        monkeypatch.setenv("POSTGRES_POOL_MIN_SIZE", "1")
+        monkeypatch.setenv("POSTGRES_POOL_MAX_SIZE", "5")
+        assert resolve_postgres_pool_sizes(default_min=2, default_max=12) == (1, 5)
+
+    def test_invalid_values_fall_back_to_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Non-integer / non-positive overrides are ignored in favor of the defaults."""
+        monkeypatch.setenv("POSTGRES_POOL_MIN_SIZE", "not-a-number")
+        monkeypatch.setenv("POSTGRES_POOL_MAX_SIZE", "0")
+        assert resolve_postgres_pool_sizes(default_min=2, default_max=8) == (2, 8)
+
+    def test_min_clamped_to_max(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """min is clamped so it never exceeds max (1 <= min <= max)."""
+        monkeypatch.setenv("POSTGRES_POOL_MIN_SIZE", "20")
+        monkeypatch.setenv("POSTGRES_POOL_MAX_SIZE", "4")
+        assert resolve_postgres_pool_sizes(default_min=2, default_max=12) == (4, 4)

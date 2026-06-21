@@ -12,8 +12,9 @@ import pytest
 
 from brainztableinator.brainztableinator import (
     PROCESSORS,
-    _insert_external_link,
-    _insert_relationship,
+    _channel_prefetch,
+    _insert_external_links,
+    _insert_relationships,
     _recover_consumers,
     check_all_consumers_idle,
     close_rabbitmq_connection,
@@ -152,15 +153,16 @@ class TestProcessArtist:
 
         await process_artist(mock_conn, record)
 
-        # Should have 3 execute calls: artist insert + relationship + external link
-        assert mock_cursor.execute.call_count == 3
+        # The entity upsert uses execute(); relationships and external links are each
+        # batched into a single executemany() to keep the transaction short.
+        assert mock_cursor.execute.call_count == 1
+        assert "INSERT INTO musicbrainz.artists" in mock_cursor.execute.call_args_list[0][0][0]
+        assert mock_cursor.executemany.call_count == 2
 
-        # Check relationship insert
-        rel_sql = mock_cursor.execute.call_args_list[1][0][0]
+        rel_sql = mock_cursor.executemany.call_args_list[0][0][0]
         assert "INSERT INTO musicbrainz.relationships" in rel_sql
 
-        # Check external link insert
-        link_sql = mock_cursor.execute.call_args_list[2][0][0]
+        link_sql = mock_cursor.executemany.call_args_list[1][0][0]
         assert "INSERT INTO musicbrainz.external_links" in link_sql
 
 
@@ -264,15 +266,16 @@ class TestProcessReleaseGroup:
 
         await process_release_group(mock_conn, record)
 
-        # Should have 3 execute calls: release_group insert + relationship + external link
-        assert mock_cursor.execute.call_count == 3
+        # The entity upsert uses execute(); relationships and external links are each
+        # batched into a single executemany() to keep the transaction short.
+        assert mock_cursor.execute.call_count == 1
+        assert "INSERT INTO musicbrainz.release_groups" in mock_cursor.execute.call_args_list[0][0][0]
+        assert mock_cursor.executemany.call_count == 2
 
-        # Check relationship insert
-        rel_sql = mock_cursor.execute.call_args_list[1][0][0]
+        rel_sql = mock_cursor.executemany.call_args_list[0][0][0]
         assert "INSERT INTO musicbrainz.relationships" in rel_sql
 
-        # Check external link insert
-        link_sql = mock_cursor.execute.call_args_list[2][0][0]
+        link_sql = mock_cursor.executemany.call_args_list[1][0][0]
         assert "INSERT INTO musicbrainz.external_links" in link_sql
 
 
@@ -281,119 +284,130 @@ class TestProcessReleaseGroup:
 # ===========================================================================
 
 
-class TestInsertRelationship:
-    """Tests for _insert_relationship."""
+class TestInsertRelationships:
+    """Tests for _insert_relationships (batched executemany)."""
 
     @pytest.mark.asyncio
-    async def test_insert_relationship(self):
-        """Verify INSERT INTO musicbrainz.relationships is called."""
+    async def test_insert_relationships(self):
+        """Verify all relationships are written with a single executemany."""
         mock_conn, mock_cursor = _make_mock_conn()
-        rel = {
-            "target_mbid": "target-mbid-1",
-            "target_type": "artist",
-            "type": "member of band",
-            "attributes": ["guitar"],
-            "begin_date": "2000-01-01",
-            "end_date": None,
-            "ended": False,
-        }
+        rels = [
+            {
+                "target_mbid": "target-mbid-1",
+                "target_type": "artist",
+                "type": "member of band",
+                "attributes": ["guitar"],
+                "begin_date": "2000-01-01",
+                "end_date": None,
+                "ended": False,
+            },
+            {
+                "target_mbid": "target-mbid-2",
+                "target_type": "artist",
+                "type": "collaboration",
+            },
+        ]
 
-        await _insert_relationship(mock_conn, "source-mbid-1", "artist", rel)
+        await _insert_relationships(mock_conn, "source-mbid-1", "artist", rels)
 
-        mock_cursor.execute.assert_called_once()
-        sql = mock_cursor.execute.call_args[0][0]
+        # One pipelined round-trip for the whole set, not one execute per relationship.
+        mock_cursor.execute.assert_not_called()
+        mock_cursor.executemany.assert_called_once()
+        sql = mock_cursor.executemany.call_args[0][0]
+        params = mock_cursor.executemany.call_args[0][1]
         assert "INSERT INTO musicbrainz.relationships" in sql
         assert "ON CONFLICT" in sql
         assert "DO UPDATE SET" in sql
+        assert len(params) == 2
 
     @pytest.mark.asyncio
-    async def test_insert_relationship_no_target_skips(self):
-        """Empty target_mbid is skipped to avoid PostgreSQL UUID cast failure."""
+    async def test_insert_relationships_filters_invalid_rows(self):
+        """Rows missing target_mbid/target_type/type are dropped from the batch."""
         mock_conn, mock_cursor = _make_mock_conn()
-        rel = {
-            "target_mbid": "",
-            "target_type": "artist",
-            "type": "member of band",
-        }
+        rels = [
+            {"target_mbid": "", "target_type": "artist", "type": "x"},  # empty mbid (UUID cast)
+            {"target_type": "artist", "type": "x"},  # missing target_mbid
+            {"target_mbid": "ok", "type": "x"},  # missing target_type
+            {"target_mbid": "ok", "target_type": "artist"},  # missing type
+            {"target_mbid": "ok", "target_type": "artist", "type": "valid"},  # the only good row
+        ]
 
-        await _insert_relationship(mock_conn, "source-mbid-1", "artist", rel)
+        await _insert_relationships(mock_conn, "source-mbid-1", "artist", rels)
 
-        # Empty target_mbid should be skipped (would fail UUID cast)
-        mock_cursor.execute.assert_not_called()
+        mock_cursor.executemany.assert_called_once()
+        params = mock_cursor.executemany.call_args[0][1]
+        assert len(params) == 1
 
     @pytest.mark.asyncio
-    async def test_insert_relationship_missing_target_skips(self):
-        """Missing target_mbid key is skipped."""
+    async def test_insert_relationships_empty_skips_db(self):
+        """An empty/all-invalid batch issues no database call."""
         mock_conn, mock_cursor = _make_mock_conn()
-        rel = {
-            "target_type": "artist",
-            "type": "member of band",
-        }
 
-        await _insert_relationship(mock_conn, "source-mbid-1", "artist", rel)
-
-        # Missing target_mbid should be skipped
-        mock_cursor.execute.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_insert_relationship_no_target_type_skips(self):
-        """Missing target_type is skipped."""
-        mock_conn, mock_cursor = _make_mock_conn()
-        rel = {
-            "target_mbid": "target-mbid-1",
-            "type": "member of band",
-        }
-
-        await _insert_relationship(mock_conn, "source-mbid-1", "artist", rel)
+        await _insert_relationships(mock_conn, "source-mbid-1", "artist", [])
 
         mock_cursor.execute.assert_not_called()
+        mock_cursor.executemany.assert_not_called()
+
+
+class TestInsertExternalLinks:
+    """Tests for _insert_external_links (batched executemany)."""
 
     @pytest.mark.asyncio
-    async def test_insert_relationship_no_type_skips(self):
-        """Missing relationship type is skipped."""
+    async def test_insert_external_links(self):
+        """Verify external links are written with a single executemany upsert."""
         mock_conn, mock_cursor = _make_mock_conn()
-        rel = {
-            "target_mbid": "target-mbid-1",
-            "target_type": "artist",
-        }
+        links = [
+            {"url": "https://example.com", "service": "official homepage"},
+            {"url": "https://discogs.com/x", "service": "discogs"},
+        ]
 
-        await _insert_relationship(mock_conn, "source-mbid-1", "artist", rel)
+        await _insert_external_links(mock_conn, "mbid-1", "artist", links)
 
         mock_cursor.execute.assert_not_called()
-
-
-class TestInsertExternalLink:
-    """Tests for _insert_external_link."""
-
-    @pytest.mark.asyncio
-    async def test_insert_external_link(self):
-        """Verify INSERT INTO musicbrainz.external_links is called with upsert."""
-        mock_conn, mock_cursor = _make_mock_conn()
-        link = {
-            "url": "https://example.com",
-            "service": "official homepage",
-        }
-
-        await _insert_external_link(mock_conn, "mbid-1", "artist", link)
-
-        mock_cursor.execute.assert_called_once()
-        sql = mock_cursor.execute.call_args[0][0]
+        mock_cursor.executemany.assert_called_once()
+        sql = mock_cursor.executemany.call_args[0][0]
+        params = mock_cursor.executemany.call_args[0][1]
         assert "INSERT INTO musicbrainz.external_links" in sql
         assert "ON CONFLICT (mbid, entity_type, service_name, url) DO UPDATE SET url = EXCLUDED.url" in sql
+        assert len(params) == 2
 
     @pytest.mark.asyncio
-    async def test_insert_external_link_no_service_skips(self):
-        """Empty service/url skips the insert entirely."""
+    async def test_insert_external_links_filters_invalid_rows(self):
+        """Links with empty url or service are dropped; an empty batch issues no DB call."""
         mock_conn, mock_cursor = _make_mock_conn()
-        link = {
-            "url": "",
-            "service": "",
-        }
+        links = [
+            {"url": "", "service": ""},
+            {"url": "https://example.com", "service": ""},
+            {"url": "", "service": "discogs"},
+        ]
 
-        await _insert_external_link(mock_conn, "mbid-1", "artist", link)
+        await _insert_external_links(mock_conn, "mbid-1", "artist", links)
 
-        # Links with empty url or service are skipped
         mock_cursor.execute.assert_not_called()
+        mock_cursor.executemany.assert_not_called()
+
+
+# ===========================================================================
+# Prefetch / pool-coupling tests
+# ===========================================================================
+
+
+class TestChannelPrefetch:
+    """Tests for _channel_prefetch (RabbitMQ prefetch coupled to pool capacity)."""
+
+    def test_prefetch_matches_pool_max_when_config_loaded(self):
+        """Prefetch equals the configured pool max so in-flight handlers can't exceed it."""
+        mock_config = MagicMock()
+        mock_config.postgres_pool_max_size = 7
+        with patch("brainztableinator.brainztableinator.config", mock_config):
+            assert _channel_prefetch() == 7
+
+    def test_prefetch_falls_back_when_config_unset(self):
+        """Before config loads, prefetch falls back to the default pool max."""
+        from brainztableinator.brainztableinator import _DEFAULT_POOL_MAX
+
+        with patch("brainztableinator.brainztableinator.config", None):
+            assert _channel_prefetch() == _DEFAULT_POOL_MAX
 
 
 # ===========================================================================
@@ -1821,8 +1835,9 @@ class TestMain:
 
         assert mock_pool_class.call_count == 1
         call_args = mock_pool_class.call_args
-        assert call_args[1]["max_connections"] == 50
-        assert call_args[1]["min_connections"] == 5
+        # Budget-aware defaults from BrainztableinatorConfig (resolve_postgres_pool_sizes).
+        assert call_args[1]["max_connections"] == 12
+        assert call_args[1]["min_connections"] == 2
         mock_rabbitmq_class.assert_called_once()
 
     @pytest.mark.asyncio
@@ -2026,10 +2041,10 @@ class TestProcessLabelRelationshipsAndLinks:
 
         await process_label(mock_conn, record)
 
-        # Should have calls for the main insert + relationship insert
-        assert mock_cursor.execute.call_count >= 2
-        rel_call = mock_cursor.execute.call_args_list[1]
-        assert "musicbrainz.relationships" in rel_call[0][0]
+        # Entity upsert via execute(); relationships batched via a single executemany().
+        assert mock_cursor.execute.call_count == 1
+        mock_cursor.executemany.assert_called_once()
+        assert "musicbrainz.relationships" in mock_cursor.executemany.call_args[0][0]
 
     @pytest.mark.asyncio
     async def test_process_label_with_external_links(self) -> None:
@@ -2046,9 +2061,10 @@ class TestProcessLabelRelationshipsAndLinks:
 
         await process_label(mock_conn, record)
 
-        assert mock_cursor.execute.call_count >= 2
-        link_call = mock_cursor.execute.call_args_list[1]
-        assert "musicbrainz.external_links" in link_call[0][0]
+        # Entity upsert via execute(); external links batched via a single executemany().
+        assert mock_cursor.execute.call_count == 1
+        mock_cursor.executemany.assert_called_once()
+        assert "musicbrainz.external_links" in mock_cursor.executemany.call_args[0][0]
 
     @pytest.mark.asyncio
     async def test_process_release_with_relationships(self) -> None:
@@ -2065,9 +2081,10 @@ class TestProcessLabelRelationshipsAndLinks:
 
         await process_release(mock_conn, record)
 
-        assert mock_cursor.execute.call_count >= 2
-        rel_call = mock_cursor.execute.call_args_list[1]
-        assert "musicbrainz.relationships" in rel_call[0][0]
+        # Entity upsert via execute(); relationships batched via a single executemany().
+        assert mock_cursor.execute.call_count == 1
+        mock_cursor.executemany.assert_called_once()
+        assert "musicbrainz.relationships" in mock_cursor.executemany.call_args[0][0]
 
     @pytest.mark.asyncio
     async def test_process_release_with_external_links(self) -> None:
@@ -2084,9 +2101,10 @@ class TestProcessLabelRelationshipsAndLinks:
 
         await process_release(mock_conn, record)
 
-        assert mock_cursor.execute.call_count >= 2
-        link_call = mock_cursor.execute.call_args_list[1]
-        assert "musicbrainz.external_links" in link_call[0][0]
+        # Entity upsert via execute(); external links batched via a single executemany().
+        assert mock_cursor.execute.call_count == 1
+        mock_cursor.executemany.assert_called_once()
+        assert "musicbrainz.external_links" in mock_cursor.executemany.call_args[0][0]
 
 
 # ===========================================================================

@@ -371,15 +371,19 @@ class TestQoSOptimization:
 
     @pytest.mark.asyncio
     async def test_tableinator_connection_pool_size(self):
-        """Test that Tableinator uses appropriate connection pool size."""
+        """Document Tableinator's connection-pool sizing intent.
 
-        # Connection pool should match or exceed prefetch_count
-        # This is tested implicitly in the code, but documented here
-        # Expected: min_connections=5, max_connections=50
+        Tableinator no longer sizes its pool to match prefetch_count. Writes flow
+        through the BatchProcessor, whose ``max_concurrent_flushes`` semaphore caps
+        simultaneous PostgreSQL flushes, so only a small pool is ever needed. Pool
+        sizing is now budget-aware (see common.config.resolve_postgres_pool_sizes) and
+        coordinated across services to fit the shared PgBouncer per-database cap rather
+        than scaled per-service to prefetch.
+        """
+        from common.config import resolve_postgres_pool_sizes
 
-        # In actual deployment, verify pool size matches QoS
-        # This test serves as documentation of the requirement
-        assert True  # Placeholder - actual validation is in integration tests
+        # Default tableinator sizing stays small and within the shared backend budget.
+        assert resolve_postgres_pool_sizes(default_min=2, default_max=12) == (2, 12)
 
 
 @pytest.mark.benchmark

@@ -232,6 +232,8 @@ Bolt traffic crosses an untrusted network (separate host/VM, overlay network, cl
 | `POSTGRES_USERNAME` | PostgreSQL username                          | (none)           | Yes      |
 | `POSTGRES_PASSWORD` | PostgreSQL password                          | (none)           | Yes      |
 | `POSTGRES_DATABASE` | Database name                                | `discogsography` | Yes      |
+| `POSTGRES_POOL_MIN_SIZE` | Override the connection-pool minimum for **all** pooled services | per-service default | No |
+| `POSTGRES_POOL_MAX_SIZE` | Override the connection-pool maximum for **all** pooled services | per-service default | No |
 
 **Used By**: Tableinator, Dashboard, API, Insights, Brainztableinator, Schema-Init
 
@@ -240,11 +242,21 @@ Bolt traffic crosses an untrusted network (separate host/VM, overlay network, cl
 > over `POSTGRES_PORT`; if no port is present, `POSTGRES_PORT` (default `5432`) is used.
 > IPv6 hosts may be bracketed, e.g. `[::1]:6432`.
 
+> **Connection-pool sizing**: Under a shared pooler in *session* mode (e.g. PgBouncer),
+> each client connection pins a dedicated Postgres backend for its lifetime, so the sum
+> of every service's pool maximum is the deployment's real backend footprint and must
+> stay under the pooler's per-database cap. Each service ships a conservative, workload-
+> appropriate default (api 2/8, tableinator 2/12, brainztableinator 2/12, insights 1/4;
+> dashboard uses a single connection). The two `POSTGRES_POOL_*` overrides clamp the whole
+> fleet uniformly without a code change. See
+> [postgres-pool-exhaustion-analysis.md](postgres-pool-exhaustion-analysis.md) for the
+> rationale.
+
 **Connection Details**:
 
 - Protocol: PostgreSQL wire protocol
 - Default port: 5432 (mapped to 5433 in Docker)
-- Connection pool: 20 connections (max)
+- Connection pool: budget-aware per-service sizing (see note above)
 - Retry logic: Exponential backoff (max 5 attempts)
 - Query timeout: 30 seconds
 

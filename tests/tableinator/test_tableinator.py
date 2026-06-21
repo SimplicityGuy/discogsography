@@ -277,10 +277,11 @@ class TestMain:
 
         # Verify setup was performed
         assert mock_pool_class.call_count == 1
-        # Check that it was called with correct parameters (updated for performance optimization)
+        # Budget-aware defaults from TableinatorConfig (resolve_postgres_pool_sizes). The
+        # BatchProcessor semaphore caps concurrent flushes, so a small pool is sufficient.
         call_args = mock_pool_class.call_args
-        assert call_args[1]["max_connections"] == 50
-        assert call_args[1]["min_connections"] == 5
+        assert call_args[1]["max_connections"] == 12
+        assert call_args[1]["min_connections"] == 2
         mock_rabbitmq_class.assert_called_once()
 
     @pytest.mark.asyncio
