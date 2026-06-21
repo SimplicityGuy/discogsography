@@ -13,7 +13,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from api.auth import decrypt_oauth_token, encrypt_oauth_token, get_oauth_encryption_key
-from common.config import get_secret
+from common.config import get_secret, parse_postgres_host_port
 
 
 def _build_conninfo() -> str:
@@ -37,12 +37,9 @@ def _build_conninfo() -> str:
         print(f"❌ Missing required environment variables: {', '.join(missing)}", file=sys.stderr)
         sys.exit(1)
 
-    # POSTGRES_HOST may include an optional :port suffix
-    if ":" in address:
-        host, port = address.rsplit(":", 1)
-    else:
-        host = address
-        port = os.getenv("POSTGRES_PORT", "5432")
+    # POSTGRES_HOST may include an optional :port suffix (e.g. a pooler)
+    default_port = int(os.getenv("POSTGRES_PORT", "5432") or "5432")
+    host, port = parse_postgres_host_port(address, default_port)
 
     return f"host={host} port={port} user={username} password={password} dbname={database}"
 

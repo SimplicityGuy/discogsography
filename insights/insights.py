@@ -22,7 +22,7 @@ import redis.asyncio as aioredis
 import structlog
 import uvicorn
 
-from common import AsyncPostgreSQLPool, HealthServer, setup_logging
+from common import AsyncPostgreSQLPool, HealthServer, parse_postgres_host_port, setup_logging
 from common.config import InsightsConfig
 from insights.cache import InsightsCache
 from insights.computations import run_all_computations
@@ -111,16 +111,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     health_srv.start_background()
     logger.info("🏥 Health server started", port=INSIGHTS_HEALTH_PORT)
 
-    # Initialize PostgreSQL
-    if ":" in _config.postgres_host:
-        host, port_str = _config.postgres_host.rsplit(":", 1)
-    else:
-        host = _config.postgres_host
-        port_str = "5432"
+    # Initialize PostgreSQL (POSTGRES_HOST may embed a port, e.g. a pooler)
+    host, port = parse_postgres_host_port(_config.postgres_host)
     _pool = AsyncPostgreSQLPool(
         connection_params={
             "host": host,
-            "port": int(port_str),
+            "port": port,
             "dbname": _config.postgres_database,
             "user": _config.postgres_username,
             "password": _config.postgres_password,

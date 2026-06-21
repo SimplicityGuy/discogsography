@@ -66,10 +66,70 @@ def _build_neo4j_uri() -> str:
     return f"bolt://{host}:7687"
 
 
+def _coerce_port(value: str | None, default_port: int) -> int:
+    """Parse a port string to int, falling back to default_port on anything invalid."""
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return default_port
+
+
+def parse_postgres_host_port(value: str | None, default_port: int = 5432) -> tuple[str, int]:
+    """Split a POSTGRES_HOST value into a (host, port) pair.
+
+    POSTGRES_HOST may carry an embedded port (e.g. a PgBouncer pooler configured
+    as ``"pgbouncer:6432"``). When a port is embedded it always wins; otherwise
+    ``default_port`` (normally POSTGRES_PORT, falling back to 5432) is used. The
+    two ports are never concatenated.
+
+    Accepted forms:
+
+    - ``"host"``         -> ``(host, default_port)``
+    - ``"host:6432"``    -> ``(host, 6432)``      (embedded port wins)
+    - ``"[::1]"``        -> ``("::1", default_port)``
+    - ``"[::1]:6432"``   -> ``("::1", 6432)``     (IPv6 in brackets)
+    - ``"::1"``          -> ``("::1", default_port)`` (bare IPv6 literal, no port)
+    - ``""`` / ``None``  -> ``("localhost", default_port)``
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return "localhost", default_port
+
+    # IPv6 in brackets: "[host]" or "[host]:port"
+    if raw.startswith("["):
+        end = raw.find("]")
+        if end != -1:
+            host = raw[1:end]
+            rest = raw[end + 1 :]
+            if rest.startswith(":") and rest[1:]:
+                return host, _coerce_port(rest[1:], default_port)
+            return host, default_port
+        # Malformed bracket — fall through and treat the whole value as a host.
+
+    # Bare IPv6 literal (more than one colon, no brackets) — no port to extract.
+    if raw.count(":") > 1:
+        return raw, default_port
+
+    if ":" in raw:
+        host, _, port_str = raw.partition(":")
+        return (host or "localhost"), _coerce_port(port_str, default_port)
+
+    return raw, default_port
+
+
 def _build_postgres_connstr() -> str:
-    """Build PostgreSQL host:port connection string from plain hostname environment variable."""
-    host = getenv("POSTGRES_HOST", "localhost")
-    return f"{host}:5432"
+    """Build a canonical ``host:port`` connection string for PostgreSQL.
+
+    Reads POSTGRES_HOST (which may embed a port, e.g. ``"pgbouncer:6432"``) and
+    POSTGRES_PORT (default 5432). An embedded port in POSTGRES_HOST takes
+    precedence over POSTGRES_PORT; the two are never concatenated. IPv6 hosts are
+    bracketed so the result round-trips through ``parse_postgres_host_port``.
+    """
+    default_port = _coerce_port(getenv("POSTGRES_PORT", "5432"), 5432)
+    host, port = parse_postgres_host_port(getenv("POSTGRES_HOST", "localhost"), default_port)
+    if ":" in host:  # IPv6 literal — bracket it for safe round-tripping.
+        return f"[{host}]:{port}"
+    return f"{host}:{port}"
 
 
 def _build_redis_url() -> str:

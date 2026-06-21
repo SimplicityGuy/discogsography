@@ -14,7 +14,7 @@ from common import (
     neo4j_security_kwargs,
     setup_logging,
 )
-from common.config import get_secret
+from common.config import _build_postgres_connstr, get_secret, parse_postgres_host_port
 
 
 class TestExtractorConfig:
@@ -1225,3 +1225,107 @@ class TestNeo4jSecurityKwargs:
         for value in ["1", "yes", "on", ""]:
             monkeypatch.setenv("NEO4J_TLS_ENABLED", value)
             assert neo4j_security_kwargs() == {}
+
+
+class TestParsePostgresHostPort:
+    """Test parse_postgres_host_port — robust POSTGRES_HOST host/port splitting."""
+
+    def test_host_with_embedded_port(self) -> None:
+        """A pooler address like 'pgbouncer:6432' yields the embedded port."""
+        assert parse_postgres_host_port("pgbouncer:6432") == ("pgbouncer", 6432)
+
+    def test_embedded_port_wins_over_default(self) -> None:
+        """An embedded port takes precedence over the supplied default port."""
+        assert parse_postgres_host_port("pgbouncer:6432", 5432) == ("pgbouncer", 6432)
+
+    def test_host_without_port_uses_default(self) -> None:
+        """A bare host falls back to the default port (POSTGRES_PORT)."""
+        assert parse_postgres_host_port("postgres", 5432) == ("postgres", 5432)
+
+    def test_host_without_port_uses_builtin_default(self) -> None:
+        """With no default supplied, a bare host falls back to 5432."""
+        assert parse_postgres_host_port("postgres") == ("postgres", 5432)
+
+    def test_host_with_explicit_5432(self) -> None:
+        """'postgres:5432' with no separate port still yields 5432."""
+        assert parse_postgres_host_port("postgres:5432") == ("postgres", 5432)
+
+    def test_empty_value_falls_back_to_localhost(self) -> None:
+        """An empty value yields localhost on the default port."""
+        assert parse_postgres_host_port("", 5432) == ("localhost", 5432)
+
+    def test_none_value_falls_back_to_localhost(self) -> None:
+        """A None value yields localhost on the default port."""
+        assert parse_postgres_host_port(None) == ("localhost", 5432)
+
+    def test_whitespace_is_stripped(self) -> None:
+        """Surrounding whitespace is stripped before parsing."""
+        assert parse_postgres_host_port("  pgbouncer:6432  ") == ("pgbouncer", 6432)
+
+    def test_malformed_port_falls_back_to_default(self) -> None:
+        """A non-numeric port falls back to the default rather than raising."""
+        assert parse_postgres_host_port("pgbouncer:notaport", 5432) == ("pgbouncer", 5432)
+
+    def test_trailing_colon_uses_default_port(self) -> None:
+        """'host:' (empty port) falls back to the default port."""
+        assert parse_postgres_host_port("postgres:", 5432) == ("postgres", 5432)
+
+    def test_ipv6_bracketed_with_port(self) -> None:
+        """A bracketed IPv6 host with a port is parsed correctly."""
+        assert parse_postgres_host_port("[::1]:6432") == ("::1", 6432)
+
+    def test_ipv6_bracketed_without_port(self) -> None:
+        """A bracketed IPv6 host without a port uses the default port."""
+        assert parse_postgres_host_port("[2001:db8::1]", 5432) == ("2001:db8::1", 5432)
+
+    def test_ipv6_bare_literal_no_port(self) -> None:
+        """A bare (unbracketed) IPv6 literal is treated as host-only."""
+        assert parse_postgres_host_port("::1", 5432) == ("::1", 5432)
+
+    def test_never_concatenates_ports(self) -> None:
+        """Regression: the embedded port is never concatenated with the default."""
+        _host, port = parse_postgres_host_port("pgbouncer:6432", 5432)
+        assert port == 6432
+        assert ":" not in str(port)
+
+
+class TestBuildPostgresConnstr:
+    """Test _build_postgres_connstr — canonical host:port assembly from env."""
+
+    def test_embedded_port_in_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """POSTGRES_HOST carrying a port produces a clean host:port with no double port."""
+        monkeypatch.setenv("POSTGRES_HOST", "pgbouncer:6432")
+        monkeypatch.delenv("POSTGRES_PORT", raising=False)
+        assert _build_postgres_connstr() == "pgbouncer:6432"
+
+    def test_host_plus_postgres_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A bare host with POSTGRES_PORT set uses that port."""
+        monkeypatch.setenv("POSTGRES_HOST", "postgres")
+        monkeypatch.setenv("POSTGRES_PORT", "5432")
+        assert _build_postgres_connstr() == "postgres:5432"
+
+    def test_host_without_port_defaults_5432(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A bare host with no POSTGRES_PORT defaults to 5432."""
+        monkeypatch.setenv("POSTGRES_HOST", "postgres")
+        monkeypatch.delenv("POSTGRES_PORT", raising=False)
+        assert _build_postgres_connstr() == "postgres:5432"
+
+    def test_embedded_port_wins_over_postgres_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An embedded port in POSTGRES_HOST beats POSTGRES_PORT — never concatenated."""
+        monkeypatch.setenv("POSTGRES_HOST", "pgbouncer:6432")
+        monkeypatch.setenv("POSTGRES_PORT", "5432")
+        assert _build_postgres_connstr() == "pgbouncer:6432"
+
+    def test_ipv6_host_is_bracketed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An IPv6 host round-trips as a bracketed host:port string."""
+        monkeypatch.setenv("POSTGRES_HOST", "[::1]:6432")
+        monkeypatch.delenv("POSTGRES_PORT", raising=False)
+        result = _build_postgres_connstr()
+        assert result == "[::1]:6432"
+        assert parse_postgres_host_port(result) == ("::1", 6432)
+
+    def test_default_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """No POSTGRES_HOST defaults to localhost:5432."""
+        monkeypatch.delenv("POSTGRES_HOST", raising=False)
+        monkeypatch.delenv("POSTGRES_PORT", raising=False)
+        assert _build_postgres_connstr() == "localhost:5432"
