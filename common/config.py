@@ -117,6 +117,35 @@ def parse_postgres_host_port(value: str | None, default_port: int = 5432) -> tup
     return raw, default_port
 
 
+def _coerce_pool_size(value: str | None, default: int) -> int:
+    """Parse a pool-size string to a positive int, falling back to default on anything invalid."""
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 1 else default
+
+
+def resolve_postgres_pool_sizes(default_min: int, default_max: int) -> tuple[int, int]:
+    """Resolve ``(min, max)`` PostgreSQL pool sizes from env with budget-aware defaults.
+
+    Every long-lived service shares a single PostgreSQL backend budget (in production
+    a PgBouncer pooler in *session* mode pins one backend per client connection for its
+    whole lifetime, with a hard per-database cap). The sum of every service's pool
+    ``max`` is therefore the deployment's real connection footprint and must stay under
+    that cap. Each service ships a conservative per-service default; an operator can
+    additionally clamp the whole fleet with the shared ``POSTGRES_POOL_MIN_SIZE`` /
+    ``POSTGRES_POOL_MAX_SIZE`` overrides without a code change.
+
+    Values are clamped so ``1 <= min <= max``.
+    """
+    min_size = _coerce_pool_size(getenv("POSTGRES_POOL_MIN_SIZE"), default_min)
+    max_size = _coerce_pool_size(getenv("POSTGRES_POOL_MAX_SIZE"), default_max)
+    max_size = max(max_size, 1)
+    min_size = min(min_size, max_size)
+    return min_size, max_size
+
+
 def _build_postgres_connstr() -> str:
     """Build a canonical ``host:port`` connection string for PostgreSQL.
 
@@ -289,6 +318,11 @@ class TableinatorConfig:
     postgres_username: str
     postgres_password: str
     postgres_database: str
+    # Connection-pool sizing. Tableinator batches writes through a BatchProcessor
+    # whose semaphore caps concurrent flushes, so it never needs many connections.
+    # Kept small to fit the shared PgBouncer backend budget (see resolve_postgres_pool_sizes).
+    postgres_pool_min_size: int = 2
+    postgres_pool_max_size: int = 12
 
     @classmethod
     def from_env(cls) -> "TableinatorConfig":
@@ -311,12 +345,16 @@ class TableinatorConfig:
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
+        pool_min, pool_max = resolve_postgres_pool_sizes(default_min=2, default_max=12)
+
         return cls(
             amqp_connection=amqp_connection,
             postgres_host=_build_postgres_connstr(),
             postgres_username=cast("str", postgres_username),
             postgres_password=cast("str", postgres_password),
             postgres_database=cast("str", postgres_database),
+            postgres_pool_min_size=pool_min,
+            postgres_pool_max_size=pool_max,
         )
 
 
@@ -329,6 +367,11 @@ class BrainztableinatorConfig:
     postgres_username: str
     postgres_password: str
     postgres_database: str
+    # Connection-pool sizing. Brainztableinator's RabbitMQ prefetch is coupled to this
+    # max (see brainztableinator.py) so in-flight message handlers can never exceed the
+    # connection capacity. Kept small to fit the shared PgBouncer backend budget.
+    postgres_pool_min_size: int = 2
+    postgres_pool_max_size: int = 12
 
     @classmethod
     def from_env(cls) -> "BrainztableinatorConfig":
@@ -351,12 +394,16 @@ class BrainztableinatorConfig:
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
+        pool_min, pool_max = resolve_postgres_pool_sizes(default_min=2, default_max=12)
+
         return cls(
             amqp_connection=amqp_connection,
             postgres_host=_build_postgres_connstr(),
             postgres_username=cast("str", postgres_username),
             postgres_password=cast("str", postgres_password),
             postgres_database=cast("str", postgres_database),
+            postgres_pool_min_size=pool_min,
+            postgres_pool_max_size=pool_max,
         )
 
 
@@ -596,6 +643,10 @@ class ApiConfig:
     neo4j_host: str
     neo4j_username: str
     neo4j_password: str
+    # Connection-pool sizing. The API is user-facing; modest concurrency is enough and
+    # it must share the PgBouncer backend budget with the importers (see resolve_postgres_pool_sizes).
+    postgres_pool_min_size: int = 2
+    postgres_pool_max_size: int = 8
     redis_host: str = "redis://redis:6379/0"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 30
@@ -690,6 +741,8 @@ class ApiConfig:
         except ValueError:
             snapshot_max_nodes = 100
 
+        pool_min, pool_max = resolve_postgres_pool_sizes(default_min=2, default_max=8)
+
         encryption_master_key = get_secret("ENCRYPTION_MASTER_KEY") or None
         brevo_api_key = get_secret("BREVO_API_KEY") or None
         brevo_sender_email = getenv("BREVO_SENDER_EMAIL", "noreply@discogsography.com")
@@ -721,6 +774,8 @@ class ApiConfig:
             neo4j_host=_build_neo4j_uri(),
             neo4j_username=cast("str", neo4j_username),
             neo4j_password=cast("str", neo4j_password),
+            postgres_pool_min_size=pool_min,
+            postgres_pool_max_size=pool_max,
             cors_origins=cors_origins,
             snapshot_ttl_days=snapshot_ttl_days,
             snapshot_max_nodes=snapshot_max_nodes,
@@ -770,6 +825,10 @@ class InsightsConfig:
     postgres_username: str
     postgres_password: str
     postgres_database: str
+    # Connection-pool sizing. Insights runs periodic batch analytics jobs and only needs
+    # a handful of connections; kept small to fit the shared PgBouncer backend budget.
+    postgres_pool_min_size: int = 1
+    postgres_pool_max_size: int = 4
     redis_host: str = "redis://localhost:6379/0"
     schedule_hours: int = 24
     milestone_years: tuple[int, ...] = (25, 30, 40, 50, 75, 100)
@@ -813,12 +872,16 @@ class InsightsConfig:
 
         redis_host = _build_redis_url()
 
+        pool_min, pool_max = resolve_postgres_pool_sizes(default_min=1, default_max=4)
+
         return cls(
             api_base_url=api_base_url,
             postgres_host=_build_postgres_connstr(),
             postgres_username=cast("str", postgres_username),
             postgres_password=cast("str", postgres_password),
             postgres_database=cast("str", postgres_database),
+            postgres_pool_min_size=pool_min,
+            postgres_pool_max_size=pool_max,
             redis_host=redis_host,
             schedule_hours=schedule_hours,
             milestone_years=milestone_years,

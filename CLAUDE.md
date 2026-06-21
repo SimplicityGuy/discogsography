@@ -216,6 +216,14 @@ All variables support `_FILE` variants for Docker Compose runtime secrets in pro
 - **Single-statement writes** (upserts, inserts): use autocommit directly, no `conn.transaction()` needed
 - **Never call `await conn.commit()`** on autocommit connections — it's a no-op
 
+### Connection-pool sizing (shared PgBouncer budget)
+
+- Production runs behind a PgBouncer pooler in **session** mode — every pooled connection pins a dedicated Postgres backend for its whole lifetime (no multiplexing), against a hard per-database cap (currently 45)
+- **The sum of every service's `postgres_pool_max_size` is the deployment's real footprint and must stay under that cap.** Never let a single service's pool max exceed the cap
+- Pool sizes come from `resolve_postgres_pool_sizes()` in `common/config.py` (per-service defaults + `POSTGRES_POOL_MIN_SIZE` / `POSTGRES_POOL_MAX_SIZE` overrides) — do not hardcode `max_connections=` at the call site
+- **Couple RabbitMQ prefetch to pool capacity** for one-transaction-per-message consumers (`brainztableinator` uses channel-global QoS = pool max). Prefetch ≫ pool max drives the "pool exhausted" retry churn
+- Batch child-row writes (`executemany`) to keep transactions short — long *idle in transaction* windows pin backends. See [docs/postgres-pool-exhaustion-analysis.md](docs/postgres-pool-exhaustion-analysis.md)
+
 ### asyncio primitives
 
 - **Never create `asyncio.Lock`, `asyncio.Queue`, `asyncio.Event`, or `asyncio.Semaphore` in `__init__` or at module level** — they bind to the current event loop at creation time

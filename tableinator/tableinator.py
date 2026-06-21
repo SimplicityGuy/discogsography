@@ -887,20 +887,24 @@ async def main() -> None:
         "password": str(config.postgres_password),
     }
 
-    # Initialize async resilient connection pool for concurrent access
-    # Increased from max=20 to max=50 to match prefetch_count for better throughput
+    # Initialize async resilient connection pool for concurrent access.
+    # Writes go through the BatchProcessor, whose semaphore (max_concurrent_flushes)
+    # caps simultaneous PostgreSQL flushes — so a small pool is sufficient and keeps
+    # the service within the shared PgBouncer backend budget (see resolve_postgres_pool_sizes).
     try:
         connection_pool = AsyncPostgreSQLPool(
             connection_params=connection_params,
-            max_connections=50,
-            min_connections=5,
+            max_connections=config.postgres_pool_max_size,
+            min_connections=config.postgres_pool_min_size,
             max_retries=5,
             health_check_interval=30,
         )
         await connection_pool.initialize()
         logger.info("🐘 Connected to PostgreSQL with async resilient connection pool")
         logger.info(
-            "✅ Async connection pool initialized (min: 5, max: 50 connections)"
+            "✅ Async connection pool initialized (min: %d, max: %d connections)",
+            config.postgres_pool_min_size,
+            config.postgres_pool_max_size,
         )
     except Exception as e:
         logger.error("❌ Failed to initialize connection pool", error=str(e))

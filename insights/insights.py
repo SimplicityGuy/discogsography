@@ -121,8 +121,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             "user": _config.postgres_username,
             "password": _config.postgres_password,
         },
-        max_connections=5,
-        min_connections=1,
+        max_connections=_config.postgres_pool_max_size,
+        min_connections=_config.postgres_pool_min_size,
     )
     await _pool.initialize()
     logger.info("🐘 PostgreSQL pool initialized")

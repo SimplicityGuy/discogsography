@@ -32,6 +32,22 @@ logger = structlog.get_logger(__name__)
 # Config will be initialized in main
 config: BrainztableinatorConfig | None = None
 
+# Fallback prefetch when config is not yet loaded (matches BrainztableinatorConfig default).
+_DEFAULT_POOL_MAX = 12
+
+
+def _channel_prefetch() -> int:
+    """RabbitMQ prefetch coupled to the PostgreSQL pool capacity.
+
+    Unlike tableinator, brainztableinator opens one transaction per message, so every
+    in-flight handler holds a pooled connection for the duration of its write. Bounding
+    the channel's total unacked deliveries (channel-global QoS) to the pool's ``max``
+    means the broker — not the pool's exhausted-wait retry loop — applies backpressure,
+    so the pool is never oversubscribed and the shared PgBouncer budget is respected.
+    """
+    return config.postgres_pool_max_size if config is not None else _DEFAULT_POOL_MAX
+
+
 # Progress tracking
 message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
@@ -351,7 +367,10 @@ async def _recover_consumers() -> None:
             active_connection = temp_connection
             active_channel = temp_channel
 
-            await active_channel.set_qos(prefetch_count=200)
+            # Channel-global QoS bounds total in-flight handlers to the pool capacity.
+            await active_channel.set_qos(
+                prefetch_count=_channel_prefetch(), global_=True
+            )
 
             # Declare per-data-type fanout exchanges and consumer-owned queues
             queues = {}
@@ -433,56 +452,76 @@ async def _recover_consumers() -> None:
         queues = {}
 
 
-async def _insert_relationship(
-    conn: Any, source_mbid: str, source_type: str, rel: dict[str, Any]
+async def _insert_relationships(
+    conn: Any, source_mbid: str, source_type: str, rels: list[dict[str, Any]]
 ) -> None:
-    """Insert a relationship record into musicbrainz.relationships."""
-    if not rel.get("target_mbid"):
-        return  # Skip relations without a target MBID (would fail UUID cast)
-    if not rel.get("target_type"):
-        return  # Skip relations without a target entity type
-    if not rel.get("type"):
-        return  # Skip relations without a relationship type
+    """Batch-insert relationship records for one entity into musicbrainz.relationships.
+
+    All of an entity's relationships are written with a single ``executemany`` so the
+    set is pipelined in one round-trip instead of one statement (and one network
+    round-trip) per relationship. This keeps the per-message transaction short, which
+    minimizes how long the connection sits ``idle in transaction`` holding a backend —
+    the dominant pressure on the shared PgBouncer budget during a bulk import.
+    """
+    params = [
+        (
+            source_mbid,
+            source_type,
+            rel.get("target_mbid", ""),
+            rel.get("target_type", ""),
+            rel.get("type", ""),
+            Jsonb(rel.get("attributes", [])),
+            rel.get("begin_date"),
+            rel.get("end_date"),
+            rel.get("ended", False),
+        )
+        for rel in rels
+        # Skip relations missing a target MBID (would fail UUID cast), target entity
+        # type, or relationship type — these would violate NOT NULL / cast constraints.
+        if rel.get("target_mbid") and rel.get("target_type") and rel.get("type")
+    ]
+    if not params:
+        return
     async with conn.cursor() as cursor:
-        await cursor.execute(
+        await cursor.executemany(
             "INSERT INTO musicbrainz.relationships "
             "(source_mbid, source_entity_type, target_mbid, target_entity_type, relationship_type, attributes, begin_date, end_date, ended) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT (source_mbid, target_mbid, source_entity_type, target_entity_type, relationship_type) "
             "DO UPDATE SET attributes = EXCLUDED.attributes, begin_date = EXCLUDED.begin_date, "
             "end_date = EXCLUDED.end_date, ended = EXCLUDED.ended",
-            (
-                source_mbid,
-                source_type,
-                rel.get("target_mbid", ""),
-                rel.get("target_type", ""),
-                rel.get("type", ""),
-                Jsonb(rel.get("attributes", [])),
-                rel.get("begin_date"),
-                rel.get("end_date"),
-                rel.get("ended", False),
-            ),
+            params,
         )
 
 
-async def _insert_external_link(
-    conn: Any, mbid: str, entity_type: str, link: dict[str, Any]
+async def _insert_external_links(
+    conn: Any, mbid: str, entity_type: str, links: list[dict[str, Any]]
 ) -> None:
-    """Insert an external link record into musicbrainz.external_links."""
-    if not link.get("url") or not link.get("service"):
-        return  # Skip links with missing URL or service name
+    """Batch-insert external link records for one entity into musicbrainz.external_links.
+
+    Uses a single ``executemany`` for the same round-trip / transaction-window reasons
+    described in :func:`_insert_relationships`.
+    """
+    params = [
+        (
+            mbid,
+            entity_type,
+            link.get("url", ""),
+            link.get("service", ""),
+        )
+        for link in links
+        if link.get("url")
+        and link.get("service")  # Skip links missing URL or service name
+    ]
+    if not params:
+        return
     async with conn.cursor() as cursor:
-        await cursor.execute(
+        await cursor.executemany(
             "INSERT INTO musicbrainz.external_links "
             "(mbid, entity_type, url, service_name) "
             "VALUES (%s, %s, %s, %s) "
             "ON CONFLICT (mbid, entity_type, service_name, url) DO UPDATE SET url = EXCLUDED.url",
-            (
-                mbid,
-                entity_type,
-                link.get("url", ""),
-                link.get("service", ""),
-            ),
+            params,
         )
 
 
@@ -528,13 +567,9 @@ async def process_artist(conn: Any, record: dict[str, Any]) -> None:
             ),
         )
 
-    # Insert relationships
-    for rel in record.get("relations", []):
-        await _insert_relationship(conn, mbid, "artist", rel)
-
-    # Insert external links
-    for link in record.get("external_links", []):
-        await _insert_external_link(conn, mbid, "artist", link)
+    # Insert relationships and external links (batched into one round-trip each)
+    await _insert_relationships(conn, mbid, "artist", record.get("relations", []))
+    await _insert_external_links(conn, mbid, "artist", record.get("external_links", []))
 
 
 async def process_label(conn: Any, record: dict[str, Any]) -> None:
@@ -571,13 +606,9 @@ async def process_label(conn: Any, record: dict[str, Any]) -> None:
             ),
         )
 
-    # Insert relationships
-    for rel in record.get("relations", []):
-        await _insert_relationship(conn, mbid, "label", rel)
-
-    # Insert external links
-    for link in record.get("external_links", []):
-        await _insert_external_link(conn, mbid, "label", link)
+    # Insert relationships and external links (batched into one round-trip each)
+    await _insert_relationships(conn, mbid, "label", record.get("relations", []))
+    await _insert_external_links(conn, mbid, "label", record.get("external_links", []))
 
 
 async def process_release(conn: Any, record: dict[str, Any]) -> None:
@@ -605,13 +636,11 @@ async def process_release(conn: Any, record: dict[str, Any]) -> None:
             ),
         )
 
-    # Insert relationships
-    for rel in record.get("relations", []):
-        await _insert_relationship(conn, mbid, "release", rel)
-
-    # Insert external links
-    for link in record.get("external_links", []):
-        await _insert_external_link(conn, mbid, "release", link)
+    # Insert relationships and external links (batched into one round-trip each)
+    await _insert_relationships(conn, mbid, "release", record.get("relations", []))
+    await _insert_external_links(
+        conn, mbid, "release", record.get("external_links", [])
+    )
 
 
 async def process_release_group(conn: Any, record: dict[str, Any]) -> None:
@@ -642,13 +671,13 @@ async def process_release_group(conn: Any, record: dict[str, Any]) -> None:
             ),
         )
 
-    # Insert relationships
-    for rel in record.get("relations", []):
-        await _insert_relationship(conn, mbid, "release-group", rel)
-
-    # Insert external links
-    for link in record.get("external_links", []):
-        await _insert_external_link(conn, mbid, "release-group", link)
+    # Insert relationships and external links (batched into one round-trip each)
+    await _insert_relationships(
+        conn, mbid, "release-group", record.get("relations", [])
+    )
+    await _insert_external_links(
+        conn, mbid, "release-group", record.get("external_links", [])
+    )
 
 
 # Map data types to their processing functions
@@ -963,15 +992,17 @@ async def main() -> None:
     try:
         connection_pool = AsyncPostgreSQLPool(
             connection_params=connection_params,
-            max_connections=50,
-            min_connections=5,
+            max_connections=config.postgres_pool_max_size,
+            min_connections=config.postgres_pool_min_size,
             max_retries=5,
             health_check_interval=30,
         )
         await connection_pool.initialize()
         logger.info("🐘 Connected to PostgreSQL with async resilient connection pool")
         logger.info(
-            "✅ Async connection pool initialized (min: 5, max: 50 connections)"
+            "✅ Async connection pool initialized (min: %d, max: %d connections)",
+            config.postgres_pool_min_size,
+            config.postgres_pool_max_size,
         )
     except Exception as e:
         logger.error("❌ Failed to initialize connection pool", error=str(e))
@@ -1044,10 +1075,13 @@ async def main() -> None:
         channel = await amqp_connection.channel()
         active_channel = channel
 
-        await channel.set_qos(prefetch_count=200)
+        # Channel-global QoS bounds total in-flight handlers across all consumers to the
+        # pool capacity, so the connection pool is never oversubscribed (see _channel_prefetch).
+        prefetch = _channel_prefetch()
+        await channel.set_qos(prefetch_count=prefetch, global_=True)
         logger.info(
-            "🔧 QoS prefetch configured",
-            prefetch_count=200,
+            "🔧 QoS prefetch configured (channel-global, coupled to pool max)",
+            prefetch_count=prefetch,
         )
 
         # Declare per-data-type fanout exchanges and consumer-owned queues
@@ -1099,7 +1133,7 @@ async def main() -> None:
 
         logger.info(
             f"🚀 Brainztableinator started! Connected to AMQP broker ({len(MUSICBRAINZ_DATA_TYPES)} fanout exchanges). "
-            f"Consuming from {len(MUSICBRAINZ_DATA_TYPES)} queues with connection pool (max 50 connections). "
+            f"Consuming from {len(MUSICBRAINZ_DATA_TYPES)} queues with connection pool (max {config.postgres_pool_max_size} connections). "
             "Ready to process MusicBrainz messages into PostgreSQL. Press CTRL+C to exit"
         )
 
