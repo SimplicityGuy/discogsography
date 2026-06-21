@@ -27,6 +27,7 @@ from common import (
     AsyncResilientRabbitMQ,
     get_config,
     neo4j_security_kwargs,
+    parse_postgres_host_port,
     setup_logging,
 )
 from dashboard.admin_proxy import configure as configure_admin_proxy, router as admin_router
@@ -166,13 +167,8 @@ class DashboardApp:
             logger.info("🔗 Connected to Neo4j with resilient driver")
 
             # Initialize resilient PostgreSQL connection
-            # Parse host and port from address
-            if ":" in self.config.postgres_host:
-                host, port_str = self.config.postgres_host.split(":", 1)
-                port = int(port_str)
-            else:
-                host = self.config.postgres_host
-                port = 5432
+            # Parse host and port from address (POSTGRES_HOST may embed a port, e.g. a pooler)
+            host, port = parse_postgres_host_port(self.config.postgres_host)
 
             self.postgres_conn = AsyncResilientPostgreSQL(
                 connection_params={

@@ -24,6 +24,7 @@ from common import (
     AsyncPostgreSQLPool,
     AsyncResilientNeo4jDriver,
     neo4j_security_kwargs,
+    parse_postgres_host_port,
     setup_logging,
 )
 from common.config import get_secret
@@ -47,13 +48,9 @@ POSTGRES_DATABASE = os.environ.get("POSTGRES_DATABASE", "discogsography")
 
 
 def _postgres_connection_params() -> dict[str, Any]:
-    """Parse POSTGRES_HOST into psycopg connection params."""
-    if ":" in POSTGRES_HOST:
-        host, port_str = POSTGRES_HOST.split(":", 1)
-        port = int(port_str)
-    else:
-        host = POSTGRES_HOST
-        port = 5432
+    """Parse POSTGRES_HOST (which may embed a port, e.g. a pooler) into psycopg connection params."""
+    default_port = int(os.environ.get("POSTGRES_PORT", "5432") or "5432")
+    host, port = parse_postgres_host_port(POSTGRES_HOST, default_port)
     return {
         "host": host,
         "port": port,

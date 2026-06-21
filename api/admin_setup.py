@@ -14,15 +14,14 @@ import sys
 import psycopg
 
 from api.auth import _hash_password
-from common.config import get_secret
+from common.config import get_secret, parse_postgres_host_port
 
 
 def _build_conninfo() -> str:
     """Build PostgreSQL connection string from environment variables."""
-    host = getenv("POSTGRES_HOST", "localhost")
-    port = getenv("POSTGRES_PORT", "5432")
-    if ":" in host:
-        host, port = host.rsplit(":", 1)
+    # POSTGRES_HOST may include an optional :port suffix (e.g. a pooler)
+    default_port = int(getenv("POSTGRES_PORT", "5432") or "5432")
+    host, port = parse_postgres_host_port(getenv("POSTGRES_HOST", "localhost"), default_port)
     user = get_secret("POSTGRES_USERNAME") or "postgres"
     password = get_secret("POSTGRES_PASSWORD") or "postgres"
     database = getenv("POSTGRES_DATABASE", "discogsography")

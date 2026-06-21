@@ -21,6 +21,7 @@ from common.config import (
     TableinatorConfig,
     get_config,
     neo4j_security_kwargs,
+    parse_postgres_host_port,
     setup_logging,
 )
 from common.data_normalizer import (
@@ -128,6 +129,7 @@ __all__ = [
     "log_sql_query",
     "neo4j_security_kwargs",
     "normalize_record",
+    "parse_postgres_host_port",
     "process_message_with_retry",
     "resilient_connection",
     "setup_logging",

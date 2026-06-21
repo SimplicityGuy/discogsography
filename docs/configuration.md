@@ -225,14 +225,20 @@ Bolt traffic crosses an untrusted network (separate host/VM, overlay network, cl
 
 ### PostgreSQL Configuration
 
-| Variable            | Description         | Default          | Required |
-| ------------------- | ------------------- | ---------------- | -------- |
-| `POSTGRES_HOST`     | PostgreSQL hostname | `localhost`      | Yes      |
-| `POSTGRES_USERNAME` | PostgreSQL username | (none)           | Yes      |
-| `POSTGRES_PASSWORD` | PostgreSQL password | (none)           | Yes      |
-| `POSTGRES_DATABASE` | Database name       | `discogsography` | Yes      |
+| Variable            | Description                                  | Default          | Required |
+| ------------------- | -------------------------------------------- | ---------------- | -------- |
+| `POSTGRES_HOST`     | PostgreSQL hostname, optionally `host:port`  | `localhost`      | Yes      |
+| `POSTGRES_PORT`     | PostgreSQL port (used when not in host)       | `5432`           | No       |
+| `POSTGRES_USERNAME` | PostgreSQL username                          | (none)           | Yes      |
+| `POSTGRES_PASSWORD` | PostgreSQL password                          | (none)           | Yes      |
+| `POSTGRES_DATABASE` | Database name                                | `discogsography` | Yes      |
 
 **Used By**: Tableinator, Dashboard, API, Insights, Brainztableinator, Schema-Init
+
+> **Note**: `POSTGRES_HOST` may include a port, e.g. `pgbouncer:6432` (useful when
+> connecting through a connection pooler). An embedded port always takes precedence
+> over `POSTGRES_PORT`; if no port is present, `POSTGRES_PORT` (default `5432`) is used.
+> IPv6 hosts may be bracketed, e.g. `[::1]:6432`.
 
 **Connection Details**:
 
@@ -259,6 +265,12 @@ POSTGRES_DATABASE="discogsography"
 
 # Remote server
 POSTGRES_HOST="db.example.com"
+POSTGRES_USERNAME="app_user"
+POSTGRES_PASSWORD="secure-password"
+POSTGRES_DATABASE="discogsography_prod"
+
+# Through a connection pooler (port embedded in host)
+POSTGRES_HOST="pgbouncer:6432"
 POSTGRES_USERNAME="app_user"
 POSTGRES_PASSWORD="secure-password"
 POSTGRES_DATABASE="discogsography_prod"

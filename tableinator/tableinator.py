@@ -20,6 +20,7 @@ from common import (
     HealthServer,
     TableinatorConfig,
     normalize_record,
+    parse_postgres_host_port,
     setup_logging,
 )
 from orjson import loads
@@ -874,13 +875,8 @@ async def main() -> None:
         logger.error("❌ Configuration error", error=str(e))
         return
 
-    # Parse host and port from address
-    if ":" in config.postgres_host:
-        host, port_str = config.postgres_host.split(":", 1)
-        port = int(port_str)
-    else:
-        host = config.postgres_host
-        port = 5432
+    # Parse host and port from address (POSTGRES_HOST may embed a port, e.g. a pooler)
+    host, port = parse_postgres_host_port(config.postgres_host)
 
     # Set connection parameters
     connection_params = {

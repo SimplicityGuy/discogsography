@@ -66,7 +66,7 @@ from api.services.discogs import (
     fetch_discogs_identity,
     request_oauth_token,
 )
-from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver, HealthServer, neo4j_security_kwargs, setup_logging
+from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver, HealthServer, neo4j_security_kwargs, parse_postgres_host_port, setup_logging
 from common.config import ApiConfig
 from common.query_debug import execute_sql
 
@@ -213,16 +213,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     health_srv.start_background()
     logger.info("🏥 Health server started", port=API_HEALTH_PORT)
 
-    # Parse postgres address (format: host:port)
-    if ":" in _config.postgres_host:
-        host, port_str = _config.postgres_host.rsplit(":", 1)
-    else:
-        host = _config.postgres_host
-        port_str = "5432"
+    # Parse postgres address (POSTGRES_HOST may embed a port, e.g. a pooler)
+    host, port = parse_postgres_host_port(_config.postgres_host)
     _pool = AsyncPostgreSQLPool(
         connection_params={
             "host": host,
-            "port": int(port_str),
+            "port": port,
             "dbname": _config.postgres_database,
             "user": _config.postgres_username,
             "password": _config.postgres_password,
