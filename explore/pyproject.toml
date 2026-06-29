@@ -18,7 +18,7 @@ classifiers = [
 ]
 license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
-    "fastapi>=0.138.0",
+    "fastapi>=0.138.2",
     "httpx>=0.28.1",
     "orjson>=3.11.9",
     "pydantic>=2.13.4",
