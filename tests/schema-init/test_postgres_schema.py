@@ -1,6 +1,6 @@
 """Tests for schema-init/postgres_schema.py."""
 
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -9,6 +9,7 @@ from postgres_schema import (
     _ENTITY_TABLES,
     _INSIGHTS_TABLES,
     _MUSICBRAINZ_INDEXES,
+    _MUSICBRAINZ_MIGRATIONS,
     _MUSICBRAINZ_TABLES,
     _SPECIFIC_INDEXES,
     _USER_TABLES,
@@ -107,6 +108,56 @@ class TestInsightsSchema:
         assert "insights.computation_log table" in table_names
 
 
+class TestMusicBrainzDiscogsIdColumns:
+    """Discogs IDs exceed the int4 limit (2,147,483,647), so the MusicBrainz
+    columns that store them must be BIGINT. Regression guard for the
+    brainztableinator 'integer out of range' overflow on releases.
+    """
+
+    _DISCOGS_ID_COLUMNS: ClassVar[list[tuple[str, str]]] = [
+        ("musicbrainz.artists table", "discogs_artist_id"),
+        ("musicbrainz.labels table", "discogs_label_id"),
+        ("musicbrainz.releases table", "discogs_release_id"),
+        ("musicbrainz.release_groups table", "discogs_master_id"),
+    ]
+
+    _MIGRATION_NAMES: ClassVar[list[str]] = [
+        "musicbrainz.artists.discogs_artist_id -> BIGINT",
+        "musicbrainz.labels.discogs_label_id -> BIGINT",
+        "musicbrainz.releases.discogs_release_id -> BIGINT",
+        "musicbrainz.release_groups.discogs_master_id -> BIGINT",
+    ]
+
+    @pytest.mark.parametrize(("table_name", "column"), _DISCOGS_ID_COLUMNS)
+    def test_create_table_uses_bigint(self, table_name: str, column: str) -> None:
+        """Fresh deployments: the CREATE TABLE column must be BIGINT, not INTEGER."""
+        sql = dict(_MUSICBRAINZ_TABLES)[table_name]
+        assert f"{column} BIGINT" in sql, f"{column} in {table_name} must be BIGINT"
+        assert f"{column} INTEGER" not in sql, f"{column} in {table_name} is still INTEGER"
+
+    @pytest.mark.parametrize("statement_name", _MIGRATION_NAMES)
+    def test_widening_migration_present(self, statement_name: str) -> None:
+        """Existing deployments: an ALTER COLUMN ... TYPE BIGINT migration must exist.
+
+        CREATE TABLE IF NOT EXISTS never alters a pre-existing table.
+        """
+        sql = dict(_MUSICBRAINZ_MIGRATIONS)[statement_name]
+        assert "ALTER COLUMN" in sql and "TYPE BIGINT" in sql
+
+    def test_one_migration_per_discogs_id_column(self) -> None:
+        assert len(_MUSICBRAINZ_MIGRATIONS) == len(self._DISCOGS_ID_COLUMNS)
+
+    def test_migrations_run_after_tables_and_before_indexes(self) -> None:
+        """Execution order: tables exist, then widen columns, then build indexes."""
+        names = [name for name, _ in _MUSICBRAINZ_TABLES + _MUSICBRAINZ_MIGRATIONS + _MUSICBRAINZ_INDEXES]
+        last_table = max(i for i, n in enumerate(names) if n in dict(_MUSICBRAINZ_TABLES))
+        first_migration = min(i for i, n in enumerate(names) if n.endswith("-> BIGINT"))
+        last_migration = max(i for i, n in enumerate(names) if n.endswith("-> BIGINT"))
+        first_index = min(i for i, n in enumerate(names) if n.startswith("idx_mb_"))
+        assert last_table < first_migration
+        assert last_migration < first_index
+
+
 class TestAppTokensTable:
     """Schema-shape tests for the app_tokens third-party auth table."""
 
@@ -186,6 +237,7 @@ class TestCreatePostgresSchema:
             + len(_USER_TABLES)
             + len(_INSIGHTS_TABLES)
             + len(_MUSICBRAINZ_TABLES)
+            + len(_MUSICBRAINZ_MIGRATIONS)
             + len(_MUSICBRAINZ_INDEXES)
         )
         assert cursor.execute.await_count == expected_calls
@@ -213,6 +265,7 @@ class TestCreatePostgresSchema:
             + len(_USER_TABLES)
             + len(_INSIGHTS_TABLES)
             + len(_MUSICBRAINZ_TABLES)
+            + len(_MUSICBRAINZ_MIGRATIONS)
             + len(_MUSICBRAINZ_INDEXES)
         )
         assert cursor.execute.await_count == expected_calls
@@ -232,7 +285,11 @@ class TestCreatePostgresSchema:
 
         for stmt in captured:
             upper = stmt.upper()
-            assert "IF NOT EXISTS" in upper, f"Statement is not idempotent: {stmt[:80]}..."
+            # `ALTER TABLE ... ALTER COLUMN ... TYPE` is inherently idempotent:
+            # PostgreSQL performs no table rewrite when the column is already the
+            # target type, so re-running is a no-op (no IF NOT EXISTS form exists).
+            is_idempotent_alter_type = "ALTER COLUMN" in upper and "TYPE " in upper
+            assert "IF NOT EXISTS" in upper or is_idempotent_alter_type, f"Statement is not idempotent: {stmt[:80]}..."
             # A multi-statement blob could still hide an un-guarded DROP that would
             # not be idempotent — any DROP must be guarded with IF EXISTS.
             if "DROP " in upper:
@@ -253,6 +310,7 @@ class TestCreatePostgresSchema:
             + len(_USER_TABLES)
             + len(_INSIGHTS_TABLES)
             + len(_MUSICBRAINZ_TABLES)
+            + len(_MUSICBRAINZ_MIGRATIONS)
             + len(_MUSICBRAINZ_INDEXES)
         )
         assert cursor.execute.await_count == expected_calls

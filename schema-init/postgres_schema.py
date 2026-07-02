@@ -539,7 +539,7 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
             begin_area TEXT,
             end_area TEXT,
             disambiguation TEXT,
-            discogs_artist_id INTEGER,
+            discogs_artist_id BIGINT,
             aliases JSONB,
             tags JSONB,
             data JSONB,
@@ -559,7 +559,7 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
             ended BOOLEAN DEFAULT FALSE,
             area TEXT,
             disambiguation TEXT,
-            discogs_label_id INTEGER,
+            discogs_label_id BIGINT,
             data JSONB,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -573,7 +573,7 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
             barcode TEXT,
             status TEXT,
             release_group_mbid UUID,
-            discogs_release_id INTEGER,
+            discogs_release_id BIGINT,
             data JSONB,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -588,7 +588,7 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
             secondary_types JSONB,
             first_release_date TEXT,
             disambiguation TEXT,
-            discogs_master_id INTEGER,
+            discogs_master_id BIGINT,
             data JSONB,
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -622,6 +622,35 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
             created_at TIMESTAMPTZ DEFAULT NOW(),
             UNIQUE (mbid, entity_type, service_name, url)
         )""",
+    ),
+]
+
+
+# MusicBrainz migrations — widen Discogs ID columns to BIGINT on existing
+# deployments. The CREATE TABLE statements above already use BIGINT, but
+# `CREATE TABLE IF NOT EXISTS` never alters a pre-existing table, so tables
+# created before this change keep their INTEGER (int4) columns. Discogs IDs have
+# crossed the int4 limit (2,147,483,647), causing "integer out of range" on
+# insert in brainztableinator. `ALTER COLUMN ... TYPE BIGINT` is a no-op (no
+# table rewrite) when the column is already BIGINT, so this is safe to run on
+# every startup. Must run AFTER the CREATE TABLE statements and BEFORE the
+# indexes that reference these columns.
+_MUSICBRAINZ_MIGRATIONS: list[tuple[str, str]] = [
+    (
+        "musicbrainz.artists.discogs_artist_id -> BIGINT",
+        "ALTER TABLE musicbrainz.artists ALTER COLUMN discogs_artist_id TYPE BIGINT",
+    ),
+    (
+        "musicbrainz.labels.discogs_label_id -> BIGINT",
+        "ALTER TABLE musicbrainz.labels ALTER COLUMN discogs_label_id TYPE BIGINT",
+    ),
+    (
+        "musicbrainz.releases.discogs_release_id -> BIGINT",
+        "ALTER TABLE musicbrainz.releases ALTER COLUMN discogs_release_id TYPE BIGINT",
+    ),
+    (
+        "musicbrainz.release_groups.discogs_master_id -> BIGINT",
+        "ALTER TABLE musicbrainz.release_groups ALTER COLUMN discogs_master_id TYPE BIGINT",
     ),
 ]
 
@@ -772,8 +801,12 @@ async def create_postgres_schema(pool: Any) -> int:
                     logger.error(f"❌ Failed to create schema object '{name}': {e}")
                     failure_count += 1
 
-            # ── MusicBrainz tables ────────────────────────────────────────
-            for name, stmt in _MUSICBRAINZ_TABLES + _MUSICBRAINZ_INDEXES:
+            # ── MusicBrainz tables, migrations, indexes ───────────────────
+            # Order matters: tables first (so they exist), then column-widening
+            # migrations, then indexes that reference the widened columns.
+            for name, stmt in (
+                _MUSICBRAINZ_TABLES + _MUSICBRAINZ_MIGRATIONS + _MUSICBRAINZ_INDEXES
+            ):
                 try:
                     await cursor.execute(stmt)
                     logger.info(f"✅ Schema: {name}")
@@ -788,6 +821,7 @@ async def create_postgres_schema(pool: Any) -> int:
         + len(_USER_TABLES)
         + len(_INSIGHTS_TABLES)
         + len(_MUSICBRAINZ_TABLES)
+        + len(_MUSICBRAINZ_MIGRATIONS)
         + len(_MUSICBRAINZ_INDEXES)
     )
     logger.info(

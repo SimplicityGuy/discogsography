@@ -80,7 +80,7 @@ CREATE TABLE musicbrainz.artists (
     begin_area         TEXT,
     end_area           TEXT,
     disambiguation     TEXT,
-    discogs_artist_id  INTEGER,
+    discogs_artist_id  BIGINT,
     aliases            JSONB,
     tags               JSONB,
     data               JSONB,
@@ -102,7 +102,7 @@ CREATE TABLE musicbrainz.labels (
     ended              BOOLEAN DEFAULT FALSE,
     area               TEXT,
     disambiguation     TEXT,
-    discogs_label_id   INTEGER,
+    discogs_label_id   BIGINT,
     data               JSONB,
     created_at         TIMESTAMPTZ DEFAULT NOW(),
     updated_at         TIMESTAMPTZ DEFAULT NOW()
@@ -118,7 +118,7 @@ CREATE TABLE musicbrainz.releases (
     barcode            TEXT,
     status             TEXT,
     release_group_mbid UUID,
-    discogs_release_id INTEGER,
+    discogs_release_id BIGINT,
     data               JSONB,
     created_at         TIMESTAMPTZ DEFAULT NOW(),
     updated_at         TIMESTAMPTZ DEFAULT NOW()
@@ -135,7 +135,7 @@ CREATE TABLE musicbrainz.release_groups (
     secondary_types     JSONB,
     first_release_date  TEXT,
     disambiguation      TEXT,
-    discogs_master_id   INTEGER,
+    discogs_master_id   BIGINT,
     data                JSONB,
     created_at          TIMESTAMPTZ DEFAULT NOW(),
     updated_at          TIMESTAMPTZ DEFAULT NOW()
