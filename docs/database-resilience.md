@@ -92,7 +92,7 @@ During database outages:
 ### Tableinator Service (PostgreSQL)
 
 - Uses `ResilientPostgreSQLPool` with health monitoring
-- Connection pool with min/max bounds (2-20)
+- Connection pool with min/max bounds (2-12 by default; see `POSTGRES_POOL_MIN_SIZE` / `POSTGRES_POOL_MAX_SIZE` in [Configuration Guide](configuration.md))
 - Handles `InterfaceError` and `OperationalError`
 - Automatic connection recycling
 
@@ -113,7 +113,7 @@ During database outages:
 
 - Uses `ResilientPostgreSQLPool` with health monitoring
 - Stores MusicBrainz data in `musicbrainz` PostgreSQL schema
-- Connection pool with min/max bounds (2-20)
+- Connection pool with min/max bounds (2-12 by default; see `POSTGRES_POOL_MIN_SIZE` / `POSTGRES_POOL_MAX_SIZE` in [Configuration Guide](configuration.md)); RabbitMQ prefetch (channel-global QoS) is coupled to the pool max instead of using batch flushing
 - Handles `InterfaceError` and `OperationalError`
 
 ## Configuration

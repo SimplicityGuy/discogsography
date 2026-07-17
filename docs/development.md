@@ -101,9 +101,11 @@ discogsography/
 │   ├── README.md
 │   └── __init__.py
 ├── 🤖 mcp-server/          # AI assistant MCP server
-│   ├── server.py           # FastMCP server exposing knowledge graph
-│   ├── README.md
-│   └── __init__.py
+│   ├── mcp_server/
+│   │   ├── server.py       # FastMCP server exposing knowledge graph
+│   │   └── __init__.py
+│   ├── pyproject.toml
+│   └── README.md
 ├── 🔧 schema-init/         # One-shot database schema initializer
 │   ├── schema_init.py      # Entry point — creates Neo4j + PostgreSQL schema
 │   ├── neo4j_schema.py     # Neo4j constraints and indexes
@@ -599,7 +601,7 @@ uv run python -m memory_profiler script.py
 just security
 
 # Or directly
-uv run bandit -r . -ll
+uv run bandit -r . -c pyproject.toml
 ```
 
 ### Dependency Scanning
@@ -695,9 +697,16 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
+  # mypy runs as a local hook (uv run mypy .) rather than the mirrors-mypy repo,
+  # so it always uses the project's own dependency environment
+  - repo: local
     hooks:
       - id: mypy
+        entry: uv run mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+        args: ["."]
 ```
 
 ## 🐛 Troubleshooting Development Issues
