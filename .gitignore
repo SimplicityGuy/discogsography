@@ -346,3 +346,14 @@ perftest-results/
 # graphify
 ###
 graphify-out/cache/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+
+###
+# beads (bead corpus lives on the dolt remote: refs/dolt/data)
+###
+.beads/
