@@ -8,6 +8,9 @@
 
 ## AI Development Rules
 
+- **Every change needs a bead first** — file an issue bead for small work or an epic bead with
+  task/bug children for larger, decomposable work, before starting implementation. See
+  [docs/AGF.md](docs/AGF.md) for the full bead-driven workflow.
 - **ALWAYS use `uv run`** for any Python command (pytest, mypy, ruff, python scripts)
 - **Use git worktrees** for all feature work — create in `.worktrees/` directory, branch from `origin/main`. Each worktree = one branch = one PR. Use the `superpowers:using-git-worktrees` skill.
 - **Open a PR for every change** — never push directly to `main`
