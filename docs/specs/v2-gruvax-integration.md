@@ -57,10 +57,10 @@ Outcome chosen: **populate `catalog_number` from both writers (per-user sync + b
 
 ### 3.1 App token format
 
-Plaintext token: `dscg_` + 32 random bytes encoded as base64url without padding (44 chars body, ~50 chars total).
+Plaintext token: `dscg_` + 32 random bytes encoded as base64url without padding (43 chars body, ~48 chars total, via `secrets.token_urlsafe(32)`).
 
 ```
-dscg_7yA-Nq3PtV6m1k9_LpOcEx2gFw5Hr0sIuYj8RdMv1bAo
+dscg_7yA-Nq3PtV6m1k9_LpOcEx2gFw5Hr0sIuYj8RdMv1bA
 ```
 
 - The `dscg_` prefix is **public**. It exists so a leaked token in logs or screenshots is visually recognizable.
@@ -340,7 +340,7 @@ The three collection endpoints carry per-token rate limits:
 - **60 requests / minute** per token
 - **600 requests / hour** per token
 
-Limits are keyed by `SHA-256(authorization_header)[:16]` — distinct tokens get distinct buckets; the plaintext never appears in slowapi telemetry. Unauthenticated requests fall back to client-IP keying.
+Limits are keyed by `SHA-256(bearer_token)[:16]` (the token/credential portion of the `Authorization: Bearer …` header, not the raw header string) — distinct tokens get distinct buckets; the plaintext never appears in slowapi telemetry. Unauthenticated requests fall back to client-IP keying.
 
 A 429 response includes:
 - `Retry-After: <seconds>` — how long to wait before retrying
@@ -350,7 +350,7 @@ A 429 response includes:
 
 ## 8. Mint / list / revoke flow for the user
 
-The flow is fully self-service in the discogsography Settings UI (`/settings/apps` lives under the Account Settings pane in the explore service):
+The flow is fully self-service in the discogsography Settings UI (a "Connected Apps" card in the Account Settings pane of the Explore single-page app — `explore/static/index.html` `#settingsPane`, no dedicated URL route):
 
 1. User signs in to discogsography.
 2. Navigates to **Account Settings → Connected Apps**.

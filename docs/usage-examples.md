@@ -235,6 +235,10 @@ LIMIT 20;
 
 #### PageRank - Find influential artists
 
+> **Note**: This requires the Neo4j **Graph Data Science (GDS)** plugin, which is **not** included in this
+> project's `docker-compose.yml` (only `apoc` is installed by default — see the `NEO4J_PLUGINS` setting).
+> Add `"graph-data-science"` to `NEO4J_PLUGINS` and restart Neo4j before running this query.
+
 ```cypher
 CALL gds.pageRank.stream({
   nodeProjection: 'Artist',
