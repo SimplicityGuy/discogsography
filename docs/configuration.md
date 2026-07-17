@@ -482,7 +482,7 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
 | `POSTGRES_BATCH_SIZE`           | Records per batch for PostgreSQL         | `100`        | `500`          | 10-1000    |
 | `POSTGRES_BATCH_FLUSH_INTERVAL` | Seconds between automatic flushes        | `5.0`        | `2.0`          | 1.0-60.0   |
 
-**Used By**: Graphinator (Neo4j), Tableinator (PostgreSQL), Brainzgraphinator (Neo4j), Brainztableinator (PostgreSQL)
+**Used By**: Graphinator (Neo4j), Tableinator (PostgreSQL), Brainzgraphinator (Neo4j). Brainztableinator does **not** use batch flushing — it commits one PostgreSQL transaction per message and instead couples RabbitMQ prefetch to its connection-pool size (channel-global QoS = pool max); the `POSTGRES_BATCH_*` variables have no effect on it.
 
 **Purpose**: Improve write performance by batching multiple database operations
 
@@ -543,21 +543,21 @@ See [Performance Guide](performance-guide.md) for detailed optimization strategi
 
 ## Dashboard Configuration
 
-| Variable                       | Description                                  | Default           | Required |
-| ------------------------------ | -------------------------------------------- | ----------------- | -------- |
-| `RABBITMQ_MANAGEMENT_USER`     | RabbitMQ management API username             | `discogsography`  | No       |
-| `RABBITMQ_MANAGEMENT_PASSWORD` | RabbitMQ management API password             | `discogsography`  | No       |
+| Variable                | Description                                  | Default           | Required |
+| ------------------------ | --------------------------------------------- | ----------------- | -------- |
+| `RABBITMQ_USERNAME`     | RabbitMQ management API username (shared with the core RabbitMQ credentials) | `discogsography`  | No       |
+| `RABBITMQ_PASSWORD`     | RabbitMQ management API password (shared with the core RabbitMQ credentials) | `discogsography`  | No       |
 | `CORS_ORIGINS`                 | Comma-separated list of allowed CORS origins | (none — disabled) | No       |
 | `CACHE_WARMING_ENABLED`        | Pre-warm cache on startup                    | `true`            | No       |
 | `CACHE_WEBHOOK_SECRET`         | Secret for cache invalidation webhooks       | (none — disabled) | No       |
 | `API_HOST`                     | API service hostname for admin proxy         | `api`             | No       |
 | `API_PORT`                     | API service port for admin proxy             | `8004`            | No       |
 
-**Used By**: Dashboard only (for `RABBITMQ_MANAGEMENT_USER`, `CACHE_WARMING_ENABLED`, `CACHE_WEBHOOK_SECRET`); `CORS_ORIGINS` is also supported by the API service — see the [API](#api) section above. `API_HOST` / `API_PORT` are used by the admin proxy router to forward authenticated admin requests to the API service.
+**Used By**: Dashboard only (for `CACHE_WARMING_ENABLED`, `CACHE_WEBHOOK_SECRET`); `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` and `CORS_ORIGINS` are also supported by other services — see the [RabbitMQ Configuration](#rabbitmq-configuration) and [API](#api) sections above. `API_HOST` / `API_PORT` are used by the admin proxy router to forward authenticated admin requests to the API service.
 
 **Notes**:
 
-- `RABBITMQ_MANAGEMENT_USER` / `RABBITMQ_MANAGEMENT_PASSWORD` must match the credentials set in RabbitMQ for the management plugin. In production these are supplied via `RABBITMQ_MANAGEMENT_USER_FILE` / `RABBITMQ_MANAGEMENT_PASSWORD_FILE` (Docker secrets)
+- The dashboard authenticates against the RabbitMQ management API using the same `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` credentials as the core RabbitMQ connection (there is no separate management-only credential pair). In production these are supplied via `RABBITMQ_USERNAME_FILE` / `RABBITMQ_PASSWORD_FILE` (Docker secrets)
 - `CORS_ORIGINS` is optional; omit it to restrict cross-origin access
 - `CACHE_WEBHOOK_SECRET` enables an authenticated endpoint to invalidate cached queries
 - `API_HOST` / `API_PORT` configure the admin proxy — the dashboard forwards admin panel requests (login, extraction trigger, DLQ purge) to the API service at `http://{API_HOST}:{API_PORT}`
@@ -669,7 +669,7 @@ RABBITMQ_PASSWORD=discogsography # default: discogsography
 # Optional
 PERIODIC_CHECK_DAYS=5            # Days between update checks (code default: 15, docker-compose: 5 Discogs / 3 MusicBrainz)
 BATCH_SIZE=100                   # Records per AMQP publish batch (default: 100)
-MAX_WORKERS=4                    # Concurrent processing workers (default: 4)
+MAX_WORKERS=4                    # Concurrent processing workers (default: number of CPU cores)
 FORCE_REPROCESS=false            # Force reprocess even if already extracted (default: false)
 LOG_LEVEL=INFO
 ```
@@ -700,7 +700,7 @@ NEO4J_BATCH_SIZE=500
 NEO4J_BATCH_FLUSH_INTERVAL=2.0
 
 # Optional - Startup
-STARTUP_DELAY=15                 # Seconds to wait before starting (default: 15)
+STARTUP_DELAY=15                 # Seconds to wait before starting (code default: 5, docker-compose: 15)
 
 # Optional - Logging
 LOG_LEVEL=INFO
@@ -733,7 +733,7 @@ POSTGRES_BATCH_SIZE=500
 POSTGRES_BATCH_FLUSH_INTERVAL=2.0
 
 # Optional - Startup
-STARTUP_DELAY=20                 # Seconds to wait before starting (default: 20)
+STARTUP_DELAY=20                 # Seconds to wait before starting (code default: 5, docker-compose: 20)
 
 # Optional - Logging
 LOG_LEVEL=INFO
@@ -767,14 +767,10 @@ POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
 REDIS_HOST="localhost"
 
-# RabbitMQ
+# RabbitMQ (also used to authenticate against the RabbitMQ management API)
 RABBITMQ_HOST=rabbitmq           # default: rabbitmq
 RABBITMQ_USERNAME=discogsography # default: discogsography
 RABBITMQ_PASSWORD=discogsography # default: discogsography
-
-# Optional - RabbitMQ Management API access
-RABBITMQ_MANAGEMENT_USER=discogsography
-RABBITMQ_MANAGEMENT_PASSWORD=discogsography
 
 # Optional - CORS
 CORS_ORIGINS="http://localhost:8003,http://localhost:8006"  # comma-separated origins
@@ -809,7 +805,7 @@ INSIGHTS_SCHEDULE_HOURS=24                    # Computation interval in hours (d
 INSIGHTS_MILESTONE_YEARS="25,30,40,50,75,100" # Anniversary years to highlight (default: 25,30,40,50,75,100)
 
 # Optional - Startup
-STARTUP_DELAY=10                              # Seconds to wait before starting (default: 10)
+STARTUP_DELAY=10                              # Seconds to wait before starting (code default: 0, docker-compose: 10)
 
 # Optional - Logging
 LOG_LEVEL=INFO
@@ -842,7 +838,7 @@ NEO4J_BATCH_SIZE=500
 NEO4J_BATCH_FLUSH_INTERVAL=2.0
 
 # Optional - Startup
-STARTUP_DELAY=20                 # Seconds to wait before starting (default: 20)
+STARTUP_DELAY=20                 # Seconds to wait before starting (code default: 5, docker-compose: 20)
 
 # Optional - Logging
 LOG_LEVEL=INFO
@@ -870,13 +866,12 @@ RABBITMQ_PASSWORD=discogsography # default: discogsography
 CONSUMER_CANCEL_DELAY=300
 QUEUE_CHECK_INTERVAL=3600
 
-# Optional - Batch Processing (enabled by default)
-POSTGRES_BATCH_MODE=true
-POSTGRES_BATCH_SIZE=500
-POSTGRES_BATCH_FLUSH_INTERVAL=2.0
+# Optional - PostgreSQL pool sizing (also bounds RabbitMQ prefetch — see notes below)
+POSTGRES_POOL_MIN_SIZE=2         # code default: 2
+POSTGRES_POOL_MAX_SIZE=12        # code default: 12
 
 # Optional - Startup
-STARTUP_DELAY=25                 # Seconds to wait before starting (default: 25)
+STARTUP_DELAY=25                 # Seconds to wait before starting (code default: 5, docker-compose: 25)
 
 # Optional - Logging
 LOG_LEVEL=INFO
@@ -884,7 +879,7 @@ LOG_LEVEL=INFO
 
 Health check: http://localhost:8010/health
 
-**Notes**: Brainztableinator stores all MusicBrainz data in the `musicbrainz` PostgreSQL schema — including entities without Discogs matches — with relationships and external links. Consumes from the `musicbrainz-{artists,labels,release-groups,releases}` exchanges.
+**Notes**: Brainztableinator stores all MusicBrainz data in the `musicbrainz` PostgreSQL schema — including entities without Discogs matches — with relationships and external links. Consumes from the `musicbrainz-{artists,labels,release-groups,releases}` exchanges. Unlike Graphinator/Tableinator/Brainzgraphinator, it does **not** batch writes — it commits one PostgreSQL transaction per message and instead sets RabbitMQ prefetch (channel-global QoS) equal to its connection-pool maximum, so in-flight message handlers never exceed pool capacity.
 
 ### MCP Server
 
