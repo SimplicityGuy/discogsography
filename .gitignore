@@ -352,3 +352,8 @@ graphify-out/cache/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+###
+# beads (bead corpus lives on the dolt remote: refs/dolt/data)
+###
+.beads/

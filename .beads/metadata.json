@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "discogsography",
-  "project_id": "83284ac2-a32c-48cf-a1e0-e46bd527501c"
-}

@@ -15,8 +15,8 @@
       {
         "hooks": [
           {
-            "type": "command",
-            "command": "bd prime --hook-json"
+            "command": "bd prime --hook-json",
+            "type": "command"
           }
         ]
       }
@@ -28,8 +28,8 @@
     ]
   },
   "statusLine": {
-    "type": "command",
     "command": "ws statusline",
-    "padding": 0
+    "padding": 0,
+    "type": "command"
   }
 }
