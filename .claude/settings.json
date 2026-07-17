@@ -10,6 +10,26 @@
         ],
         "matcher": "Glob|Grep"
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bd prime --hook-json"
+          }
+        ]
+      }
     ]
+  },
+  "permissions": {
+    "deny": [
+      "Bash(bd remember:*)"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "ws statusline",
+    "padding": 0
   }
 }
