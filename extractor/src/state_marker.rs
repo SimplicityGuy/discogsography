@@ -188,7 +188,8 @@ impl StateMarker {
 
         // Try to read and parse the file, but return None if it fails
         // This allows the extractor to start fresh if the state file is corrupt
-        let contents = match fs::read_to_string(path).await { // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+        let read_result = fs::read_to_string(path).await; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+        let contents = match read_result {
             Ok(contents) => contents,
             Err(e) => {
                 warn!("⚠️ Failed to read state marker file, will start fresh: {}", e);

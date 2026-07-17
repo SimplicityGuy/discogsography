@@ -36,7 +36,8 @@ pub fn discover_mb_dump_files(root: &Path) -> Result<HashMap<DataType, PathBuf>>
     let mut found: HashMap<DataType, PathBuf> = HashMap::new();
 
     // `root` comes from operator-controlled config (CLI/env var), not HTTP input.
-    let entries: Vec<_> = match std::fs::read_dir(root) { // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+    let read_dir_result = std::fs::read_dir(root); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+    let entries: Vec<_> = match read_dir_result {
         Ok(rd) => rd.filter_map(|e| e.ok()).filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false)).collect(),
         Err(e) => {
             warn!("⚠️ Cannot read MusicBrainz dump directory {:?}: {}", root, e);
