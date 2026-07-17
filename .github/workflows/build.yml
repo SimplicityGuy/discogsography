@@ -79,30 +79,31 @@ jobs:
     if: needs.detect-changes.outputs.code-changed == 'true'
     uses: ./.github/workflows/list-sub-projects.yml
 
+  # GITHUB_TOKEN is minted automatically per-job and needs no explicit pass-through;
+  # this workflow uses no other secrets, so no `secrets:` block is required.
   run-code-quality:
     uses: ./.github/workflows/code-quality.yml
-    secrets: inherit
 
+  # GITHUB_TOKEN only — no `secrets:` block required (see run-code-quality above).
   run-security:
     needs: [detect-changes, run-code-quality]
     if: needs.detect-changes.outputs.code-changed == 'true'
     uses: ./.github/workflows/security.yml
-    secrets: inherit
     permissions:
       contents: read
       security-events: write # Required for SARIF uploads to GitHub Security tab
 
+  # GITHUB_TOKEN only — no `secrets:` block required (see run-code-quality above).
   run-docker-compose-validate:
     needs: [detect-changes, run-code-quality]
     if: needs.detect-changes.outputs.code-changed == 'true'
     uses: ./.github/workflows/docker-compose-validate.yml
-    secrets: inherit
 
+  # GITHUB_TOKEN only — no `secrets:` block required (see run-code-quality above).
   run-docker-validate:
     needs: [list-sub-projects, detect-changes, run-code-quality]
     if: needs.detect-changes.outputs.code-changed == 'true'
     uses: ./.github/workflows/docker-validate.yml
-    secrets: inherit
     with:
       simple-matrix: ${{ needs.list-sub-projects.outputs.simple-matrix }}
 
@@ -112,7 +113,8 @@ jobs:
     needs: [detect-changes, run-code-quality]
     if: needs.detect-changes.outputs.code-changed == 'true'
     uses: ./.github/workflows/test.yml
-    secrets: inherit
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     permissions:
       contents: read
       pull-requests: write  # Required for coverage report comments
@@ -122,7 +124,8 @@ jobs:
     needs: [detect-changes, run-code-quality]
     if: needs.detect-changes.outputs.code-changed == 'true'
     uses: ./.github/workflows/e2e-test.yml
-    secrets: inherit
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     permissions:
       contents: read
       pull-requests: write  # Required for coverage report comments

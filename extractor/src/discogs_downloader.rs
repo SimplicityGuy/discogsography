@@ -278,8 +278,11 @@ impl Downloader {
         let mut ids: std::collections::HashMap<String, Vec<S3FileInfo>> = std::collections::HashMap::new();
 
         for file in files {
-            // Extract basename before splitting — the full S3 key may contain path separators
-            let basename = std::path::Path::new(&file.name).file_name().and_then(|f| f.to_str()).unwrap_or(&file.name);
+            // Extract basename before splitting — the full S3 key may contain path separators.
+            // `file.name` is an S3 object key scraped from the Discogs public bucket listing —
+            // operator-controlled infrastructure, not user input — and `.file_name()` discards
+            // any path components, so no path escapes this function.
+            let basename = std::path::Path::new(&file.name).file_name().and_then(|f| f.to_str()).unwrap_or(&file.name); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
             let parts: Vec<&str> = basename.split('_').collect();
             if parts.len() >= 2 {
                 let id = parts[1].to_string();
@@ -323,8 +326,11 @@ impl Downloader {
     }
 
     pub async fn should_download(&self, file_info: &S3FileInfo) -> Result<bool> {
-        // Extract just the base filename for local checks
-        let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
+        // Extract just the base filename for local checks. `file_info.name` is an S3 object
+        // key scraped from the Discogs public bucket listing (operator-controlled
+        // infrastructure, not user input); `.file_name()` discards any path components so
+        // `local_path` below can never escape `output_directory`.
+        let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file"); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
         let local_path = self.output_directory.join(filename);
 
         // Check if file exists locally
@@ -358,8 +364,11 @@ impl Downloader {
 
         // Use the full S3 key directly (name already contains the full path)
         let s3_key = &file_info.name;
-        // Extract just the base filename for local storage (remove path components)
-        let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
+        // Extract just the base filename for local storage (remove path components). `file_info.name`
+        // is an S3 object key scraped from the Discogs public bucket listing (operator-controlled
+        // infrastructure, not user input); `.file_name()` discards any path components so
+        // `local_path` below can never escape `output_directory`.
+        let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file"); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
         let local_path = self.output_directory.join(filename);
 
         info!("⬇️ Downloading {}...", filename);
@@ -405,7 +414,10 @@ impl Downloader {
                 continue;
             }
 
-            let mut file = File::create(&local_path).await.context("Failed to create local file")?;
+            // `local_path` is built above from the sanitized basename (path components already
+            // stripped via `.file_name()`) joined with the operator-controlled `output_directory`,
+            // so it always resolves inside `output_directory`.
+            let mut file = File::create(&local_path).await.context("Failed to create local file")?; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
             let mut hasher = Sha256::new();
             let mut downloaded: u64 = 0;
             let download_start = std::time::Instant::now();
@@ -505,19 +517,23 @@ impl Downloader {
 }
 
 fn load_metadata(output_directory: &Path) -> Result<HashMap<String, LocalFileInfo>> {
+    // Filename here is a hardcoded literal, not derived from any external input.
     let metadata_file = output_directory.join(".discogs_metadata.json");
 
     if !metadata_file.exists() {
         return Ok(HashMap::new());
     }
 
-    let json = std::fs::read_to_string(metadata_file).context("Failed to read metadata file")?;
+    let json = std::fs::read_to_string(metadata_file).context("Failed to read metadata file")?; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
 
     serde_json::from_str(&json).context("Failed to parse metadata")
 }
 
+/// Compute a SHA-256 checksum for a local file. Callers only ever pass paths built from
+/// `output_directory` joined with a sanitized basename (see `should_download`/`download_file`,
+/// which strip path components via `.file_name()`), so this never escapes `output_directory`.
 async fn calculate_file_checksum(path: &Path) -> Result<String> {
-    let mut file = File::open(path).await.context("Failed to open file for checksum")?;
+    let mut file = File::open(path).await.context("Failed to open file for checksum")?; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
 
     let mut hasher = Sha256::new();
     let mut buffer = vec![0; 8192];
