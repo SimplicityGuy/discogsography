@@ -68,21 +68,26 @@ The script provides:
 
 The script now includes comprehensive component verification and updates **all** project files:
 
-**Python Configuration (8 files)**:
+**Python Configuration**:
 
-- ✅ Root `pyproject.toml`
-- ✅ All Python service `pyproject.toml` files (api, common, dashboard, explore, graphinator, schema-init, tableinator)
+- ✅ Root `pyproject.toml`, `uv.lock`, and `pyrightconfig.json`
+- ✅ All Python service `pyproject.toml` files (api, brainzgraphinator, brainztableinator, common, dashboard, explore, graphinator, insights, mcp-server, schema-init, tableinator)
 
-**Docker Configuration (7 files)**:
+**Docker Configuration**:
 
-- ✅ All service Dockerfiles
-- ✅ Documentation standards file
+- ✅ All service Dockerfiles (api, brainzgraphinator, brainztableinator, dashboard, explore, extractor, graphinator, insights, schema-init, tableinator)
+- ✅ `docs/dockerfile-standards.md`
+- ✅ `docker-compose.yml` and `docker-compose.prod.yml`
 
-**Rust Configuration (2 files)**:
+**Rust Configuration**:
 
 - ✅ `Cargo.toml` and `Cargo.lock` for extractor
 
-**Total: 14+ components verified and updated automatically**
+**Node.js Configuration** (when present):
+
+- ✅ `explore/package.json`
+
+**Total: 25+ components verified and updated automatically**
 
 ### Example Output
 
@@ -216,6 +221,41 @@ Thin wrapper for the Neo4j Docker container entrypoint. Reads the password from 
 ### Usage
 
 Used as the Docker entrypoint for the Neo4j container in `docker-compose.prod.yml` — not intended to be run manually.
+
+## 🐰 rabbitmq-entrypoint.sh
+
+Thin wrapper for the RabbitMQ Docker container entrypoint. Reads `/run/secrets/rabbitmq_username` and `/run/secrets/rabbitmq_password` and sets `RABBITMQ_DEFAULT_USER` / `RABBITMQ_DEFAULT_PASS` before delegating to the official RabbitMQ entrypoint. This is needed because RabbitMQ does not natively support the Docker `_FILE` secret convention.
+
+### Usage
+
+Used as the Docker entrypoint for the RabbitMQ container in `docker-compose.prod.yml` — not intended to be run manually.
+
+## 🔁 migrate-encryption-key.sh
+
+Migrates OAuth tokens to a new `ENCRYPTION_MASTER_KEY`. Generates a new HKDF master key locally and re-encrypts existing OAuth tokens inside the API container. PostgreSQL credentials are read from the container's own environment.
+
+### Usage
+
+```bash
+./scripts/migrate-encryption-key.sh --old-key "$OLD_KEY" \
+  --new-key-file secrets/encryption_master_key.txt discogsography-api
+```
+
+The `<api-container>` argument must be the API service container (has Python, psycopg, and cryptography installed) — not the postgres container.
+
+## 🎨 generate_brand_assets.py
+
+Generates the full "Constellation Vinyl" brand asset set (icon mark, banner, square logo, OG image, design showcase, favicons, `site.webmanifest`) for the `explore/` and `dashboard/` static directories.
+
+### Usage
+
+```bash
+# Generate to explore/ and dashboard/
+uv run python scripts/generate_brand_assets.py
+
+# Generate to /tmp/brand_test/ for preview
+uv run python scripts/generate_brand_assets.py --test
+```
 
 ## 🔑 reset-password.sh
 
