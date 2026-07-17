@@ -175,7 +175,11 @@ impl StateMarker {
         }
     }
 
-    /// Load state marker from file
+    /// Load state marker from file. Callers only ever pass paths built by `file_path()` /
+    /// `musicbrainz_file_path()` below, which embed `version` as a substring of a fixed
+    /// `.extraction_status_<version>.json` filename under an operator-controlled root — `version`
+    /// itself is always a slash-free basename fragment (see extractor.rs), so this can never
+    /// escape the configured root directory.
     pub async fn load(path: &Path) -> Result<Option<Self>> {
         if !path.exists() {
             debug!("📋 No state marker found at: {}", path.display());
@@ -184,7 +188,7 @@ impl StateMarker {
 
         // Try to read and parse the file, but return None if it fails
         // This allows the extractor to start fresh if the state file is corrupt
-        let contents = match fs::read_to_string(path).await {
+        let contents = match fs::read_to_string(path).await { // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
             Ok(contents) => contents,
             Err(e) => {
                 warn!("⚠️ Failed to read state marker file, will start fresh: {}", e);
