@@ -42,6 +42,10 @@ RABBITMQ_PASSWORD=discogsography
 # Redis
 REDIS_HOST=redis
 
+# API service (used to proxy /admin/api/* requests)
+API_HOST=api                        # Default: api
+API_PORT=8004                       # Default: 8004
+
 # Optional
 CORS_ORIGINS="http://localhost:3000,http://localhost:8003"
 LOG_LEVEL=INFO
