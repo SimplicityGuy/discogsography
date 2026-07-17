@@ -143,4 +143,4 @@ Can be adjusted if needed, but 5,000 provides good balance between:
 ## Related Documentation
 
 - [State Marker System](state-marker-system.md) - Overall state marker architecture
-- [State Marker Periodic Updates](../README.md) - Referenced from project README
+- [Main README](../README.md) - This document is also referenced from the project README

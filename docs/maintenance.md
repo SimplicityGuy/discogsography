@@ -142,7 +142,7 @@ cargo outdated
 just security
 
 # Or directly with bandit
-uv run bandit -r . -ll
+uv run bandit -r . -c pyproject.toml
 
 # Scan dependencies
 uv run pip-audit

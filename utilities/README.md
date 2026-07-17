@@ -8,11 +8,14 @@ This directory contains utility scripts to help debug, monitor, and analyze the 
 
 ### check_errors.py
 
-Analyzes service log files for errors and warnings.
+Scans recent `docker compose logs` output for the pipeline services for error patterns.
 
 ```bash
-# Check all service logs
+# Check the last 60 minutes (default) across all pipeline services
 uv run python utilities/check_errors.py
+
+# Check a custom time window (minutes)
+uv run python utilities/check_errors.py 30
 
 # Or use just
 just check-errors
@@ -20,10 +23,9 @@ just check-errors
 
 **Features:**
 
-- Scans all logs in `/logs` directory
-- Highlights errors (❌) and warnings (⚠️)
-- Shows timestamp and context
-- Groups errors by service
+- Checks `extractor-discogs`, `extractor-musicbrainz`, `graphinator`, `tableinator`, `brainzgraphinator`, and `brainztableinator` via `docker compose logs --since=<N>m`
+- Matches lines against error patterns (`ERROR`, `Exception`, `Traceback`, `Failed to process...`)
+- Groups and counts similar errors per service, printing `✅ No errors found` when clean
 
 ### check_queues.py
 
@@ -45,8 +47,11 @@ uv run python utilities/check_queues.py
 Real-time monitoring of RabbitMQ queue activity.
 
 ```bash
-# Monitor with auto-refresh
+# Monitor with auto-refresh (default: every 5 seconds)
 uv run python utilities/monitor_queues.py
+
+# Custom refresh interval (seconds)
+uv run python utilities/monitor_queues.py 10
 
 # Or use just
 just monitor
@@ -54,10 +59,9 @@ just monitor
 
 **Features:**
 
-- Live updates every 5 seconds
-- Color-coded status indicators
-- Message throughput tracking
-- Consumer health monitoring
+- Live updates every 5 seconds by default (configurable via a positional interval argument)
+- Highlights queues with unacknowledged messages in yellow
+- Running total of messages across all `discogsography`/`musicbrainz` queues
 
 ### system_monitor.py
 
@@ -73,49 +77,38 @@ just system-monitor
 
 **Displays:**
 
-- Service health status (all microservices)
-- Database connections (Neo4j, PostgreSQL)
-- Queue metrics (RabbitMQ)
-- System resources (if available)
+- Docker container status and health (`docker compose ps`)
+- RabbitMQ queue message counts (ready/unacked/total)
+- Neo4j node counts by label (via `cypher-shell`)
+- PostgreSQL table sizes and row counts (via `psql`)
+- Recent `ERROR`/`Failed` log lines for the pipeline services (extractor-discogs, extractor-musicbrainz, graphinator, tableinator, brainzgraphinator, brainztableinator)
 
 ### debug_message.py
 
-Send test messages directly to AMQP queues for debugging.
+Peeks at (non-destructively, via `basic_get` + `basic_nack` requeue) a single message from a consumer queue and analyzes its structure — checks required/optional fields for the given data type and flags common issues (missing fields, malformed nested artist entries).
 
 ```bash
-# Interactive mode
-uv run python utilities/debug_message.py
-
-# Send specific message
-uv run python utilities/debug_message.py --queue artists --message '{"id": 123, "name": "Test Artist"}'
+uv run python utilities/debug_message.py <queue_type> [consumer]
 ```
 
-**Options:**
+**Arguments:**
 
-- `--queue`: Target queue name
-- `--message`: JSON message to send
-- `--count`: Number of messages to send
-- Interactive mode for manual testing
+- `queue_type`: `artists`, `labels`, `masters`, `releases`, or `release-groups` (MusicBrainz)
+- `consumer`: `graphinator`, `tableinator`, `brainzgraphinator`, or `brainztableinator` (default: `graphinator`)
 
 ### healthcheck.py
 
-Simple health check utility for testing service endpoints.
+Checks whether a process matching the given name is currently running (via `psutil.process_iter`), matching against each process's command line. Exits `0` if found, `1` otherwise.
 
 ```bash
-# Check all services
-uv run python utilities/healthcheck.py
-
-# Check specific service
-uv run python utilities/healthcheck.py --service extractor
+uv run python utilities/healthcheck.py <process_name>
 ```
 
 ## 🔒 Security Notes
 
 These utilities include security suppressions for development use:
 
-- `# nosec B603 B607` - For Docker subprocess commands
-- `# noqa: S310` - For localhost HTTP requests
-- `# nosec B105` - For hardcoded development credentials
+- `# nosec B404 B603 B607` / `# noqa: S603 S607` - For `docker compose`/`docker exec` subprocess commands
 
 These suppressions are appropriate because:
 
@@ -129,7 +122,7 @@ These suppressions are appropriate because:
 1. **Start with system_monitor.py** for overall health
 1. **Use check_errors.py** when services report issues
 1. **Run monitor_queues.py** to watch message flow
-1. **Use debug_message.py** to test message processing
+1. **Use debug_message.py** to inspect a queue's message structure
 
 ## 🔗 Related Documentation
 

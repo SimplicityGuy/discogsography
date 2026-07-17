@@ -33,6 +33,11 @@ POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography
 
+# Neo4j connection (required — used by graph queries, sync, and recommendations)
+NEO4J_HOST=neo4j
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=discogsography
+
 # Redis (OAuth state + JTI blacklist storage)
 REDIS_HOST=redis
 
@@ -72,6 +77,7 @@ All tokens are HS256 JWTs containing:
 - `email`: User email address
 - `iat`: Issued-at timestamp
 - `exp`: Expiry timestamp
+- `jti`: Unique token ID, used for logout revocation (blacklisted in Redis)
 
 The API service handles all JWT validation locally. No other service requires the `JWT_SECRET_KEY`.
 
@@ -183,8 +189,10 @@ All graph query endpoints are served by the API service and consumed by the Expl
 
 | Method | Path               | Auth Required | Rate Limit | Description                     |
 | ------ | ------------------ | ------------- | ---------- | ------------------------------- |
-| POST   | `/api/sync`        | Yes           | 2/10min    | Trigger a full Discogs sync     |
+| POST   | `/api/sync`        | Yes           | 10/min     | Trigger a full Discogs sync     |
 | GET    | `/api/sync/status` | Yes           | —          | Get sync history (last 10 jobs) |
+
+A per-user Redis cooldown additionally blocks re-triggering a sync for 60 seconds after the previous one starts.
 
 ### User Collection
 
@@ -197,6 +205,18 @@ Personalized endpoints that return data from the user's synced Discogs collectio
 | GET    | `/api/user/recommendations`  | Yes           | Get recommended releases                 |
 | GET    | `/api/user/collection/stats` | Yes           | Collection statistics summary            |
 | GET    | `/api/user/status`           | Optional      | Check collection/wantlist status for IDs |
+
+### App Tokens
+
+Manage third-party app tokens for the authenticated user. The plaintext token is returned exactly once, at creation; only its SHA-256 hash is persisted thereafter.
+
+| Method | Path                          | Auth Required | Description                                     |
+| ------ | ----------------------------- | ------------- | ------------------------------------------------ |
+| POST   | `/api/user/app-tokens`        | Yes           | Mint a new app token (plaintext returned once)  |
+| GET    | `/api/user/app-tokens`        | Yes           | List active and revoked tokens for the user     |
+| DELETE | `/api/user/app-tokens/{id}`   | Yes           | Revoke (tombstone) a token                      |
+
+**Allowed scopes:** `collection:read`
 
 ### Collection Gap Analysis
 
@@ -283,6 +303,25 @@ Multi-hop collaborator traversal, centrality scoring, and community detection vi
 
 - `limit` — Maximum cluster members to return (1–200, default: 50)
 
+### Recommendations
+
+Artist similarity and personalized graph-traversal discovery, ranked by multi-dimensional profile matching or the authenticated user's taste. Results are cached in Redis.
+
+| Method | Path                                          | Auth Required | Rate Limit | Description                                                    |
+| ------ | ---------------------------------------------- | ------------- | ---------- | ---------------------------------------------------------------- |
+| GET    | `/api/recommend/similar/artist/{artist_id}`    | No            | 30/min     | Artists with the closest multi-dimensional similarity           |
+| GET    | `/api/recommend/explore/{entity_type}/{id}`    | Yes           | 30/min     | Personalized multi-hop traversal from an entity, ranked by taste |
+
+**Query parameters for `/api/recommend/similar/artist/{artist_id}`:**
+
+- `limit` — Number of similar artists to return (1–50, default: 20)
+
+**Query parameters for `/api/recommend/explore/{entity_type}/{id}`:**
+
+- `entity_type` — One of `artist`, `label`, `genre`, `style`
+- `hops` — Number of hops to traverse (1–3, default: 2)
+- `limit` — Maximum discoveries to return (1–50, default: 10)
+
 ### Genre Tree
 
 Full genre/style hierarchy derived from release co-occurrence in the knowledge graph.
@@ -331,22 +370,23 @@ Proxied endpoints forwarding to the insights microservice for precomputed analyt
 
 Natural language query interface for the knowledge graph. Translates plain English questions into graph queries.
 
-| Method | Path              | Auth Required | Description                      |
-| ------ | ----------------- | ------------- | -------------------------------- |
-| GET    | `/api/nlq/status` | No            | Check NLQ service availability   |
-| POST   | `/api/nlq/query`  | No            | Execute a natural language query |
+| Method | Path                    | Auth Required | Rate Limit | Description                                   |
+| ------ | ----------------------- | ------------- | ---------- | ---------------------------------------------- |
+| GET    | `/api/nlq/suggestions`  | No            | 100/min    | Dynamic suggested queries for the Ask pill    |
+| GET    | `/api/nlq/status`       | No            | —          | Check NLQ service availability                |
+| POST   | `/api/nlq/query`        | Optional      | 10/min     | Execute a natural language query (supports SSE streaming; personalized when a Bearer token is supplied) |
 
 ### Release Rarity Scoring
 
 Rarity analysis for releases based on market scarcity, pressing details, and collector demand.
 
-| Method | Path                             | Auth Required | Description                            |
-| ------ | -------------------------------- | ------------- | -------------------------------------- |
-| GET    | `/api/rarity/leaderboard`        | No            | Top rarest releases overall            |
-| GET    | `/api/rarity/hidden-gems`        | No            | Underappreciated rare releases         |
-| GET    | `/api/rarity/artist/{artist_id}` | No            | Rarity scores for an artist's releases |
-| GET    | `/api/rarity/label/{label_id}`   | No            | Rarity scores for a label's releases   |
-| GET    | `/api/rarity/{release_id}`       | No            | Rarity score for a specific release    |
+| Method | Path                             | Auth Required | Rate Limit | Description                            |
+| ------ | -------------------------------- | ------------- | ---------- | --------------------------------------- |
+| GET    | `/api/rarity/leaderboard`        | No            | 30/min     | Top rarest releases overall            |
+| GET    | `/api/rarity/hidden-gems`        | No            | 30/min     | Underappreciated rare releases         |
+| GET    | `/api/rarity/artist/{artist_id}` | No            | 30/min     | Rarity scores for an artist's releases |
+| GET    | `/api/rarity/label/{label_id}`   | No            | 30/min     | Rarity scores for a label's releases   |
+| GET    | `/api/rarity/{release_id}`       | No            | 30/min     | Rarity score for a specific release    |
 
 ### Label DNA
 
@@ -512,6 +552,7 @@ The API service uses the following tables (created by schema-init):
 - `users` — user accounts (`id`, `email`, `hashed_password`, `is_active`, `created_at`)
 - `oauth_tokens` — Discogs OAuth tokens (`user_id`, `provider`, `access_token`, `access_secret`, `provider_username`, `provider_user_id`, `updated_at`)
 - `app_config` — admin key-value configuration (`key`, `value`, `updated_at`)
+- `app_tokens` — revocable third-party app tokens (`id`, `user_id`, `name`, `scope`, `token_hash`, `created_at`, `last_used_at`, `revoked_at`)
 
 ## Security
 
@@ -522,7 +563,7 @@ The API service uses the following tables (created by schema-init):
 - **OAuth tokens encrypted at rest**: Discogs OAuth access tokens are encrypted with Fernet symmetric encryption using an HKDF-derived key from `ENCRYPTION_MASTER_KEY`
 - **TOTP 2FA**: Optional time-based one-time password with `pyotp`, Fernet-encrypted secrets, SHA-256 hashed recovery codes, brute-force lockout
 - **Password reset**: Redis-backed tokens (15min TTL), anti-enumeration responses, session revocation on password change
-- **Rate limiting**: register (3/min), login (5/min), sync (2/10min), autocomplete (30/min) via slowapi; per-user sync cooldown (600s) in Redis
+- **Rate limiting**: register (3/min), login (5/min), sync (10/min), autocomplete (30/min) via slowapi; per-user sync cooldown (60s) in Redis
 - **Security response headers**: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`
 - **CORS**: Configurable via `CORS_ORIGINS` env var (disabled by default)
 - **Snapshots require auth**: `POST /api/snapshot` requires a valid JWT

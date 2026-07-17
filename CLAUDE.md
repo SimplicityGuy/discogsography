@@ -8,9 +8,12 @@
 
 ## AI Development Rules
 
+- **Every change needs a bead first** — file an issue bead for small work or an epic bead with
+  task/bug children for larger, decomposable work, before starting implementation. See
+  [docs/AGF.md](docs/AGF.md) for the full bead-driven workflow.
 - **ALWAYS use `uv run`** for any Python command (pytest, mypy, ruff, python scripts)
-- **Use git worktrees** for all feature work — create in `.worktrees/` directory, branch from `origin/main`. Each worktree = one branch = one PR. Use the `superpowers:using-git-worktrees` skill.
-- **Open a PR for every change** — never push directly to `main`
+- **Use bh-managed worktrees** for all feature work — `bh work assign`/`claim` provisions one worktree per bead on a `wt/bead/<type>/<id>` branch; an epic's children fork off the epic's container branch. See [docs/AGF.md](docs/AGF.md). Do not hand-roll worktrees for bead work.
+- **Open a PR for every change** — never push directly to `main`. Standalone beads get one PR each; an epic's children merge into the epic branch first, then one PR for the epic.
 - **Mermaid diagrams** for all diagrams in Markdown files
 - **Lowercase filenames** with hyphens for new markdown files (except README). Do not rename existing markdown files.
 - **Emojis in GitHub Actions** step names; single quotes in `${{ }}` expressions, double quotes for YAML strings

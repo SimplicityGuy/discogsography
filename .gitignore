@@ -342,11 +342,6 @@ explore/coverage-e2e/
 ###
 perftest-results/
 
-###
-# graphify
-###
-graphify-out/cache/
-
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db

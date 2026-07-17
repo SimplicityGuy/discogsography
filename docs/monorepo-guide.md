@@ -49,7 +49,7 @@ graph TD
     InsightsFiles[insights.py<br/>computations.py]
 
     MCPServer[mcp-server/<br/>AI Assistant MCP]
-    MCPFiles[server.py]
+    MCPFiles[mcp_server/server.py]
 
     Root --> RootFiles
     Root --> API
@@ -145,7 +145,8 @@ discogsography/                    # Root workspace
 │
 ├── mcp-server/                    # AI assistant MCP server (workspace member)
 │   ├── pyproject.toml           # Service dependencies
-│   └── server.py                # FastMCP server
+│   └── mcp_server/
+│       └── server.py            # FastMCP server
 │
 ├── schema-init/                   # Database schema initializer (workspace member)
 │   ├── pyproject.toml           # Schema dependencies
@@ -166,11 +167,11 @@ Each service is a **workspace member** with its own `pyproject.toml`:
 ```toml
 # dashboard/pyproject.toml
 [project]
-name = "dashboard"
-version = "1.0.0"
+name = "discogsography-dashboard"
+version = "0.1.0"
 dependencies = [
-    "fastapi>=0.115.6",
-    "websockets>=14.1",
+    "fastapi>=0.138.0",
+    "websockets>=16.0",
     # Service-specific deps
 ]
 ```
@@ -259,8 +260,9 @@ just extractor
 ### Import Patterns
 
 ```python
-# Services can import from common
-from common.config import Config
+# Services can import from common (each service has its own config dataclass,
+# e.g. DashboardConfig, ApiConfig, GraphinatorConfig — there is no generic Config)
+from common.config import DashboardConfig
 from common.health_server import HealthServer
 
 
@@ -356,7 +358,7 @@ uv add package-name
 from dashboard.something import thing
 
 # ✅ Good: Only import from common
-from common.config import Config
+from common.config import DashboardConfig
 ```
 
 ### 4. Installing Without Workspace

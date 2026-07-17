@@ -23,7 +23,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 | **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initializer                                                                                  | `neo4j-driver`, `psycopg3`                                   | —                       |
 | **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs                                                                                   | `neo4j-driver`, graph algorithms                             | 8001 (health)           |
 | **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables                                                                             | `psycopg3`, JSONB, full-text search                          | 8002 (health)           |
-| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Static frontend files and health check                                                                          | `FastAPI`, `Tailwind CSS`, `Alpine.js`, `D3.js`, `Plotly.js` | 8006, 8007 (internal)   |
+| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Static frontend files and health check                                                                          | `FastAPI`, `Tailwind CSS`, `Alpine.js`, `D3.js`, `Plotly.js` | 8006, 8007 (ext)        |
 | **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time monitoring and admin panel                                                                            | `FastAPI`, WebSocket, reactive UI, `httpx`                   | 8003 (ext)              |
 | **[📈](emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends                                                                          | `FastAPI`, `psycopg3`, `httpx`                               | 8008, 8009 (internal)   |
 | **[🤖](emoji-guide.md#service-identifiers) MCP Server**  | Exposes knowledge graph to AI assistants                                                                        | `FastMCP`, `httpx`                                           | stdio / streamable-http |
@@ -189,7 +189,7 @@ Shows how the MCP server connects AI assistants to the knowledge graph through t
 ```mermaid
 graph LR
     AI["🤖 AI Assistant<br/>(Claude, Cursor, Zed)"]
-    MCP[["🤖 MCP Server<br/>11 tools<br/>stdio / HTTP"]]
+    MCP[["🤖 MCP Server<br/>12 tools<br/>stdio / HTTP"]]
     API[["🔐 API<br/>FastAPI"]]
 
     NEO4J[("🔗 Neo4j")]
@@ -327,8 +327,8 @@ See [MusicBrainz Sync Guide](musicbrainz-sync.md) for operational instructions.
 
 **MCP Server** (AI assistant integration):
 
-- Thin HTTP client that proxies all 11 tools through the API service — no direct database access
-- Tools: search, entity details (artist/label/release/genre/style), path finder, trends, graph stats, collaborators, genre tree
+- Thin HTTP client that proxies all 12 tools through the API service — no direct database access
+- Tools: search, entity details (artist/label/release/genre/style), path finder, trends, graph stats, collaborators, genre tree, natural-language query
 - Transports: stdio (Claude Desktop, Cursor, Zed) or streamable-http (hosted)
 
 **Insights Service** (precomputed analytics):
@@ -520,7 +520,7 @@ See [Brainztableinator README](../brainztableinator/README.md) for details.
 - FastAPI static file serving (HTML, JS, CSS)
 - Tailwind CSS dark theme with Alpine.js reactive UI
 - D3.js force-directed graph and Plotly.js trends visualizations
-- Internal-only (not externally exposed in Docker Compose)
+- Exposed on host ports 8006 (frontend) and 8007 (health check) in Docker Compose
 
 **Configuration**:
 
@@ -563,7 +563,7 @@ See [Dashboard README](../dashboard/README.md) for details.
 **Responsibilities**:
 
 - Run scheduled batch analytics by fetching raw query data from the API service over HTTP
-- Compute artist centrality, genre trends, label longevity, anniversaries, and data completeness
+- Compute artist centrality, genre trends, label longevity, anniversaries, data completeness, community enrichment, and release rarity
 - Store precomputed results in PostgreSQL `insights.*` tables
 - Serve analytics via read-only HTTP endpoints
 
@@ -571,7 +571,7 @@ See [Dashboard README](../dashboard/README.md) for details.
 
 - FastAPI backend with async PostgreSQL and httpx (API client)
 - Configurable scheduler interval (default: 24 hours)
-- 5 computation types running sequentially
+- 7 computation types running sequentially
 - Redis caching with cache-aside pattern (TTL matches schedule interval, invalidated after computation)
 - Separate health server on port 8009
 - Results proxied through the API service at `/api/insights/*`
@@ -769,6 +769,7 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
 - Release (physical/digital releases)
 - Genre (musical genres)
 - Style (sub-genres, styles)
+- Person (non-performing release credits, e.g. producer/engineer)
 - User (authenticated Discogs users)
 
 **Relationship Types**:
@@ -781,6 +782,8 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
 - ALIAS_OF (artist alias → primary artist)
 - SUBLABEL_OF (label → parent label)
 - PART_OF (style → genre)
+- CREDITED_ON (person → release, non-performing credit)
+- SAME_AS (person → artist, when a credited person is also a performing artist)
 - COLLECTED (user → release)
 - WANTS (user → release)
 
@@ -811,6 +814,8 @@ See [Database Schema](database-schema.md) for details.
 - `insights.label_longevity`: Labels ranked by years active
 - `insights.monthly_anniversaries`: Notable release anniversaries
 - `insights.data_completeness`: Data quality metrics per entity type
+- `insights.release_rarity`: Rarity scoring for releases
+- `insights.community_counts`: Genre/style community enrichment counts
 - `insights.computation_log`: Audit log of computation runs
 
 **MusicBrainz Schema** (`musicbrainz.*`):
@@ -874,7 +879,7 @@ See [Docker Security](docker-security.md) for details.
 
 ### Network Security
 
-- No external ports exposed (except dashboards)
+- Only user-facing services and infrastructure UIs publish host ports (API, Dashboard, Explore, plus RabbitMQ, Neo4j, PostgreSQL, Redis); pipeline consumers (Extractor, Graphinator, Tableinator, Brainzgraphinator, Brainztableinator, Schema-Init, Insights) are internal-only
 - Internal Docker network for services
 - Encrypted connections to databases
 - Secrets via environment variables

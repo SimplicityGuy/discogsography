@@ -23,6 +23,8 @@ The Insights service runs scheduled batch analytics, stores precomputed results 
 | **Label Longevity**       | Labels ranked by years active                                         | PostgreSQL           |
 | **Monthly Anniversaries** | Releases with 25/30/40/50/75/100-year milestones                      | PostgreSQL           |
 | **Data Completeness**     | Quality scores per entity type (image, year, country, genre coverage) | PostgreSQL           |
+| **Community Enrichment**  | Triggers genre-based community detection via the API's Neo4j endpoint | API (Neo4j via HTTP) |
+| **Release Rarity**        | Rarity scores per release (pressing scarcity, hidden-gem score, tier) | API (Neo4j via HTTP) |
 
 ## API Endpoints
 
@@ -76,6 +78,8 @@ Results are stored in the `insights` schema:
 - `insights.label_longevity` — Ranked labels by years active
 - `insights.monthly_anniversaries` — Notable release anniversaries
 - `insights.data_completeness` — Data quality metrics per entity type
+- `insights.release_rarity` — Per-release rarity scores and tiers
+- `insights.community_counts` — Community enrichment counts from genre-based clustering
 - `insights.computation_log` — Audit log of all computation runs
 
 ## Health Check

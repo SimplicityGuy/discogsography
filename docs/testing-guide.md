@@ -68,11 +68,15 @@ tests/
 │   └── ...                              # Query, model, and integration tests
 │
 ├── common/                              # Shared module tests
+│   ├── test_agent_tools_*.py            # Codebase-memory agent tool tests (discovery, entities, graph, package, stats)
 │   ├── test_config.py                   # Configuration tests
+│   ├── test_credit_roles.py
 │   ├── test_data_normalizer.py
 │   ├── test_db_resilience.py
 │   ├── test_health_server.py
+│   ├── test_metrics_config.py
 │   ├── test_neo4j_resilient.py
+│   ├── test_oauth.py
 │   ├── test_postgres_resilient.py
 │   ├── test_query_debug.py              # Query profiling tests
 │   ├── test_rabbitmq_resilient.py
@@ -113,14 +117,18 @@ tests/
 │   ├── test_cache.py                    # Redis caching tests
 │   ├── test_computations.py             # Computation orchestration tests
 │   ├── test_insights.py                 # Main service tests
+│   ├── test_log_computation.py          # Computation audit log tests
 │   ├── test_models.py                   # Response model tests
 │   ├── test_neo4j_queries.py            # Query function tests (via API internal endpoints)
 │   ├── test_pg_queries.py               # PostgreSQL query tests (via API internal endpoints)
+│   ├── test_rarity_computation.py       # Rarity tier computation tests
 │   └── test_scheduler.py               # Scheduler tests
 │
 ├── mcp-server/                          # MCP server tests
 │   ├── __init__.py
-│   └── test_server.py                  # All 11 MCP tools + entry point tests
+│   ├── test_server.py                   # All 12 MCP tools + entry point tests
+│   ├── test_mcp_tools_regression.py     # Tool schema/regression tests
+│   └── test_nlq_tool.py                 # Natural-language-query tool tests
 │
 ├── perftest/                            # Performance testing suite
 │   ├── config.yaml                      # Test configuration (entities, iterations)
@@ -669,7 +677,7 @@ open htmlcov/index.html
 # pyproject.toml
 [tool.coverage.run]
 source = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator"]
-omit = ["*/tests/*", "*/__pycache__/*", "*/static/*"]
+omit = ["*/tests/*", "*/__init__.py"]
 
 [tool.coverage.report]
 exclude_lines = [

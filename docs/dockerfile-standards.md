@@ -166,8 +166,8 @@ LABEL org.opencontainers.image.title="Discogsography <Service>" \
 
 Additional labels for database services:
 
-- `com.discogsography.database="postgresql"` (tableinator)
-- `com.discogsography.database="neo4j"` (graphinator)
+- `com.discogsography.database="postgresql"` (tableinator, brainztableinator)
+- `com.discogsography.database="neo4j"` (graphinator, brainzgraphinator)
 
 ### 3. Package Installation
 
@@ -217,18 +217,11 @@ RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/
 
 ### 6. Health Check
 
-HTTP-based (default):
+HTTP-based (all services, including graphinator, tableinator, brainzgraphinator, and brainztableinator — each runs its own health server on its designated port):
 
 ```dockerfile
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:<port>/health || exit 1
-```
-
-Process-based (graphinator only):
-
-```dockerfile
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD pgrep -f "python.*graphinator" > /dev/null || exit 1
 ```
 
 ### 7. Environment Variables
@@ -311,7 +304,7 @@ Additional volumes:
 
 ### Graphinator
 
-- Process-based health check (no HTTP endpoint)
+- HTTP health check on port 8001
 - Neo4j connection environment variables
 
 ### Tableinator

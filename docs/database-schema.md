@@ -117,7 +117,7 @@ Represents physical or digital releases (albums, singles, etc.).
   id: String,              -- Discogs release ID
   title: String,           -- Release title
   year: Integer?,          -- Release year (parsed from 'released' date field, null if absent)
-  formats: [String]?,      -- Deduplicated format names (e.g., ["Vinyl", "LP", "Album"])
+  formats: [String]?,      -- Format names in message order, not deduplicated (e.g., ["Vinyl", "LP", "Album"])
   sha256: String           -- Content hash for change detection
 })
 ```
@@ -179,6 +179,24 @@ Represents an authenticated Discogs user. Created by the collection sync process
 
 ```cypher
 CREATE CONSTRAINT user_id IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE;
+```
+
+#### Person Node
+
+Represents a non-performing release credit (e.g. producer, engineer, mastering engineer) from the Discogs `extraartists` field. Created by the graphinator.
+
+```cypher
+(:Person {
+  name: String              -- Credited person's name
+})
+```
+
+**Constraints & Indexes**:
+
+```cypher
+CREATE CONSTRAINT person_name IF NOT EXISTS FOR (p:Person) REQUIRE p.name IS UNIQUE;
+CREATE INDEX person_credit_count IF NOT EXISTS FOR (p:Person) ON (p.credit_count);
+CREATE FULLTEXT INDEX person_name_fulltext IF NOT EXISTS FOR (n:Person) ON EACH [n.name];
 ```
 
 ### Relationships
@@ -356,6 +374,38 @@ graph LR
 - Properties: `rating` (Integer?), `date_added` (String?), `synced_at` (String)
 - Created by the wantlist sync process
 
+#### Person Relationships
+
+```mermaid
+graph LR
+    P[Person] -->|CREDITED_ON| R[Release]
+    P -->|SAME_AS| A[Artist]
+
+    style P fill:#e0f2f1
+    style R fill:#f3e5f5
+    style A fill:#e3f2fd
+```
+
+**CREDITED_ON**:
+
+```cypher
+(person:Person)-[:CREDITED_ON {role, category}]->(release:Release)
+```
+
+- Direction: Person -> Release
+- Properties: `role` (String, raw Discogs credit role e.g. "Producer"), `category` (String, normalized category e.g. "production", "engineering", "mastering")
+- Created from the `extraartists` field on each release
+
+**SAME_AS**:
+
+```cypher
+(person:Person)-[:SAME_AS]->(artist:Artist)
+```
+
+- Direction: Person -> Artist
+- Properties: None
+- Created when a credited person also has a matching Discogs artist ID (i.e. they are also a performing artist)
+
 ### Complete Relationship Summary
 
 | Relationship      | From    | To               | Source      | Properties                               |
@@ -369,6 +419,8 @@ graph LR
 | ALIAS_OF          | Artist  | Artist (primary) | Discogs     | None                                     |
 | SUBLABEL_OF       | Label   | Label (parent)   | Discogs     | None                                     |
 | PART_OF           | Style   | Genre            | Discogs     | None                                     |
+| CREDITED_ON       | Person  | Release          | Discogs     | role, category                           |
+| SAME_AS           | Person  | Artist           | Discogs     | None                                     |
 | COLLECTED         | User    | Release          | Sync        | rating, folder_id, date_added, synced_at |
 | WANTS             | User    | Release          | Sync        | rating, date_added, synced_at            |
 | COLLABORATED_WITH | Artist  | Artist           | MusicBrainz | source                                   |
@@ -730,7 +782,7 @@ Published `releases` message (extractor-normalized; consumers add only year pars
   "styles": ["Pop Rock"],
   "released": "1969-09-26",
   "country": "UK",
-  "formats": { "format": { "@name": "Vinyl", "@qty": "1", "descriptions": { "description": "LP" } } }
+  "formats": [{ "name": "Vinyl", "qty": "1", "descriptions": { "description": "LP" } }]
 }
 ```
 
@@ -738,7 +790,7 @@ Notes:
 
 - `year` is parsed from the `released` date field (`"1969-09-26"` -> `1969`) by `_parse_year_int()`.
 - `master_id` is extracted from the `#text` field of the dict.
-- `formats` raw data is preserved; the graphinator separately calls `extract_format_names()` to produce `["Vinyl"]` for storage on the Release node.
+- `formats` is unwrapped into an array with `@`-prefixed keys stripped at the top level (nested objects like `descriptions` are left as-is — the extractor's prefix-stripping does not recurse); the graphinator then pulls each item's `name` field inline in `process_release()` to produce `["Vinyl"]` for storage on the Release node (not deduplicated).
 
 ### XML-to-JSON Conventions
 
@@ -808,14 +860,23 @@ CREATE INDEX IF NOT EXISTS idx_releases_labels ON releases USING GIN ((data->'la
 
 #### User Tables
 
+There is no separate admin-account table — admin status is the `users.is_admin` boolean, and `admin_setup` (see [Admin Guide](admin-guide.md)) creates/promotes rows directly in `users`.
+
 ```sql
 CREATE TABLE IF NOT EXISTS users (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email           VARCHAR(255) UNIQUE NOT NULL,
-    hashed_password VARCHAR(255) NOT NULL,
-    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email                VARCHAR(255) UNIQUE NOT NULL,
+    hashed_password      VARCHAR(255) NOT NULL,
+    is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+    is_admin             BOOLEAN NOT NULL DEFAULT FALSE,
+    password_changed_at  TIMESTAMP WITH TIME ZONE,
+    totp_secret          VARCHAR,
+    totp_enabled         BOOLEAN NOT NULL DEFAULT FALSE,
+    totp_recovery_codes  JSONB,
+    totp_failed_attempts INTEGER NOT NULL DEFAULT 0,
+    totp_locked_until    TIMESTAMP WITH TIME ZONE,
+    created_at           TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS oauth_tokens (
@@ -830,6 +891,23 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
     updated_at        TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     UNIQUE(user_id, provider)
 );
+
+-- Revocable Bearer tokens for third-party app authorization (e.g. GRUVAX kiosk).
+-- The plaintext token is shown once at mint time; only its SHA-256 hex hash is
+-- persisted. Revoked rows are tombstones (never deleted) to preserve the audit trail.
+CREATE TABLE IF NOT EXISTS app_tokens (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name         VARCHAR(255) NOT NULL,
+    scope        TEXT[] NOT NULL,
+    token_hash   VARCHAR(64) NOT NULL,
+    created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    last_used_at TIMESTAMP WITH TIME ZONE,
+    revoked_at   TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_tokens_user_active ON app_tokens (user_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_app_tokens_token_lookup ON app_tokens (token_hash) WHERE revoked_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS app_config (
     key        VARCHAR(255) PRIMARY KEY,
@@ -855,7 +933,7 @@ CREATE TABLE IF NOT EXISTS user_collections (
     metadata     JSONB,
     created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    UNIQUE(user_id, release_id, instance_id)
+    UNIQUE NULLS NOT DISTINCT(user_id, release_id, instance_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_collections_user_id ON user_collections (user_id);
@@ -898,29 +976,58 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_running ON sync_history (user_id) WH
 
 -- Admin tables
 
-CREATE TABLE IF NOT EXISTS dashboard_admins (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email           VARCHAR(255) UNIQUE NOT NULL,
-    hashed_password VARCHAR(255) NOT NULL,
-    is_active       BOOLEAN DEFAULT TRUE,
-    created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
 CREATE TABLE IF NOT EXISTS extraction_history (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    triggered_by      UUID NOT NULL REFERENCES dashboard_admins(id),
+    triggered_by      UUID NOT NULL REFERENCES users(id),
     status            VARCHAR(20) NOT NULL DEFAULT 'pending',
     started_at        TIMESTAMP WITH TIME ZONE,
     completed_at      TIMESTAMP WITH TIME ZONE,
     record_counts     JSONB,
     error_message     TEXT,
     extractor_version VARCHAR(50),
-    created_at        TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at        TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_extraction_history_status ON extraction_history(status);
 CREATE INDEX IF NOT EXISTS idx_extraction_history_created_at ON extraction_history(created_at DESC);
+
+-- Phase 3 metrics history tables (see Admin Guide § Phase 3: Metrics History and Trend Analysis)
+
+CREATE TABLE IF NOT EXISTS queue_metrics (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    recorded_at TIMESTAMPTZ NOT NULL,
+    queue_name VARCHAR(100) NOT NULL,
+    messages_ready INTEGER,
+    messages_unacknowledged INTEGER,
+    consumers INTEGER,
+    publish_rate REAL,
+    ack_rate REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_queue_metrics_recorded_queue ON queue_metrics (recorded_at, queue_name);
+
+CREATE TABLE IF NOT EXISTS service_health_metrics (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    recorded_at TIMESTAMPTZ NOT NULL,
+    service_name VARCHAR(50) NOT NULL,
+    status VARCHAR(20),
+    response_time_ms REAL,
+    endpoint_stats JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_service_health_recorded_service ON service_health_metrics (recorded_at, service_name);
+
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    admin_id   UUID NOT NULL REFERENCES users(id),
+    action     VARCHAR(100) NOT NULL,
+    target     VARCHAR(255),
+    details    JSONB,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created_at ON admin_audit_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_log_admin_id ON admin_audit_log (admin_id);
 ```
 
 #### Insights Tables
@@ -966,7 +1073,7 @@ CREATE TABLE IF NOT EXISTS insights.label_longevity (
     label_id        TEXT NOT NULL,
     label_name      TEXT NOT NULL,
     first_year      INT NOT NULL,
-    last_year       INT NOT NULL,
+    last_year       INT,
     years_active    INT NOT NULL,
     total_releases  BIGINT NOT NULL,
     peak_decade     INT,
@@ -1010,6 +1117,44 @@ CREATE TABLE IF NOT EXISTS insights.data_completeness (
 );
 ```
 
+**insights.release_rarity** — Per-release rarity scoring, computed from pressing scarcity, label catalog size, format rarity, temporal scarcity, graph isolation, and collection prevalence.
+
+```sql
+CREATE TABLE IF NOT EXISTS insights.release_rarity (
+    release_id            BIGINT PRIMARY KEY,
+    title                 TEXT,
+    artist_name           TEXT,
+    year                  INTEGER,
+    rarity_score          REAL NOT NULL,
+    tier                  TEXT NOT NULL,
+    hidden_gem_score       REAL,
+    pressing_scarcity     REAL,
+    label_catalog         REAL,
+    format_rarity         REAL,
+    temporal_scarcity     REAL,
+    graph_isolation       REAL,
+    collection_prevalence REAL,
+    computed_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_release_rarity_score ON insights.release_rarity (rarity_score DESC);
+CREATE INDEX IF NOT EXISTS idx_release_rarity_tier ON insights.release_rarity (tier);
+CREATE INDEX IF NOT EXISTS idx_release_rarity_gem ON insights.release_rarity (hidden_gem_score DESC NULLS LAST);
+```
+
+**insights.community_counts** — Genre/style community enrichment counts (have/want counts) per release.
+
+```sql
+CREATE TABLE IF NOT EXISTS insights.community_counts (
+    release_id  BIGINT PRIMARY KEY,
+    have_count  INTEGER NOT NULL DEFAULT 0,
+    want_count  INTEGER NOT NULL DEFAULT 0,
+    fetched_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_community_counts_fetched ON insights.community_counts (fetched_at);
+```
+
 **insights.computation_log** — Audit trail for insight computation runs.
 
 ```sql
@@ -1051,7 +1196,7 @@ CREATE TABLE IF NOT EXISTS musicbrainz.artists (
     begin_area         TEXT,
     end_area           TEXT,
     disambiguation     TEXT,
-    discogs_artist_id  INTEGER,
+    discogs_artist_id  BIGINT,
     aliases            JSONB,
     tags               JSONB,
     data               JSONB,
@@ -1076,7 +1221,7 @@ CREATE TABLE IF NOT EXISTS musicbrainz.labels (
     ended              BOOLEAN DEFAULT FALSE,
     area               TEXT,
     disambiguation     TEXT,
-    discogs_label_id   INTEGER,
+    discogs_label_id   BIGINT,
     data               JSONB,
     created_at         TIMESTAMPTZ DEFAULT NOW(),
     updated_at         TIMESTAMPTZ DEFAULT NOW()
@@ -1095,7 +1240,7 @@ CREATE TABLE IF NOT EXISTS musicbrainz.releases (
     barcode            TEXT,
     status             TEXT,
     release_group_mbid UUID,
-    discogs_release_id INTEGER,
+    discogs_release_id BIGINT,
     data               JSONB,
     created_at         TIMESTAMPTZ DEFAULT NOW(),
     updated_at         TIMESTAMPTZ DEFAULT NOW()
@@ -1114,7 +1259,7 @@ CREATE TABLE IF NOT EXISTS musicbrainz.release_groups (
     secondary_types     JSONB,
     first_release_date  TEXT,
     disambiguation      TEXT,
-    discogs_master_id   INTEGER,
+    discogs_master_id   BIGINT,
     data                JSONB,
     created_at          TIMESTAMPTZ DEFAULT NOW(),
     updated_at          TIMESTAMPTZ DEFAULT NOW()

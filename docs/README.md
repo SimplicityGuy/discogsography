@@ -47,6 +47,7 @@
 | **[Database Resilience](database-resilience.md)**   | 💾 Database connection patterns & error handling |
 | **[Performance Guide](performance-guide.md)**       | ⚡ Performance optimization strategies           |
 | **[Maintenance Guide](maintenance.md)**             | 🔧 Keeping the system up-to-date and healthy     |
+| **[PostgreSQL Pool Exhaustion Analysis](postgres-pool-exhaustion-analysis.md)** | 🐘 Root-cause analysis of connection-pool sizing and prefetch coupling |
 
 ### ⚙️ Workflow & Automation
 
@@ -69,6 +70,7 @@
 | **[Neo4j Indexing](neo4j-indexing.md)**                                   | 🔗 Advanced Neo4j indexing strategies                                 |
 | **[Query Performance Optimizations](query-performance-optimizations.md)** | ⚡ Comprehensive query optimization report (249x overall improvement) |
 | **[MusicBrainz Sync Guide](musicbrainz-sync.md)**                         | 🎵 MusicBrainz data import, enrichment, and pipeline operations       |
+| **[Extraction Rules Guide](extraction-rules-guide.md)**                   | 🧹 Configurable data-quality rules for extraction validation          |
 | **[Recent Improvements](recent-improvements.md)**                         | 🚀 Latest platform enhancements and changelog                         |
 
 ### 🔗 Integration Contracts

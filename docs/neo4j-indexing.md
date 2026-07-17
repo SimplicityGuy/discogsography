@@ -19,6 +19,7 @@ Full-text indexes enable efficient text search queries using `CONTAINS` and case
 | `label_name_fulltext`    | Label   | name       | Search endpoint label queries   |
 | `genre_name_fulltext`    | Genre   | name       | Search endpoint genre queries   |
 | `style_name_fulltext`    | Style   | name       | Search endpoint style queries   |
+| `person_name_fulltext`   | Person  | name       | Search endpoint people queries  |
 
 **Example Query**:
 
@@ -45,6 +46,7 @@ ID lookups are served by the **uniqueness constraints**, each of which implicitl
 | `release_id` | Release | id       | Release lookups                   |
 | `genre_name` | Genre   | name     | Genre lookups (no `id` property)  |
 | `style_name` | Style   | name     | Style lookups (no `id` property)  |
+| `person_name` | Person | name     | Person lookups (no `id` property) |
 
 **Example Query**:
 
@@ -79,6 +81,7 @@ ORDER BY a.name
 | `master_year_index`      | Master  | year       | Monthly anniversaries (insights/this-month)      |
 | `genre_first_year_index` | Genre   | first_year | Genre emergence timeline (index-backed ORDER BY) |
 | `style_first_year_index` | Style   | first_year | Style emergence timeline (index-backed ORDER BY) |
+| `person_credit_count`    | Person  | credit_count | Top-credited-people leaderboard queries        |
 
 **Example Query**:
 
@@ -88,6 +91,17 @@ WHERE r.year >= $start_year AND r.year <= $end_year
 RETURN r
 ORDER BY r.year
 ```
+
+#### MusicBrainz MBID Indexes
+
+Used by **brainzgraphinator** for efficient lookups when enriching existing nodes with MusicBrainz metadata.
+
+| Index Name     | Label   | Properties | Use Case                                  |
+| -------------- | ------- | ---------- | ------------------------------------------ |
+| `artist_mbid`  | Artist  | mbid       | MusicBrainz artist enrichment lookups     |
+| `label_mbid`   | Label   | mbid       | MusicBrainz label enrichment lookups      |
+| `release_mbid` | Release | mbid       | MusicBrainz release enrichment lookups    |
+| `master_mbid`  | Master  | mbid       | MusicBrainz master enrichment lookups     |
 
 ### Pre-Computed Aggregate Properties
 
