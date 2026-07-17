@@ -5,6 +5,10 @@ name: E2E Test
 
 on:
   workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        description: "Codecov upload token"
+        required: false
 
 concurrency:
   group: e2e-${{ github.workflow }}-${{ github.ref }}
