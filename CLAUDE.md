@@ -289,3 +289,14 @@ All variables support `_FILE` variants for Docker Compose runtime secrets in pro
 - Common patterns that repeat across files: timestamp comparisons, asyncio primitive creation, ack/nack guards, subprocess calls
 - Token validation code exists in `api/dependencies.py`, `api/api.py`, `api/routers/sync.py`, and `api/routers/snapshot.py` — changes to one must be applied to all
 - Batch processors exist in `graphinator/batch_processor.py` and `tableinator/batch_processor.py` — changes to one should be mirrored in the other
+
+<!-- bh:agf:start (managed by `bh rig init` — edit outside these markers; `-f` refreshes) -->
+## AGF — Agentic Git Flow
+
+This repo is onboarded as a **`bh` rig** and develops via **AGF**: work is tracked in beads
+and driven through `bh`, **not** raw `git` / `bd` / `gh`.
+
+- **Is this repo set up for AGF?** → run `bh rig ready` (add `-v` for the line-item breakdown).
+- **Lifecycle, roles, conventions:** see `.beads/PRIME.md` and `docs/AGF.md`.
+- Drive beads with `bh work`; load the role skill for your seat (coordinator / developer / merger).
+<!-- bh:agf:end -->

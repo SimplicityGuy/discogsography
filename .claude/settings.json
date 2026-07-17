@@ -1,1 +1,12 @@
-{}
+{
+  "permissions": {
+    "deny": [
+      "Bash(bd remember:*)"
+    ]
+  },
+  "statusLine": {
+    "command": "ws statusline",
+    "padding": 0,
+    "type": "command"
+  }
+}

@@ -341,3 +341,14 @@ explore/coverage-e2e/
 # Performance test results
 ###
 perftest-results/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+
+###
+# beads (bead corpus lives on the dolt remote: refs/dolt/data)
+###
+.beads/
