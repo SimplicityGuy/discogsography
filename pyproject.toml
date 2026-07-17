@@ -289,6 +289,9 @@ members = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard
 
 # Environment restrictions for uv to avoid iOS and other incompatible platforms
 [tool.uv]
+# Wait 7 days before resolving newly published package versions, to reduce exposure
+# to malicious or unstable releases (supply-chain hardening).
+exclude-newer = "7 days"
 environments = [
     # Only support Linux platforms that we build for in CI/CD
     "sys_platform == 'linux' and platform_machine == 'x86_64'",   # linux/amd64
