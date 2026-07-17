@@ -109,8 +109,8 @@ These secrets are **never passed as plain environment variables in production**.
 | JWT secret key         | `JWT_SECRET_KEY_FILE`               | `JWT_SECRET_KEY`               |
 | Encryption master key  | `ENCRYPTION_MASTER_KEY_FILE`        | `ENCRYPTION_MASTER_KEY`        |
 | Brevo API key          | `BREVO_API_KEY_FILE`                | `BREVO_API_KEY`                |
-| RabbitMQ mgmt user     | `RABBITMQ_MANAGEMENT_USER_FILE`     | `RABBITMQ_MANAGEMENT_USER`     |
-| RabbitMQ mgmt password | `RABBITMQ_MANAGEMENT_PASSWORD_FILE` | `RABBITMQ_MANAGEMENT_PASSWORD` |
+
+The Dashboard's RabbitMQ management-API access reuses the same `RABBITMQ_USERNAME`/`RABBITMQ_PASSWORD` (or `_FILE`) credentials above — there is no separate management-only credential pair.
 
 Plain env vars work in development. The production overlay (`docker-compose.prod.yml`) switches to the `_FILE` convention automatically — application code handles both via `get_secret()` in `common/config.py`.
 
@@ -233,10 +233,11 @@ docker inspect discogsography-extractor-discogs | jq '.[0].HostConfig.SecurityOp
 
 ```bash
 # Scan images for vulnerabilities
+# (extractor-discogs and extractor-musicbrainz are two Docker Compose services
+# running the same discogsography/extractor image with different EXTRACTOR_SOURCE
+# values, so scanning the one image tag covers both)
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-  aquasec/trivy image discogsography/extractor-discogs:latest
-# Also scan the MusicBrainz variant:
-#   aquasec/trivy image discogsography/extractor-musicbrainz:latest
+  aquasec/trivy image discogsography/extractor:latest
 
 # Check for misconfigurations
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \

@@ -16,7 +16,7 @@ extractor --source discogs --data-quality-rules /path/to/extraction-rules.yaml
 DATA_QUALITY_RULES=/path/to/extraction-rules.yaml
 ```
 
-The default rules file is `extractor/extraction-rules.yaml`.
+There is no built-in default path — if `DATA_QUALITY_RULES` is unset and no CLI argument is given, the rules engine is disabled entirely. Docker Compose sets `DATA_QUALITY_RULES=/discogs-data/extraction-rules.yaml`, mounting `extractor/extraction-rules.yaml` (the project's default rules file) read-only into the container.
 
 ## YAML Structure
 
