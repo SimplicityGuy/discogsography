@@ -738,7 +738,7 @@ ______________________________________________________________________
 
 #### Implementation
 
-- ✅ **Rust Implementation**: `extractor/extractor/src/state_marker.rs` with 11 unit tests
+- ✅ **Rust Implementation**: `extractor/src/state_marker.rs` with 11 unit tests
 - ✅ **Python Implementation**: `common/state_marker.py` with 22 unit tests
 - ✅ **Documentation**: Complete usage guide in `docs/state-marker-system.md`
 - ✅ **Cross-Platform**: Rust extractor and Python `common` library share identical state marker functionality
