@@ -9,6 +9,10 @@ name: Test
 
 on:
   workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        description: "Codecov upload token"
+        required: false
 
 env:
   CI: true
