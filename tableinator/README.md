@@ -51,6 +51,10 @@ STARTUP_DELAY=5                     # Seconds to wait for dependent services at 
 POSTGRES_BATCH_MODE=true            # Enable batch processing (default: true)
 POSTGRES_BATCH_SIZE=100             # Records per batch (default: 100)
 POSTGRES_BATCH_FLUSH_INTERVAL=5.0   # Seconds between automatic flushes (default: 5.0)
+
+# PostgreSQL connection pool (optional — shares the deployment's PgBouncer backend budget)
+POSTGRES_POOL_MIN_SIZE=2            # Default: 2
+POSTGRES_POOL_MAX_SIZE=12           # Default: 12
 ```
 
 The health server port is fixed at **8002**.
@@ -98,12 +102,14 @@ All four entity tables (artists, labels, masters, releases) share the same struc
 
 ```sql
 CREATE TABLE IF NOT EXISTS <entity_type> (
-    data_id VARCHAR PRIMARY KEY,     -- Discogs entity ID
-    hash    VARCHAR NOT NULL,        -- SHA256 hash for change detection
-    data    JSONB   NOT NULL         -- Complete normalized record
+    data_id    VARCHAR PRIMARY KEY,               -- Discogs entity ID
+    hash       VARCHAR NOT NULL,                   -- SHA256 hash for change detection
+    data       JSONB   NOT NULL,                   -- Complete normalized record
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()  -- Last write timestamp
 );
 
 CREATE INDEX IF NOT EXISTS idx_<entity>_hash ON <entity> (hash);
+CREATE INDEX IF NOT EXISTS idx_<entity>_updated_at ON <entity> (updated_at);
 ```
 
 The `data` column stores the full normalized record from `normalize_record()`, preserving all fields (profile, tracklist, notes, etc.) as JSONB.
@@ -112,6 +118,7 @@ The `data` column stores the full normalized record from `normalize_record()`, p
 
 - Primary key on `data_id` for each table
 - Hash index on `hash` for change detection lookups
+- Index on `updated_at` for recency-based lookups
 
 ## Processing Logic
 

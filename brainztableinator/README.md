@@ -46,9 +46,15 @@ STUCK_CHECK_INTERVAL=30             # Seconds between stuck-state checks (defaul
 STARTUP_IDLE_TIMEOUT=30             # Seconds after startup with no messages before idle mode (default: 30)
 IDLE_LOG_INTERVAL=300               # Seconds between idle status logs (default: 300)
 STARTUP_DELAY=5                     # Seconds to wait for dependent services at startup (default: 5)
+
+# PostgreSQL connection pool (optional — shares the deployment's PgBouncer backend budget)
+POSTGRES_POOL_MIN_SIZE=2            # Default: 2
+POSTGRES_POOL_MAX_SIZE=12           # Default: 12
 ```
 
 The health server port is fixed at **8010**.
+
+RabbitMQ QoS prefetch is coupled to `POSTGRES_POOL_MAX_SIZE` (channel-global) so the number of in-flight message handlers can never exceed the connection pool's capacity.
 
 ### Smart Connection Lifecycle
 
