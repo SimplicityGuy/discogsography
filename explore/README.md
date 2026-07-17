@@ -241,7 +241,7 @@ The Explore service serves static files only — all query logic, authentication
 
 ## 📡 API Endpoints
 
-The Explore service exposes only a health endpoint. All data endpoints are served by the **API service** at port 8004:
+The frontend JavaScript calls relative `/api/*` paths, so the Explore service exposes a wildcard `/api/{path}` HTTP proxy (`GET`/`POST`/`PUT`/`DELETE`/`PATCH`) that forwards every request verbatim to the **API service** at port 8004, alongside its dedicated `/health` endpoint. Explore does not implement any query logic itself — all data endpoints below are actually served by the **API service**:
 
 ### Graph Exploration
 
@@ -392,6 +392,7 @@ The Explore service exposes only a health endpoint. All data endpoints are serve
 | -------------- | ---------------------------------------- | --------------------------------------------- |
 | `API_BASE_URL` | Base URL of the API service for proxying | `http://api:8004`                             |
 | `CORS_ORIGINS` | Comma-separated list of allowed origins  | `http://localhost:3000,http://localhost:8003` |
+| `LOG_LEVEL`    | Logging level                            | `INFO`                                        |
 
 ## 🔌 Ports
 

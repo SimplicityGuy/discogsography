@@ -51,10 +51,16 @@ Extractor is configured via environment variables.
 - `LOG_LEVEL`: Logging level - DEBUG, INFO, WARNING, ERROR, CRITICAL (default: `INFO`)
 - `MAX_WORKERS`: Number of worker threads (default: CPU count)
 - `BATCH_SIZE`: Message batch size for AMQP (default: `100`)
+- `QUEUE_SIZE`: Internal channel buffer size between pipeline stages (default: `5000`)
+- `PROGRESS_LOG_INTERVAL`: Records between progress log lines (default: `1000`)
+- `STATE_SAVE_INTERVAL`: Records between state marker saves (default: `5000`)
+- `HEALTH_PORT`: Health server port (default: `8000`)
+- `MUSICBRAINZ_DUMP_URL`: Base URL for MusicBrainz dump discovery (default: `https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/`)
+- `DISCOGS_HEALTH_URL`: URL the `extractor-musicbrainz` service polls to detect when the Discogs extractor is idle (default: `http://extractor-discogs:8000/health`)
 - `FORCE_REPROCESS`: Force reprocessing of all files (default: `false`; CLI argument with env override)
 - `DATA_QUALITY_RULES`: Path to YAML rules file for data quality validation (optional; also available as `--data-quality-rules` CLI arg)
 
-The health server port is fixed at **8000**.
+The health server listens on `HEALTH_PORT`, which defaults to **8000**.
 
 ## Building
 
@@ -334,6 +340,8 @@ The main entry point `process_discogs_data()` accepts trait objects (`&mut dyn D
 | `musicbrainz_downloader.rs` | Local dump file discovery and version detection (MusicBrainz mode)                                                  |
 | `parser.rs`                 | Streaming XML parser using quick-xml (artists, labels, masters, releases)                                           |
 | `jsonl_parser.rs`           | MusicBrainz JSONL parser — xz decompression, record parsing, MBID→Discogs ID mapping, relation enrichment           |
+| `normalize.rs`              | Shared record normalization helpers (strips `@`-prefixed keys, renames `#text` to `name`)                           |
+| `polite_http.rs`            | Rate-limited HTTP client for upstream providers — `User-Agent`, request throttling, `Retry-After` backoff           |
 | `message_queue.rs`          | AMQP connection management, exchange declaration, batch publishing                                                  |
 | `state_marker.rs`           | Version-specific progress tracking, resume decisions                                                                |
 | `rules.rs`                  | Data quality rule engine — YAML loading, compilation, condition evaluation, flagged record writing, quality reports |
@@ -423,6 +431,7 @@ Set the `LOG_LEVEL` environment variable to control logging verbosity:
 - `GET /health`: Service health status with current metrics
 - `GET /metrics`: Prometheus-compatible metrics
 - `GET /ready`: Readiness probe for container orchestration
+- `POST /trigger`: Manually trigger an extraction run (optional `force_reprocess` body field)
 
 ### Extraction Status Lifecycle
 

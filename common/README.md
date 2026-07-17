@@ -15,10 +15,16 @@ Shared utilities and configuration for all discogsography services.
 - `query_debug.py`: Query debug logging and database profiling utilities — provides `is_debug()`, `is_db_profiling()`, `log_cypher_query()`, `log_sql_query()`, and `execute_sql()` for debug-level query logging, plus optional `PROFILE`/`EXPLAIN` result logging to a dedicated profiling log file (`/logs/profiling.log`) when `DB_PROFILING=true`
 - `credit_roles.py`: Credit role taxonomy mapping Discogs `extraartists` roles to high-level categories (`production`, `engineering`, `mastering`, `session`, `design`, `management`, `other`). Used by the graphinator during ingestion and the credits API for role-based queries. Provides `categorize_role()`, `ROLE_CATEGORIES`, and `ALL_CATEGORIES`.
 - `state_marker.py`: Extraction state marker system for tracking progress and enabling safe restarts
+- `agent_tools/`: Shared, framework-agnostic async data-fetching tools (search, collaborators, trends, entity lookups, path finding, genre tree, graph stats) reused by both the API's NLQ engine and the MCP server
 
 ### Key Constants (`__init__.py`)
 
-- `DISCOGS_EXCHANGE_PREFIX`: Exchange name prefix (`discogsography-discogs`)
+- `DISCOGS_EXCHANGE_PREFIX`: Discogs exchange name prefix (`discogsography-discogs`)
+- `MUSICBRAINZ_EXCHANGE_PREFIX`: MusicBrainz exchange name prefix (`discogsography-musicbrainz`)
 - `AMQP_EXCHANGE_TYPE`: Exchange type (`fanout`)
 - `AMQP_QUEUE_PREFIX_GRAPHINATOR`: Queue prefix for graphinator consumers
 - `AMQP_QUEUE_PREFIX_TABLEINATOR`: Queue prefix for tableinator consumers
+- `AMQP_QUEUE_PREFIX_BRAINZGRAPHINATOR`: Queue prefix for brainzgraphinator consumers
+- `AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR`: Queue prefix for brainztableinator consumers
+- `DATA_TYPES`: Discogs data types processed (`artists`, `labels`, `masters`, `releases`)
+- `MUSICBRAINZ_DATA_TYPES`: MusicBrainz data types processed (`artists`, `labels`, `release-groups`, `releases`)
