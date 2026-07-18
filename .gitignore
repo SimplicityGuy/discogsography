@@ -268,14 +268,12 @@ Thumbs.db
 # Git worktrees
 ###
 .worktrees/
-.claude/worktrees/
 
 ###
 # Claude Code
 ###
-# Project-shared settings (.claude/settings.json) are committed
-# Personal/local overrides are not
-.claude/settings.local.json
+.claude/
+.mcp.json
 
 ###
 # Temporary files
@@ -317,12 +315,7 @@ Temporary Items
 ###
 # VSCode
 ###
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-!.vscode/*.code-snippets
+.vscode/
 
 # Local History for Visual Studio Code
 .history/
@@ -352,3 +345,8 @@ perftest-results/
 # beads (bead corpus lives on the dolt remote: refs/dolt/data)
 ###
 .beads/
+
+###
+# Repowise codebase index
+###
+.repowise/
