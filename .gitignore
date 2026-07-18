@@ -268,14 +268,11 @@ Thumbs.db
 # Git worktrees
 ###
 .worktrees/
-.claude/worktrees/
 
 ###
 # Claude Code
 ###
-# Project-shared settings (.claude/settings.json) are committed
-# Personal/local overrides are not
-.claude/settings.local.json
+.claude/
 
 ###
 # Temporary files
@@ -352,3 +349,8 @@ perftest-results/
 # beads (bead corpus lives on the dolt remote: refs/dolt/data)
 ###
 .beads/
+
+###
+# Repowise codebase index
+###
+.repowise/
