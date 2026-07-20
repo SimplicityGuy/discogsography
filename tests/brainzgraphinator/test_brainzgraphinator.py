@@ -460,6 +460,49 @@ class TestRelationshipEdges:
         assert isinstance(call_kwargs["source_id"], str)
         assert isinstance(call_kwargs["target_id"], str)
 
+    @pytest.mark.asyncio
+    async def test_create_edge_forward_direction_keeps_source_target(self, mock_tx: AsyncMock) -> None:
+        """direction == 'forward' (or absent) keeps the processed record as the
+        relationship source. Regression test for discogsography-cu2.20.
+        """
+        relations = [
+            {
+                "type": "member of band",
+                "target_discogs_artist_id": 67890,
+                "direction": "forward",
+            }
+        ]
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await create_relationship_edges(mock_tx, 12345, relations)
+
+        call_kwargs = mock_tx.run.call_args.kwargs
+        assert call_kwargs["source_id"] == "12345"
+        assert call_kwargs["target_id"] == "67890"
+
+    @pytest.mark.asyncio
+    async def test_create_edge_backward_direction_swaps_source_target(self, mock_tx: AsyncMock) -> None:
+        """direction == 'backward' means the processed record is the relationship's
+        TARGET, not its source — source/target must be swapped so e.g. a band's own
+        record (direction=backward, target=member) still creates
+        (member)-[:MEMBER_OF]->(band), not the inverse. Regression test for
+        discogsography-cu2.20.
+        """
+        relations = [
+            {
+                "type": "member of band",
+                "target_discogs_artist_id": 67890,
+                "direction": "backward",
+            }
+        ]
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await create_relationship_edges(mock_tx, 12345, relations)
+
+        call_kwargs = mock_tx.run.call_args.kwargs
+        # Swapped: the relation's target (67890) becomes the edge source,
+        # and the processed record (12345) becomes the edge target.
+        assert call_kwargs["source_id"] == "67890"
+        assert call_kwargs["target_id"] == "12345"
+
 
 # ── Message handling tests ────────────────────────────────────────────────
 

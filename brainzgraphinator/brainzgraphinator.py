@@ -445,6 +445,10 @@ async def create_relationship_edges(
     - Look up the Neo4j edge type in MB_RELATIONSHIP_MAP
     - Skip unknown relationship types
     - If target_discogs_artist_id is None, skip
+    - Swap source/target when the relation's direction is "backward" — the
+      current entity is the relationship's target in that case, not its
+      source (see MB_RELATIONSHIP_MAP types, all of which are canonically
+      oriented, e.g. member->band for "member of band")
     - MERGE the edge with source: 'musicbrainz' property
 
     Cypher can't parameterize relationship types, so we format the edge type
@@ -467,6 +471,13 @@ async def create_relationship_edges(
         # discogs id (see enrich_artist). Coerce both sides consistently.
         edge_source_id = str(source_discogs_id)
         edge_target_id = str(target_discogs_id)
+
+        # MusicBrainz relations are directional and materialized on both
+        # endpoints. direction == "backward" means the record being
+        # processed is the relation's TARGET, not its source — swap so the
+        # edge is created in the canonical orientation (e.g. member->band).
+        if relation.get("direction") == "backward":
+            edge_source_id, edge_target_id = edge_target_id, edge_source_id
 
         # Safe: edge_type comes from MB_RELATIONSHIP_MAP, not user input
         result = await tx.run(
