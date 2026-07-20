@@ -1175,6 +1175,36 @@ class TestExploreServiceEndpoints:
         assert response.status_code == 502
         assert response.json()["error"] == "Upstream service error"
 
+    def test_proxy_forwards_repeated_query_params(self, explore_client: TestClient) -> None:
+        """discogsography-cu2.12 regression: repeated query keys (e.g.
+        ?formats=Vinyl&formats=CD, as sent by the Explore frontend for
+        multi-value filters) must ALL reach the upstream API — dict()-ing a
+        Starlette multi-dict silently keeps only the last value.
+        """
+        import httpx
+
+        mock_proxied = MagicMock()
+        mock_proxied.status_code = 200
+        mock_proxied.content = b"{}"
+        mock_proxied.headers = {"content-type": "application/json"}
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.request = AsyncMock(return_value=mock_proxied)
+
+        with patch("explore.explore._get_http_client", return_value=mock_client):
+            response = explore_client.get("/api/collection/gaps/label/42?formats=Vinyl&formats=CD")
+
+        assert response.status_code == 200
+        forwarded_params = mock_client.request.call_args.kwargs["params"]
+        # Must be an httpx.QueryParams (or equivalent multi-value structure)
+        # preserving every repeated key — NOT a plain dict, which would
+        # collapse "formats" down to a single value.
+        assert not isinstance(forwarded_params, dict)
+        pairs = forwarded_params.multi_items() if hasattr(forwarded_params, "multi_items") else list(forwarded_params)
+        assert ("formats", "Vinyl") in pairs
+        assert ("formats", "CD") in pairs
+        assert sum(1 for k, _v in pairs if k == "formats") == 2
+
     def test_proxy_strips_hop_headers(self, explore_client: TestClient) -> None:
         """Proxy does not forward content-encoding / transfer-encoding in response."""
         import httpx
