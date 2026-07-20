@@ -20,6 +20,7 @@ from tableinator.tableinator import (
     main,
     make_data_handler,
     on_data_message,
+    purge_stale_rows,
     schedule_consumer_cancellation,
     signal_handler,
 )
@@ -186,6 +187,134 @@ class TestOnDataMessage:
 
         # Should nack without requeue for bad messages
         mock_message.nack.assert_called_once_with(requeue=False)
+
+
+def _make_purge_connection(total_count: int, stale_count: int) -> tuple[MagicMock, AsyncMock]:
+    """Build a mock connection wired for purge_stale_rows.
+
+    fetchone yields the total-row count then the would-be-deleted count; fetchall
+    (only reached if the purge is not vetoed) returns stale_count data_id rows.
+    """
+    mock_cursor = AsyncMock()
+    mock_cursor.execute = AsyncMock()
+    mock_cursor.fetchone = AsyncMock(side_effect=[(total_count,), (stale_count,)])
+    mock_cursor.fetchall = AsyncMock(return_value=[(f"id-{i}",) for i in range(stale_count)])
+
+    cursor_cm = AsyncMock()
+    cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+    cursor_cm.__aexit__ = AsyncMock(return_value=None)
+
+    tx_cm = AsyncMock()
+    tx_cm.__aenter__ = AsyncMock(return_value=None)
+    tx_cm.__aexit__ = AsyncMock(return_value=None)
+
+    mock_conn = MagicMock()
+    mock_conn.set_autocommit = AsyncMock()
+    mock_conn.transaction = MagicMock(return_value=tx_cm)
+    mock_conn.cursor = MagicMock(return_value=cursor_cm)
+    return mock_conn, mock_cursor
+
+
+class TestPurgeStaleRowsGuards:
+    """Regression tests for discogsography-cu2.2 — resumed-extraction mass data loss.
+
+    On a resumed extraction the extractor skips files completed in an earlier session,
+    so a data type can receive an extraction_complete signal while zero records were
+    streamed this run. Purging blindly then deletes every row written before the
+    restart. purge_stale_rows must refuse those wipes.
+    """
+
+    @pytest.mark.asyncio
+    async def test_purges_partial_stale_rows(self, mock_async_pool: Any) -> None:
+        """Normal case: a small stale fraction is deleted (dump genuinely shrank)."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=5)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=95)
+
+        # 2 count queries + 1 DELETE = 3 executes; the DELETE actually ran.
+        assert mock_cursor.execute.call_count == 3
+        mock_cursor.fetchall.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_vetoes_full_table_wipe(self, mock_async_pool: Any) -> None:
+        """The all-files-complete-before-crash variant: every row is 'stale'.
+
+        record_counts are non-zero here, so the count-based guard alone would miss it —
+        the fraction cap is what prevents the wipe.
+        """
+        mock_conn, mock_cursor = _make_purge_connection(total_count=9_000_000, stale_count=9_000_000)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=9_000_000)
+
+        # Only the two count queries ran — the DELETE was vetoed.
+        assert mock_cursor.execute.call_count == 2
+        mock_cursor.fetchall.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_vetoes_at_fraction_boundary(self, mock_async_pool: Any) -> None:
+        """The cap is inclusive: exactly 90% of the table is refused."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=90)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=10)
+
+        assert mock_cursor.execute.call_count == 2
+        mock_cursor.fetchall.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_purges_just_below_boundary(self, mock_async_pool: Any) -> None:
+        """Just under the cap (89%) still purges."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=89)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=11)
+
+        assert mock_cursor.execute.call_count == 3
+        mock_cursor.fetchall.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_zero_records_this_session(self, mock_async_pool: Any) -> None:
+        """record_count == 0 (resumed run re-sent nothing) short-circuits before any query."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=100)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=0)
+
+        # No connection acquired, no query executed.
+        pool.connection.assert_not_called()
+        mock_cursor.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_skips_empty_started_at(self, mock_async_pool: Any) -> None:
+        """Missing started_at short-circuits before touching the database."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=5)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "", record_count=95)
+
+        pool.connection.assert_not_called()
+        mock_cursor.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_empty_table_no_delete(self, mock_async_pool: Any) -> None:
+        """An empty table performs no DELETE."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=0, stale_count=0)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=50)
+
+        # Only the total-count query ran; short-circuited before counting stale rows.
+        assert mock_cursor.execute.call_count == 1
+        mock_cursor.fetchall.assert_not_awaited()
 
 
 class TestMain:
@@ -621,7 +750,8 @@ class TestOnDataMessageExtended:
         ):
             await on_data_message(mock_message, "artists")
 
-        mock_purge.assert_called_once_with("artists", "2026-01-01T00:00:00Z")
+        # No record_counts in the message → third positional arg is None.
+        mock_purge.assert_called_once_with("artists", "2026-01-01T00:00:00Z", None)
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1700,8 +1830,11 @@ class TestPurgeStaleRows:
 
     @pytest.mark.asyncio
     async def test_purges_stale_rows(self) -> None:
-        """Test deletes rows older than started_at."""
+        """Test deletes rows older than started_at (small stale fraction → real shrink)."""
         mock_cursor = AsyncMock()
+        # fetchone answers the total-count then the stale-count queries; 2 of 100 rows
+        # are stale (2% ≪ safety cap), so the DELETE proceeds and returns those 2 rows.
+        mock_cursor.fetchone = AsyncMock(side_effect=[(100,), (2,)])
         mock_cursor.fetchall = AsyncMock(return_value=[("old_id_1",), ("old_id_2",)])
 
         mock_cursor_cm = MagicMock()
@@ -1725,12 +1858,13 @@ class TestPurgeStaleRows:
 
         from tableinator.tableinator import purge_stale_rows
 
-        await purge_stale_rows("artists", "2026-01-01T00:00:00Z")
+        await purge_stale_rows("artists", "2026-01-01T00:00:00Z", record_count=98)
 
         # Verify autocommit was disabled before transaction
         mock_conn.set_autocommit.assert_called_once_with(False)
 
-        mock_cursor.execute.assert_called_once()
+        # 2 count queries + 1 DELETE; the DELETE (last call) carries the parsed timestamp.
+        assert mock_cursor.execute.call_count == 3
         call_args = mock_cursor.execute.call_args
         param = call_args[0][1]
         # After fix, started_at is parsed to a datetime with UTC timezone
@@ -1774,7 +1908,9 @@ class TestPurgeStaleRows:
     async def test_purge_with_naive_datetime_adds_utc(self) -> None:
         """Test purge_stale_rows with a timezone-naive timestamp adds UTC."""
         mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(return_value=[])
+        # 3 of 100 rows stale → DELETE proceeds; fetchall returns the deleted rows.
+        mock_cursor.fetchone = AsyncMock(side_effect=[(100,), (3,)])
+        mock_cursor.fetchall = AsyncMock(return_value=[("a",), ("b",), ("c",)])
 
         mock_cursor_cm = MagicMock()
         mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
@@ -1798,9 +1934,10 @@ class TestPurgeStaleRows:
         from tableinator.tableinator import purge_stale_rows
 
         # Pass a timezone-naive timestamp (no trailing Z or +00:00)
-        await purge_stale_rows("artists", "2026-01-01T00:00:00")
+        await purge_stale_rows("artists", "2026-01-01T00:00:00", record_count=97)
 
-        mock_cursor.execute.assert_called_once()
+        # The DELETE (last execute) receives the UTC-normalized timestamp.
+        assert mock_cursor.execute.call_count == 3
         call_args = mock_cursor.execute.call_args
         param = call_args[0][1]
         if isinstance(param, tuple):
@@ -1810,6 +1947,8 @@ class TestPurgeStaleRows:
         # Should have been converted to UTC-aware datetime
         assert param == datetime(2026, 1, 1, tzinfo=UTC)
         assert param.tzinfo is not None
+
+        tableinator.tableinator.connection_pool = None
 
         tableinator.tableinator.connection_pool = None
 
