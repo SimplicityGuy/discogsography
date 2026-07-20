@@ -268,9 +268,12 @@ pub fn build_mbid_discogs_map_from_file(path: &Path, entity_type: &str) -> Resul
     for line_result in reader.lines() {
         let line = match line_result {
             Ok(l) => l,
+            // A read error from a compressed stream (XzDecoder) is *persistent*, not
+            // transient: a corrupt/truncated `.jsonl.xz` returns the same `Err` on every
+            // subsequent read, so `continue` here would busy-loop forever at 100% CPU.
+            // Treat it as fatal so the caller can fail the run instead of wedging.
             Err(e) => {
-                debug!("⚠️ Failed to read line during MBID map build: {e}");
-                continue;
+                return Err(e).context(format!("Failed to read line during MBID map build from {:?}", path));
             }
         };
         let trimmed = line.trim();
