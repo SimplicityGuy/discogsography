@@ -1032,6 +1032,62 @@ class TestComputeGenreStyleStats:
         graphinator.graphinator.graph = None
 
     @pytest.mark.asyncio
+    async def test_driving_match_is_outside_transactional_subquery(self) -> None:
+        """Regression (cu2.17): the driving MATCH must sit OUTSIDE ``CALL {} IN
+        TRANSACTIONS`` so the update batches one node per inner transaction.
+
+        If the MATCH is the first statement *inside* the transactional subquery
+        (``CALL { MATCH (g:Genre) ... } IN TRANSACTIONS``) then nothing precedes
+        the CALL, exactly one implicit input row drives it, and the entire update
+        runs in a single transaction — defeating the batching and hitting the
+        120s transaction timeout at production scale.
+        """
+        mock_driver = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_driver.session = MagicMock(return_value=mock_session_ctx)
+
+        result = AsyncMock()
+        result.consume = AsyncMock(return_value=MagicMock(counters="properties_set=0"))
+        mock_session.run = AsyncMock(return_value=result)
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = mock_driver
+
+        from graphinator.graphinator import compute_genre_style_stats
+
+        await compute_genre_style_stats()
+
+        # (query string, driving-match snippet) for each of the three queries
+        cases = [
+            (mock_session.run.call_args_list[0][0][0], "MATCH (g:Genre)"),
+            (mock_session.run.call_args_list[1][0][0], "MATCH (s:Style)"),
+            (mock_session.run.call_args_list[2][0][0], "MATCH (l:Label)"),
+        ]
+        for query, driving_match in cases:
+            match_idx = query.index(driving_match)
+            call_idx = query.index("CALL {")
+            # Driving MATCH must appear before the transactional CALL block.
+            assert match_idx < call_idx, (
+                f"driving MATCH {driving_match!r} must precede 'CALL {{' — "
+                "otherwise the whole update runs in one transaction"
+            )
+            # The transactional subquery must import the node with WITH, not
+            # re-MATCH the full label set inside the CALL.
+            after_call = query[call_idx + len("CALL {") :]
+            first_stmt = after_call.strip().split("\n", 1)[0].strip()
+            assert first_stmt.startswith("WITH "), (
+                f"first statement inside 'CALL {{' should be a WITH import, got {first_stmt!r}"
+            )
+            assert "IN TRANSACTIONS" in query
+
+        # Reset
+        graphinator.graphinator.graph = None
+
+    @pytest.mark.asyncio
     async def test_skips_when_no_driver(self) -> None:
         """Test does nothing when graph driver is None."""
         import graphinator.graphinator

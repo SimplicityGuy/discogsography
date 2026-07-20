@@ -525,13 +525,17 @@ async def compute_genre_style_stats() -> None:
     if graph is None:
         return
 
-    # Use CALL {} IN TRANSACTIONS OF 1 ROWS to process each genre/style
-    # in its own transaction.  This avoids the default 120s transaction
-    # timeout — each individual node takes ~10-30s (even for Electronic/Rock
-    # with millions of releases), well within the limit.
+    # Drive the batching with an outer MATCH so CALL {} IN TRANSACTIONS actually
+    # commits one inner transaction per node (OF 1 ROWS = one genre/style per
+    # transaction).  The driving MATCH MUST sit OUTSIDE the transactional
+    # subquery, with the node re-imported via WITH; otherwise nothing precedes
+    # the CALL, exactly one implicit input row drives it, and the entire update
+    # runs in a SINGLE transaction — defeating the batching and hitting the
+    # default 120s transaction timeout (each node takes ~10-30s).
     genre_cypher = """
+    MATCH (g:Genre)
     CALL {
-        MATCH (g:Genre)
+        WITH g
         CALL {
             WITH g
             MATCH (g)<-[:IS]-(r:Release)
@@ -565,8 +569,9 @@ async def compute_genre_style_stats() -> None:
     """
 
     style_cypher = """
+    MATCH (s:Style)
     CALL {
-        MATCH (s:Style)
+        WITH s
         CALL {
             WITH s
             MATCH (s)<-[:IS]-(r:Release)
@@ -604,8 +609,9 @@ async def compute_genre_style_stats() -> None:
     # but most labels have <100 releases so each batch computes quickly.
     # Use IN TRANSACTIONS OF 100 ROWS for throughput.
     label_cypher = """
+    MATCH (l:Label)
     CALL {
-        MATCH (l:Label)
+        WITH l
         CALL {
             WITH l
             MATCH (l)<-[:ON]-(r:Release)
