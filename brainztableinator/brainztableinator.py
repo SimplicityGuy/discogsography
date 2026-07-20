@@ -462,24 +462,42 @@ async def _insert_relationships(
     round-trip) per relationship. This keeps the per-message transaction short, which
     minimizes how long the connection sits ``idle in transaction`` holding a backend —
     the dominant pressure on the shared PgBouncer budget during a bulk import.
+
+    MusicBrainz relations are directional and materialized on both endpoints;
+    ``direction`` == "backward" means the entity being processed is the
+    relation's TARGET, not its source (mirrors the fix in
+    brainzgraphinator.create_relationship_edges). Swap source/target in that
+    case so the stored row always reflects the relationship's canonical
+    orientation (e.g. member->band for "member of band"), regardless of
+    which endpoint's record we happened to be processing.
     """
-    params = [
-        (
-            source_mbid,
-            source_type,
-            rel.get("target_mbid", ""),
-            rel.get("target_type", ""),
-            rel.get("type", ""),
-            Jsonb(rel.get("attributes", [])),
-            rel.get("begin_date"),
-            rel.get("end_date"),
-            rel.get("ended", False),
-        )
-        for rel in rels
+    params = []
+    for rel in rels:
         # Skip relations missing a target MBID (would fail UUID cast), target entity
         # type, or relationship type — these would violate NOT NULL / cast constraints.
-        if rel.get("target_mbid") and rel.get("target_type") and rel.get("type")
-    ]
+        if not (rel.get("target_mbid") and rel.get("target_type") and rel.get("type")):
+            continue
+
+        if rel.get("direction") == "backward":
+            row_source_mbid, row_source_type = rel["target_mbid"], rel["target_type"]
+            row_target_mbid, row_target_type = source_mbid, source_type
+        else:
+            row_source_mbid, row_source_type = source_mbid, source_type
+            row_target_mbid, row_target_type = rel["target_mbid"], rel["target_type"]
+
+        params.append(
+            (
+                row_source_mbid,
+                row_source_type,
+                row_target_mbid,
+                row_target_type,
+                rel.get("type", ""),
+                Jsonb(rel.get("attributes", [])),
+                rel.get("begin_date"),
+                rel.get("end_date"),
+                rel.get("ended", False),
+            )
+        )
     if not params:
         return
     async with conn.cursor() as cursor:

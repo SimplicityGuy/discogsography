@@ -149,6 +149,20 @@ class TestEnrichArtist:
             mock_tx.run.assert_not_called()
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
 
+    @pytest.mark.asyncio
+    async def test_enrich_artist_coerces_discogs_id_to_string(self, mock_tx: AsyncMock) -> None:
+        """discogs_artist_id (a JSON int from the extractor) is coerced to str before
+        matching, since graphinator always writes Discogs node `id` as a String.
+        Regression test for discogsography-cu2.10.
+        """
+        record = {"mbid": "abc", "discogs_artist_id": 12345}
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await enrich_artist(mock_tx, record)
+
+        call_kwargs = mock_tx.run.call_args_list[0].kwargs
+        assert call_kwargs["discogs_id"] == "12345"
+        assert isinstance(call_kwargs["discogs_id"], str)
+
 
 class TestEnrichLabel:
     """Tests for enrich_label."""
@@ -192,6 +206,19 @@ class TestEnrichLabel:
             await enrich_label(mock_tx, record)
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
 
+    @pytest.mark.asyncio
+    async def test_enrich_label_coerces_discogs_id_to_string(self, mock_tx: AsyncMock) -> None:
+        """discogs_label_id is coerced to str before matching. Regression test for
+        discogsography-cu2.10.
+        """
+        record = {"mbid": "abc", "discogs_label_id": 54321}
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await enrich_label(mock_tx, record)
+
+        call_kwargs = mock_tx.run.call_args_list[0].kwargs
+        assert call_kwargs["discogs_id"] == "54321"
+        assert isinstance(call_kwargs["discogs_id"], str)
+
 
 class TestEnrichRelease:
     """Tests for enrich_release."""
@@ -234,6 +261,19 @@ class TestEnrichRelease:
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
             assert bgmod.enrichment_stats["entities_enriched"] == 0
 
+    @pytest.mark.asyncio
+    async def test_enrich_release_coerces_discogs_id_to_string(self, mock_tx: AsyncMock) -> None:
+        """discogs_release_id is coerced to str before matching. Regression test for
+        discogsography-cu2.10.
+        """
+        record = {"mbid": "abc", "discogs_release_id": 99999}
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await enrich_release(mock_tx, record)
+
+        call_kwargs = mock_tx.run.call_args_list[0].kwargs
+        assert call_kwargs["discogs_id"] == "99999"
+        assert isinstance(call_kwargs["discogs_id"], str)
+
 
 # ── Release-group enrichment tests ────────────────────────────────────────
 
@@ -275,6 +315,19 @@ class TestEnrichReleaseGroup:
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
             result = await enrich_release_group(mock_tx, record)
             assert result is True
+
+    @pytest.mark.asyncio
+    async def test_enrich_release_group_coerces_discogs_id_to_string(self, mock_tx: AsyncMock) -> None:
+        """discogs_master_id is coerced to str before matching. Regression test for
+        discogsography-cu2.10.
+        """
+        record = {"mbid": "abc", "discogs_master_id": 23853}
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await enrich_release_group(mock_tx, record)
+
+        call_kwargs = mock_tx.run.call_args_list[0].kwargs
+        assert call_kwargs["discogs_id"] == "23853"
+        assert isinstance(call_kwargs["discogs_id"], str)
 
 
 # ── Relationship edge tests ───────────────────────────────────────────────
@@ -391,6 +444,64 @@ class TestRelationshipEdges:
             await create_relationship_edges(mock_tx, 12345, relations)
             assert bgmod.enrichment_stats["relationships_skipped_missing_side"] == 1
             assert bgmod.enrichment_stats["relationships_created"] == 0
+
+    @pytest.mark.asyncio
+    async def test_create_edge_coerces_ids_to_string(self, mock_tx: AsyncMock) -> None:
+        """source_id/target_id are coerced to str to match the graph's String `id`
+        convention on Discogs nodes. Regression test for discogsography-cu2.10.
+        """
+        relations = [{"type": "member of band", "target_discogs_artist_id": 67890}]
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await create_relationship_edges(mock_tx, 12345, relations)
+
+        call_kwargs = mock_tx.run.call_args.kwargs
+        assert call_kwargs["source_id"] == "12345"
+        assert call_kwargs["target_id"] == "67890"
+        assert isinstance(call_kwargs["source_id"], str)
+        assert isinstance(call_kwargs["target_id"], str)
+
+    @pytest.mark.asyncio
+    async def test_create_edge_forward_direction_keeps_source_target(self, mock_tx: AsyncMock) -> None:
+        """direction == 'forward' (or absent) keeps the processed record as the
+        relationship source. Regression test for discogsography-cu2.20.
+        """
+        relations = [
+            {
+                "type": "member of band",
+                "target_discogs_artist_id": 67890,
+                "direction": "forward",
+            }
+        ]
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await create_relationship_edges(mock_tx, 12345, relations)
+
+        call_kwargs = mock_tx.run.call_args.kwargs
+        assert call_kwargs["source_id"] == "12345"
+        assert call_kwargs["target_id"] == "67890"
+
+    @pytest.mark.asyncio
+    async def test_create_edge_backward_direction_swaps_source_target(self, mock_tx: AsyncMock) -> None:
+        """direction == 'backward' means the processed record is the relationship's
+        TARGET, not its source — source/target must be swapped so e.g. a band's own
+        record (direction=backward, target=member) still creates
+        (member)-[:MEMBER_OF]->(band), not the inverse. Regression test for
+        discogsography-cu2.20.
+        """
+        relations = [
+            {
+                "type": "member of band",
+                "target_discogs_artist_id": 67890,
+                "direction": "backward",
+            }
+        ]
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await create_relationship_edges(mock_tx, 12345, relations)
+
+        call_kwargs = mock_tx.run.call_args.kwargs
+        # Swapped: the relation's target (67890) becomes the edge source,
+        # and the processed record (12345) becomes the edge target.
+        assert call_kwargs["source_id"] == "67890"
+        assert call_kwargs["target_id"] == "12345"
 
 
 # ── Message handling tests ────────────────────────────────────────────────
