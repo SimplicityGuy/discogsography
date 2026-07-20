@@ -393,6 +393,25 @@ async def twofa_setup(
     user_id = current_user.get("sub")
     email = current_user.get("email", "")
 
+    # Refuse to overwrite a LIVE 2FA configuration. When totp_enabled is already
+    # TRUE, regenerating totp_secret / totp_recovery_codes would silently orphan
+    # the user's authenticator app and printed recovery codes while login still
+    # demands 2FA — a permanent lockout. Require an explicit disable first
+    # (mirrors the totp_enabled guard in twofa_disable).
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await execute_sql(
+            cur,
+            "SELECT totp_enabled FROM users WHERE id = %s::uuid",
+            (user_id,),
+        )
+        existing = await cur.fetchone()
+
+    if existing and existing.get("totp_enabled"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="2FA is already enabled — disable it first before setting up again",
+        )
+
     # Generate TOTP secret and encrypt it
     secret = generate_totp_secret()
     encrypted_secret = encrypt_totp_secret(secret, totp_key)
@@ -400,17 +419,23 @@ async def twofa_setup(
     # Generate recovery codes
     plaintext_codes, hashed_codes = generate_recovery_codes()
 
-    # Store encrypted secret and hashed recovery codes (but do NOT enable TOTP yet)
+    # Store encrypted secret and hashed recovery codes (but do NOT enable TOTP yet).
+    # Guarded WHERE totp_enabled IS NOT TRUE so a concurrent enable cannot be raced.
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,
             """
             UPDATE users
             SET totp_secret = %s, totp_recovery_codes = %s, updated_at = NOW()
-            WHERE id = %s::uuid
+            WHERE id = %s::uuid AND totp_enabled IS NOT TRUE
             """,
             (encrypted_secret, json.dumps(hashed_codes), user_id),
         )
+        if cur.rowcount == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="2FA is already enabled — disable it first before setting up again",
+            )
 
     otpauth_uri = f"otpauth://totp/Discogsography:{email}?secret={secret}&issuer=Discogsography"
 
