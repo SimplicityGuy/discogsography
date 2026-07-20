@@ -260,9 +260,7 @@ async def _run_total(
     union_sql, union_params = _build_union(types, per_table_limit=_TOTAL_COUNT_CAP, year_min=year_min, year_max=year_max, genres=genres)
 
     query = sql.SQL(
-        "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),"
-        " results AS ({union_sql})"
-        " SELECT COUNT(*) AS total FROM results"
+        "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq), results AS ({union_sql}) SELECT COUNT(*) AS total FROM results"
     ).format(union_sql=union_sql)
     params = [q, *union_params]
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
