@@ -2434,3 +2434,37 @@ class TestPgPoolBatchRegressions:
 
         assert create_mock.call_count == 0
         assert pool.active_connections == 3
+
+    def test_cu2_81_sync_exhausted_pool_raises_not_spins(self, connection_params: dict) -> None:
+        """discogsography-cu2.81: an exhausted sync pool must raise after max_retries, not busy-spin.
+
+        When the queue is Empty and active_connections >= max_connections, no branch produced a
+        connection or an exception, so retry_count never advanced and connection() spun a CPU core
+        forever. It must now block on get(timeout=...), count retries, and raise the terminal error.
+        """
+        import threading as _threading
+
+        with patch("common.postgres_resilient.threading.Thread"), patch("common.postgres_resilient.psycopg.connect"):
+            pool = ResilientPostgreSQLPool(
+                connection_params=connection_params, min_connections=0, max_connections=1, max_retries=3, health_check_interval=999
+            )
+
+        pool.backoff.get_delay = Mock(return_value=0.001)  # type: ignore[method-assign]
+        pool.active_connections = 1  # at cap, queue empty -> exhausted
+
+        result: dict[str, object] = {}
+
+        def worker() -> None:
+            try:
+                with pool.connection():
+                    result["yielded"] = True
+            except Exception as e:
+                result["error"] = e
+
+        t = _threading.Thread(target=worker, daemon=True)
+        t.start()
+        t.join(timeout=5)
+
+        assert not t.is_alive(), "connection() busy-spun / hung on an exhausted pool"
+        assert "yielded" not in result
+        assert "Failed to get PostgreSQL connection" in str(result.get("error"))

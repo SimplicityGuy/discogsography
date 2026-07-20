@@ -184,14 +184,32 @@ class ResilientPostgreSQLPool:
                     conn = self.connections.get_nowait()
                 except Empty:
                     # Create new connection if pool is not at max
+                    created = False
                     with self._lock:
                         if self.active_connections < self.max_connections:
                             self.active_connections += 1
-                            try:
-                                conn = self._create_connection()
-                            except Exception:
-                                self.active_connections -= 1
-                                raise
+                            created = True
+                    if created:
+                        try:
+                            conn = self._create_connection()
+                        except Exception:
+                            with self._lock:
+                                self.active_connections = max(0, self.active_connections - 1)
+                            raise
+                    else:
+                        # Pool exhausted — block for a returned connection instead of
+                        # busy-spinning at 100% CPU. Without this branch neither a connection nor an
+                        # exception is produced, so retry_count never advances and max_retries is
+                        # unreachable. On timeout, count a retry and continue (mirrors the async pool).
+                        try:
+                            conn = self.connections.get(timeout=self.backoff.get_delay(retry_count))
+                        except Empty:
+                            retry_count += 1
+                            if retry_count < self.max_retries:
+                                logger.warning(
+                                    f"⚠️ Connection pool exhausted (attempt {retry_count}/{self.max_retries}), waiting for available connection..."
+                                )
+                            continue
 
                 # Test connection health
                 if conn and not self._test_connection(conn):
