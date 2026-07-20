@@ -32,6 +32,10 @@ RUN touch src/main.rs && \
 # Runtime stage
 FROM debian:13-slim
 
+# Build arguments for configurable UID/GID (must match the compose `user:` override)
+ARG UID=1000
+ARG GID=1000
+
 # Install runtime dependencies
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -40,8 +44,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN groupadd -r extractor && useradd -r -g extractor extractor
+# Create non-root user with a fixed UID/GID so file ownership matches the
+# runtime user regardless of any `useradd -r` system-UID auto-allocation.
+RUN groupadd -r -g ${GID} extractor && useradd -r -l -u ${UID} -g extractor extractor
 
 # Create necessary directories
 RUN mkdir -p /discogs-data /musicbrainz-data /logs && \
@@ -51,7 +56,7 @@ RUN mkdir -p /discogs-data /musicbrainz-data /logs && \
 COPY --from=builder /app/target/release/extractor /usr/local/bin/extractor
 
 # Switch to non-root user
-USER extractor
+USER extractor:extractor
 
 # Set environment variables
 ENV LOG_LEVEL=INFO
