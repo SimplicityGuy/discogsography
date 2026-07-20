@@ -634,47 +634,57 @@ async def twofa_recovery(request: Request, body: TwoFactorRecoveryModel) -> JSON
     if not jti:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid challenge token")
 
-    # Atomically consume challenge from Redis to prevent replay
-    challenge_data = await _redis.getdel(f"2fa_challenge:{jti}")
+    # Verify the challenge EXISTS (without consuming) before validating the code,
+    # so a mistyped recovery code does not burn the challenge token. The challenge
+    # is consumed only after the recovery code is successfully redeemed below.
+    challenge_key = f"2fa_challenge:{jti}"
+    challenge_data = await _redis.get(challenge_key)
     if not challenge_data:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Challenge expired or already used")
 
     user_id = payload["sub"]
     email = payload.get("email", "")
 
-    # Fetch recovery codes
-    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await execute_sql(
-            cur,
-            "SELECT totp_recovery_codes FROM users WHERE id = %s::uuid",
-            (user_id,),
-        )
-        user = await cur.fetchone()
-
-    if not user or not user.get("totp_recovery_codes"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No recovery codes available")
-
-    stored_hashes: list[str] = (
-        json.loads(user["totp_recovery_codes"]) if isinstance(user["totp_recovery_codes"], str) else user["totp_recovery_codes"]
-    )
     submitted_hash = hash_recovery_code(body.code)
 
-    if submitted_hash not in stored_hashes:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid recovery code")
-
-    # Remove used code (challenge already consumed above)
-    stored_hashes.remove(submitted_hash)
-
+    # Consume the recovery code ATOMICALLY in a single guarded statement. Recovery
+    # codes are one-time by contract; a Python read-modify-write across two
+    # autocommit round-trips loses updates under concurrency, letting a used code
+    # be resurrected (last-writer-wins) or the same code be redeemed twice.
+    #
+    # `totp_recovery_codes ? %s` guards that the hash is still present, and
+    # `totp_recovery_codes - %s` removes it in the same UPDATE. Under Postgres
+    # row locking, concurrent redemptions serialize and the WHERE qual is
+    # re-evaluated against the committed row, so only one redemption of a given
+    # code can ever match (rowcount 1); the rest match nothing (rowcount 0).
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,
-            "UPDATE users SET totp_recovery_codes = %s, updated_at = NOW() WHERE id = %s::uuid",
-            (json.dumps(stored_hashes), user_id),
+            """
+            UPDATE users
+            SET totp_recovery_codes = totp_recovery_codes - %s, updated_at = NOW()
+            WHERE id = %s::uuid
+              AND totp_recovery_codes IS NOT NULL
+              AND totp_recovery_codes ? %s
+            RETURNING totp_recovery_codes
+            """,
+            (submitted_hash, user_id, submitted_hash),
         )
+        updated = await cur.fetchone()
+
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid recovery code")
+
+    remaining: list[str] = (
+        json.loads(updated["totp_recovery_codes"]) if isinstance(updated["totp_recovery_codes"], str) else (updated["totp_recovery_codes"] or [])
+    )
+
+    # Recovery code redeemed — now consume the challenge so it cannot be replayed.
+    await _redis.getdel(challenge_key)
 
     # Issue access token
     access_token, expires_in = _create_access_token_fn(user_id, email)
-    logger.info("✅ 2FA recovery code used", user_id=user_id, remaining_codes=len(stored_hashes))
+    logger.info("✅ 2FA recovery code used", user_id=user_id, remaining_codes=len(remaining))
 
     content: dict[str, Any] = {
         "access_token": access_token,
@@ -682,7 +692,7 @@ async def twofa_recovery(request: Request, body: TwoFactorRecoveryModel) -> JSON
         "expires_in": expires_in,
     }
 
-    if len(stored_hashes) == 0:
+    if len(remaining) == 0:
         content["warning"] = "This was your last recovery code. Please set up new recovery codes."
 
     return JSONResponse(content=content)

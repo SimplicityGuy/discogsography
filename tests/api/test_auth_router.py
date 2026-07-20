@@ -727,7 +727,9 @@ class TestTwoFactorRecoveryFull:
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
-        mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps(hashed_codes)})
+        # The atomic UPDATE ... WHERE totp_recovery_codes ? %s matches no row for
+        # an unknown code, so RETURNING yields nothing (fetchone -> None).
+        mock_cur.fetchone = AsyncMock(return_value=None)
 
         response = test_client.post(
             "/api/auth/2fa/recovery",
@@ -735,6 +737,8 @@ class TestTwoFactorRecoveryFull:
         )
         assert response.status_code == 401
         assert "Invalid recovery code" in response.json()["detail"]
+        # A rejected code must NOT burn the challenge — getdel is only called on success.
+        mock_redis.getdel.assert_not_called()
 
     def test_recovery_last_code_includes_warning(
         self,
@@ -752,7 +756,9 @@ class TestTwoFactorRecoveryFull:
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.delete = AsyncMock()
-        mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps(last_hashed)})
+        # After the atomic UPDATE removes the last code, RETURNING yields an empty array.
+        _ = last_hashed
+        mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps([])})
 
         response = test_client.post(
             "/api/auth/2fa/recovery",
@@ -775,7 +781,8 @@ class TestTwoFactorRecoveryFull:
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
-        mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": None})
+        # No stored codes -> the guarded UPDATE matches no row -> RETURNING None.
+        mock_cur.fetchone = AsyncMock(return_value=None)
 
         response = test_client.post(
             "/api/auth/2fa/recovery",
