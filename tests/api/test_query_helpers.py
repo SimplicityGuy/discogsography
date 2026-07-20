@@ -103,13 +103,32 @@ class TestRunQuery:
 
     @pytest.mark.asyncio
     async def test_passes_timeout(self) -> None:
+        from neo4j import Query
+
         from api.queries.helpers import run_query
 
         driver = _make_driver(records=[])
         await run_query(driver, "MATCH (n) RETURN n", timeout=30.0)
         session = driver.session.return_value
         _call_args = session.__aenter__.return_value.run.call_args
-        assert _call_args.kwargs.get("timeout") == 30.0
+        # timeout must NOT be forwarded as a session.run() kwarg — session.run
+        # has no timeout option and merges kwargs into the Cypher parameter
+        # map instead. It must be applied via a neo4j.Query wrapper.
+        assert "timeout" not in _call_args.kwargs
+        sent_query = _call_args.args[0]
+        assert isinstance(sent_query, Query)
+        assert sent_query.timeout == 30.0
+        assert sent_query.text == "MATCH (n) RETURN n"
+
+    @pytest.mark.asyncio
+    async def test_no_query_wrapper_without_timeout(self) -> None:
+        from api.queries.helpers import run_query
+
+        driver = _make_driver(records=[])
+        await run_query(driver, "MATCH (n) RETURN n")
+        session = driver.session.return_value
+        _call_args = session.__aenter__.return_value.run.call_args
+        assert _call_args.args[0] == "MATCH (n) RETURN n"
 
     @pytest.mark.asyncio
     async def test_passes_database(self) -> None:
@@ -201,13 +220,18 @@ class TestRunSingle:
 
     @pytest.mark.asyncio
     async def test_passes_timeout(self) -> None:
+        from neo4j import Query
+
         from api.queries.helpers import run_single
 
         driver = _make_driver(single={"id": "1"})
         await run_single(driver, "MATCH (a) RETURN a LIMIT 1", timeout=60.0)
         session = driver.session.return_value
         call_kwargs = session.__aenter__.return_value.run.call_args
-        assert call_kwargs.kwargs.get("timeout") == 60.0
+        assert "timeout" not in call_kwargs.kwargs
+        sent_query = call_kwargs.args[0]
+        assert isinstance(sent_query, Query)
+        assert sent_query.timeout == 60.0
 
     @pytest.mark.asyncio
     async def test_passes_database(self) -> None:
@@ -278,13 +302,18 @@ class TestRunCount:
 
     @pytest.mark.asyncio
     async def test_passes_timeout(self) -> None:
+        from neo4j import Query
+
         from api.queries.helpers import run_count
 
         driver = _make_driver(single={"total": 1})
         await run_count(driver, "RETURN count(*) AS total", timeout=30.0)
         session = driver.session.return_value
         call_kwargs = session.__aenter__.return_value.run.call_args
-        assert call_kwargs.kwargs.get("timeout") == 30.0
+        assert "timeout" not in call_kwargs.kwargs
+        sent_query = call_kwargs.args[0]
+        assert isinstance(sent_query, Query)
+        assert sent_query.timeout == 30.0
 
     @pytest.mark.asyncio
     async def test_passes_database(self) -> None:

@@ -13,6 +13,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from neo4j import Query
+
 from common.query_debug import (
     is_db_profiling,
     log_cypher_query,
@@ -25,6 +27,19 @@ if TYPE_CHECKING:
     from common import AsyncResilientNeo4jDriver
 
 _logger = logging.getLogger(__name__)
+
+
+def _build_query(cypher: str, timeout: float | None) -> Query | str:
+    """Wrap ``cypher`` in a :class:`neo4j.Query` when a timeout is requested.
+
+    ``session.run()`` has no ``timeout`` keyword argument — passing one merges
+    it into the Cypher parameter map instead of applying a server-side
+    transaction timeout (see neo4j._async.work.session.AsyncSession.run). A
+    per-query timeout must be set via ``Query(cypher, timeout=...)``.
+    """
+    if timeout is not None:
+        return Query(cypher, timeout=timeout)
+    return cypher
 
 
 async def _try_explain_on_error(
@@ -76,10 +91,7 @@ async def run_query(
 
     profiling = is_db_profiling()
     actual_cypher = f"PROFILE {cypher}" if profiling else cypher
-
-    run_kwargs: dict[str, Any] = {}
-    if timeout is not None:
-        run_kwargs["timeout"] = timeout
+    query = _build_query(actual_cypher, timeout)
 
     session_kwargs: dict[str, Any] = {}
     if database:
@@ -87,7 +99,7 @@ async def run_query(
 
     try:
         async with driver.session(**session_kwargs) as session:
-            result = await session.run(actual_cypher, params, **run_kwargs)
+            result = await session.run(query, params)
             records = [dict(record) async for record in result]
             summary = await result.consume()
             if profiling:
@@ -123,10 +135,7 @@ async def run_single(
 
     profiling = is_db_profiling()
     actual_cypher = f"PROFILE {cypher}" if profiling else cypher
-
-    run_kwargs: dict[str, Any] = {}
-    if timeout is not None:
-        run_kwargs["timeout"] = timeout
+    query = _build_query(actual_cypher, timeout)
 
     session_kwargs: dict[str, Any] = {}
     if database:
@@ -134,7 +143,7 @@ async def run_single(
 
     try:
         async with driver.session(**session_kwargs) as session:
-            result = await session.run(actual_cypher, params, **run_kwargs)
+            result = await session.run(query, params)
             record = await result.single()
             summary = await result.consume()
             if profiling:
@@ -172,10 +181,7 @@ async def run_count(
 
     profiling = is_db_profiling()
     actual_cypher = f"PROFILE {cypher}" if profiling else cypher
-
-    run_kwargs: dict[str, Any] = {}
-    if timeout is not None:
-        run_kwargs["timeout"] = timeout
+    query = _build_query(actual_cypher, timeout)
 
     session_kwargs: dict[str, Any] = {}
     if database:
@@ -183,7 +189,7 @@ async def run_count(
 
     try:
         async with driver.session(**session_kwargs) as session:
-            result = await session.run(actual_cypher, params, **run_kwargs)
+            result = await session.run(query, params)
             record = await result.single()
             summary = await result.consume()
             if profiling:
