@@ -185,6 +185,15 @@ pub async fn process_discogs_data(
         info!("🔄 Resuming processing phase: {} total files, {} already completed", data_files.len(), state_marker.processing_phase.files_processed);
     }
 
+    // Use the ORIGINAL processing start time persisted in the state marker for the
+    // extraction_complete signal — NOT this (possibly resumed) process's start time.
+    // On a resumed run, files already completed in an earlier session are not re-sent,
+    // so their rows retain updated_at from that earlier session. Broadcasting the
+    // resumed process's now() would make the downstream stale-row purge delete every
+    // row written before the restart (mass data loss). start_processing() sets this on
+    // the first run and it is preserved (never reset) across InProgress resumes.
+    let processing_started_at = state_marker.processing_phase.started_at.unwrap_or(extraction_started_at);
+
     // Get list of files that still need processing
     let pending_files = state_marker.pending_files(&data_files);
 
@@ -209,7 +218,7 @@ pub async fn process_discogs_data(
             }
             match mq_factory.create(&config.amqp_connection, &config.discogs_exchange_prefix).await {
                 Ok(mq) => {
-                    if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::discogs()).await {
+                    if let Err(e) = mq.send_extraction_complete(&version, processing_started_at, record_counts, &DataType::discogs()).await {
                         error!("❌ Failed to send extraction_complete message: {}", e);
                     }
                     let _ = mq.close().await;
@@ -321,7 +330,7 @@ pub async fn process_discogs_data(
             drop(s); // Release read lock before async MQ operations
             match mq_factory.create(&config.amqp_connection, &config.discogs_exchange_prefix).await {
                 Ok(mq) => {
-                    if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::discogs()).await {
+                    if let Err(e) = mq.send_extraction_complete(&version, processing_started_at, record_counts, &DataType::discogs()).await {
                         error!("❌ Failed to send extraction_complete message: {}", e);
                         success = false;
                     }
@@ -1116,6 +1125,13 @@ pub async fn process_musicbrainz_data(
             file_count, state_marker.processing_phase.files_processed
         );
     }
+
+    // Use the ORIGINAL processing start time persisted in the state marker (never this
+    // possibly-resumed process's now()). On resume, already-completed files are skipped
+    // and not re-sent, so their rows keep updated_at from the earlier session; sending
+    // the resumed now() would make brainztableinator's stale-row purge wipe those rows.
+    let processing_started_at = state_marker.processing_phase.started_at.unwrap_or(extraction_started_at);
+
     let state_marker = Arc::new(tokio::sync::Mutex::new(state_marker));
 
     // First pass: build MBID→Discogs ID map for artist relationship target resolution
@@ -1275,7 +1291,7 @@ pub async fn process_musicbrainz_data(
     // Send extraction_complete to MusicBrainz exchanges only (no masters) — only if all succeeded
     if success {
         let mb_types = DataType::musicbrainz();
-        if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &mb_types).await {
+        if let Err(e) = mq.send_extraction_complete(&version, processing_started_at, record_counts, &mb_types).await {
             error!("❌ Failed to send extraction_complete: {}", e);
             success = false;
         }
