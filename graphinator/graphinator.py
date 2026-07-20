@@ -716,20 +716,20 @@ async def cleanup_stub_nodes(data_type: str) -> None:
         )
 
 
-def process_artist(tx: Any, record: dict[str, Any]) -> bool:
+async def process_artist(tx: Any, record: dict[str, Any]) -> bool:
     """Process artist within a single transaction for atomicity."""
-    existing_result = tx.run(
+    existing_result = await tx.run(
         "MATCH (a:Artist {id: $id}) RETURN a.sha256 AS hash",
         id=record["id"],
     )
-    existing_record = existing_result.single()
+    existing_record = await existing_result.single()
     if existing_record and existing_record["hash"] == record["sha256"]:
         return False  # No update needed
 
     resources: str = f"https://api.discogs.com/artists/{record['id']}"
     releases: str = f"{resources}/releases"
 
-    tx.run(
+    await tx.run(
         "MERGE (a:Artist {id: $id}) "
         "ON CREATE SET a.name = $name, a.resource_url = $resource_url, a.releases_url = $releases_url, a.sha256 = $sha256 "
         "ON MATCH SET a.name = $name, a.resource_url = $resource_url, a.releases_url = $releases_url, a.sha256 = $sha256",
@@ -745,7 +745,7 @@ def process_artist(tx: Any, record: dict[str, Any]) -> bool:
     if members:
         valid_members = [m for m in members if m.get("id")]
         if valid_members:
-            tx.run(
+            await tx.run(
                 "UNWIND $members AS member "
                 "MATCH (a:Artist {id: $artist_id}) "
                 "MERGE (m_a:Artist {id: member.id}) "
@@ -759,7 +759,7 @@ def process_artist(tx: Any, record: dict[str, Any]) -> bool:
     if groups:
         valid_groups = [g for g in groups if g.get("id")]
         if valid_groups:
-            tx.run(
+            await tx.run(
                 "UNWIND $groups AS group "
                 "MATCH (a:Artist {id: $artist_id}) "
                 "MERGE (g_a:Artist {id: group.id}) "
@@ -773,7 +773,7 @@ def process_artist(tx: Any, record: dict[str, Any]) -> bool:
     if aliases:
         valid_aliases = [a for a in aliases if a.get("id")]
         if valid_aliases:
-            tx.run(
+            await tx.run(
                 "UNWIND $aliases AS alias "
                 "MATCH (a:Artist {id: $artist_id}) "
                 "MERGE (a_a:Artist {id: alias.id}) "
@@ -785,16 +785,16 @@ def process_artist(tx: Any, record: dict[str, Any]) -> bool:
     return True  # Updated successfully
 
 
-def process_label(tx: Any, record: dict[str, Any]) -> bool:
+async def process_label(tx: Any, record: dict[str, Any]) -> bool:
     """Process label within a single transaction for atomicity."""
-    existing_result = tx.run(
+    existing_result = await tx.run(
         "MATCH (l:Label {id: $id}) RETURN l.sha256 AS hash", id=record["id"]
     )
-    existing_record = existing_result.single()
+    existing_record = await existing_result.single()
     if existing_record and existing_record["hash"] == record["sha256"]:
         return False  # No update needed
 
-    tx.run(
+    await tx.run(
         "MERGE (l:Label {id: $id}) "
         "ON CREATE SET l.name = $name, l.sha256 = $sha256 "
         "ON MATCH SET l.name = $name, l.sha256 = $sha256",
@@ -806,7 +806,7 @@ def process_label(tx: Any, record: dict[str, Any]) -> bool:
     # Handle parent label relationship (normalized to {"id": ...} dict)
     parent: dict[str, Any] | None = record.get("parentLabel")
     if parent and parent.get("id"):
-        tx.run(
+        await tx.run(
             "MATCH (l:Label {id: $id}) "
             "MERGE (p_l:Label {id: $p_id}) "
             "MERGE (l)-[:SUBLABEL_OF]->(p_l)",
@@ -819,7 +819,7 @@ def process_label(tx: Any, record: dict[str, Any]) -> bool:
     if sublabels:
         valid_sublabels = [s for s in sublabels if s.get("id")]
         if valid_sublabels:
-            tx.run(
+            await tx.run(
                 "UNWIND $sublabels AS sublabel "
                 "MATCH (l:Label {id: $label_id}) "
                 "MERGE (s_l:Label {id: sublabel.id}) "
@@ -831,17 +831,17 @@ def process_label(tx: Any, record: dict[str, Any]) -> bool:
     return True  # Updated successfully
 
 
-def process_master(tx: Any, record: dict[str, Any]) -> bool:
+async def process_master(tx: Any, record: dict[str, Any]) -> bool:
     """Process master within a single transaction for atomicity."""
-    existing_result = tx.run(
+    existing_result = await tx.run(
         "MATCH (m:Master {id: $id}) RETURN m.sha256 AS hash",
         id=record["id"],
     )
-    existing_record = existing_result.single()
+    existing_record = await existing_result.single()
     if existing_record and existing_record["hash"] == record["sha256"]:
         return False  # No update needed
 
-    tx.run(
+    await tx.run(
         "MERGE (m:Master {id: $id}) "
         "ON CREATE SET m.title = $title, m.year = $year, m.sha256 = $sha256 "
         "ON MATCH SET m.title = $title, m.year = $year, m.sha256 = $sha256",
@@ -856,7 +856,7 @@ def process_master(tx: Any, record: dict[str, Any]) -> bool:
     if artists:
         valid_artists = [a for a in artists if a.get("id")]
         if valid_artists:
-            tx.run(
+            await tx.run(
                 "UNWIND $artists AS artist "
                 "MATCH (m:Master {id: $master_id}) "
                 "MERGE (a_m:Artist {id: artist.id}) "
@@ -868,7 +868,7 @@ def process_master(tx: Any, record: dict[str, Any]) -> bool:
     # Handle genres and styles (normalized to string lists)
     genres_list: list[str] = record.get("genres", [])
     if genres_list:
-        tx.run(
+        await tx.run(
             "UNWIND $genres AS genre "
             "MATCH (m:Master {id: $master_id}) "
             "MERGE (g:Genre {name: genre.name}) "
@@ -879,7 +879,7 @@ def process_master(tx: Any, record: dict[str, Any]) -> bool:
 
     styles_list: list[str] = record.get("styles", [])
     if styles_list:
-        tx.run(
+        await tx.run(
             "UNWIND $styles AS style "
             "MATCH (m:Master {id: $master_id}) "
             "MERGE (s:Style {name: style.name}) "
@@ -890,7 +890,7 @@ def process_master(tx: Any, record: dict[str, Any]) -> bool:
 
     # Connect styles to genres if both exist
     if genres_list and styles_list:
-        tx.run(
+        await tx.run(
             "UNWIND $genre_style_pairs AS pair "
             "MERGE (g:Genre {name: pair.genre}) "
             "MERGE (s:Style {name: pair.style}) "
@@ -905,13 +905,13 @@ def process_master(tx: Any, record: dict[str, Any]) -> bool:
     return True  # Updated successfully
 
 
-def process_release(tx: Any, record: dict[str, Any]) -> bool:
+async def process_release(tx: Any, record: dict[str, Any]) -> bool:
     """Process release within a single transaction for atomicity."""
-    existing_result = tx.run(
+    existing_result = await tx.run(
         "MATCH (r:Release {id: $id}) RETURN r.sha256 AS hash",
         id=record["id"],
     )
-    existing_record = existing_result.single()
+    existing_record = await existing_result.single()
     if existing_record and existing_record["hash"] == record["sha256"]:
         return False  # No update needed
 
@@ -920,7 +920,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
         for f in record.get("formats", [])
         if isinstance(f, dict) and "name" in f
     ]
-    tx.run(
+    await tx.run(
         "MERGE (r:Release {id: $id}) "
         "ON CREATE SET r.title = $title, r.year = $year, r.formats = $formats, r.sha256 = $sha256 "
         "ON MATCH SET r.title = $title, r.year = $year, r.formats = $formats, r.sha256 = $sha256",
@@ -936,7 +936,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
     if artists:
         valid_artists = [a for a in artists if a.get("id")]
         if valid_artists:
-            tx.run(
+            await tx.run(
                 "UNWIND $artists AS artist "
                 "MATCH (r:Release {id: $release_id}) "
                 "MERGE (a_r:Artist {id: artist.id}) "
@@ -950,7 +950,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
     if labels:
         valid_labels = [lbl for lbl in labels if lbl.get("id")]
         if valid_labels:
-            tx.run(
+            await tx.run(
                 "UNWIND $labels AS label "
                 "MATCH (r:Release {id: $release_id}) "
                 "MERGE (l_r:Label {id: label.id}) "
@@ -962,7 +962,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
     # Handle master relationship (normalized to string)
     master_id = record.get("master_id")
     if master_id:
-        tx.run(
+        await tx.run(
             "MATCH (r:Release {id: $id}) "
             "MERGE (m_r:Master {id: $m_id}) "
             "MERGE (r)-[:DERIVED_FROM]->(m_r)",
@@ -973,7 +973,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
     # Handle genres and styles (normalized to string lists)
     genres_list: list[str] = record.get("genres", [])
     if genres_list:
-        tx.run(
+        await tx.run(
             "UNWIND $genres AS genre "
             "MATCH (r:Release {id: $release_id}) "
             "MERGE (g:Genre {name: genre.name}) "
@@ -984,7 +984,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
 
     styles_list: list[str] = record.get("styles", [])
     if styles_list:
-        tx.run(
+        await tx.run(
             "UNWIND $styles AS style "
             "MATCH (r:Release {id: $release_id}) "
             "MERGE (s:Style {name: style.name}) "
@@ -995,7 +995,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
 
     # Connect styles to genres if both exist
     if genres_list and styles_list:
-        tx.run(
+        await tx.run(
             "UNWIND $genre_style_pairs AS pair "
             "MERGE (g:Genre {name: pair.genre}) "
             "MERGE (s:Style {name: pair.style}) "
@@ -1028,7 +1028,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
                 credit_data.append(entry)
         if credit_data:
             # Create Person nodes and CREDITED_ON relationships
-            tx.run(
+            await tx.run(
                 "UNWIND $credits AS credit "
                 "MATCH (r:Release {id: credit.release_id}) "
                 "MERGE (p:Person {name: credit.name}) "
@@ -1038,7 +1038,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
             # Create SAME_AS relationships for credited people who are also performing artists
             artist_credits = [c for c in credit_data if c.get("artist_id")]
             if artist_credits:
-                tx.run(
+                await tx.run(
                     "UNWIND $credits AS credit "
                     "MATCH (p:Person {name: credit.name}) "
                     "MATCH (a:Artist {id: credit.artist_id}) "
@@ -1111,8 +1111,8 @@ def make_message_handler(
 
             async with graph.session(database="neo4j") as session:
 
-                def tx_fn(tx: Any) -> bool:
-                    return bool(process_fn(tx, record))
+                async def tx_fn(tx: Any) -> bool:
+                    return bool(await process_fn(tx, record))
 
                 updated = await session.execute_write(tx_fn)
 

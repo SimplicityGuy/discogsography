@@ -37,10 +37,11 @@ class TestOnArtistMessage:
 
         # Mock transaction to indicate new artist
         mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
 
         async def mock_tx_func(func: Any) -> Any:
-            mock_tx.run.return_value.single.return_value = None  # No existing artist
-            return func(mock_tx)
+            mock_tx.run.return_value.single = AsyncMock(return_value=None)  # No existing artist
+            return await func(mock_tx)
 
         mock_session.execute_write.side_effect = mock_tx_func
 
@@ -52,6 +53,56 @@ class TestOnArtistMessage:
 
         # Verify session was used
         mock_session.execute_write.assert_called()
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_non_batch_mode_awaits_async_transaction(self, sample_artist_data: dict[str, Any], mock_neo4j_driver: MagicMock) -> None:
+        """Regression (cu2.18): non-batch mode must await tx.run()/result.single().
+
+        The service runs on AsyncResilientNeo4jDriver, whose execute_write hands
+        the tx function a real AsyncManagedTransaction where ``tx.run()`` is a
+        coroutine. The old sync ``process_artist`` did ``tx.run(...).single()``
+        with no await, raising ``AttributeError: 'coroutine' object has no
+        attribute 'single'`` on the first statement of every message — nacking
+        the whole dataset to the DLQ. This test drives the real handler with a
+        faithful async transaction and asserts the message is acked (written),
+        never nacked.
+        """
+        import inspect
+
+        from graphinator.graphinator import process_artist
+
+        # process_artist must be a coroutine function so tx_fn can await it.
+        assert inspect.iscoroutinefunction(process_artist)
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+
+        mock_context_manager = mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
+        # Faithful AsyncManagedTransaction: run() is an async def, so calling it
+        # WITHOUT await yields a coroutine (as the real driver does). The single()
+        # on the awaited result is also a coroutine.
+        async def async_run(*_args: Any, **_kwargs: Any) -> Any:
+            result = MagicMock()
+            result.single = AsyncMock(return_value=None)  # no existing artist
+            return result
+
+        real_tx = MagicMock()
+        real_tx.run = MagicMock(side_effect=async_run)
+
+        async def execute_write(tx_fn: Any, *_a: Any, **_k: Any) -> Any:
+            # AsyncSession.execute_write awaits the (async) tx function.
+            return await tx_fn(real_tx)
+
+        mock_session.execute_write.side_effect = execute_write
+
+        with patch("graphinator.graphinator.graph", mock_neo4j_driver), patch("graphinator.graphinator.BATCH_MODE", False):
+            await on_artist_message(mock_message)
+
+        mock_message.ack.assert_called_once()
+        mock_message.nack.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
@@ -67,11 +118,12 @@ class TestOnArtistMessage:
 
         # Mock transaction to return existing hash
         mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
 
         async def mock_tx_func(func: Any) -> Any:
             # Return existing artist with same hash
-            mock_tx.run.return_value.single.return_value = {"hash": sample_artist_data["sha256"]}
-            return func(mock_tx)
+            mock_tx.run.return_value.single = AsyncMock(return_value={"hash": sample_artist_data["sha256"]})
+            return await func(mock_tx)
 
         mock_session.execute_write.side_effect = mock_tx_func
 
@@ -1072,16 +1124,13 @@ class TestComputeGenreStyleStats:
             call_idx = query.index("CALL {")
             # Driving MATCH must appear before the transactional CALL block.
             assert match_idx < call_idx, (
-                f"driving MATCH {driving_match!r} must precede 'CALL {{' — "
-                "otherwise the whole update runs in one transaction"
+                f"driving MATCH {driving_match!r} must precede 'CALL {{' — otherwise the whole update runs in one transaction"
             )
             # The transactional subquery must import the node with WITH, not
             # re-MATCH the full label set inside the CALL.
             after_call = query[call_idx + len("CALL {") :]
             first_stmt = after_call.strip().split("\n", 1)[0].strip()
-            assert first_stmt.startswith("WITH "), (
-                f"first statement inside 'CALL {{' should be a WITH import, got {first_stmt!r}"
-            )
+            assert first_stmt.startswith("WITH "), f"first statement inside 'CALL {{' should be a WITH import, got {first_stmt!r}"
             assert "IN TRANSACTIONS" in query
 
         # Reset
@@ -1375,12 +1424,13 @@ class TestLabelTransactionLogic:
 
         # Create a mock transaction function that will be called
         mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
         # Return existing hash that matches
-        mock_tx.run.return_value.single.return_value = {"hash": sample_label_data["sha256"]}
+        mock_tx.run.return_value.single = AsyncMock(return_value={"hash": sample_label_data["sha256"]})
 
         # When execute_write is called, execute the transaction function
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1415,11 +1465,12 @@ class TestLabelTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
         # No existing label
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1457,10 +1508,11 @@ class TestLabelTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1495,10 +1547,11 @@ class TestLabelTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1527,10 +1580,11 @@ class TestMasterTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = {"hash": sample_master_data["sha256"]}
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value={"hash": sample_master_data["sha256"]})
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1567,10 +1621,11 @@ class TestMasterTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1610,10 +1665,11 @@ class TestMasterTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1642,10 +1698,11 @@ class TestReleaseTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = {"hash": sample_release_data["sha256"]}
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value={"hash": sample_release_data["sha256"]})
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1683,10 +1740,11 @@ class TestReleaseTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1730,10 +1788,11 @@ class TestReleaseTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1778,10 +1837,11 @@ class TestReleaseTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1814,10 +1874,11 @@ class TestReleaseTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -2156,10 +2217,11 @@ class TestArtistTransactionEdgeCases:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -2192,10 +2254,11 @@ class TestArtistTransactionEdgeCases:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -2227,10 +2290,11 @@ class TestArtistTransactionEdgeCases:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -2304,10 +2368,11 @@ class TestLabelTransactionEdgeCases:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -2339,10 +2404,11 @@ class TestLabelTransactionEdgeCases:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -2689,12 +2755,14 @@ class TestRecoverConsumersEdgeCases:
 class TestProcessArtistEdgeCases:
     """Test process_artist edge cases with normalized data."""
 
-    def test_member_with_id_creates_relationship(self) -> None:
+    @pytest.mark.asyncio
+    async def test_member_with_id_creates_relationship(self) -> None:
         """Test normalized member with ID creates MEMBER_OF relationship."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "artist-1",
@@ -2703,17 +2771,19 @@ class TestProcessArtistEdgeCases:
             "members": [{"id": "string-member-id"}],
         }
 
-        result = process_artist(mock_tx, record)
+        result = await process_artist(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert any("MEMBER_OF" in c for c in calls)
 
-    def test_member_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_member_without_id_skipped(self) -> None:
         """Test normalized member without ID is silently skipped."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "artist-1",
@@ -2722,17 +2792,19 @@ class TestProcessArtistEdgeCases:
             "members": [{"name": "No ID Member"}],
         }
 
-        result = process_artist(mock_tx, record)
+        result = await process_artist(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("MEMBER_OF" in c for c in calls)
 
-    def test_group_with_id_creates_relationship(self) -> None:
+    @pytest.mark.asyncio
+    async def test_group_with_id_creates_relationship(self) -> None:
         """Test normalized group with ID creates MEMBER_OF relationship."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "artist-1",
@@ -2741,17 +2813,19 @@ class TestProcessArtistEdgeCases:
             "groups": [{"id": "string-group-id"}],
         }
 
-        result = process_artist(mock_tx, record)
+        result = await process_artist(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert any("MEMBER_OF" in c for c in calls)
 
-    def test_group_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_group_without_id_skipped(self) -> None:
         """Test normalized group without ID is silently skipped."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "artist-1",
@@ -2760,17 +2834,19 @@ class TestProcessArtistEdgeCases:
             "groups": [{"name": "No ID Group"}],
         }
 
-        result = process_artist(mock_tx, record)
+        result = await process_artist(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("MEMBER_OF" in c for c in calls)
 
-    def test_alias_with_id_creates_relationship(self) -> None:
+    @pytest.mark.asyncio
+    async def test_alias_with_id_creates_relationship(self) -> None:
         """Test normalized alias with ID creates ALIAS_OF relationship."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "artist-1",
@@ -2779,17 +2855,19 @@ class TestProcessArtistEdgeCases:
             "aliases": [{"id": "string-alias-id"}],
         }
 
-        result = process_artist(mock_tx, record)
+        result = await process_artist(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert any("ALIAS_OF" in c for c in calls)
 
-    def test_alias_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_alias_without_id_skipped(self) -> None:
         """Test normalized alias without ID is silently skipped."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "artist-1",
@@ -2798,7 +2876,7 @@ class TestProcessArtistEdgeCases:
             "aliases": [{"name": "No ID Alias"}],
         }
 
-        result = process_artist(mock_tx, record)
+        result = await process_artist(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("ALIAS_OF" in c for c in calls)
@@ -2807,12 +2885,14 @@ class TestProcessArtistEdgeCases:
 class TestProcessLabelEdgeCases:
     """Test process_label edge cases with normalized data."""
 
-    def test_sublabel_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_sublabel_without_id_skipped(self) -> None:
         """Test normalized sublabel without ID is silently skipped."""
         from graphinator.graphinator import process_label
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "label-1",
@@ -2821,17 +2901,19 @@ class TestProcessLabelEdgeCases:
             "sublabels": [{"name": "No ID Sublabel"}],
         }
 
-        result = process_label(mock_tx, record)
+        result = await process_label(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("SUBLABEL_OF" in c for c in calls)
 
-    def test_parent_label_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_parent_label_without_id_skipped(self) -> None:
         """Test normalized parent label without ID is silently skipped."""
         from graphinator.graphinator import process_label
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "label-1",
@@ -2840,7 +2922,7 @@ class TestProcessLabelEdgeCases:
             "parentLabel": {"name": "No ID Parent"},
         }
 
-        result = process_label(mock_tx, record)
+        result = await process_label(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("SUBLABEL_OF" in c for c in calls)
@@ -2849,12 +2931,14 @@ class TestProcessLabelEdgeCases:
 class TestProcessMasterEdgeCases:
     """Test process_master edge cases with normalized data."""
 
-    def test_artist_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_artist_without_id_skipped(self) -> None:
         """Test normalized artist without ID is silently skipped."""
         from graphinator.graphinator import process_master
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "master-1",
@@ -2864,7 +2948,7 @@ class TestProcessMasterEdgeCases:
             "artists": [{"name": "Unknown Artist"}],
         }
 
-        result = process_master(mock_tx, record)
+        result = await process_master(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("BY" in c and "artist" in c for c in calls)
@@ -2873,12 +2957,14 @@ class TestProcessMasterEdgeCases:
 class TestProcessLabelSublabelsString:
     """Test process_label with normalized sublabels."""
 
-    def test_sublabels_list_creates_relationship(self) -> None:
+    @pytest.mark.asyncio
+    async def test_sublabels_list_creates_relationship(self) -> None:
         """Test normalized sublabels list creates SUBLABEL_OF relationship."""
         from graphinator.graphinator import process_label
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "label-str-1",
@@ -2887,7 +2973,7 @@ class TestProcessLabelSublabelsString:
             "sublabels": [{"id": "SubLabel As String"}],
         }
 
-        result = process_label(mock_tx, record)
+        result = await process_label(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert any("SUBLABEL_OF" in c for c in calls)
@@ -2896,12 +2982,14 @@ class TestProcessLabelSublabelsString:
 class TestProcessReleaseArtistNoId:
     """Test process_release with normalized artist missing ID."""
 
-    def test_artist_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_artist_without_id_skipped(self) -> None:
         """Test normalized artist without ID is silently skipped."""
         from graphinator.graphinator import process_release
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "release-no-artist-id",
@@ -2912,7 +3000,7 @@ class TestProcessReleaseArtistNoId:
             ],
         }
 
-        result = process_release(mock_tx, record)
+        result = await process_release(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("BY" in c and "artist" in c for c in calls)
@@ -2921,12 +3009,14 @@ class TestProcessReleaseArtistNoId:
 class TestProcessReleaseLabelNoId:
     """Test process_release with normalized label missing ID."""
 
-    def test_label_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_label_without_id_skipped(self) -> None:
         """Test normalized label without ID is silently skipped."""
         from graphinator.graphinator import process_release
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "release-no-label-id",
@@ -2937,7 +3027,7 @@ class TestProcessReleaseLabelNoId:
             ],
         }
 
-        result = process_release(mock_tx, record)
+        result = await process_release(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any(")-[:ON]->" in c for c in calls)
@@ -2946,12 +3036,14 @@ class TestProcessReleaseLabelNoId:
 class TestProcessReleaseMasterNoId:
     """Test process_release with no master_id."""
 
-    def test_no_master_id_skips_relationship(self) -> None:
+    @pytest.mark.asyncio
+    async def test_no_master_id_skips_relationship(self) -> None:
         """Test that missing master_id skips DERIVED_FROM relationship."""
         from graphinator.graphinator import process_release
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "release-no-master-text",
@@ -2959,7 +3051,7 @@ class TestProcessReleaseMasterNoId:
             "title": "Test Release",
         }
 
-        result = process_release(mock_tx, record)
+        result = await process_release(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("DERIVED_FROM" in c for c in calls)
