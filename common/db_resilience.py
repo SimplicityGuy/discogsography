@@ -224,11 +224,28 @@ class ResilientConnection[T]:
         self._connection: T | None = None
         self._lock = Lock()
 
+    def _close_connection(self, connection: Any) -> None:
+        """Best-effort close of a connection, matching close()'s dispatch."""
+        if connection is None:
+            return
+        try:
+            if hasattr(connection, "close"):
+                connection.close()
+        except Exception as e:
+            logger.warning(f"⚠️ {self.name}: Error closing connection: {e}")
+
     def get_connection(self) -> T:
         """Get a healthy connection, creating or reconnecting if needed."""
         with self._lock:
             if self._connection and self._test_connection(self._connection):
                 return self._connection
+
+            # The existing connection is unhealthy. Close and discard it BEFORE reconnecting —
+            # otherwise the retry loop overwrites self._connection and orphans the old object
+            # (leaked driver pool / socket that GC cannot reliably clean up).
+            if self._connection is not None:
+                self._close_connection(self._connection)
+                self._connection = None
 
             # Connection is not healthy, try to create new one
             retry_count = 0
@@ -241,6 +258,8 @@ class ResilientConnection[T]:
                     def create_connection() -> T:
                         conn = self.connection_factory()
                         if not self.connection_test(conn):
+                            # Close the just-built connection before discarding it.
+                            self._close_connection(conn)
                             raise Exception("Connection test failed")
                         return conn
 
@@ -272,15 +291,9 @@ class ResilientConnection[T]:
     def close(self) -> None:
         """Close the connection."""
         with self._lock:
-            if self._connection:
-                try:
-                    # Attempt to close gracefully (implementation specific)
-                    if hasattr(self._connection, "close"):
-                        self._connection.close()
-                except Exception as e:
-                    logger.warning(f"⚠️ {self.name}: Error closing connection: {e}")
-                finally:
-                    self._connection = None
+            if self._connection is not None:
+                self._close_connection(self._connection)
+                self._connection = None
 
 
 class AsyncResilientConnection[T]:
@@ -304,6 +317,21 @@ class AsyncResilientConnection[T]:
         self._connection: T | None = None
         self._lock: asyncio.Lock | None = None
 
+    async def _aclose_connection(self, connection: Any) -> None:
+        """Best-effort close of a connection, dispatching aclose()/close() like close()."""
+        if connection is None:
+            return
+        try:
+            if hasattr(connection, "aclose"):
+                await connection.aclose()
+            elif hasattr(connection, "close"):
+                if asyncio.iscoroutinefunction(connection.close):
+                    await connection.close()
+                else:
+                    connection.close()
+        except Exception as e:
+            logger.warning(f"⚠️ {self.name}: Error closing connection: {e}")
+
     async def get_connection(self) -> T:
         """Get a healthy connection, creating or reconnecting if needed."""
         if self._lock is None:
@@ -311,6 +339,13 @@ class AsyncResilientConnection[T]:
         async with self._lock:
             if self._connection and await self._test_connection(self._connection):
                 return self._connection
+
+            # The existing connection is unhealthy. Close and discard it BEFORE reconnecting —
+            # otherwise the retry loop overwrites self._connection and orphans the old object
+            # (e.g. a whole Neo4j driver pool of 50 sockets that GC cannot close via __del__).
+            if self._connection is not None:
+                await self._aclose_connection(self._connection)
+                self._connection = None
 
             # Connection is not healthy, try to create new one
             retry_count = 0
@@ -326,11 +361,14 @@ class AsyncResilientConnection[T]:
                         else:
                             conn = self.connection_factory()
                         if asyncio.iscoroutinefunction(self.connection_test):
-                            if not await self.connection_test(conn):
-                                raise Exception("Connection test failed")
+                            test_ok = await self.connection_test(conn)
                         else:
-                            if not self.connection_test(conn):
-                                raise Exception("Connection test failed")
+                            test_ok = self.connection_test(conn)
+                        if not test_ok:
+                            # Close the just-built connection before discarding it, so a failed
+                            # health test does not leak a fresh pool/socket per attempt.
+                            await self._aclose_connection(conn)
+                            raise Exception("Connection test failed")
                         return cast("T", conn)
 
                     conn = await self.circuit_breaker.call_async(create_connection)
@@ -368,20 +406,9 @@ class AsyncResilientConnection[T]:
         if self._lock is None:
             self._lock = asyncio.Lock()
         async with self._lock:
-            if self._connection:
-                try:
-                    # Attempt to close gracefully
-                    if hasattr(self._connection, "aclose"):
-                        await self._connection.aclose()
-                    elif hasattr(self._connection, "close"):
-                        if asyncio.iscoroutinefunction(self._connection.close):
-                            await self._connection.close()
-                        else:
-                            self._connection.close()
-                except Exception as e:
-                    logger.warning(f"⚠️ {self.name}: Error closing connection: {e}")
-                finally:
-                    self._connection = None
+            if self._connection is not None:
+                await self._aclose_connection(self._connection)
+                self._connection = None
 
 
 # Context managers for resilient connections
