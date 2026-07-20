@@ -540,34 +540,61 @@ async def twofa_verify(request: Request, body: TwoFactorVerifyModel) -> JSONResp
     if locked_until and locked_until > datetime.now(UTC):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Account temporarily locked due to failed 2FA attempts")
 
-    # Atomically consume challenge from Redis to prevent replay
-    challenge_data = await _redis.getdel(challenge_key)
-    if not challenge_data:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Challenge expired or already used")
-
     totp_key = get_totp_encryption_key(_config.encryption_master_key)
     if not totp_key:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Encryption not configured")
 
     secret = decrypt_totp_secret(user["totp_secret"], totp_key)
 
+    # NOTE: the challenge is intentionally NOT consumed until AFTER a successful
+    # verification (see success branch below). Consuming it here would burn the
+    # challenge on a single mistyped digit, forcing a full re-login for every typo.
     if not verify_totp_code(secret, body.code):
-        # Increment failed attempts
-        failed = (user.get("totp_failed_attempts") or 0) + 1
-        lock_sql = "UPDATE users SET totp_failed_attempts = %s, updated_at = NOW()"
-        params: list[Any] = [failed]
-        if failed >= 5:
-            lock_sql += ", totp_locked_until = NOW() + INTERVAL '15 minutes'"
-        lock_sql += " WHERE id = %s::uuid"
-        params.append(user_id)
-
+        # Increment the failed-attempt counter ATOMICALLY in SQL and derive the
+        # lock from the freshly-computed value. Parallel wrong-code submissions
+        # must each advance the counter — a Python read-then-blind-write lets K
+        # concurrent requests all write value+1, defeating the 5-strike lock.
+        #
+        # When a previous lock window has already elapsed (totp_locked_until is
+        # set but in the past — the gate above let us through), the counter is
+        # reset so each post-expiry window starts fresh instead of instantly
+        # re-locking at 5+1.
+        lock_sql = """
+            UPDATE users
+            SET totp_failed_attempts = CASE
+                    WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW() THEN 1
+                    ELSE COALESCE(totp_failed_attempts, 0) + 1
+                END,
+                totp_locked_until = CASE
+                    WHEN (CASE
+                            WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW() THEN 1
+                            ELSE COALESCE(totp_failed_attempts, 0) + 1
+                          END) >= 5
+                        THEN NOW() + INTERVAL '15 minutes'
+                    WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW()
+                        THEN NULL
+                    ELSE totp_locked_until
+                END,
+                updated_at = NOW()
+            WHERE id = %s::uuid
+            RETURNING totp_failed_attempts
+        """
         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-            await execute_sql(cur, lock_sql, tuple(params))
+            await execute_sql(cur, lock_sql, (user_id,))
+            updated = await cur.fetchone()
 
+        failed = updated["totp_failed_attempts"] if updated else None
         logger.warning("⚠️ Failed 2FA attempt", user_id=user_id, attempts=failed)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
 
-    # Success — reset attempts (challenge already consumed above)
+    # Success — consume the challenge NOW (only after a correct code) to prevent
+    # replay. getdel is atomic, so concurrent requests replaying the same valid
+    # challenge race here and exactly one wins; the loser gets None -> 401.
+    consumed = await _redis.getdel(challenge_key)
+    if not consumed:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Challenge expired or already used")
+
+    # Reset attempts
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,

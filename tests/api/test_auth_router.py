@@ -1072,31 +1072,38 @@ class TestTwoFactorVerifyEdgeCases:
         mock_redis: AsyncMock,
         mock_cur: AsyncMock,
     ) -> None:
-        """If challenge exists on get but is consumed by another request before getdel, return 401."""
-        import json
+        """A CORRECT code whose challenge is consumed by a concurrent request before getdel returns 401.
 
-        token = create_challenge_token(TEST_USER_ID, TEST_USER_EMAIL, TEST_JWT_SECRET)
+        The challenge is now consumed only after a successful verification
+        (verify-then-consume), so this race is only reachable on the success path.
+        """
+        secret, encrypted_secret = _make_encrypted_totp_secret()
+        token = _make_challenge_token()
 
-        async def redis_get(redis_key: str) -> str | None:
-            if "2fa_challenge:" in redis_key:
-                return json.dumps({"user_id": TEST_USER_ID})
-            return None
-
-        mock_redis.get = AsyncMock(side_effect=redis_get)
-        # getdel returns None — another request consumed the challenge between get and getdel
+        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        # getdel returns None — another request consumed the challenge between the
+        # existence check and this success-path consume.
         mock_redis.getdel = AsyncMock(return_value=None)
         mock_cur.fetchone = AsyncMock(
             return_value={
-                "totp_secret": "encrypted_secret",
+                "totp_secret": encrypted_secret,
                 "totp_failed_attempts": 0,
                 "totp_locked_until": None,
             }
         )
 
-        response = test_client.post(
-            "/api/auth/2fa/verify",
-            json={"challenge_token": token, "code": "123456"},
-        )
+        valid_code = pyotp.TOTP(secret).now()
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/verify",
+                json={"challenge_token": token, "code": valid_code},
+            )
+        finally:
+            auth_router._config = original_config
+
         assert response.status_code == 401
         assert "expired" in response.json()["detail"].lower() or "used" in response.json()["detail"].lower()
 
