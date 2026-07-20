@@ -262,6 +262,37 @@ class TestSnapshotTokenChecks:
         assert response.status_code == 403
         assert "admin" in response.json()["detail"].lower()
 
+    def test_challenge_token_rejected(self, test_client: TestClient) -> None:
+        """Regression discogsography-cu2.1 — a 2FA challenge token must NOT authenticate /api/snapshot."""
+        import base64
+        import hashlib
+        import hmac
+        import json
+
+        from tests.api.conftest import TEST_JWT_SECRET
+
+        def b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+        body_payload = b64url(
+            json.dumps(
+                {"sub": "user-1", "email": "user@test.com", "exp": 9_999_999_999, "type": "2fa_challenge", "jti": "chal:snap-test"},
+                separators=(",", ":"),
+            ).encode()
+        )
+        signing_input = f"{header}.{body_payload}".encode("ascii")
+        sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
+        challenge_token = f"{header}.{body_payload}.{sig}"
+
+        body = {"nodes": [{"id": "1", "type": "artist"}], "center": {"id": "1", "type": "artist"}}
+        response = test_client.post(
+            "/api/snapshot",
+            json=body,
+            headers={"Authorization": f"Bearer {challenge_token}"},
+        )
+        assert response.status_code == 401
+
     def test_password_changed_revocation(self, test_client: TestClient) -> None:
         """snapshot.py:56-65 — Token issued before password change is rejected with 401."""
         import base64

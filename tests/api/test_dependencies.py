@@ -561,3 +561,55 @@ class TestRequireUserTokenChecks:
         creds = _make_credentials(token)
         result = await require_user(creds)
         assert result["sub"] == "user-1"
+
+
+class TestChallengeTokenRejection:
+    """Regression tests for discogsography-cu2.1.
+
+    A 2FA challenge token (``type == "2fa_challenge"``) proves only the password.
+    It must NEVER authenticate a protected user endpoint — otherwise an attacker
+    with only the victim's password fully bypasses the TOTP second factor. Only
+    the dedicated 2FA verify/recovery endpoints may consume a challenge token.
+    """
+
+    @pytest.mark.asyncio
+    async def test_require_user_rejects_challenge_token(self) -> None:
+        """require_user must reject a 2FA challenge token with 401, not accept it."""
+        configure(TEST_SECRET)
+        from fastapi import HTTPException
+
+        token = _make_token_with_claims({"type": "2fa_challenge", "jti": "chal-1"})
+        creds = _make_credentials(token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_user(creds)
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_get_optional_user_rejects_challenge_token(self) -> None:
+        """get_optional_user must resolve a 2FA challenge token to None, not a user."""
+        configure(TEST_SECRET)
+        token = _make_token_with_claims({"type": "2fa_challenge", "jti": "chal-2"})
+        creds = _make_credentials(token)
+        result = await get_optional_user(creds)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_require_user_rejects_unknown_token_type(self) -> None:
+        """Allowlist: any typed token (present but not an access token) is rejected."""
+        configure(TEST_SECRET)
+        from fastapi import HTTPException
+
+        token = _make_token_with_claims({"type": "some_future_type"})
+        creds = _make_credentials(token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_user(creds)
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_require_user_still_accepts_plain_access_token(self) -> None:
+        """A pure access token (no ``type`` claim) is still accepted."""
+        configure(TEST_SECRET)
+        token = _make_token_with_claims({"jti": "access-1"})
+        creds = _make_credentials(token)
+        result = await require_user(creds)
+        assert result["sub"] == "user-1"

@@ -57,7 +57,9 @@ def _extract_user_id(request: Request) -> str | None:
         if _jwt_secret is None:
             return None
         payload = decode_token(token, _jwt_secret)
-        if payload.get("type") == "admin":
+        # Allowlist: only pure access tokens (no `type` claim) resolve to a user.
+        # Admin and 2FA challenge tokens must not be treated as an authenticated user.
+        if payload.get("type") is not None:
             return None
         return payload.get("sub")
     except (ValueError, Exception):

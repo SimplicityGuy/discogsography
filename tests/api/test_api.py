@@ -824,6 +824,35 @@ class TestGetCurrentUser:
         response = test_client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 401
 
+    def test_get_current_user_challenge_token_401(
+        self,
+        test_client: TestClient,
+    ) -> None:
+        """Regression discogsography-cu2.1 — a 2FA challenge token must NOT authenticate _get_current_user endpoints."""
+        import base64
+        import hashlib
+        import hmac
+        import json
+
+        from tests.api.conftest import TEST_JWT_SECRET
+
+        def b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+        body = b64url(
+            json.dumps(
+                {"sub": "user-1", "email": "x@y.com", "exp": 9_999_999_999, "type": "2fa_challenge", "jti": "chal:me-test"},
+                separators=(",", ":"),
+            ).encode()
+        )
+        signing_input = f"{header}.{body}".encode("ascii")
+        sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
+        token = f"{header}.{body}.{sig}"
+
+        response = test_client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 401
+
 
 class TestLoginServiceNotReady:
     """Test login 503 when pool/config is None."""
