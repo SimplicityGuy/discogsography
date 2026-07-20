@@ -2264,6 +2264,21 @@ class TestAsyncHealthCheckQueueEmpty:
         await pool.close()
 
 
+def _make_sync_conn(*, healthy: bool = True) -> Mock:
+    """Build a mock sync psycopg connection whose health probe returns ``healthy``."""
+    conn = Mock()
+    conn.closed = False
+    conn.autocommit = True
+    conn.close = Mock()
+    cursor = Mock()
+    cursor.execute = Mock()
+    cursor.fetchone = Mock(return_value=(1,) if healthy else (0,))
+    cursor.__enter__ = Mock(return_value=cursor)
+    cursor.__exit__ = Mock(return_value=None)
+    conn.cursor = Mock(return_value=cursor)
+    return conn
+
+
 def _make_async_conn(*, healthy: bool = True) -> AsyncMock:
     """Build a mock async psycopg connection whose health probe returns ``healthy``."""
     conn = AsyncMock()
@@ -2468,3 +2483,24 @@ class TestPgPoolBatchRegressions:
         assert not t.is_alive(), "connection() busy-spun / hung on an exhausted pool"
         assert "yielded" not in result
         assert "Failed to get PostgreSQL connection" in str(result.get("error"))
+
+    def test_cu2_82_sync_conn_death_during_use_decrements(self, connection_params: dict) -> None:
+        """discogsography-cu2.82: a connection dying mid-use must decrement active_connections.
+
+        The except (InterfaceError, OperationalError) block closed the connection and set conn=None
+        before the finally block, so neither finally branch ran and the slot was leaked forever.
+        After max_connections such failures the pool believes it is full while holding zero real
+        connections (and then degenerates into the exhaustion busy-spin). Decrement in the handler.
+        """
+        with patch("common.postgres_resilient.threading.Thread"), patch("common.postgres_resilient.psycopg.connect"):
+            pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5, health_check_interval=999)
+
+        conn = _make_sync_conn(healthy=True)
+        pool.connections.put_nowait(conn)
+        pool.active_connections = 1
+
+        with pytest.raises(OperationalError), pool.connection():
+            raise OperationalError("connection lost mid-query")
+
+        assert pool.active_connections == 0
+        conn.close.assert_called()

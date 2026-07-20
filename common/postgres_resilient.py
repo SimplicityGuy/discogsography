@@ -254,6 +254,12 @@ class ResilientPostgreSQLPool:
             logger.warning(f"⚠️ Connection error during operation: {e}")
             with contextlib.suppress(Exception):
                 conn.close()
+            # Decrement for the destroyed connection BEFORE clearing `conn`: once `conn` is None
+            # neither finally branch runs, so without this the slot is leaked permanently — after
+            # max_connections such failures the pool believes it is full while holding no live
+            # connections. Mirrors the async pool. (This is the last read of `conn`.)
+            with self._lock:
+                self.active_connections = max(0, self.active_connections - 1)
             conn = None
             raise
         finally:
