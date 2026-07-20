@@ -191,6 +191,33 @@ class TestAutocompletePerson:
         await autocomplete_person(driver, "Bob*")
         # Should not add another wildcard
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "raw",
+        ["AC/DC", "C++", "Emerson, Lake (Palmer", "a:b", "foo~", "Jean-Michel"],
+    )
+    async def test_escapes_lucene_metacharacters(self, raw: str) -> None:
+        """cu2.3: crafted names with Lucene syntax must be escaped, not passed raw.
+
+        Regression for autocomplete_person handing user input straight to
+        db.index.fulltext.queryNodes, where metacharacters (/, +, :, ~, (, -)
+        trigger a Lucene ParseException surfaced as an unhandled 500.
+        """
+        driver = _make_mock_driver(query_returns=[])
+        await autocomplete_person(driver, raw)
+
+        session = driver.session().__aenter__.return_value
+        call_args = session.run.call_args
+        assert call_args is not None
+        # params dict is the 2nd positional arg to session.run(cypher, params, ...)
+        params = call_args[0][1]
+        sent = params["query"]
+        # Every Lucene special char that appears in the raw input must be
+        # backslash-escaped in the query actually sent to Neo4j.
+        for ch in raw:
+            if ch in '+-&|!(){}[]^"~*?:\\/':
+                assert f"\\{ch}" in sent, f"metacharacter {ch!r} was not escaped in {sent!r}"
+
 
 class TestGetPersonProfile:
     """Tests for get_person_profile."""
