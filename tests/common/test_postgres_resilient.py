@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import suppress
+from queue import Empty as Empty_
 import time
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -2357,3 +2358,79 @@ class TestPgPoolBatchRegressions:
         held.close.assert_awaited()
 
         await pool.close()
+
+    @pytest.mark.asyncio
+    async def test_cu2_11_async_replenish_respects_max_connections(self, connection_params: dict) -> None:
+        """discogsography-cu2.11: the async health-check replenisher must not mint past max_connections.
+
+        When the pool is saturated (all connections checked out) the queue is empty, so the
+        replenish branch fires every tick. Without a cap check it mints min_connections fresh
+        backends per tick, blowing past the shared PgBouncer session-mode cap. Reserve the slot
+        under the lock (active_connections < max_connections) before creating.
+        """
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=2, max_connections=3, health_check_interval=0)
+        # Manually stand up the primitives (skip initialize() so no background task races us).
+        pool.connections = asyncio.Queue(maxsize=3)
+        pool._lock = asyncio.Lock()
+        pool.active_connections = 3  # saturated & at cap; every connection checked out (queue empty)
+
+        create_mock = AsyncMock(return_value=_make_async_conn())
+        pool._create_connection = create_mock  # type: ignore[method-assign]
+
+        task = asyncio.create_task(pool._health_check_loop())
+        await asyncio.sleep(0.05)
+        pool._closed = True
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+        assert create_mock.call_count == 0
+        assert pool.active_connections == 3
+
+    @pytest.mark.asyncio
+    async def test_cu2_11_async_replenish_still_fills_up_to_max(self, connection_params: dict) -> None:
+        """discogsography-cu2.11: the cap gate must not block legitimate replenishment below max."""
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=2, max_connections=3, health_check_interval=0)
+        pool.connections = asyncio.Queue(maxsize=3)
+        pool._lock = asyncio.Lock()
+        pool.active_connections = 0  # empty pool, room to grow
+
+        create_mock = AsyncMock(side_effect=lambda: _make_async_conn())
+        pool._create_connection = create_mock  # type: ignore[method-assign]
+
+        task = asyncio.create_task(pool._health_check_loop())
+        await asyncio.sleep(0.05)
+        pool._closed = True
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+        # Replenished exactly up to min_connections and never past max_connections.
+        assert pool.active_connections == 2
+        assert pool.active_connections <= pool.max_connections
+
+    def test_cu2_11_sync_replenish_respects_max_connections(self, connection_params: dict) -> None:
+        """discogsography-cu2.11 (fix-one-fix-all): sync replenisher must also honor max_connections."""
+        import threading as _threading
+
+        with patch("common.postgres_resilient.threading.Thread"), patch("common.postgres_resilient.psycopg.connect") as mock_connect:
+            mock_connect.return_value = Mock(closed=False, autocommit=True)
+            pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=2, max_connections=3, health_check_interval=0)
+
+        # Drain the queue (simulate all connections checked out) and pin at the cap.
+        with suppress(Empty_):
+            while True:
+                pool.connections.get_nowait()
+        pool.active_connections = 3
+
+        create_mock = Mock(return_value=Mock(closed=False))
+        pool._create_connection = create_mock  # type: ignore[method-assign]
+
+        t = _threading.Thread(target=pool._health_check_loop, daemon=True)
+        t.start()
+        time.sleep(0.05)
+        pool._closed = True
+        t.join(timeout=1)
+
+        assert create_mock.call_count == 0
+        assert pool.active_connections == 3

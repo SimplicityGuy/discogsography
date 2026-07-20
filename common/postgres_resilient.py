@@ -137,19 +137,34 @@ class ResilientPostgreSQLPool:
                     with self._lock:
                         self.active_connections = max(0, self.active_connections - 1)
 
-            # Ensure minimum connections
+            # Ensure minimum connections — but never mint past max_connections. qsize() counts
+            # only IDLE connections; checked-out connections are not in the queue, so gating on
+            # queue size alone would mint fresh backends past the cap under saturation. Reserve the
+            # slot under the lock first (active_connections < max_connections), mirroring checkout.
             current_size = self.connections.qsize()
             if current_size < self.min_connections:
                 logger.info(f"🔄 Replenishing connection pool ({current_size}/{self.min_connections} connections)")
                 for _ in range(self.min_connections - current_size):
+                    reserved = False
+                    with self._lock:
+                        if self.active_connections < self.max_connections:
+                            self.active_connections += 1
+                            reserved = True
+                    if not reserved:
+                        break
                     try:
                         conn = self._create_connection()
-                        if conn:
-                            self.connections.put_nowait(conn)
-                            with self._lock:
-                                self.active_connections += 1
                     except Exception as e:
+                        with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
                         logger.warning(f"⚠️ Failed to replenish connection: {e}")
+                        break
+                    try:
+                        self.connections.put_nowait(conn)
+                    except Full:
+                        conn.close()
+                        with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
                         break
 
     @contextmanager
@@ -447,23 +462,35 @@ class AsyncPostgreSQLPool:
                     async with self._lock:
                         self.active_connections = max(0, self.active_connections - 1)
 
-            # Ensure minimum connections
+            # Ensure minimum connections — but never mint past max_connections. qsize() counts
+            # only IDLE connections; checked-out connections are not in the queue, so gating on
+            # queue size alone mints fresh backends on every tick while the pool is saturated and
+            # blows past the shared PgBouncer session-mode backend cap. Reserve the slot under the
+            # lock first (active_connections < max_connections), mirroring the checkout path.
             current_size = self.connections.qsize()
             if current_size < self.min_connections:
                 logger.info(f"🔄 Replenishing connection pool ({current_size}/{self.min_connections} connections)")
                 for _ in range(self.min_connections - current_size):
+                    reserved = False
+                    async with self._lock:
+                        if self.active_connections < self.max_connections:
+                            self.active_connections += 1
+                            reserved = True
+                    if not reserved:
+                        break
                     try:
                         conn = await self._create_connection()
-                        if conn:
-                            try:
-                                self.connections.put_nowait(conn)
-                            except asyncio.QueueFull:
-                                await conn.close()
-                                break
-                            async with self._lock:
-                                self.active_connections += 1
                     except Exception as e:
+                        async with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
                         logger.warning(f"⚠️ Failed to replenish connection: {e}")
+                        break
+                    try:
+                        self.connections.put_nowait(conn)
+                    except asyncio.QueueFull:
+                        await conn.close()
+                        async with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
                         break
 
     @asynccontextmanager
