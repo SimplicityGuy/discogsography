@@ -366,3 +366,73 @@ fn test_complete_extraction_without_download_start() {
     assert!(marker.summary.total_duration_seconds.is_none());
     assert_eq!(marker.summary.overall_status, PhaseStatus::Completed);
 }
+
+// Regression: discogsography-cu2.2 — a resumed extraction must broadcast the ORIGINAL
+// processing start time, not the restarted process's now(). If it used a fresh start
+// time, the tableinator stale-row purge would delete every row written before the
+// restart (mass data loss). The extractor derives the start time it sends from
+// processing_phase.started_at, so this test pins that the field survives a resume
+// (persist -> restart -> continue) unchanged and is NOT reset for an InProgress marker.
+#[tokio::test]
+async fn test_resume_preserves_original_processing_start_time() {
+    // Session 1: begin processing four files, finish only artists, then "crash".
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_processing(4);
+    let original_started_at = marker.processing_phase.started_at.expect("started_at set on start_processing");
+    marker.start_file_processing("discogs_20260101_artists.xml.gz");
+    marker.complete_file_processing("discogs_20260101_artists.xml.gz", 9_000_000);
+
+    // Marker is still InProgress — releases/labels/masters never finished.
+    assert_eq!(marker.processing_phase.status, PhaseStatus::InProgress);
+
+    // Persist across the restart (serialize -> deserialize like load/save on disk).
+    let json = serde_json::to_string_pretty(&marker).unwrap();
+    let mut resumed: StateMarker = serde_json::from_str(&json).unwrap();
+
+    // The original start time must survive the roundtrip.
+    assert_eq!(resumed.processing_phase.started_at, Some(original_started_at));
+
+    // Session 2 (resume): extractor.rs only calls start_processing() when the phase is
+    // Pending. For an InProgress marker it just refreshes files_total, so started_at is
+    // left untouched. Simulate exactly that resume branch.
+    assert_eq!(resumed.processing_phase.status, PhaseStatus::InProgress);
+    resumed.processing_phase.files_total = 4; // resume branch: update total, do not reset
+
+    // The value the extractor propagates into extraction_complete is still the original.
+    let propagated = resumed.processing_phase.started_at.unwrap();
+    assert_eq!(propagated, original_started_at);
+
+    // The already-completed artists file is not re-sent this session.
+    let all_files = vec![
+        "discogs_20260101_artists.xml.gz".to_string(),
+        "discogs_20260101_labels.xml.gz".to_string(),
+        "discogs_20260101_masters.xml.gz".to_string(),
+        "discogs_20260101_releases.xml.gz".to_string(),
+    ];
+    let pending = resumed.pending_files(&all_files);
+    assert!(!pending.contains(&"discogs_20260101_artists.xml.gz".to_string()));
+}
+
+// Regression: discogsography-cu2.2 — the "all files already processed" completion path
+// (a crash lands after every file finished but before the completion broadcast). On
+// restart, pending_files is empty and no data is re-sent, yet extraction_complete still
+// fires. It must carry the original processing start time so the purge stays sound.
+#[tokio::test]
+async fn test_all_files_complete_before_crash_keeps_original_start_time() {
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_processing(1);
+    let original_started_at = marker.processing_phase.started_at.unwrap();
+    marker.start_file_processing("discogs_20260101_artists.xml.gz");
+    marker.complete_file_processing("discogs_20260101_artists.xml.gz", 9_000_000);
+
+    // Persist and "restart" before the completion broadcast was sent.
+    let json = serde_json::to_string_pretty(&marker).unwrap();
+    let resumed: StateMarker = serde_json::from_str(&json).unwrap();
+
+    // No files remain to process — the "all files already processed" branch runs.
+    let all_files = vec!["discogs_20260101_artists.xml.gz".to_string()];
+    assert!(resumed.pending_files(&all_files).is_empty());
+
+    // extraction_complete on this branch must still use the original start time.
+    assert_eq!(resumed.processing_phase.started_at, Some(original_started_at));
+}
