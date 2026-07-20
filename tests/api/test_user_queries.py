@@ -428,6 +428,48 @@ class TestGetUserCollectionTimeline:
 
         assert result["timeline"][0]["year"] == 1980
 
+    @pytest.mark.asyncio
+    async def test_cypher_does_not_dedupe_genre_and_label_lists(self) -> None:
+        """discogsography-cu2.7 regression: collect(DISTINCT rg)/collect(DISTINCT rl)
+        dedupe identical per-release genre/label lists, corrupting per-bucket
+        counts (e.g. 20 Rock-only releases collapse to a single ["Rock"] entry).
+        The list-of-list collects must be plain collect(), not collect(DISTINCT).
+        Style dedup (collect(DISTINCT rs)) is harmless — styles are consumed as
+        a membership set — so it is intentionally left as DISTINCT.
+        """
+        from api.queries.user_queries import get_user_collection_timeline
+
+        driver = _simple_driver(records=[])
+        await get_user_collection_timeline(driver, "user-1")
+
+        cypher = driver.session.return_value.__aenter__.return_value.run.call_args[0][0]
+        assert "collect(DISTINCT rg)" not in cypher
+        assert "collect(DISTINCT rl)" not in cypher
+        assert "collect(rg) AS genre_lists" in cypher
+        assert "collect(rl) AS label_lists" in cypher
+        # Style dedup remains — it is not part of this defect.
+        assert "collect(DISTINCT rs) AS style_lists" in cypher
+
+    @pytest.mark.asyncio
+    async def test_duplicate_per_release_genre_lists_all_counted(self) -> None:
+        """End-to-end: many releases sharing an identical genre list must each
+        contribute to genre_counts/genre_totals, not collapse to one entry.
+        """
+        from api.queries.user_queries import get_user_collection_timeline
+
+        # Simulates the post-fix Cypher output: 20 Rock-only releases plus 2
+        # Jazz/Funk releases in the same bucket, all flattened via plain collect().
+        genres_flat = ["Rock"] * 20 + ["Jazz", "Funk"]
+        rows = [{"year": 1990, "count": 22, "genres": genres_flat, "styles": [], "labels": []}]
+        driver = _simple_driver(records=rows)
+        result = await get_user_collection_timeline(driver, "user-1")
+
+        genre_counts = result["timeline"][0]["genres"]
+        assert genre_counts["Rock"] == 20
+        assert genre_counts["Jazz"] == 1
+        assert genre_counts["Funk"] == 1
+        assert result["insights"]["dominant_genre"] == "Rock"
+
 
 # ---------------------------------------------------------------------------
 # get_user_collection_evolution
