@@ -1259,6 +1259,87 @@ class TestCheckFileCompletionComputeGenreStyleStats:
         graphinator.graphinator.graph = None
 
 
+class TestCheckFileCompletionMaintenanceFailure:
+    """Regression (cu2.50): extraction_complete must NOT be acked when post-import
+    maintenance (cleanup_stub_nodes / compute_genre_style_stats) fails — it must
+    nack(requeue=True) so the idempotent maintenance is retried, since the
+    extraction_complete signal is emitted exactly once per run.
+    """
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.compute_genre_style_stats", new_callable=AsyncMock)
+    @patch("graphinator.graphinator.cleanup_stub_nodes", new_callable=AsyncMock)
+    async def test_acks_when_maintenance_succeeds(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
+        """Both maintenance steps succeed → ack, no nack."""
+        mock_cleanup.return_value = True
+        mock_compute.return_value = True
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {"type": "extraction_complete", "version": "20260101"}
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.batch_processor = None
+        graphinator.graphinator.graph = AsyncMock()
+
+        from graphinator.graphinator import check_file_completion
+
+        result = await check_file_completion(completion_data, "releases", mock_message)
+
+        assert result is True
+        mock_message.ack.assert_called_once()
+        mock_message.nack.assert_not_called()
+        graphinator.graphinator.graph = None
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.compute_genre_style_stats", new_callable=AsyncMock)
+    @patch("graphinator.graphinator.cleanup_stub_nodes", new_callable=AsyncMock)
+    async def test_nacks_when_compute_stats_fails(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
+        """compute_genre_style_stats fails → nack(requeue=True), never ack."""
+        mock_cleanup.return_value = True
+        mock_compute.return_value = False  # stats computation failed at scale
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {"type": "extraction_complete", "version": "20260101"}
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.batch_processor = None
+        graphinator.graphinator.graph = AsyncMock()
+
+        from graphinator.graphinator import check_file_completion
+
+        result = await check_file_completion(completion_data, "releases", mock_message)
+
+        assert result is True
+        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.ack.assert_not_called()
+        graphinator.graphinator.graph = None
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.compute_genre_style_stats", new_callable=AsyncMock)
+    @patch("graphinator.graphinator.cleanup_stub_nodes", new_callable=AsyncMock)
+    async def test_nacks_when_cleanup_fails(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
+        """cleanup_stub_nodes fails → nack(requeue=True), never ack."""
+        mock_cleanup.return_value = False  # DETACH DELETE failed
+        mock_compute.return_value = True
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {"type": "extraction_complete", "version": "20260101"}
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.batch_processor = None
+        graphinator.graphinator.graph = AsyncMock()
+
+        from graphinator.graphinator import check_file_completion
+
+        # Use a non-releases type so only cleanup runs (compute is releases-only)
+        result = await check_file_completion(completion_data, "artists", mock_message)
+
+        assert result is True
+        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.ack.assert_not_called()
+        graphinator.graphinator.graph = None
+
+
 class TestScheduleConsumerCancellation:
     """Test schedule_consumer_cancellation function."""
 

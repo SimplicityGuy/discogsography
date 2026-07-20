@@ -491,21 +491,37 @@ async def check_file_completion(
         if batch_processor is not None:
             await batch_processor.flush_queue(data_type)
 
+        # Post-import maintenance is coupled to the extraction_complete ack:
+        # both steps are idempotent, so on failure we nack(requeue=True) to
+        # retry rather than acking (and silently skipping) the sole trigger.
+        maintenance_ok = True
+
         # Clean up stub nodes created by cross-type MERGE operations
-        if graph is not None:
-            await cleanup_stub_nodes(data_type)
+        if graph is not None and not await cleanup_stub_nodes(data_type):
+            maintenance_ok = False
 
         # After releases are fully imported, compute aggregate stats on Genre/Style nodes
-        if graph is not None and data_type == "releases":
-            await compute_genre_style_stats()
+        if (
+            graph is not None
+            and data_type == "releases"
+            and not await compute_genre_style_stats()
+        ):
+            maintenance_ok = False
 
-        await message.ack()
+        if maintenance_ok:
+            await message.ack()
+        else:
+            logger.error(
+                "❌ Post-import maintenance failed, nacking extraction_complete for retry",
+                data_type=data_type,
+            )
+            await message.nack(requeue=True)
         return True
 
     return False
 
 
-async def compute_genre_style_stats() -> None:
+async def compute_genre_style_stats() -> bool:
     """Pre-compute aggregate counts and first_year on Genre, Style, and Label nodes.
 
     Sets release_count, artist_count, label_count, style_count/genre_count,
@@ -521,9 +537,13 @@ async def compute_genre_style_stats() -> None:
       traversal (for Reprise Records with 55K releases) with ~3 DB hits.
 
     Should be called after all releases have been imported.
+
+    Returns:
+        True if all stats were computed (or there is no driver / no work),
+        False if the computation failed — so the caller can nack and retry.
     """
     if graph is None:
-        return
+        return True
 
     # Drive the batching with an outer MATCH so CALL {} IN TRANSACTIONS actually
     # commits one inner transaction per node (OF 1 ROWS = one genre/style per
@@ -664,18 +684,25 @@ async def compute_genre_style_stats() -> None:
             "❌ Failed to compute genre/style/label stats",
             error=str(e),
         )
+        return False
+
+    return True
 
 
-async def cleanup_stub_nodes(data_type: str) -> None:
+async def cleanup_stub_nodes(data_type: str) -> bool:
     """Delete stub nodes that have no sha256 property.
 
     During extraction, MERGE operations in relationship queries create
     skeleton nodes for cross-referenced entities (e.g., a release referencing
     an artist that hasn't been processed yet). Primary records always set
     sha256, so nodes without it are stubs that were never filled.
+
+    Returns:
+        True if cleanup succeeded (or there is nothing to do), False if the
+        DETACH DELETE failed — so the caller can nack and retry (idempotent).
     """
     if graph is None:
-        return
+        return True
 
     # Map data types to their Neo4j labels
     label_map = {
@@ -687,7 +714,7 @@ async def cleanup_stub_nodes(data_type: str) -> None:
 
     label = label_map.get(data_type)
     if not label:
-        return
+        return True
 
     try:
         async with graph.session(database="neo4j") as session:
@@ -714,6 +741,9 @@ async def cleanup_stub_nodes(data_type: str) -> None:
             data_type=data_type,
             error=str(e),
         )
+        return False
+
+    return True
 
 
 async def process_artist(tx: Any, record: dict[str, Any]) -> bool:
