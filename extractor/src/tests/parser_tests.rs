@@ -504,6 +504,98 @@ async fn test_parse_with_unknown_entity_reference() {
 }
 
 #[tokio::test]
+async fn test_parse_attribute_entity_references() {
+    // Regression test for discogsography-cu2.16: attribute values must be
+    // entity-unescaped the same way element text is. Reproduces the exact
+    // failure scenario from the bead: a label name containing "&".
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<releases>
+    <release id="1">
+        <labels>
+            <label name="Rhythm &amp; Blues Records" catno="RB-1"/>
+        </labels>
+    </release>
+</releases>"#;
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Releases, sender);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1);
+
+    let message = receiver.recv().await.unwrap();
+    let label = &message.data["labels"]["label"];
+    assert_eq!(label["@name"], json!("Rhythm & Blues Records"));
+    assert_eq!(label["@catno"], json!("RB-1"));
+}
+
+#[tokio::test]
+async fn test_parse_attribute_numeric_and_mixed_entity_references() {
+    // Attribute values should resolve numeric char refs and mixed predefined
+    // entities identically to element text.
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<releases>
+    <release id="1">
+        <labels>
+            <label name="Rock &amp; Roll &#x266A;" catno="&lt;R&amp;R&gt;"/>
+        </labels>
+    </release>
+</releases>"#;
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Releases, sender);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1);
+
+    let message = receiver.recv().await.unwrap();
+    let label = &message.data["labels"]["label"];
+    assert_eq!(label["@name"], json!("Rock & Roll ♪"));
+    assert_eq!(label["@catno"], json!("<R&R>"));
+}
+
+#[tokio::test]
+async fn test_parse_self_closing_target_attribute_entity_references() {
+    // Same unescaping must apply on the self-closing-target-element path
+    // (Event::Empty at depth 2), which builds attributes via a separate
+    // ElementContext::with_attributes call site than nested children.
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1" name="Tom &amp; Jerry" />
+</artists>"#;
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1);
+
+    let message = receiver.recv().await.unwrap();
+    assert_eq!(message.data["@name"], json!("Tom & Jerry"));
+}
+
+#[tokio::test]
 async fn test_parse_file_not_found() {
     let (sender, _receiver) = mpsc::channel(10);
     let parser = XmlParser::new(DataType::Artists, sender);
