@@ -709,3 +709,35 @@ fn test_build_mbid_discogs_map_truncated_xz_is_fatal_not_busyloop() {
         Err(_) => panic!("build_mbid_discogs_map_from_file busy-looped on a truncated xz stream (never returned)"),
     }
 }
+
+#[test]
+fn test_parse_mb_jsonl_file_truncated_xz_is_fatal_not_busyloop() {
+    use std::io::Write;
+    use std::sync::mpsc as std_mpsc;
+    use std::time::Duration;
+    use tempfile::NamedTempFile;
+    use tokio::sync::mpsc;
+
+    let line = r#"{"id":"mbid-1","name":"Artist","sort-name":"Artist","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[]}"#;
+    let content = std::iter::repeat_n(line, 500).collect::<Vec<_>>().join("\n") + "\n";
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    temp_file.write_all(&truncated_xz_bytes(&content)).unwrap();
+    temp_file.flush().unwrap();
+    let path = temp_file.path().to_path_buf();
+
+    let (tx, rx) = std_mpsc::channel();
+    std::thread::spawn(move || {
+        // Generous channel so blocking_send never blocks; we want the read error, not backpressure.
+        let (sender, _receiver) = mpsc::channel(100_000);
+        // Keep the receiver alive for the duration of the parse.
+        let result = parse_mb_jsonl_file(&path, DataType::Artists, sender, None);
+        let _ = tx.send(result.is_err());
+        drop(_receiver);
+    });
+
+    match rx.recv_timeout(Duration::from_secs(10)) {
+        Ok(is_err) => assert!(is_err, "truncated xz must yield Err, not Ok"),
+        Err(_) => panic!("parse_mb_jsonl_file busy-looped on a truncated xz stream (never returned)"),
+    }
+}

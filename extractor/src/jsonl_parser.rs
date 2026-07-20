@@ -387,9 +387,12 @@ pub fn parse_mb_jsonl_file(
     for line_result in reader.lines() {
         let line = match line_result {
             Ok(l) => l,
+            // A read error from a compressed stream (XzDecoder) is *persistent*, not
+            // transient: a corrupt/truncated `.jsonl.xz` returns the same `Err` on every
+            // subsequent read, so `continue` here would busy-loop forever at 100% CPU.
+            // Treat it as fatal so the caller can fail the run instead of wedging.
             Err(e) => {
-                debug!("⚠️ Failed to read line: {e}");
-                continue;
+                return Err(e).context(format!("Failed to read line while parsing MusicBrainz JSONL from {:?}", path));
             }
         };
         let trimmed = line.trim();
