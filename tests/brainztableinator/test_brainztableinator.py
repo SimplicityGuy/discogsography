@@ -348,6 +348,60 @@ class TestInsertRelationships:
         mock_cursor.execute.assert_not_called()
         mock_cursor.executemany.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_insert_relationships_forward_direction_keeps_source(self):
+        """direction == 'forward' (or absent) keeps the processed entity as the
+        row's source. Regression test for discogsography-cu2.31.
+        """
+        mock_conn, mock_cursor = _make_mock_conn()
+        rels = [
+            {
+                "target_mbid": "target-mbid-1",
+                "target_type": "artist",
+                "type": "member of band",
+                "direction": "forward",
+            }
+        ]
+
+        await _insert_relationships(mock_conn, "source-mbid-1", "artist", rels)
+
+        params = mock_cursor.executemany.call_args[0][1]
+        row = params[0]
+        # (source_mbid, source_entity_type, target_mbid, target_entity_type, ...)
+        assert row[0] == "source-mbid-1"
+        assert row[1] == "artist"
+        assert row[2] == "target-mbid-1"
+        assert row[3] == "artist"
+
+    @pytest.mark.asyncio
+    async def test_insert_relationships_backward_direction_swaps_source_target(self):
+        """direction == 'backward' means the processed entity is the relation's
+        TARGET, not its source. Persisting it unswapped would store a
+        semantically inverted relationship (e.g. a band's own record, direction
+        backward, target=member, would otherwise assert the band is a member of
+        the member). Regression test for discogsography-cu2.31.
+        """
+        mock_conn, mock_cursor = _make_mock_conn()
+        rels = [
+            {
+                "target_mbid": "target-mbid-1",
+                "target_type": "artist",
+                "type": "member of band",
+                "direction": "backward",
+            }
+        ]
+
+        await _insert_relationships(mock_conn, "source-mbid-1", "artist", rels)
+
+        params = mock_cursor.executemany.call_args[0][1]
+        row = params[0]
+        # Swapped: the relation's target becomes the row's source, and the
+        # processed entity becomes the row's target.
+        assert row[0] == "target-mbid-1"
+        assert row[1] == "artist"
+        assert row[2] == "source-mbid-1"
+        assert row[3] == "artist"
+
 
 class TestInsertExternalLinks:
     """Tests for _insert_external_links (batched executemany)."""
