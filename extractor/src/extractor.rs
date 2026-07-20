@@ -203,29 +203,49 @@ pub async fn process_discogs_data(
         // Only send extraction_complete on the first completion, not on
         // subsequent periodic checks where the version is already complete.
         if state_marker.summary.overall_status != PhaseStatus::Completed {
+            // Mark processing (files are genuinely all done) but NOT extraction yet —
+            // extraction is only "complete" once the extraction_complete broadcast lands.
+            // Committing the marker fully Completed here (before the AMQP send) is a
+            // split-commit ordering bug: a single AMQP failure would flip the marker to
+            // Completed, every later cycle would Skip, and the completion signal would be
+            // lost forever. Mirror the normal completion path: send first, finalize on
+            // success, and on failure leave overall_status non-Completed so the next
+            // cycle re-enters via Continue and retries. (cu2.42)
             state_marker.complete_processing();
-            state_marker.complete_extraction();
             state_marker.save(&marker_path).await?;
 
-            // Send extraction_complete with actual record counts from state marker
-            // Use data type names (e.g., "artists") as keys — consistent with the normal
-            // completion path (lines 288-292) so consumers can look up counts reliably.
+            // Build record counts from the persisted per-file progress. Use data type
+            // names (e.g., "artists") as keys — consistent with the normal completion
+            // path so consumers can look up counts reliably.
             let mut record_counts = HashMap::new();
             for (file_name, file_state) in &state_marker.processing_phase.progress_by_file {
                 if let Some(dt) = extract_data_type(file_name) {
                     record_counts.insert(dt.to_string(), file_state.records_extracted);
                 }
             }
+
+            let mut sent = false;
             match mq_factory.create(&config.amqp_connection, &config.discogs_exchange_prefix).await {
                 Ok(mq) => {
-                    if let Err(e) = mq.send_extraction_complete(&version, processing_started_at, record_counts, &DataType::discogs()).await {
-                        error!("❌ Failed to send extraction_complete message: {}", e);
+                    match mq.send_extraction_complete(&version, processing_started_at, record_counts, &DataType::discogs()).await {
+                        Ok(_) => sent = true,
+                        Err(e) => error!("❌ Failed to send extraction_complete message: {}", e),
                     }
                     let _ = mq.close().await;
                 }
                 Err(e) => {
                     error!("❌ Failed to connect to AMQP for extraction_complete: {}", e);
                 }
+            }
+
+            if sent {
+                // Broadcast succeeded — now it is safe to durably mark extraction complete.
+                state_marker.complete_extraction();
+                state_marker.save(&marker_path).await?;
+            } else {
+                // Leave overall_status non-Completed so should_process() returns Continue and
+                // the next cycle retries the broadcast instead of Skipping forever.
+                error!("❌ extraction_complete not sent — leaving version incomplete to retry on next cycle");
             }
         }
 
