@@ -62,25 +62,88 @@ def cache_key(q: str, types: list[str], genres: list[str], year_min: int | None,
     return f"search:{digest}"
 
 
-def _entity_select(entity_type: str, name_field: str, has_year: bool, has_genres: bool, *, per_table_limit: int | None = None) -> sql.Composable:
-    """Return a SELECT fragment for one entity type in the UNION ALL.
+def _year_filter_clause(year_min: int | None, year_max: int | None, column: sql.Composable | None = None) -> tuple[sql.Composable, list[Any]]:
+    """Return (SQL_clause, params) for optional year filtering.
+
+    Rows with NULL year (artists, labels) are always included regardless of
+    year filter — only rows with a parseable year are filtered.
+
+    ``column`` lets callers point the clause at a raw column expression (e.g.
+    ``(data->>'year')``) instead of the default ``year`` identifier — needed
+    to push the filter into a per-table subquery *before* its rank LIMIT.
+    """
+    col = column if column is not None else sql.SQL("year")
+    clauses: list[sql.Composable] = []
+    params: list[Any] = []
+    if year_min is not None:
+        clauses.append(sql.SQL("({c} IS NULL OR {c}::int >= %s)").format(c=col))
+        params.append(year_min)
+    if year_max is not None:
+        clauses.append(sql.SQL("({c} IS NULL OR {c}::int <= %s)").format(c=col))
+        params.append(year_max)
+    return (sql.SQL(" AND ").join(clauses), params) if clauses else (sql.SQL("TRUE"), [])
+
+
+def _genre_filter_clause(genres: list[str], column: sql.Composable | None = None) -> tuple[sql.Composable, list[Any]]:
+    """Return (SQL_clause, params) for optional genre filtering.
+
+    Rows with NULL genres (artists, labels, masters) are always included
+    regardless of genre filter — only rows with genre data are filtered.
+
+    ``column`` lets callers point the clause at a raw column expression (e.g.
+    ``(data->'genres')``) instead of the default ``genres`` identifier —
+    needed to push the filter into a per-table subquery *before* its rank
+    LIMIT.
+    """
+    if not genres:
+        return (sql.SQL("TRUE"), [])
+    col = column if column is not None else sql.SQL("genres")
+    # ?| checks if JSONB array contains any of the given strings
+    return (sql.SQL("({c} IS NULL OR {c} ?| %s::text[])").format(c=col), [genres])
+
+
+def _entity_select(
+    entity_type: str,
+    name_field: str,
+    has_year: bool,
+    has_genres: bool,
+    *,
+    per_table_limit: int | None = None,
+    year_min: int | None = None,
+    year_max: int | None = None,
+    genres: list[str] | None = None,
+) -> tuple[sql.Composable, list[Any]]:
+    """Return a (SELECT fragment, params) for one entity type in the UNION ALL.
 
     When per_table_limit is set, each entity type returns at most that many
     rows (ordered by ts_rank DESC).  This prevents high-cardinality terms
     like "Rock" from materializing 100K+ rows in the UNION ALL CTE.
+
+    year_min/year_max/genres — when given — are applied INSIDE this subquery's
+    WHERE, before its ORDER BY rank LIMIT, so the rank cap is applied to
+    already-filtered rows. Applying them only in an outer WHERE (after the
+    cap) would silently drop/empty filtered results for high-cardinality
+    terms, since rank is uncorrelated with year/genre.
     """
     year_col = sql.SQL("(data->>'year')") if has_year else sql.SQL("NULL::text")
     genres_col = sql.SQL("(data->'genres')") if has_genres else sql.SQL("NULL::jsonb")
     table = sql.Identifier(_ENTITY_CONFIG[entity_type][0])
     name_lit = sql.Literal(name_field)
     limit_clause = sql.SQL(" ORDER BY rank DESC LIMIT {n}").format(n=sql.Literal(per_table_limit)) if per_table_limit else sql.SQL("")
-    return sql.SQL(
+
+    year_clause, year_params = _year_filter_clause(year_min, year_max, column=year_col)
+    genre_clause, genre_params = _genre_filter_clause(genres or [], column=genres_col)
+    filter_params = [*year_params, *genre_params]
+    filter_clause = sql.SQL(" AND {y} AND {g}").format(y=year_clause, g=genre_clause) if filter_params else sql.SQL("")
+
+    select_sql = sql.SQL(
         "(SELECT {entity_type}::text AS type, data_id AS id, data->>{name} AS name,"
         " ts_rank(to_tsvector('english', COALESCE(data->>{name}, '')), q.tsq) AS rank,"
         " ts_headline('english', COALESCE(data->>{name}, ''), q.tsq) AS highlight,"
         " {year_col} AS year, {genres_col} AS genres"
         " FROM {table}, q"
         " WHERE to_tsvector('english', COALESCE(data->>{name}, '')) @@ q.tsq"
+        "{filter_clause}"
         "{limit_clause})"
     ).format(
         entity_type=sql.Literal(entity_type),
@@ -88,52 +151,48 @@ def _entity_select(entity_type: str, name_field: str, has_year: bool, has_genres
         year_col=year_col,
         genres_col=genres_col,
         table=table,
+        filter_clause=filter_clause,
         limit_clause=limit_clause,
     )
+    return select_sql, filter_params
 
 
-def _build_union(types: list[str], *, per_table_limit: int | None = None) -> sql.Composable:
+def _build_union(
+    types: list[str],
+    *,
+    per_table_limit: int | None = None,
+    year_min: int | None = None,
+    year_max: int | None = None,
+    genres: list[str] | None = None,
+) -> tuple[sql.Composable, list[Any]]:
     """Build UNION ALL of SELECT fragments for the requested entity types.
 
     When per_table_limit is set, each entity type returns at most that many
     rows (pre-sorted by rank), preventing high-cardinality term explosion.
+    year_min/year_max/genres are pushed into each per-table subquery so the
+    rank cap is applied to already-filtered rows (see _entity_select).
+
+    Returns (UNION_ALL SQL fragment, flattened params list in emission order).
     """
     if not types:  # would produce invalid SQL
         raise ValueError("types must not be empty")
-    parts = []
+    parts: list[sql.Composable] = []
+    params: list[Any] = []
     for t in types:
         _table, name_field, has_year, has_genres = _ENTITY_CONFIG[t]
-        parts.append(_entity_select(t, name_field, has_year, has_genres, per_table_limit=per_table_limit))
-    return sql.SQL(" UNION ALL ").join(parts)
-
-
-def _year_filter_clause(year_min: int | None, year_max: int | None) -> tuple[sql.Composable, list[Any]]:
-    """Return (SQL_clause, params) for optional year filtering.
-
-    Rows with NULL year (artists, labels) are always included regardless of
-    year filter — only rows with a parseable year are filtered.
-    """
-    clauses: list[sql.Composable] = []
-    params: list[Any] = []
-    if year_min is not None:
-        clauses.append(sql.SQL("(year IS NULL OR year::int >= %s)"))
-        params.append(year_min)
-    if year_max is not None:
-        clauses.append(sql.SQL("(year IS NULL OR year::int <= %s)"))
-        params.append(year_max)
-    return (sql.SQL(" AND ").join(clauses), params) if clauses else (sql.SQL("TRUE"), [])
-
-
-def _genre_filter_clause(genres: list[str]) -> tuple[sql.Composable, list[Any]]:
-    """Return (SQL_clause, params) for optional genre filtering.
-
-    Rows with NULL genres (artists, labels, masters) are always included
-    regardless of genre filter — only rows with genre data are filtered.
-    """
-    if not genres:
-        return (sql.SQL("TRUE"), [])
-    # ?| checks if JSONB array contains any of the given strings
-    return (sql.SQL("(genres IS NULL OR genres ?| %s::text[])"), [genres])
+        select_sql, select_params = _entity_select(
+            t,
+            name_field,
+            has_year,
+            has_genres,
+            per_table_limit=per_table_limit,
+            year_min=year_min,
+            year_max=year_max,
+            genres=genres,
+        )
+        parts.append(select_sql)
+        params.extend(select_params)
+    return sql.SQL(" UNION ALL ").join(parts), params
 
 
 async def _run_results(
@@ -151,29 +210,27 @@ async def _run_results(
     Uses per-table LIMIT in the UNION ALL to prevent high-cardinality terms
     like "Rock" from materializing 100K+ rows before outer LIMIT/OFFSET.
     Each table returns at most (limit + offset) rows pre-sorted by rank.
+
+    year/genre filters are pushed INTO each per-table subquery (before its
+    rank LIMIT) — applying them only in an outer WHERE after the per-table
+    cap would silently drop/empty filtered results for high-cardinality
+    terms, since rank is uncorrelated with year/genre.
     """
     # Each entity table returns up to per_table_limit rows pre-sorted by rank.
     # Use 2x multiplier to reduce result loss at higher page offsets while
     # keeping the materialisation bounded.
     per_table_limit = (limit + offset) * 2
-    union_sql = _build_union(types, per_table_limit=per_table_limit)
-    year_clause, year_params = _year_filter_clause(year_min, year_max)
-    genre_clause, genre_params = _genre_filter_clause(genres)
+    union_sql, union_params = _build_union(types, per_table_limit=per_table_limit, year_min=year_min, year_max=year_max, genres=genres)
 
     query = sql.SQL(
         "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),"
         " results AS ({union_sql})"
         " SELECT type, id, name, rank, highlight, year, genres"
         " FROM results"
-        " WHERE {year_clause} AND {genre_clause}"
         " ORDER BY rank DESC"
         " LIMIT %s OFFSET %s"
-    ).format(
-        union_sql=union_sql,
-        year_clause=year_clause,
-        genre_clause=genre_clause,
-    )
-    params = [q, *year_params, *genre_params, limit, offset]
+    ).format(union_sql=union_sql)
+    params = [q, *union_params, limit, offset]
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(cur, query, params)  # nosemgrep
         rows = await cur.fetchall()
@@ -196,22 +253,18 @@ async def _run_total(
     Each table is capped at _TOTAL_COUNT_CAP rows to prevent full scans
     on high-cardinality terms like "Rock" (18.9M releases).  The reported
     total is an approximate lower bound when capped.
+
+    year/genre filters are pushed INTO each per-table subquery (before its
+    rank LIMIT) for the same reason as _run_results — see its docstring.
     """
-    union_sql = _build_union(types, per_table_limit=_TOTAL_COUNT_CAP)
-    year_clause, year_params = _year_filter_clause(year_min, year_max)
-    genre_clause, genre_params = _genre_filter_clause(genres)
+    union_sql, union_params = _build_union(types, per_table_limit=_TOTAL_COUNT_CAP, year_min=year_min, year_max=year_max, genres=genres)
 
     query = sql.SQL(
         "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),"
         " results AS ({union_sql})"
         " SELECT COUNT(*) AS total FROM results"
-        " WHERE {year_clause} AND {genre_clause}"
-    ).format(
-        union_sql=union_sql,
-        year_clause=year_clause,
-        genre_clause=genre_clause,
-    )
-    params = [q, *year_params, *genre_params]
+    ).format(union_sql=union_sql)
+    params = [q, *union_params]
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(cur, query, params)  # nosemgrep
         row = await cur.fetchone()
