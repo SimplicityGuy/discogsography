@@ -1092,3 +1092,78 @@ class TestAsyncLazyLockInit:
         assert isinstance(breaker._async_lock, asyncio.Lock)
         assert breaker.failure_count == 1
         assert breaker.last_failure_time is not None
+
+
+class _FakeAsyncConn:
+    """Minimal async connection stub: has an async close() but no aclose()."""
+
+    def __init__(self) -> None:
+        self.closed_count = 0
+
+    async def close(self) -> None:
+        self.closed_count += 1
+
+
+class TestResilientConnectionCloseOnReplace:
+    """Regression tests for discogsography-cu2.33 (close-on-replace leak)."""
+
+    def test_cu2_33_sync_closes_old_connection_on_replace(self) -> None:
+        """The old unhealthy connection must be closed before a replacement overwrites it."""
+        from common.db_resilience import ResilientConnection
+
+        old_conn = Mock()
+        new_conn = Mock()
+        connection_factory = Mock(side_effect=[old_conn, new_conn])
+        connection_test = Mock(side_effect=[True, False, True])  # fresh-ok, then unhealthy, then new-ok
+
+        manager = ResilientConnection(connection_factory, connection_test)
+        assert manager.get_connection() is old_conn
+        assert manager.get_connection() is new_conn
+
+        old_conn.close.assert_called_once()
+
+    def test_cu2_33_sync_closes_failed_fresh_connection(self) -> None:
+        """A freshly built connection that fails its own health test must be closed, not orphaned."""
+        from common.db_resilience import ResilientConnection
+
+        bad_conn = Mock()
+        good_conn = Mock()
+        connection_factory = Mock(side_effect=[bad_conn, good_conn])
+        connection_test = Mock(side_effect=[False, True])  # fresh conn fails, retry succeeds
+
+        manager = ResilientConnection(connection_factory, connection_test, max_retries=3)
+        assert manager.get_connection() is good_conn
+
+        bad_conn.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cu2_33_async_closes_old_connection_on_replace(self) -> None:
+        """Async: the old unhealthy connection must be closed before reconnecting."""
+        from common.db_resilience import AsyncResilientConnection
+
+        old_conn = _FakeAsyncConn()
+        new_conn = _FakeAsyncConn()
+        connection_factory = Mock(side_effect=[old_conn, new_conn])
+        connection_test = Mock(side_effect=[True, False, True])
+
+        manager = AsyncResilientConnection(connection_factory, connection_test)
+        assert await manager.get_connection() is old_conn
+        assert await manager.get_connection() is new_conn
+
+        assert old_conn.closed_count == 1
+        assert manager._connection is new_conn
+
+    @pytest.mark.asyncio
+    async def test_cu2_33_async_closes_failed_fresh_connection(self) -> None:
+        """Async: a freshly built connection failing its own health test must be closed."""
+        from common.db_resilience import AsyncResilientConnection
+
+        bad_conn = _FakeAsyncConn()
+        good_conn = _FakeAsyncConn()
+        connection_factory = Mock(side_effect=[bad_conn, good_conn])
+        connection_test = Mock(side_effect=[False, True])
+
+        manager = AsyncResilientConnection(connection_factory, connection_test, max_retries=3)
+        assert await manager.get_connection() is good_conn
+
+        assert bad_conn.closed_count == 1
