@@ -519,6 +519,12 @@ class AsyncPostgreSQLPool:
                     logger.warning("⚠️ Got unhealthy connection from pool, creating new one")
                     with contextlib.suppress(Exception):
                         await conn.close()
+                    # Drop the stale reference before attempting a replacement. If the
+                    # replacement create fails on every retry, `conn` must stay falsy so the
+                    # post-loop `if not conn` guard fires and raises the intended "Failed to
+                    # get PostgreSQL connection" error instead of yielding a CLOSED connection
+                    # (which would also cause active_connections to be decremented twice).
+                    conn = None
                     # Replace unhealthy connection — no net change to active_connections
                     # Keep counter stable to prevent TOCTOU races
                     try:

@@ -2261,3 +2261,55 @@ class TestAsyncHealthCheckQueueEmpty:
         pool.connections.qsize = asyncio.Queue.qsize.__get__(pool.connections)  # type: ignore[attr-defined]
 
         await pool.close()
+
+
+def _make_async_conn(*, healthy: bool = True) -> AsyncMock:
+    """Build a mock async psycopg connection whose health probe returns ``healthy``."""
+    conn = AsyncMock()
+    conn.closed = False
+    conn.set_autocommit = AsyncMock()
+    conn.close = AsyncMock()
+    cursor = AsyncMock()
+    cursor.execute = AsyncMock()
+    cursor.fetchone = AsyncMock(return_value=(1,) if healthy else (0,))
+    cursor.__aenter__ = AsyncMock(return_value=cursor)
+    cursor.__aexit__ = AsyncMock(return_value=None)
+    conn.cursor = Mock(return_value=cursor)
+    return conn
+
+
+class TestPgPoolBatchRegressions:
+    """Regression tests for the batch:pg-pool defect sweep (discogsography-cu2.*)."""
+
+    @pytest.fixture
+    def connection_params(self) -> dict:
+        return {"host": "localhost", "port": 5432, "dbname": "test", "user": "u", "password": "p"}
+
+    @pytest.mark.asyncio
+    async def test_cu2_34_failed_replacement_does_not_yield_closed_conn(self, connection_params: dict) -> None:
+        """discogsography-cu2.34: a failed replacement must raise, not yield a stale CLOSED connection.
+
+        A pooled connection fails its health check and every replacement create fails. The pool must
+        surface 'Failed to get PostgreSQL connection...' rather than yielding the closed connection,
+        and active_connections must be decremented exactly once (no double-decrement below the true count).
+        """
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5, max_retries=3)
+        await pool.initialize()
+        pool.backoff.get_delay = Mock(return_value=0)  # type: ignore[method-assign]
+
+        bad_conn = _make_async_conn(healthy=False)
+        pool.connections.put_nowait(bad_conn)
+        # Simulate 3 live connections: the bad one in the queue plus 2 held elsewhere.
+        pool.active_connections = 3
+
+        pool._create_connection = AsyncMock(side_effect=OperationalError("db down"))  # type: ignore[method-assign]
+
+        with pytest.raises(Exception, match="Failed to get PostgreSQL connection"):
+            async with pool.connection():
+                pytest.fail("connection() must not yield a connection when all replacements fail")
+
+        # The bad connection's slot is released exactly once; the 2 unrelated live slots survive.
+        assert pool.active_connections == 2
+        bad_conn.close.assert_awaited()
+
+        await pool.close()
