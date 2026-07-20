@@ -33,6 +33,9 @@ class BatchConfig:
     backoff_max: float = 30.0  # Maximum backoff delay (seconds)
     backoff_multiplier: float = 2.0  # Exponential backoff multiplier
     max_flush_retries: int = 5  # Max retries per data type during flush_queue drain
+    max_poison_retries: int = (
+        5  # Consecutive non-transient failures before nacking a poison batch to the DLQ
+    )
 
 
 @dataclass
@@ -315,18 +318,62 @@ class Neo4jBatchProcessor:
                 return
 
             except Exception as e:
+                # A generic (non-transient) error is deterministic — a poison
+                # record (e.g. a data-induced Neo4j ClientError) fails every
+                # retry. Count consecutive failures so the local retry loop is
+                # BOUNDED; otherwise the identical batch is re-enqueued and
+                # retried forever, and once its unacked messages fill the
+                # prefetch window RabbitMQ stops delivering and the consumer is
+                # permanently wedged (never acked, never nacked).
+                self._consecutive_failures[data_type] = (
+                    self._consecutive_failures.get(data_type, 0) + 1
+                )
+
+                if (
+                    self._consecutive_failures[data_type]
+                    >= self.config.max_poison_retries
+                ):
+                    # Poison batch: stop re-enqueueing and nack the messages so
+                    # the quorum queue's x-delivery-limit / DLX routes the
+                    # persistent poison to the DLQ. _flush_queue is the single
+                    # ack/nack authority.
+                    logger.error(
+                        "❌ Poison batch — nacking to DLQ after repeated failures",
+                        data_type=data_type,
+                        batch_size=len(messages),
+                        consecutive_failures=self._consecutive_failures[data_type],
+                        error=str(e),
+                    )
+                    for msg in messages:
+                        try:
+                            await msg.nack_callback()
+                        except Exception as nack_err:
+                            logger.warning(
+                                "⚠️ Failed to nack message", error=str(nack_err)
+                            )
+                    # Reset per-data-type state so healthy batches behind the
+                    # poison resume normal processing.
+                    self._consecutive_failures[data_type] = 0
+                    self._backoff_until[data_type] = 0.0
+                    self._effective_batch_size[data_type] = self.config.batch_size
+                    return
+
                 logger.error(
                     "❌ Batch processing error",
                     data_type=data_type,
                     batch_size=len(messages),
+                    consecutive_failures=self._consecutive_failures[data_type],
                     error=str(e),
                 )
-                # Re-enqueue messages for local retry before AMQP nack
+                # Re-enqueue messages for local retry — bounded by the poison
+                # guard above so a deterministic error can no longer loop forever.
                 for msg in reversed(messages):
                     queue.appendleft(msg)
-                # Track failures for non-transient errors too, to enable backoff
-                self._consecutive_failures[data_type] = (
-                    self._consecutive_failures.get(data_type, 0) + 1
+                # Shrink the batch to isolate the poison record and cap DLQ
+                # collateral when the guard eventually fires.
+                self._effective_batch_size[data_type] = max(
+                    self.config.min_batch_size,
+                    self._effective_batch_size[data_type] // 2,
                 )
                 # Apply backoff to prevent tight retry loop on persistent errors
                 delay = min(
