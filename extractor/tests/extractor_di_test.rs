@@ -502,6 +502,76 @@ async fn test_process_discogs_data_resumed_completion_amqp_failure_stays_retryab
     assert_eq!(finalized.summary.overall_status, PhaseStatus::Completed, "a successful retry broadcast must finalize the marker as Completed");
 }
 
+/// Regression for discogsography-cu2.92: after a crash-and-resume, extraction_complete's
+/// record_counts must carry the TRUE per-type totals for types completed in an earlier
+/// session — not 0. The per-run ExtractionProgress is reset each run, so counts must come
+/// from the persisted progress_by_file. This also verifies the /health rehydration: the
+/// resumed run's ExtractionProgress reflects the pre-crash totals rather than 0.
+#[tokio::test]
+async fn test_process_discogs_data_resumed_record_counts_from_persisted_progress() {
+    use std::collections::HashMap;
+    use std::sync::Mutex as StdMutex;
+
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    // Marker from an earlier session: artists + labels completed (real counts), processing
+    // still InProgress (complete_processing was never reached before the crash).
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_processing(2);
+    marker.start_file_processing("discogs_20260101_artists.xml.gz");
+    marker.complete_file_processing("discogs_20260101_artists.xml.gz", 1000);
+    marker.start_file_processing("discogs_20260101_labels.xml.gz");
+    marker.complete_file_processing("discogs_20260101_labels.xml.gz", 2000);
+    assert_eq!(marker.processing_phase.status, PhaseStatus::InProgress);
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
+    mock_dl
+        .expect_download_discogs_data()
+        .times(1)
+        .returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string(), "discogs_20260101_labels.xml.gz".to_string()]));
+    mock_dl.expect_take_state_marker().times(1).returning(move || Some(marker.clone()));
+
+    // Capture the record_counts actually broadcast.
+    let captured: Arc<StdMutex<Option<HashMap<String, u64>>>> = Arc::new(StdMutex::new(None));
+    let captured_clone = captured.clone();
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_send_extraction_complete().times(1).returning(move |_version, _started, counts, _types| {
+        *captured_clone.lock().unwrap() = Some(counts);
+        Ok(())
+    });
+    mock_mq.expect_close().returning(|| Ok(()));
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = extractor::extractor::process_discogs_data(config, state.clone(), shutdown, false, &mut mock_dl, factory, None).await;
+    assert!(result.is_ok() && result.unwrap());
+
+    // The broadcast must report the true pre-crash totals, NOT 0.
+    let counts = captured.lock().unwrap().clone().expect("extraction_complete must have been sent");
+    assert_eq!(counts.get("artists").copied(), Some(1000), "artists count must come from persisted progress, not the reset per-run counter");
+    assert_eq!(counts.get("labels").copied(), Some(2000), "labels count must come from persisted progress, not the reset per-run counter");
+
+    // /health rehydration: the resumed run's ExtractionProgress reflects the pre-crash totals.
+    let s = state.read().await;
+    assert_eq!(s.extraction_progress.artists, 1000, "resume must rehydrate artists progress for /health");
+    assert_eq!(s.extraction_progress.labels, 2000, "resume must rehydrate labels progress for /health");
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // MusicBrainz pipeline tests
 // ──────────────────────────────────────────────────────────────────────────────
