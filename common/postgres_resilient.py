@@ -495,9 +495,13 @@ class AsyncPostgreSQLPool:
                     if created:
                         try:
                             conn = await self._create_connection()
-                        except Exception:
+                        except BaseException:
+                            # BaseException (not just Exception) so asyncio.CancelledError —
+                            # which derives from BaseException in Python 3.13 and can land inside
+                            # AsyncConnection.connect() when the caller task is cancelled — also
+                            # rolls back the reserved slot instead of leaking capacity permanently.
                             async with self._lock:
-                                self.active_connections -= 1
+                                self.active_connections = max(0, self.active_connections - 1)
                             raise
                     else:
                         # Pool exhausted - wait for a connection to be returned
@@ -514,8 +518,21 @@ class AsyncPostgreSQLPool:
                                 )
                             continue
 
-                # Test connection health
-                if conn and not await self._test_connection(conn):
+                # Test connection health. Guard the probe against BaseException
+                # (e.g. asyncio.CancelledError): if the acquiring task is cancelled while
+                # health-checking a checked-out connection, close it and release its slot so
+                # the capacity is not stranded (active_connections leaked) forever.
+                try:
+                    healthy = True if conn is None else await self._test_connection(conn)
+                except BaseException:
+                    if conn is not None:
+                        with contextlib.suppress(Exception):
+                            await conn.close()
+                        async with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
+                        conn = None
+                    raise
+                if conn and not healthy:
                     logger.warning("⚠️ Got unhealthy connection from pool, creating new one")
                     with contextlib.suppress(Exception):
                         await conn.close()
@@ -526,10 +543,12 @@ class AsyncPostgreSQLPool:
                     # (which would also cause active_connections to be decremented twice).
                     conn = None
                     # Replace unhealthy connection — no net change to active_connections
-                    # Keep counter stable to prevent TOCTOU races
+                    # Keep counter stable to prevent TOCTOU races. Catch BaseException so a
+                    # CancelledError landing in the replacement create also releases the slot
+                    # that belonged to the discarded connection instead of leaking it.
                     try:
                         conn = await self._create_connection()
-                    except Exception:
+                    except BaseException:
                         async with self._lock:
                             self.active_connections = max(0, self.active_connections - 1)
                         raise

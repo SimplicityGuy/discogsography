@@ -2313,3 +2313,47 @@ class TestPgPoolBatchRegressions:
         bad_conn.close.assert_awaited()
 
         await pool.close()
+
+    @pytest.mark.asyncio
+    async def test_cu2_21_cancel_during_create_rolls_back_slot(self, connection_params: dict) -> None:
+        """discogsography-cu2.21: cancellation while creating a connection must not leak a slot.
+
+        The empty-pool path reserves a slot (active_connections += 1) before awaiting
+        _create_connection(). In Python 3.13 asyncio.CancelledError derives from BaseException, so an
+        `except Exception` guard would skip the rollback and strand the slot forever. The reservation
+        must be released on cancellation too.
+        """
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5)
+        await pool.initialize()
+        assert pool.active_connections == 0
+
+        pool._create_connection = AsyncMock(side_effect=asyncio.CancelledError())  # type: ignore[method-assign]
+
+        with pytest.raises(asyncio.CancelledError):
+            async with pool.connection():
+                pytest.fail("connection() must not yield when creation is cancelled")
+
+        assert pool.active_connections == 0
+
+        await pool.close()
+
+    @pytest.mark.asyncio
+    async def test_cu2_21_cancel_during_health_test_releases_conn(self, connection_params: dict) -> None:
+        """discogsography-cu2.21: cancellation during the health probe must release the checked-out slot."""
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5)
+        await pool.initialize()
+
+        held = _make_async_conn(healthy=True)
+        pool.connections.put_nowait(held)
+        pool.active_connections = 1
+
+        pool._test_connection = AsyncMock(side_effect=asyncio.CancelledError())  # type: ignore[method-assign]
+
+        with pytest.raises(asyncio.CancelledError):
+            async with pool.connection():
+                pytest.fail("connection() must not yield when the health probe is cancelled")
+
+        assert pool.active_connections == 0
+        held.close.assert_awaited()
+
+        await pool.close()
