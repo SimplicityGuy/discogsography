@@ -175,8 +175,9 @@ class TestOnArtistMessage:
 
         captured: dict[str, Any] = {}
 
-        async def fake_add(data_type: str, record: dict[str, Any], ack_cb: Any, nack_cb: Any) -> bool:
-            captured["nack"] = nack_cb
+        async def fake_add(*args: Any) -> bool:
+            # add_message(data_type, record, ack_callback, nack_callback)
+            captured["nack"] = args[3]
             return True
 
         proc = MagicMock()
@@ -4208,3 +4209,48 @@ class TestCoverageGaps:
 
             # UTC timestamps end with +00:00
             assert result["timestamp"].endswith("+00:00")
+
+
+class TestRecoverConsumersAllTypes:
+    """Regression (cu2.53): _recover_consumers must start consumers for ALL data
+    types, not just those with a backlog at the passive-declare instant."""
+
+    @pytest.mark.asyncio
+    async def test_recovers_all_types_not_just_backlogged(self) -> None:
+        import graphinator.graphinator as g
+
+        g.active_connection = None
+        g.active_channel = None
+        g.consumer_tags = {}
+        g.completed_files = set()
+        g.queues = {}
+        g.last_message_time = dict.fromkeys(["artists", "labels", "masters", "releases"], 0.0)
+
+        def declare_queue(**kwargs: Any) -> Any:
+            if kwargs.get("passive"):
+                q = MagicMock()
+                q.declaration_result.message_count = 100 if kwargs["name"].endswith("-artists") else 0
+                return q
+            q = AsyncMock()
+            q.consume = AsyncMock(return_value=f"tag-{kwargs.get('name')}")
+            q.bind = AsyncMock()
+            return q
+
+        mock_channel = AsyncMock()
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue)
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.set_qos = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_rmq = AsyncMock()
+        mock_rmq.connect = AsyncMock(return_value=mock_connection)
+
+        with patch.object(g, "rabbitmq_manager", mock_rmq), patch.object(g, "logger"):
+            await g._recover_consumers()
+
+        assert set(g.consumer_tags.keys()) == {"artists", "labels", "masters", "releases"}
+
+        g.consumer_tags = {}
+        g.active_connection = None
+        g.active_channel = None
+        g.queues = {}

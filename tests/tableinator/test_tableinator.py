@@ -207,8 +207,8 @@ class TestOnDataMessage:
 
         captured: dict[str, Any] = {}
 
-        async def fake_add(*, data_type: str, data: dict[str, Any], ack_callback: Any, nack_callback: Any) -> bool:
-            captured["nack"] = nack_callback
+        async def fake_add(**kwargs: Any) -> bool:
+            captured["nack"] = kwargs["nack_callback"]
             return True
 
         proc = MagicMock()
@@ -2283,6 +2283,56 @@ class TestRecoverConsumersTableinator:
         # Temp channel and connection should be closed since no messages
         mock_temp_channel.close.assert_called_once()
         mock_temp_connection.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_recovers_all_types_not_just_backlogged(self) -> None:
+        """Regression (cu2.53): recovery must start consumers for ALL data types,
+        not only those with a backlog at the passive-declare instant.
+
+        With a partial backlog (only 'artists' has messages), the old loop over
+        queues_with_messages started a consumer for 'artists' only, then set
+        active_connection — permanently gating off both periodic recovery routes,
+        so labels/masters/releases published later were never consumed.
+        """
+        import tableinator.tableinator as t
+
+        t.active_connection = None
+        t.active_channel = None
+        t.consumer_tags = {}
+        t.completed_files = set()
+        t.queues = {}
+        t.last_message_time = dict.fromkeys(["artists", "labels", "masters", "releases"], 0.0)
+
+        def declare_queue(**kwargs: Any) -> Any:
+            if kwargs.get("passive"):
+                q = MagicMock()
+                # Only 'artists' has a backlog at the check instant.
+                q.declaration_result.message_count = 100 if kwargs["name"].endswith("-artists") else 0
+                return q
+            q = AsyncMock()
+            q.consume = AsyncMock(return_value=f"tag-{kwargs.get('name')}")
+            q.bind = AsyncMock()
+            return q
+
+        mock_channel = AsyncMock()
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue)
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.set_qos = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_rmq = AsyncMock()
+        mock_rmq.connect = AsyncMock(return_value=mock_connection)
+
+        with patch.object(t, "rabbitmq_manager", mock_rmq), patch.object(t, "logger"):
+            await t._recover_consumers()
+
+        assert set(t.consumer_tags.keys()) == {"artists", "labels", "masters", "releases"}
+
+        # Reset shared module state
+        t.consumer_tags = {}
+        t.active_connection = None
+        t.active_channel = None
+        t.queues = {}
 
     @pytest.mark.asyncio
     async def test_exception_during_recovery_closes_temp_connection(self) -> None:

@@ -416,18 +416,27 @@ async def _recover_consumers() -> None:
                 await queue.bind(exchange)
                 queues[data_type] = queue
 
-            # Start consumers for queues with messages
-            for data_type, msg_count in queues_with_messages:
+            # Start consumers for ALL data types lacking one — not just those
+            # with a current backlog. A type whose queue was empty at the
+            # passive-declare instant still needs a consumer; otherwise messages
+            # that arrive later are never consumed, because once active_connection
+            # is set and consumer_tags is non-empty both periodic recovery routes
+            # are permanently gated off, silently starving that data type.
+            pending_counts = dict(queues_with_messages)
+            for data_type in MUSICBRAINZ_DATA_TYPES:
                 if data_type in queues and data_type not in consumer_tags:
                     handler = make_data_handler(data_type)
                     consumer_tag = await queues[data_type].consume(handler)
                     consumer_tags[data_type] = consumer_tag
-                    completed_files.discard(data_type)
+                    # Only un-complete a type that actually has a backlog, so
+                    # genuinely-finished types stay marked complete.
+                    if data_type in pending_counts:
+                        completed_files.discard(data_type)
                     last_message_time[data_type] = time.time()
                     logger.info(
                         f"✅ Started consumer for {data_type}",
                         data_type=data_type,
-                        pending_messages=msg_count,
+                        pending_messages=pending_counts.get(data_type, 0),
                     )
 
             logger.info(

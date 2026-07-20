@@ -2871,3 +2871,50 @@ class TestMainEdgeCases:
         # Should have logged warning about pool close error
         warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
         assert any("pool" in c.lower() or "Pool" in c for c in warning_calls)
+
+
+class TestRecoverConsumersAllTypesBrainztableinator:
+    """Regression (cu2.53): _recover_consumers must start consumers for ALL
+    MusicBrainz data types, not just those with a backlog at the check instant."""
+
+    @pytest.mark.asyncio
+    async def test_recovers_all_types_not_just_backlogged(self) -> None:
+        import brainztableinator.brainztableinator as bt
+
+        expected = {"artists", "labels", "release-groups", "releases"}
+
+        bt.active_connection = None
+        bt.active_channel = None
+        bt.consumer_tags = {}
+        bt.completed_files = set()
+        bt.queues = {}
+        bt.last_message_time = dict.fromkeys(expected, 0.0)
+
+        def declare_queue(**kwargs: Any) -> Any:
+            if kwargs.get("passive"):
+                q = MagicMock()
+                q.declaration_result.message_count = 100 if kwargs["name"].endswith("-artists") else 0
+                return q
+            q = AsyncMock()
+            q.consume = AsyncMock(return_value=f"tag-{kwargs.get('name')}")
+            q.bind = AsyncMock()
+            return q
+
+        mock_channel = AsyncMock()
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue)
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.set_qos = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_rmq = AsyncMock()
+        mock_rmq.connect = AsyncMock(return_value=mock_connection)
+
+        with patch.object(bt, "rabbitmq_manager", mock_rmq), patch.object(bt, "logger"):
+            await bt._recover_consumers()
+
+        assert set(bt.consumer_tags.keys()) == expected
+
+        bt.consumer_tags = {}
+        bt.active_connection = None
+        bt.active_channel = None
+        bt.queues = {}
