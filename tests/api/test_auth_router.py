@@ -722,7 +722,7 @@ class TestTwoFactorRecoveryFull:
         mock_redis: AsyncMock,
     ) -> None:
         """Invalid recovery code should return 401."""
-        _plaintext_codes, hashed_codes = self._make_recovery_setup()
+        _plaintext_codes, _hashed_codes = self._make_recovery_setup()
         challenge_token = _make_challenge_token()
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)

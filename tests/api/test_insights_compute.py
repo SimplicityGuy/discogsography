@@ -267,3 +267,61 @@ class TestAnniversariesValidation:
         response = test_client.get("/api/internal/insights/anniversaries?year=2025&month=3&milestones=25,abc,50")
         assert response.status_code == 422
         assert "milestones" in response.json()["error"].lower()
+
+
+class TestInternalInsightsAuth:
+    """cu2.8: the /api/internal/insights/* router must not be anonymously reachable."""
+
+    _PROTECTED_PATHS = (
+        "/api/internal/insights/artist-centrality",
+        "/api/internal/insights/genre-trends",
+        "/api/internal/insights/label-longevity",
+        "/api/internal/insights/anniversaries?year=2025&month=3",
+        "/api/internal/insights/data-completeness",
+        "/api/internal/insights/rarity-scores",
+        "/api/internal/insights/community-enrichment",
+    )
+
+    @staticmethod
+    def _bare_client() -> TestClient:
+        """A client WITHOUT the default X-Internal-Secret header, sharing app state."""
+        from api.api import app
+
+        return TestClient(app, raise_server_exceptions=False)
+
+    def test_all_endpoints_reject_missing_secret(self, test_client: TestClient) -> None:  # noqa: ARG002
+        """Without the shared secret every endpoint returns 401 — no anonymous access."""
+        bare = self._bare_client()
+        for path in self._PROTECTED_PATHS:
+            response = bare.get(path)
+            assert response.status_code == 401, f"{path} was reachable without the internal secret"
+
+    def test_endpoint_rejects_wrong_secret(self, test_client: TestClient) -> None:  # noqa: ARG002
+        """A wrong shared secret is rejected with 401."""
+        bare = self._bare_client()
+        response = bare.get(
+            "/api/internal/insights/artist-centrality",
+            headers={"X-Internal-Secret": "not-the-secret"},
+        )
+        assert response.status_code == 401
+
+    def test_endpoint_accepts_valid_secret(self, test_client: TestClient) -> None:
+        """The configured secret grants access (test_client sends it by default)."""
+        items = [{"artist_id": "1", "artist_name": "Miles Davis", "edge_count": 500}]
+        with patch("api.routers.insights_compute.query_artist_centrality", new_callable=AsyncMock, return_value=items):
+            response = test_client.get("/api/internal/insights/artist-centrality")
+        assert response.status_code == 200
+        assert response.json() == {"items": items}
+
+    def test_fails_closed_when_secret_not_configured(self, test_client: TestClient) -> None:  # noqa: ARG002
+        """When no secret is configured the router fails closed with 503 (never open)."""
+        import api.routers.insights_compute as mod
+
+        original = mod._config
+        mod._config = None
+        try:
+            bare = self._bare_client()
+            response = bare.get("/api/internal/insights/artist-centrality")
+            assert response.status_code == 503
+        finally:
+            mod._config = original

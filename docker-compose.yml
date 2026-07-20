@@ -259,6 +259,9 @@ services:
       # BREVO_SENDER_NAME: "${BREVO_SENDER_NAME:-Discogsography}"
       # Encryption master key (optional — required for TOTP 2FA, derives OAuth + TOTP keys via HKDF)
       # ENCRYPTION_MASTER_KEY: "${ENCRYPTION_MASTER_KEY:-}"
+      # Shared secret gating the internal /api/internal/insights/* router. MUST match the
+      # insights service. Override with a random value in production.
+      INSIGHTS_INTERNAL_SECRET: "${INSIGHTS_INTERNAL_SECRET:-dev-internal-insights-secret-change-in-production}"
     ports:
       - "8004:8004"      # Auth API
       - "8005:8005"      # Health check
@@ -732,6 +735,9 @@ services:
       PYTHONUNBUFFERED: "1"
       REDIS_HOST: redis
       STARTUP_DELAY: "10"
+      # Shared secret for authenticating to the API's /api/internal/insights/* router.
+      # MUST match the api service's value.
+      INSIGHTS_INTERNAL_SECRET: "${INSIGHTS_INTERNAL_SECRET:-dev-internal-insights-secret-change-in-production}"
       # INSIGHTS_MILESTONE_YEARS: "25,30,40,50,75,100"
     depends_on:
       api:

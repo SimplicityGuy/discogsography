@@ -6,9 +6,10 @@ service can fetch data over HTTP instead of importing query modules directly.
 
 import asyncio
 import json
-from typing import Any
+import secrets
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 import httpx
 from neo4j.exceptions import TransientError
@@ -30,12 +31,43 @@ from api.syncer import DISCOGS_API_BASE, MAX_RATE_LIMIT_RETRIES, _auth_header
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/api/internal/insights", tags=["insights-compute"])
-
 _neo4j: Any = None
 _pool: Any = None
 _redis: Any = None
 _config: Any = None
+
+
+async def require_internal_secret(
+    x_internal_secret: Annotated[str | None, Header()] = None,
+) -> None:
+    """Gate the internal insights router with a shared secret.
+
+    These endpoints are mounted on the public app and reachable through the
+    explore ``/api/{path:path}`` proxy, so the ``/api/internal`` prefix alone
+    provides no isolation. The insights service presents the configured secret
+    as the ``X-Internal-Secret`` header; any other caller is rejected.
+
+    Fails closed: if no secret is configured the router is unreachable rather
+    than anonymously open.
+    """
+    configured = getattr(_config, "insights_internal_secret", None) if _config is not None else None
+    if not configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Internal insights API is not configured",
+        )
+    if not x_internal_secret or not secrets.compare_digest(x_internal_secret, configured):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing internal API credentials",
+        )
+
+
+router = APIRouter(
+    prefix="/api/internal/insights",
+    tags=["insights-compute"],
+    dependencies=[Depends(require_internal_secret)],
+)
 
 _ENRICHMENT_DELAY_SECONDS = 1.0  # 1 req/sec to stay under 60 req/min
 _STALENESS_DAYS = 7

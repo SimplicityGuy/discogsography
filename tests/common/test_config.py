@@ -560,6 +560,28 @@ class TestApiConfig:
 
         assert config.discogs_oauth_callback_url is None
 
+    def test_insights_internal_secret_defaults_to_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cu2.8: without INSIGHTS_INTERNAL_SECRET the field is None (router fails closed)."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.delenv("INSIGHTS_INTERNAL_SECRET", raising=False)
+
+        config = ApiConfig.from_env()
+
+        assert config.insights_internal_secret is None
+
+    def test_insights_internal_secret_read_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cu2.8: INSIGHTS_INTERNAL_SECRET is read into ApiConfig for the internal-router gate."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("INSIGHTS_INTERNAL_SECRET", "shared-internal-secret")
+
+        config = ApiConfig.from_env()
+
+        assert config.insights_internal_secret == "shared-internal-secret"
+
     def test_discogs_oauth_callback_url_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """DISCOGS_OAUTH_CALLBACK_URL is read into the config."""
         from common.config import ApiConfig
@@ -1100,6 +1122,26 @@ class TestInsightsConfig:
 
         config = InsightsConfig.from_env()
         assert config.api_base_url == "http://api:8004"
+
+    def test_internal_secret_read_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cu2.8: INSIGHTS_INTERNAL_SECRET is read so the service can authenticate to the API."""
+        _set_insights_env(monkeypatch)
+        monkeypatch.setenv("INSIGHTS_INTERNAL_SECRET", "shared-internal-secret")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.internal_secret == "shared-internal-secret"
+
+    def test_internal_secret_defaults_to_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """cu2.8: without the env var the field is None (calls will be rejected, flow made explicit)."""
+        _set_insights_env(monkeypatch)
+        monkeypatch.delenv("INSIGHTS_INTERNAL_SECRET", raising=False)
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.internal_secret is None
 
     def test_default_milestone_years(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _set_insights_env(monkeypatch)
