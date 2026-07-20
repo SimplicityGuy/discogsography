@@ -188,6 +188,39 @@ class TestOnDataMessage:
         # Should nack without requeue for bad messages
         mock_message.nack.assert_called_once_with(requeue=False)
 
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_batch_mode_nack_callback_uses_requeue_false(self) -> None:
+        """Regression (cu2.52): the batch-mode add_message nack callback must use
+        requeue=False.
+
+        add_message invokes nack_callback only for permanently-invalid input
+        (unknown data_type, missing 'id', normalize failure). requeue=True sent
+        such a poison record around x-delivery-limit (20) futile redeliveries
+        before the DLQ; requeue=False routes it to the DLQ in one hop, matching
+        the non-batch validation path and the mirrored graphinator fix.
+        """
+        import tableinator.tableinator as t
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"id": "1", "sha256": "h"}).encode()
+
+        captured: dict[str, Any] = {}
+
+        async def fake_add(*, data_type: str, data: dict[str, Any], ack_callback: Any, nack_callback: Any) -> bool:
+            captured["nack"] = nack_callback
+            return True
+
+        proc = MagicMock()
+        proc.add_message = AsyncMock(side_effect=fake_add)
+
+        with patch.object(t, "BATCH_MODE", True), patch.object(t, "batch_processor", proc):
+            await on_data_message(mock_message, "artists")
+
+        # Simulate add_message rejecting a permanently-invalid message.
+        await captured["nack"]()
+        mock_message.nack.assert_called_once_with(requeue=False)
+
 
 def _make_purge_connection(total_count: int, stale_count: int) -> tuple[MagicMock, AsyncMock]:
     """Build a mock connection wired for purge_stale_rows.

@@ -163,6 +163,34 @@ class TestOnArtistMessage:
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_batch_mode_nack_callback_uses_requeue_false(self) -> None:
+        """Regression (cu2.52): the batch-mode add_message nack callback must use
+        requeue=False so permanently-invalid input goes straight to the DLQ
+        instead of cycling x-delivery-limit (20) futile redeliveries.
+        """
+        import graphinator.graphinator as g
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"id": "1", "sha256": "h", "name": "x"}).encode()
+
+        captured: dict[str, Any] = {}
+
+        async def fake_add(data_type: str, record: dict[str, Any], ack_cb: Any, nack_cb: Any) -> bool:
+            captured["nack"] = nack_cb
+            return True
+
+        proc = MagicMock()
+        proc.add_message = AsyncMock(side_effect=fake_add)
+
+        with patch.object(g, "BATCH_MODE", True), patch.object(g, "batch_processor", proc):
+            await on_artist_message(mock_message)
+
+        # Simulate add_message rejecting a permanently-invalid message.
+        await captured["nack"]()
+        mock_message.nack.assert_called_once_with(requeue=False)
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
     async def test_handle_processing_error(self, sample_artist_data: dict[str, Any]) -> None:
         """Test error handling during processing."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)

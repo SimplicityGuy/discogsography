@@ -1106,7 +1106,13 @@ def make_message_handler(
                     data_type,
                     record,
                     message.ack,
-                    lambda: message.nack(requeue=True),
+                    # requeue=False: this callback nacks permanently-invalid
+                    # input (unknown data_type, missing 'id', normalize failure,
+                    # poison batch) — send it straight to the DLQ instead of
+                    # cycling x-delivery-limit (20) futile redeliveries. Transient
+                    # failures are handled by _flush_queue's re-enqueue+backoff,
+                    # which never nacks.
+                    lambda: message.nack(requeue=False),
                 )
                 if accepted:
                     # Note: message_counts tracks received (not processed) messages in

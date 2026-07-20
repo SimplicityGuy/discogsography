@@ -691,7 +691,13 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                 data_type=data_type,
                 data=data,
                 ack_callback=message.ack,
-                nack_callback=lambda: message.nack(requeue=True),
+                # requeue=False: this callback nacks permanently-invalid input
+                # (unknown data_type, missing 'id', normalize failure, poison
+                # batch) — send it straight to the DLQ instead of cycling
+                # x-delivery-limit (20) futile redeliveries. Matches the
+                # non-batch validation path above. Transient failures are handled
+                # by _flush_queue's re-enqueue+backoff, which never nacks.
+                nack_callback=lambda: message.nack(requeue=False),
             )
 
             # Only update progress tracking when message was actually accepted
