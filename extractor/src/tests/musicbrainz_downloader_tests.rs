@@ -1048,3 +1048,106 @@ async fn test_download_latest_sha256sums_non_success_returns_error() {
     let msg = format!("{:#}", err);
     assert!(msg.contains("404") || msg.contains("MusicBrainz SHA256SUMS returned"), "unexpected error: {}", msg);
 }
+
+// ── cu2.15: atomic tmp+rename so a crash never leaves a truncated final file ──────
+
+/// A crash mid-extraction leaves a `{entity}.jsonl.xz.tmp`, NOT a truncated
+/// `{entity}.jsonl.xz`. is_version_complete keys on the final name only, so the
+/// partial `.tmp` is correctly treated as incomplete and the version is re-downloaded
+/// instead of being trusted forever. Regression for discogsography-cu2.15.
+#[test]
+fn test_is_version_complete_ignores_partial_tmp_file() {
+    let dir = TempDir::new().unwrap();
+    let version_dir = dir.path().join("20260322-001001");
+    std::fs::create_dir(&version_dir).unwrap();
+    // Three entities completed (final files), release crashed mid-write (only a .tmp).
+    std::fs::write(version_dir.join("artist.jsonl.xz"), b"data").unwrap();
+    std::fs::write(version_dir.join("label.jsonl.xz"), b"data").unwrap();
+    std::fs::write(version_dir.join("release-group.jsonl.xz"), b"data").unwrap();
+    std::fs::write(version_dir.join("release.jsonl.xz.tmp"), b"truncated-partial").unwrap();
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), "http://unused".to_string());
+    // The partial `.tmp` must NOT satisfy completeness — otherwise the truncated dump
+    // would be accepted as AlreadyCurrent and never re-downloaded.
+    assert!(!downloader.is_version_complete(&version_dir));
+
+    // Once the release extraction finishes and atomically renames into place, it's complete.
+    std::fs::rename(version_dir.join("release.jsonl.xz.tmp"), version_dir.join("release.jsonl.xz")).unwrap();
+    assert!(downloader.is_version_complete(&version_dir));
+}
+
+/// A failed extraction must leave NEITHER a final file NOR a leftover `.tmp` at the
+/// destination — so is_version_complete cannot later be fooled by a partial artifact.
+#[test]
+fn test_extract_entity_from_tarball_failure_leaves_no_final_or_tmp() {
+    let dir = TempDir::new().unwrap();
+    let tar_path = dir.path().join("artist.tar.xz");
+    let out_path = dir.path().join("artist.jsonl.xz");
+    let tmp_path = dir.path().join("artist.jsonl.xz.tmp");
+
+    // Tarball without the requested entity → extraction fails after (possibly) creating tmp.
+    let mut tar_data = Vec::new();
+    {
+        let mut builder = tar::Builder::new(&mut tar_data);
+        let content = b"readme only";
+        let mut header = tar::Header::new_gnu();
+        header.set_path("artist/README").unwrap();
+        header.set_size(content.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder.append(&header, &content[..]).unwrap();
+        builder.finish().unwrap();
+    }
+    let mut xz_file = std::fs::File::create(&tar_path).unwrap();
+    let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
+    encoder.write_all(&tar_data).unwrap();
+    let compressed = encoder.finish().unwrap();
+    xz_file.write_all(&compressed).unwrap();
+    drop(xz_file);
+
+    let result = extract_entity_from_tarball(&tar_path, "artist", &out_path);
+    assert!(result.is_err());
+    // Neither the final nor the staging file may survive a failed extraction.
+    assert!(!out_path.exists(), "final path must not exist after a failed extraction");
+    assert!(!tmp_path.exists(), "staging .tmp must be cleaned up after a failed extraction");
+}
+
+/// A successful extraction publishes the final file and leaves no `.tmp` behind.
+#[test]
+fn test_extract_entity_from_tarball_success_leaves_no_tmp() {
+    let dir = TempDir::new().unwrap();
+    let tar_path = dir.path().join("label.tar.xz");
+    let out_path = dir.path().join("label.jsonl.xz");
+    let tmp_path = dir.path().join("label.jsonl.xz.tmp");
+
+    let original_content = "{\"id\":\"abc-123\",\"name\":\"Test Label\"}\n";
+    let mut tar_data = Vec::new();
+    {
+        let mut builder = tar::Builder::new(&mut tar_data);
+        let content = original_content.as_bytes();
+        let mut header = tar::Header::new_gnu();
+        header.set_path("label/mbdump/label").unwrap();
+        header.set_size(content.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder.append(&header, content).unwrap();
+        builder.finish().unwrap();
+    }
+    let mut xz_file = std::fs::File::create(&tar_path).unwrap();
+    let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
+    encoder.write_all(&tar_data).unwrap();
+    let compressed = encoder.finish().unwrap();
+    xz_file.write_all(&compressed).unwrap();
+    drop(xz_file);
+
+    extract_entity_from_tarball(&tar_path, "label", &out_path).unwrap();
+    assert!(out_path.exists(), "final file must exist after success");
+    assert!(!tmp_path.exists(), "staging .tmp must be renamed away on success");
+
+    // Round-trip integrity of the atomically-published file.
+    let file = std::fs::File::open(&out_path).unwrap();
+    let mut decoder = xz2::read::XzDecoder::new(file);
+    let mut decompressed = String::new();
+    decoder.read_to_string(&mut decompressed).unwrap();
+    assert_eq!(decompressed, original_content);
+}
