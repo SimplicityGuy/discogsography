@@ -136,8 +136,10 @@ async def _get_current_user(
         )
     try:
         payload = decode_token(credentials.credentials, _config.jwt_secret_key)
-        # Reject admin tokens — they must not be used as regular user tokens
-        if payload.get("type") == "admin":
+        # Allowlist: only pure access tokens (which carry NO `type` claim) may
+        # authenticate. Admin tokens and 2FA challenge tokens (type="2fa_challenge")
+        # must never be accepted here — a challenge token proves only the password.
+        if payload.get("type") is not None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token",

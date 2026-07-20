@@ -39,6 +39,10 @@ async def get_optional_user(
         payload = decode_token(credentials.credentials, _jwt_secret)
     except ValueError:
         return None
+    # Allowlist: only pure access tokens (no `type` claim) resolve to a user.
+    # Admin and 2FA challenge tokens must not be treated as an authenticated user.
+    if payload.get("type") is not None:
+        return None
     # Check JTI revocation
     jti: str | None = payload.get("jti")
     if jti and _redis:
@@ -72,6 +76,11 @@ async def require_user(
     # Reject admin tokens on user endpoints
     if payload.get("type") == "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin tokens cannot be used for user endpoints")
+    # Allowlist: only pure access tokens (which carry NO `type` claim) may
+    # authenticate user endpoints. A 2FA challenge token (type="2fa_challenge")
+    # proves only the password — it must NOT grant access before TOTP is verified.
+    if payload.get("type") is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"})
     # Validate sub claim presence
     user_id: str | None = payload.get("sub")
     if user_id is None:

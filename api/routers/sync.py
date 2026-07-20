@@ -76,7 +76,10 @@ async def _get_current_user(
                         detail="Token has been revoked",
                         headers={"WWW-Authenticate": "Bearer"},
                     )
-        if payload.get("type") == "admin":
+        # Allowlist: only pure access tokens (which carry NO `type` claim) may
+        # authenticate. Admin tokens and 2FA challenge tokens (type="2fa_challenge")
+        # are rejected — a challenge token proves only the password, not the second factor.
+        if payload.get("type") is not None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
         return payload
     except ValueError as exc:

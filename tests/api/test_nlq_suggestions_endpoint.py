@@ -163,3 +163,51 @@ async def test_extract_user_id_returns_none_when_jwt_secret_is_none() -> None:
     call_args = mock_engine.run.call_args
     ctx = call_args[0][1]
     assert ctx.user_id is None
+
+
+def _sign_jwt(claims: dict, secret: str) -> str:
+    """Build a signed HS256 JWT for _extract_user_id tests."""
+    import base64
+    import hashlib
+    import hmac
+    import json
+
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    body = b64url(json.dumps(claims, separators=(",", ":")).encode())
+    signing_input = f"{header}.{body}".encode("ascii")
+    sig = b64url(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
+    return f"{header}.{body}.{sig}"
+
+
+def _fake_request(token: str) -> object:
+    """Minimal object exposing the .headers.get() interface _extract_user_id uses."""
+
+    class _Headers:
+        def __init__(self, auth: str) -> None:
+            self._auth = auth
+
+        def get(self, key: str, default: str = "") -> str:
+            return self._auth if key.lower() == "authorization" else default
+
+    class _Req:
+        def __init__(self, auth: str) -> None:
+            self.headers = _Headers(auth)
+
+    return _Req(f"Bearer {token}")
+
+
+def test_extract_user_id_rejects_challenge_token() -> None:
+    """Regression discogsography-cu2.1 — _extract_user_id must not resolve a 2FA challenge token to a user."""
+    from api.routers import nlq as nlq_router
+
+    secret = "test-nlq-secret"
+    nlq_router.configure(nlq_router.NLQConfig(), engine=None, redis=None, jwt_secret=secret)
+
+    challenge = _sign_jwt({"sub": "user-1", "email": "x@y.com", "exp": 9_999_999_999, "type": "2fa_challenge"}, secret)
+    assert nlq_router._extract_user_id(_fake_request(challenge)) is None  # type: ignore[arg-type]
+
+    access = _sign_jwt({"sub": "user-1", "email": "x@y.com", "exp": 9_999_999_999}, secret)
+    assert nlq_router._extract_user_id(_fake_request(access)) == "user-1"  # type: ignore[arg-type]
