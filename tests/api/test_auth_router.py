@@ -722,12 +722,14 @@ class TestTwoFactorRecoveryFull:
         mock_redis: AsyncMock,
     ) -> None:
         """Invalid recovery code should return 401."""
-        _plaintext_codes, hashed_codes = self._make_recovery_setup()
+        _plaintext_codes, _hashed_codes = self._make_recovery_setup()
         challenge_token = _make_challenge_token()
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
-        mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps(hashed_codes)})
+        # The atomic UPDATE ... WHERE totp_recovery_codes ? %s matches no row for
+        # an unknown code, so RETURNING yields nothing (fetchone -> None).
+        mock_cur.fetchone = AsyncMock(return_value=None)
 
         response = test_client.post(
             "/api/auth/2fa/recovery",
@@ -735,6 +737,8 @@ class TestTwoFactorRecoveryFull:
         )
         assert response.status_code == 401
         assert "Invalid recovery code" in response.json()["detail"]
+        # A rejected code must NOT burn the challenge — getdel is only called on success.
+        mock_redis.getdel.assert_not_called()
 
     def test_recovery_last_code_includes_warning(
         self,
@@ -752,7 +756,9 @@ class TestTwoFactorRecoveryFull:
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.delete = AsyncMock()
-        mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps(last_hashed)})
+        # After the atomic UPDATE removes the last code, RETURNING yields an empty array.
+        _ = last_hashed
+        mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps([])})
 
         response = test_client.post(
             "/api/auth/2fa/recovery",
@@ -775,7 +781,8 @@ class TestTwoFactorRecoveryFull:
 
         mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
-        mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": None})
+        # No stored codes -> the guarded UPDATE matches no row -> RETURNING None.
+        mock_cur.fetchone = AsyncMock(return_value=None)
 
         response = test_client.post(
             "/api/auth/2fa/recovery",
@@ -1072,31 +1079,38 @@ class TestTwoFactorVerifyEdgeCases:
         mock_redis: AsyncMock,
         mock_cur: AsyncMock,
     ) -> None:
-        """If challenge exists on get but is consumed by another request before getdel, return 401."""
-        import json
+        """A CORRECT code whose challenge is consumed by a concurrent request before getdel returns 401.
 
-        token = create_challenge_token(TEST_USER_ID, TEST_USER_EMAIL, TEST_JWT_SECRET)
+        The challenge is now consumed only after a successful verification
+        (verify-then-consume), so this race is only reachable on the success path.
+        """
+        secret, encrypted_secret = _make_encrypted_totp_secret()
+        token = _make_challenge_token()
 
-        async def redis_get(redis_key: str) -> str | None:
-            if "2fa_challenge:" in redis_key:
-                return json.dumps({"user_id": TEST_USER_ID})
-            return None
-
-        mock_redis.get = AsyncMock(side_effect=redis_get)
-        # getdel returns None — another request consumed the challenge between get and getdel
+        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        # getdel returns None — another request consumed the challenge between the
+        # existence check and this success-path consume.
         mock_redis.getdel = AsyncMock(return_value=None)
         mock_cur.fetchone = AsyncMock(
             return_value={
-                "totp_secret": "encrypted_secret",
+                "totp_secret": encrypted_secret,
                 "totp_failed_attempts": 0,
                 "totp_locked_until": None,
             }
         )
 
-        response = test_client.post(
-            "/api/auth/2fa/verify",
-            json={"challenge_token": token, "code": "123456"},
-        )
+        valid_code = pyotp.TOTP(secret).now()
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/verify",
+                json={"challenge_token": token, "code": valid_code},
+            )
+        finally:
+            auth_router._config = original_config
+
         assert response.status_code == 401
         assert "expired" in response.json()["detail"].lower() or "used" in response.json()["detail"].lower()
 
@@ -1121,6 +1135,177 @@ class TestTwoFactorRecoveryEdgeCases:
             },
         )
         assert response.status_code == 401
+
+
+class TestTwoFactorStateMachineRegressions:
+    """Regression tests for the 2FA state-machine bug-hunt fixes (cu2.24/25/58/59/60/96)."""
+
+    @staticmethod
+    def _executed_sql(mock_cur: AsyncMock) -> list[str]:
+        return [str(call) for call in mock_cur.execute.call_args_list]
+
+    def test_setup_refuses_when_already_enabled(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """cu2.24: setup must refuse to overwrite a live secret while 2FA is enabled."""
+        mock_redis.get = AsyncMock(return_value=None)
+        # SELECT totp_enabled -> TRUE; the guarded UPDATE also matches no row (rowcount 0).
+        mock_cur.fetchone = AsyncMock(return_value={"totp_enabled": True})
+        mock_cur.rowcount = 0
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post("/api/auth/2fa/setup", headers=auth_headers)
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 400
+        assert "already enabled" in response.json()["detail"].lower()
+        # The live secret/recovery-code columns must NOT have been overwritten.
+        assert not any("SET totp_secret" in sql for sql in self._executed_sql(mock_cur))
+
+    def test_setup_update_is_guarded_by_totp_enabled(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """cu2.24: the setup UPDATE carries a `totp_enabled IS NOT TRUE` guard against races."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
+        mock_cur.rowcount = 1
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post("/api/auth/2fa/setup", headers=auth_headers)
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 200
+        update_sqls = [sql for sql in self._executed_sql(mock_cur) if "SET totp_secret" in sql]
+        assert update_sqls, "expected an UPDATE that writes totp_secret"
+        assert all("totp_enabled IS NOT TRUE" in sql for sql in update_sqls)
+
+    def test_verify_wrong_code_preserves_challenge(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """cu2.59: a wrong TOTP code must NOT consume the challenge (verify-then-consume)."""
+        _secret, encrypted_secret = _make_encrypted_totp_secret()
+        challenge_token = _make_challenge_token()
+
+        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
+        mock_cur.fetchone = AsyncMock(return_value={"totp_secret": encrypted_secret, "totp_failed_attempts": 0, "totp_locked_until": None})
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/verify",
+                json={"challenge_token": challenge_token, "code": "000000"},
+            )
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 401
+        # The challenge must survive so the user can retry with the same token.
+        mock_redis.getdel.assert_not_called()
+
+    def test_verify_failure_increments_counter_atomically(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """cu2.25: the failure counter is incremented in SQL with RETURNING, not read-then-blind-write."""
+        _secret, encrypted_secret = _make_encrypted_totp_secret()
+        challenge_token = _make_challenge_token()
+
+        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
+        mock_cur.fetchone = AsyncMock(return_value={"totp_secret": encrypted_secret, "totp_failed_attempts": 0, "totp_locked_until": None})
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/verify",
+                json={"challenge_token": challenge_token, "code": "000000"},
+            )
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 401
+        executed = " ".join(self._executed_sql(mock_cur))
+        assert "COALESCE(totp_failed_attempts, 0) + 1" in executed
+        assert "RETURNING totp_failed_attempts" in executed
+
+    def test_verify_failure_resets_counter_after_lock_expiry(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """cu2.96: a wrong code after an expired lock window starts the counter fresh, not at 5+1."""
+        _secret, encrypted_secret = _make_encrypted_totp_secret()
+        challenge_token = _make_challenge_token()
+
+        past = datetime.now(UTC) - timedelta(minutes=1)
+        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
+        mock_cur.fetchone = AsyncMock(return_value={"totp_secret": encrypted_secret, "totp_failed_attempts": 5, "totp_locked_until": past})
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/verify",
+                json={"challenge_token": challenge_token, "code": "000000"},
+            )
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 401
+        executed = " ".join(self._executed_sql(mock_cur))
+        # The reset CASE keys off an elapsed lock window.
+        assert "totp_locked_until <= NOW()" in executed
+
+    def test_recovery_consumes_code_atomically(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """cu2.58/cu2.60: recovery-code consumption is a single guarded atomic UPDATE."""
+        plaintext_codes, _hashed_codes = generate_recovery_codes()
+        challenge_token = _make_challenge_token()
+
+        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
+        # RETURNING yields the array after the used code was removed atomically.
+        mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps([])})
+
+        response = test_client.post(
+            "/api/auth/2fa/recovery",
+            json={"challenge_token": challenge_token, "code": plaintext_codes[0]},
+        )
+
+        assert response.status_code == 200
+        executed = " ".join(self._executed_sql(mock_cur))
+        # Set-based removal guarded by membership, in one statement with RETURNING.
+        assert "totp_recovery_codes - %s" in executed
+        assert "totp_recovery_codes ? %s" in executed
+        assert "RETURNING totp_recovery_codes" in executed
 
 
 class TestChangePassword:
