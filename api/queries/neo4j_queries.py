@@ -90,7 +90,7 @@ async def find_shortest_path(
     MATCH {a_match}, {b_match}
     MATCH p = shortestPath((a)-[:{_PATH_REL_TYPES}*..{depth}]-(b))
     RETURN [node IN nodes(p) | {{
-               id: node.id,
+               id: coalesce(node.id, node.name),
                name: coalesce(node.name, node.title, ''),
                labels: labels(node)
            }}] AS nodes,

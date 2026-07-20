@@ -430,7 +430,7 @@ async def get_explore_traversal(
          [r IN relationships(path) | type(r)] AS rel_types,
          length(path) AS dist
     ORDER BY dist
-    RETURN discovered.id AS id,
+    RETURN coalesce(discovered.id, discovered.name) AS id,
            coalesce(discovered.name, discovered.id) AS name,
            CASE
              WHEN discovered:Artist THEN 'artist'
@@ -483,7 +483,10 @@ def score_discoveries(
 
         scored.append(
             {
-                "id": d.get("id", d.get("name", "")),
+                # d.get("id", default) does NOT help when the "id" key is present
+                # with value None (e.g. name-keyed Genre/Style nodes) — dict.get's
+                # default only applies to a MISSING key. Use `or` to fall back.
+                "id": d.get("id") or d.get("name", ""),
                 "name": d["name"],
                 "type": node_type,
                 "score": round(base_score, 4),

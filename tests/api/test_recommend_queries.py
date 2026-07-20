@@ -729,6 +729,19 @@ class TestGetExploreTraversal:
         assert "*1..2" in cypher
 
     @pytest.mark.asyncio
+    async def test_id_coalesces_to_name_for_genre_style_nodes(self) -> None:
+        """Genre/Style nodes have no id property; Cypher must coalesce to name
+        so name-keyed discoveries never come back with id=None (discogsography-cu2.5).
+        """
+        from api.queries.recommend_queries import get_explore_traversal
+
+        driver = _make_driver(records=[])
+        await get_explore_traversal(driver, "artist", "a1", hops=2)
+        call_args = driver.session.return_value.__aenter__.return_value.run.call_args
+        cypher = call_args[0][0]
+        assert "coalesce(discovered.id, discovered.name) AS id" in cypher
+
+    @pytest.mark.asyncio
     async def test_get_explore_traversal_rejects_invalid_entity_type(self) -> None:
         """Invalid entity_type returns [] without making any Neo4j call."""
         from api.queries.recommend_queries import get_explore_traversal
@@ -792,3 +805,25 @@ class TestScoreDiscoveries:
         discoveries = [{"id": "g1", "name": "Unknown", "type": "genre", "path_names": [], "rel_types": [], "dist": 1}]
         result = score_discoveries(discoveries, {"Rock": 0.8}, set(), limit=10)
         assert result[0]["score"] == 0.0
+
+    def test_genre_with_none_id_falls_back_to_name(self) -> None:
+        """Genre/Style nodes are name-keyed in Neo4j and come back with id=None.
+
+        dict.get("id", default) only falls back when the key is MISSING, not
+        when it is present with value None — so score_discoveries must use
+        `d.get("id") or d.get("name", "")` to avoid emitting id=None, which
+        fails DiscoveryNode(id: str) validation downstream (discogsography-cu2.5).
+        """
+        from api.queries.recommend_queries import score_discoveries
+
+        discoveries = [{"id": None, "name": "Jazz", "type": "genre", "path_names": ["Start", "Jazz"], "rel_types": ["IS"], "dist": 1}]
+        result = score_discoveries(discoveries, {}, {"Jazz"}, limit=10)
+        assert result[0]["id"] == "Jazz"
+        assert result[0]["id"] is not None
+
+    def test_style_with_none_id_falls_back_to_name(self) -> None:
+        from api.queries.recommend_queries import score_discoveries
+
+        discoveries = [{"id": None, "name": "Bossa Nova", "type": "style", "path_names": ["Start", "Bossa Nova"], "rel_types": ["IS"], "dist": 1}]
+        result = score_discoveries(discoveries, {}, {"Bossa Nova"}, limit=10)
+        assert result[0]["id"] == "Bossa Nova"
