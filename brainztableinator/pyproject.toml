@@ -17,7 +17,7 @@ classifiers = [
 ]
 license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
-    "aio-pika>=9.6.2",
+    "aio-pika>=10.0.1",
     "orjson>=3.11.9",
     "psycopg[binary]>=3.3.4",
     "structlog>=26.1.0",

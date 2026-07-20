@@ -18,13 +18,13 @@ classifiers = [
 ]
 license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
-    "fastapi>=0.138.0",
+    "fastapi>=0.139.0",
     "httpx>=0.28.1",
     "orjson>=3.11.9",
     "pydantic>=2.13.4",
     "python-multipart>=0.0.32",
     "structlog>=26.1.0",
-    "uvicorn[standard]>=0.49.0",
+    "uvicorn[standard]>=0.51.0",
 ]
 
 [project.scripts]
