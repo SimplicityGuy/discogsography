@@ -134,6 +134,18 @@ impl Downloader {
                     Ok(downloaded_size) => {
                         info!("✅ Successfully downloaded: {}", filename);
 
+                        // Persist metadata immediately so a later file's failure can't
+                        // discard this file's checksum. download_file only records the
+                        // checksum in the in-memory metadata map; without this incremental
+                        // save the durable .discogs_metadata.json is written once, after
+                        // the whole loop — so a failure on file N loses the checksums of
+                        // files 1..N-1, forcing full multi-GB re-downloads on restart
+                        // (discogsography-cu2.65). Best-effort: a save failure only costs a
+                        // re-download next run, so warn and continue rather than abort.
+                        if let Err(e) = self.save_metadata() {
+                            warn!("⚠️ Failed to persist metadata after downloading {}: {}", filename, e);
+                        }
+
                         // Track file download in state marker with actual downloaded size
                         if let Some(ref mut marker) = self.state_marker {
                             marker.file_downloaded(filename, downloaded_size);
