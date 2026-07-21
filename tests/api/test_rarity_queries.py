@@ -758,3 +758,69 @@ class TestFetchAllRaritySignals:
 
         assert len(results) == 1
         assert results[0]["collection_prevalence"] == 50.0
+
+
+class TestRarityPaginationTiebreaker:
+    """discogsography-cu2.55: rarity_score / hidden_gem_score are heavily
+    quantized (round(..., 1)), so OFFSET pagination without a unique tiebreaker
+    duplicates and skips rows across pages. Every paginated ORDER BY must append
+    the unique release_id column.
+    """
+
+    @staticmethod
+    def _pool_with_capture() -> tuple[MagicMock, AsyncMock]:
+        mock_cur = AsyncMock()
+        mock_cur.fetchall = AsyncMock(return_value=[])
+        mock_cur.fetchone = AsyncMock(return_value={"total": 0})
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+        return mock_pool, mock_cur
+
+    @staticmethod
+    def _first_order_by_sql(mock_cur: AsyncMock) -> str:
+        """The SQL of the first (paginated) execute — the count query is second."""
+        return str(mock_cur.execute.call_args_list[0].args[0])
+
+    @pytest.mark.asyncio
+    async def test_leaderboard_no_tier_has_tiebreaker(self) -> None:
+        mock_pool, mock_cur = self._pool_with_capture()
+        await get_rarity_leaderboard(mock_pool, page=1, page_size=20)
+        assert "ORDER BY rarity_score DESC, release_id" in self._first_order_by_sql(mock_cur)
+
+    @pytest.mark.asyncio
+    async def test_leaderboard_with_tier_has_tiebreaker(self) -> None:
+        mock_pool, mock_cur = self._pool_with_capture()
+        await get_rarity_leaderboard(mock_pool, page=1, page_size=20, tier="ultra-rare")
+        assert "ORDER BY rarity_score DESC, release_id" in self._first_order_by_sql(mock_cur)
+
+    @pytest.mark.asyncio
+    async def test_hidden_gems_has_tiebreaker(self) -> None:
+        mock_pool, mock_cur = self._pool_with_capture()
+        await get_rarity_hidden_gems(mock_pool, page=1, page_size=20, min_rarity=41.0)
+        assert "ORDER BY hidden_gem_score DESC, release_id" in self._first_order_by_sql(mock_cur)
+
+    @pytest.mark.asyncio
+    async def test_by_artist_has_tiebreaker(self) -> None:
+        mock_pool, mock_cur = self._pool_with_capture()
+        with patch(
+            "api.queries.rarity_queries.run_query",
+            new=AsyncMock(side_effect=[[{"id": "123", "name": "Artist"}], [{"release_id": "1"}]]),
+        ):
+            await get_rarity_by_artist(MagicMock(), mock_pool, "123")
+        assert "ORDER BY rarity_score DESC, release_id" in self._first_order_by_sql(mock_cur)
+
+    @pytest.mark.asyncio
+    async def test_by_label_has_tiebreaker(self) -> None:
+        mock_pool, mock_cur = self._pool_with_capture()
+        with patch(
+            "api.queries.rarity_queries.run_query",
+            new=AsyncMock(side_effect=[[{"id": "456", "name": "Label"}], [{"release_id": "1"}]]),
+        ):
+            await get_rarity_by_label(MagicMock(), mock_pool, "456")
+        assert "ORDER BY rarity_score DESC, release_id" in self._first_order_by_sql(mock_cur)

@@ -257,6 +257,47 @@ class TestExploreFromHereCacheHit:
         finally:
             mod._cache = original_cache
 
+    def test_cache_key_includes_hops(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        """discogsography-cu2.29: the explore cache key must include the hops
+        parameter — hops changes the traversal depth (not merely truncation), so
+        omitting it serves results computed for a different depth for the TTL.
+        Different hops values MUST produce different cache keys.
+        """
+        import api.routers.recommend as mod
+
+        seen_keys: list[str] = []
+
+        async def record_get(key: str) -> None:
+            seen_keys.append(key)
+            return None
+
+        mock_cache = AsyncMock()
+        mock_cache.get = AsyncMock(side_effect=record_get)
+        mock_cache.set = AsyncMock()
+
+        original_cache = mod._cache
+        original_driver = mod._neo4j_driver
+        mod._cache = mock_cache
+        mod._neo4j_driver = AsyncMock()
+        try:
+            with (
+                patch("api.routers.recommend.get_explore_traversal", new=AsyncMock(return_value=[])),
+                patch("api.routers.recommend.get_taste_heatmap", new=AsyncMock(return_value=([], 0))),
+                patch("api.routers.recommend.get_blind_spots", new=AsyncMock(return_value=[])),
+            ):
+                r2 = test_client.get("/api/recommend/explore/artist/a1?hops=2", headers=auth_headers)
+                r3 = test_client.get("/api/recommend/explore/artist/a1?hops=3", headers=auth_headers)
+        finally:
+            mod._cache = original_cache
+            mod._neo4j_driver = original_driver
+
+        assert r2.status_code == 200
+        assert r3.status_code == 200
+        assert len(seen_keys) == 2
+        assert seen_keys[0].endswith(":2")
+        assert seen_keys[1].endswith(":3")
+        assert seen_keys[0] != seen_keys[1]
+
 
 class TestRecommenderModels:
     """Tests for recommender Pydantic models."""

@@ -241,7 +241,7 @@ class TestSearchQueryModuleHelpers:
 
         frag, params = _entity_select("artist", "name", has_year=False, has_genres=False, per_table_limit=50)
         rendered = frag.as_string(None)
-        assert "ORDER BY rank DESC LIMIT 50" in rendered
+        assert "ORDER BY rank DESC, data_id LIMIT 50" in rendered
         assert params == []
 
     def test_entity_select_pushes_year_filter_before_limit(self) -> None:
@@ -254,7 +254,7 @@ class TestSearchQueryModuleHelpers:
         frag, params = _entity_select("release", "title", has_year=True, has_genres=True, per_table_limit=40, year_min=1960, year_max=1969)
         rendered = frag.as_string(None)
         where_idx = rendered.index("WHERE")
-        limit_idx = rendered.index("ORDER BY rank DESC LIMIT")
+        limit_idx = rendered.index("ORDER BY rank DESC, data_id LIMIT")
         assert where_idx < limit_idx
         # the year predicate text must appear before the LIMIT, not after
         assert "year" in rendered[where_idx:limit_idx].lower()
@@ -266,7 +266,7 @@ class TestSearchQueryModuleHelpers:
         frag, params = _entity_select("release", "title", has_year=True, has_genres=True, per_table_limit=40, genres=["Rock", "Jazz"])
         rendered = frag.as_string(None)
         where_idx = rendered.index("WHERE")
-        limit_idx = rendered.index("ORDER BY rank DESC LIMIT")
+        limit_idx = rendered.index("ORDER BY rank DESC, data_id LIMIT")
         assert "?|" in rendered[where_idx:limit_idx]
         assert params == [["Rock", "Jazz"]]
 
@@ -277,7 +277,7 @@ class TestSearchQueryModuleHelpers:
         rendered = frag.as_string(None)
         # No filters given -> WHERE clause should only be the tsvector match,
         # immediately followed by ORDER BY (no " AND (...)" filter tacked on).
-        assert "@@ q.tsq order by rank desc limit" in rendered.lower()
+        assert "@@ q.tsq order by rank desc, data_id limit" in rendered.lower()
         assert params == []
 
     def test_build_union_passes_per_table_limit(self) -> None:
@@ -392,7 +392,7 @@ class TestSearchQueryModuleHelpers:
         # The per-table subquery's own WHERE (with the filter) must precede its
         # ORDER BY rank LIMIT — not a trailing outer WHERE applied after the cap.
         subquery_where = rendered.index("WHERE")
-        subquery_limit = rendered.index("ORDER BY rank DESC LIMIT")
+        subquery_limit = rendered.index("ORDER BY rank DESC, data_id LIMIT")
         assert subquery_where < subquery_limit
         assert "year" in rendered[subquery_where:subquery_limit].lower()
         assert "?|" in rendered[subquery_where:subquery_limit]
@@ -674,3 +674,95 @@ class TestSearchQueryAsyncFunctions:
             result = await execute_search(mock_pool, None, "blue", ["artist"], [], None, None, 20, 0)
 
         assert result["query"] == "blue"
+
+    @staticmethod
+    def _db_mocks() -> MagicMock:
+        """A pool whose cursor returns empty result sets for every _run_* query."""
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[])
+        mock_cursor.fetchone = AsyncMock(return_value={"total": 0})
+        mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor.__aexit__ = AsyncMock(return_value=False)
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+        return mock_pool
+
+    @pytest.mark.asyncio
+    async def test_execute_search_degrades_when_redis_get_raises(self) -> None:
+        """discogsography-cu2.23: a Redis read outage must fall through to the DB,
+        not propagate a 500 — search is fully PostgreSQL-backed.
+        """
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        from api.queries.search_queries import execute_search
+
+        mock_pool = self._db_mocks()
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(side_effect=RedisConnectionError("Connection refused"))
+        mock_redis.setex = AsyncMock()
+
+        with patch("api.queries.search_queries.execute_sql", new_callable=AsyncMock):
+            result = await execute_search(mock_pool, mock_redis, "blue", ["artist"], [], None, None, 20, 0)
+
+        # Answered from PostgreSQL despite the Redis outage.
+        assert result["query"] == "blue"
+        assert result["total"] == 0
+        mock_redis.get.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_search_returns_when_redis_setex_raises(self) -> None:
+        """discogsography-cu2.23: a Redis write outage must not fail an otherwise
+        successful search response.
+        """
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        from api.queries.search_queries import execute_search
+
+        mock_pool = self._db_mocks()
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock(side_effect=RedisConnectionError("Connection refused"))
+
+        with patch("api.queries.search_queries.execute_sql", new_callable=AsyncMock):
+            result = await execute_search(mock_pool, mock_redis, "blue", ["artist"], [], None, None, 20, 0)
+
+        assert result["query"] == "blue"
+        mock_redis.setex.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_search_treats_corrupt_cache_entry_as_miss(self) -> None:
+        """discogsography-cu2.23: a corrupt (non-JSON) cache entry must be treated
+        as a miss rather than raising.
+        """
+        from api.queries.search_queries import execute_search
+
+        mock_pool = self._db_mocks()
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value="{not valid json")
+        mock_redis.setex = AsyncMock()
+
+        with patch("api.queries.search_queries.execute_sql", new_callable=AsyncMock):
+            result = await execute_search(mock_pool, mock_redis, "blue", ["artist"], [], None, None, 20, 0)
+
+        assert result["query"] == "blue"
+
+    @pytest.mark.asyncio
+    async def test_run_results_final_order_has_unique_tiebreaker(self) -> None:
+        """discogsography-cu2.56: the outer paginated query must sort by a unique
+        secondary key so OFFSET pagination is page-consistent across executions.
+        """
+        from api.queries.search_queries import _run_results
+
+        mock_pool = self._db_mocks()
+        with patch("api.queries.search_queries.execute_sql", new_callable=AsyncMock) as mock_exec:
+            await _run_results(mock_pool, "Rock", ["artist"], [], None, None, 10, 10)
+
+        rendered = mock_exec.call_args[0][1].as_string(None)
+        # Final ordering carries the unique `id` tiebreaker; the per-table cap
+        # carries the unique `data_id` tiebreaker.
+        assert "ORDER BY rank DESC, id" in rendered
+        assert "ORDER BY rank DESC, data_id LIMIT" in rendered

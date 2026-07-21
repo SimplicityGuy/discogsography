@@ -290,6 +290,48 @@ class TestNLQSSE:
 
         assert response.status_code == 200
 
+    def test_sse_stream_replays_cache_hit_as_events(self, test_client: TestClient) -> None:
+        """discogsography-cu2.27: a streaming request whose query is already cached
+        (written by a prior JSON request) must receive an SSE event stream, not a
+        plain JSON body — otherwise the Ask UI's SSE parser finds no events and
+        the spinner hangs. The engine must not run for a cache hit.
+        """
+        original_config = nlq_router._nlq_config
+        original_engine = nlq_router._engine
+        original_redis = nlq_router._redis
+        try:
+            nlq_router._nlq_config = MagicMock(is_available=True, max_query_length=500)
+            mock_engine = MagicMock()
+            mock_engine.run = AsyncMock(side_effect=AssertionError("engine must not run on a cache hit"))
+            nlq_router._engine = mock_engine
+            cached_data = {
+                "query": "who produced Thriller",
+                "summary": "Quincy Jones",
+                "entities": [],
+                "tools_used": ["search"],
+                "actions": [],
+                "cached": True,
+            }
+            nlq_router._redis = AsyncMock()
+            nlq_router._redis.get = AsyncMock(return_value=json.dumps(cached_data))
+
+            response = test_client.post(
+                "/api/nlq/query",
+                json={"query": "who produced Thriller"},
+                headers={"Accept": "text/event-stream"},
+            )
+        finally:
+            nlq_router._nlq_config = original_config
+            nlq_router._engine = original_engine
+            nlq_router._redis = original_redis
+
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers["content-type"]
+        body = response.text
+        assert "event: result" in body
+        assert "Quincy Jones" in body
+        mock_engine.run.assert_not_called()
+
 
 class TestSSEStreamErrorHandling:
     """Test SSE streaming error handling."""

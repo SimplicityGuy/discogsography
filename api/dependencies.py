@@ -1,5 +1,6 @@
 """Shared FastAPI dependency functions for API routers."""
 
+import asyncio
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
@@ -10,7 +11,9 @@ from psycopg.rows import dict_row
 from api.app_tokens import (
     TOKEN_PREFIX as _APP_TOKEN_PREFIX,
     AppTokenAuth,  # noqa: F401  — re-exported for callers
+    _background_tasks,
     _lookup_active_token,
+    _touch_last_used_at,
     hash_token,
     require_app_token,  # noqa: F401  — re-exported for callers
 )
@@ -155,6 +158,14 @@ def require_user_or_app_token(scopes: list[str]) -> Any:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"App token missing required scope(s): {', '.join(missing)}",
                 )
+            # Fire-and-forget last_used_at bookkeeping — mirrors require_app_token
+            # so tokens authenticated through the unified path are also audited.
+            # A slow PG round trip never blocks the request; the reference is held
+            # in _background_tasks so the loop does not GC the coroutine mid-flight.
+            task = asyncio.create_task(_touch_last_used_at(str(row["id"])))
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+
             return UnifiedAuth(
                 user_id=str(row["user_id"]),
                 via="app_token",
