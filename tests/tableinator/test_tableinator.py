@@ -3090,3 +3090,76 @@ class TestMainFullRun:
             mock_rabbitmq_instance.channel.assert_not_called()
         finally:
             mod.shutdown_requested = original_shutdown
+
+    @pytest.mark.asyncio
+    async def test_main_full_run_teardown_error_paths(self) -> None:
+        """Exercise the defensive teardown error-handlers: a KeyboardInterrupt in the
+        run loop, an exception while flushing the batch processor, a pending
+        consumer-cancellation task, and an exception while closing the pool. None may
+        escape main()."""
+        import tableinator.tableinator as mod
+
+        original_shutdown = mod.shutdown_requested
+        original_cancel_tasks = dict(mod.consumer_cancel_tasks)
+        mod.shutdown_requested = False
+
+        mock_channel = AsyncMock()
+        mock_channel.set_qos = AsyncMock()
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_queue = AsyncMock()
+        mock_queue.bind = AsyncMock()
+        mock_queue.consume = AsyncMock(return_value="ctag")
+        mock_channel.declare_queue = AsyncMock(return_value=mock_queue)
+        mock_amqp_connection = AsyncMock()
+        mock_amqp_connection.channel = AsyncMock(return_value=mock_channel)
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_instance.connect = AsyncMock(return_value=mock_amqp_connection)
+
+        mock_pool = MagicMock()
+        mock_pool.initialize = AsyncMock()
+        # Pool close raises → covers the "Error closing connection pool" handler.
+        mock_pool.close = AsyncMock(side_effect=RuntimeError("pool close failed"))
+
+        real_sleep = asyncio.sleep
+
+        async def sleep_raises_keyboard_interrupt(delay: float) -> None:
+            if delay == 1.0:
+                raise KeyboardInterrupt
+            await real_sleep(0)
+
+        # Seed a pending consumer-cancellation task so the cancel loop body runs.
+        pending_task = MagicMock()
+
+        try:
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("tableinator.tableinator.setup_logging"),
+                patch("tableinator.tableinator.HealthServer") as mock_hs,
+                patch("tableinator.tableinator.AsyncPostgreSQLPool", return_value=mock_pool),
+                patch("tableinator.tableinator.AsyncResilientRabbitMQ", return_value=mock_rabbitmq_instance),
+                patch("tableinator.tableinator.BATCH_MODE", True),
+                patch("tableinator.tableinator.progress_reporter", new=AsyncMock()),
+                patch("tableinator.tableinator.periodic_queue_checker", new=AsyncMock()),
+                patch("tableinator.tableinator.close_rabbitmq_connection", new=AsyncMock()),
+                patch.object(mod.PostgreSQLBatchProcessor, "periodic_flush", new=AsyncMock()),
+                # flush_all raises → covers the "Error flushing batch processor" handler.
+                patch.object(mod.PostgreSQLBatchProcessor, "flush_all", new=AsyncMock(side_effect=RuntimeError("flush failed"))),
+                patch.object(mod.PostgreSQLBatchProcessor, "shutdown", new=MagicMock()),
+                patch("tableinator.tableinator.asyncio.sleep", side_effect=sleep_raises_keyboard_interrupt),
+                patch("tableinator.tableinator.signal.signal"),
+            ):
+                mock_hs.return_value = MagicMock()
+                mod.consumer_cancel_tasks.clear()
+                mod.consumer_cancel_tasks["artists"] = pending_task
+                # Must not raise despite KeyboardInterrupt + two teardown exceptions.
+                await main()
+
+            # The pending consumer-cancellation task was cancelled during teardown.
+            pending_task.cancel.assert_called_once()
+            # The pool close was attempted (and its failure swallowed).
+            mock_pool.close.assert_awaited()
+        finally:
+            mod.shutdown_requested = original_shutdown
+            mod.consumer_cancel_tasks.clear()
+            mod.consumer_cancel_tasks.update(original_cancel_tasks)
