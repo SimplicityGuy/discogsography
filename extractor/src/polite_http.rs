@@ -40,6 +40,11 @@ pub struct PoliteConfig {
     pub max_throttle_retries: u32,
     /// Per-request HTTP timeout.
     pub request_timeout: Duration,
+    /// Idle/read timeout applied to each body read, resetting after a successful
+    /// read. Bounds a mid-stream stall (a peer that stops sending bytes without
+    /// closing the socket) so the download retry loop can recover, without
+    /// bounding a legitimately long multi-GB transfer (discogsography-cu2.66).
+    pub read_timeout: Duration,
 }
 
 impl PoliteConfig {
@@ -52,6 +57,7 @@ impl PoliteConfig {
             max_retry_after: Duration::from_secs(2 * 60 * 60),
             max_throttle_retries: 5,
             request_timeout: Duration::from_secs(120),
+            read_timeout: Duration::from_secs(120),
         }
     }
 
@@ -63,6 +69,7 @@ impl PoliteConfig {
             max_retry_after: Duration::from_secs(30 * 60),
             max_throttle_retries: 5,
             request_timeout: Duration::from_secs(120),
+            read_timeout: Duration::from_secs(120),
         }
     }
 }
@@ -80,16 +87,23 @@ impl PoliteClient {
     }
 
     pub fn with_user_agent(cfg: PoliteConfig, user_agent: &str) -> Result<Self> {
-        // No per-request `timeout` — the prior call sites used `reqwest::get`
-        // which has no default timeout, and integration tests using
-        // `tokio::test(start_paused = true)` advance virtual time past any
-        // wall-clock timeout, firing it spuriously. We rely on:
-        //   * `connect_timeout` to bound TCP setup,
-        //   * the polite-client retry loop to handle transient errors,
-        //   * the existing per-attempt MAX_DOWNLOAD_RETRIES to bound retries.
+        // No overall per-request `timeout` — a total deadline would fire
+        // spuriously on legitimately long multi-GB downloads, and integration
+        // tests using `tokio::test(start_paused = true)` advance virtual time
+        // past any wall-clock deadline. Instead we bound the two failure modes
+        // separately:
+        //   * `connect_timeout` bounds TCP/TLS setup,
+        //   * `read_timeout` bounds each body read and resets after a successful
+        //     read — catching a silent mid-stream stall (half-open TCP, LB
+        //     idle-drop with no RST) that would otherwise hang `stream.next()`
+        //     forever with neither an Ok nor an Err for the retry loop to act on
+        //     (discogsography-cu2.66),
+        //   * the polite-client retry loop handles transient errors,
+        //   * the existing per-attempt MAX_DOWNLOAD_RETRIES bounds retries.
         let client = Client::builder()
             .user_agent(user_agent)
             .connect_timeout(cfg.request_timeout)
+            .read_timeout(cfg.read_timeout)
             .build()
             .context("Failed to build polite HTTP client")?;
         Ok(Self { client, cfg, last_request: Arc::new(Mutex::new(None)) })
@@ -174,6 +188,7 @@ mod tests {
             max_retry_after: Duration::from_millis(50),
             max_throttle_retries: 3,
             request_timeout: Duration::from_secs(5),
+            read_timeout: Duration::from_secs(5),
         }
     }
 
@@ -187,6 +202,7 @@ mod tests {
             max_retry_after: Duration::from_millis(50),
             max_throttle_retries: 2,
             request_timeout: Duration::from_secs(5),
+            read_timeout: Duration::from_secs(5),
         };
         let client = PoliteClient::new(cfg).unwrap();
         let url = format!("{}/x", server.url());
@@ -272,6 +288,7 @@ mod tests {
             max_retry_after: Duration::from_millis(50),
             max_throttle_retries: 2,
             request_timeout: Duration::from_secs(5),
+            read_timeout: Duration::from_secs(5),
         };
         let client = PoliteClient::new(cfg).unwrap();
         let url = Arc::new(format!("{}/x", server.url()));
@@ -296,5 +313,56 @@ mod tests {
         assert_eq!(counter.load(Ordering::SeqCst), 3);
         // 3 requests with 100ms gap → at least ~200ms total (first runs immediately).
         assert!(elapsed >= Duration::from_millis(180), "concurrent requests should serialize, took {:?}", elapsed);
+    }
+
+    #[tokio::test]
+    async fn read_timeout_fires_on_mid_stream_stall() {
+        // Regression for discogsography-cu2.66: a peer that sends response
+        // headers and a few body bytes and then goes silent — without closing
+        // the socket (half-open TCP / LB idle-drop with no RST) — used to hang
+        // the body read forever, since `stream.next().await` never resolved to
+        // either Ok or Err for the retry loop to act on. With a bounded
+        // `read_timeout` the stalled read must surface an error instead.
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            // Drain the request bytes so the client's write completes.
+            let mut buf = [0u8; 1024];
+            let _ = sock.read(&mut buf).await;
+            // Promise a large body but send only a few bytes, then hold the
+            // connection open indefinitely — the silent mid-stream stall.
+            let _ = sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1048576\r\n\r\nhello").await;
+            let _ = sock.flush().await;
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+        });
+
+        let cfg = PoliteConfig {
+            min_gap: Duration::from_millis(1),
+            max_retry_after: Duration::from_millis(50),
+            max_throttle_retries: 1,
+            request_timeout: Duration::from_secs(5),
+            read_timeout: Duration::from_millis(200),
+        };
+        let client = PoliteClient::new(cfg).unwrap();
+        let url = format!("http://{}/stall", addr);
+
+        // Headers arrive, so the GET itself succeeds...
+        let response = client.get(&url).await.unwrap();
+
+        // ...but consuming the stalled body must error via the read timeout
+        // rather than hang forever.
+        let start = Instant::now();
+        let body_result = response.bytes().await;
+        let elapsed = start.elapsed();
+
+        assert!(body_result.is_err(), "stalled body read should error, not hang");
+        assert!(elapsed < Duration::from_secs(4), "read timeout should fire promptly, took {:?}", elapsed);
+
+        server.abort();
     }
 }

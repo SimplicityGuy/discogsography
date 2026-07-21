@@ -825,3 +825,72 @@ async fn test_year_directory_non_success_skipped_other_years_succeed() {
     assert!(!files.is_empty(), "expected files from the working year");
     assert!(files.iter().all(|f| f.name.contains("2025")), "should not have any 2026 files; got {:?}", files);
 }
+
+#[tokio::test]
+async fn test_download_metadata_persisted_incrementally_on_mid_batch_failure() {
+    // Regression for discogsography-cu2.65: metadata was persisted only after
+    // ALL files succeeded, so a failure on a later file discarded the checksums
+    // of the files that already completed — forcing full multi-GB re-downloads
+    // on restart. Each successful download must now persist metadata immediately.
+    let temp_dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let main_page_html = r#"<html><body>
+        <a href="?prefix=data%2F2026%2F">2026/</a>
+    </body></html>"#;
+    let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_page_html).create_async().await;
+
+    let year_page_html = r#"<html><body>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
+    </body></html>"#;
+    let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(year_page_html).create_async().await;
+
+    // The three earlier files download successfully...
+    let mut _ok_mocks = Vec::new();
+    for file_type in ["artists", "labels", "masters"] {
+        let download_path = format!("/?download=data%2F2026%2Fdiscogs_20260101_{}.xml.gz", file_type);
+        let mock = server
+            .mock("GET", download_path.as_str())
+            .with_status(200)
+            .with_body(format!("fake {} data", file_type))
+            .create_async()
+            .await;
+        _ok_mocks.push(mock);
+    }
+    // ...but the last file (releases) fails on every attempt, aborting the batch.
+    let _fail_mock = server
+        .mock("GET", "/?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz")
+        .with_status(500)
+        .with_body("boom")
+        .create_async()
+        .await;
+
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
+    let result = downloader.download_discogs_data().await;
+
+    // The batch fails on the releases download.
+    assert!(result.is_err(), "expected the batch to fail on the releases download");
+
+    // A fresh Downloader loads the durable metadata written during the failed run.
+    // Before the fix this file was written only after full success, so it would be
+    // empty and every completed file would be re-downloaded.
+    let reloaded = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), "http://unused".to_string()).await.unwrap();
+    assert!(!reloaded.metadata.is_empty(), "completed files' checksums must be persisted after a mid-batch failure");
+    assert!(
+        reloaded.metadata.contains_key("discogs_20260101_artists.xml.gz"),
+        "the first completed file's checksum must survive; got {:?}",
+        reloaded.metadata.keys().collect::<Vec<_>>()
+    );
+    // The failed file left no persisted metadata entry.
+    assert!(!reloaded.metadata.contains_key("discogs_20260101_releases.xml.gz"), "the failed file must not be recorded as complete");
+
+    // The persisted checksum means the completed file is not re-downloaded next run.
+    let completed = S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: "fake artists data".len() as u64 };
+    assert!(!reloaded.should_download(&completed).await.unwrap(), "a completed, persisted file must not be re-downloaded");
+}

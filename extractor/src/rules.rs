@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use regex::Regex;
 use serde::Deserialize;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::io::{BufWriter, Write};
@@ -425,29 +425,52 @@ pub fn apply_filters(config: &CompiledRulesConfig, data_type: &str, record: &mut
                     }
                 };
 
-                // Get the array at the leaf key
-                let arr = match parent {
-                    Value::Object(map) => match map.get_mut(leaf) {
-                        Some(Value::Array(arr)) => arr,
-                        _ => continue,
-                    },
+                // Navigate to the leaf-bearing object.
+                let map = match parent {
+                    Value::Object(map) => map,
                     _ => continue,
                 };
 
-                let mut removed_values = Vec::new();
-                let original_len = arr.len();
-                arr.retain(|elem| {
-                    if let Value::String(s) = elem
-                        && remove_matching.is_match(s)
-                    {
-                        removed_values.push(s.clone());
-                        return false;
+                // The XML parser (parser.rs `add_child`) only produces an array when a
+                // child name repeats; a single occurrence stays a scalar string. Handle
+                // both shapes so single-genre/style records aren't silently skipped.
+                match map.get_mut(leaf) {
+                    // Multi-value field: retain only the non-matching elements.
+                    Some(Value::Array(arr)) => {
+                        let mut removed_values = Vec::new();
+                        let original_len = arr.len();
+                        arr.retain(|elem| {
+                            if let Value::String(s) = elem
+                                && remove_matching.is_match(s)
+                            {
+                                removed_values.push(s.clone());
+                                return false;
+                            }
+                            true
+                        });
+                        let removed_count = original_len - arr.len();
+                        if removed_count > 0 {
+                            actions.push(FilterAction { field: field.clone(), removed_count, removed_values, reason: reason.clone() });
+                        }
                     }
-                    true
-                });
-                let removed_count = original_len - arr.len();
-                if removed_count > 0 {
-                    actions.push(FilterAction { field: field.clone(), removed_count, removed_values, reason: reason.clone() });
+                    // Single-value field: a lone occurrence is a scalar string. If it
+                    // matches, drop the key entirely — same net effect as filtering the
+                    // only element out of an array. Without this, records with exactly
+                    // one genre/style keep the bad value while multi-valued records get
+                    // filtered — inconsistent, incomplete cleaning (discogsography-cu2.47).
+                    Some(Value::String(s)) => {
+                        if remove_matching.is_match(s) {
+                            let removed = s.clone();
+                            map.remove(leaf);
+                            actions.push(FilterAction {
+                                field: field.clone(),
+                                removed_count: 1,
+                                removed_values: vec![removed],
+                                reason: reason.clone(),
+                            });
+                        }
+                    }
+                    _ => continue,
                 }
             }
             CompiledFilterCondition::NullifyWhen { field, below, above, reason } => {
@@ -785,15 +808,42 @@ impl FlaggedRecordWriter {
         }
     }
 
+    /// Write the data-quality summary to a **per-data-type** report file
+    /// (`base_dir/<data_type>/report.txt`).
+    ///
+    /// The four Discogs types are validated by separate concurrent
+    /// `FlaggedRecordWriter`s, each with the same version-keyed `base_dir`.
+    /// Writing a single shared `base_dir/report.txt` was a lost-update: whichever
+    /// validator finished last truncated the file, destroying the other three
+    /// types' summaries (a clean file could even overwrite a report full of
+    /// errors with "No data quality violations found"). Scoping the report to a
+    /// per-type subdir — alongside that type's existing `violations.jsonl` —
+    /// removes the collision entirely (discogsography-cu2.48).
     pub fn write_report(&self, report: &QualityReport, version: &str) {
-        if let Err(e) = fs::create_dir_all(&self.base_dir) {
-            tracing::warn!("⚠️ Failed to create flagged directory: {}", e);
+        // A per-file validator's report carries exactly one data type, but be
+        // robust to a merged multi-type report by writing one file per type.
+        let mut data_types: BTreeSet<&str> = BTreeSet::new();
+        data_types.extend(report.counts.keys().map(String::as_str));
+        data_types.extend(report.total_records.keys().map(String::as_str));
+        data_types.extend(report.skipped.keys().map(String::as_str));
+
+        if data_types.is_empty() {
             return;
         }
-        // `self.base_dir` is built from operator config in `new()` — not user input.
-        let report_path = self.base_dir.join("report.txt"); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-        if let Err(e) = fs::write(&report_path, report.format_summary(version)) {
-            tracing::warn!("⚠️ Failed to write quality report: {}", e);
+
+        let summary = report.format_summary(version);
+        for data_type in data_types {
+            // `data_type` originates from validated enum variants, and `base_dir`
+            // is built from operator config in `new()` — neither is user input.
+            let type_dir = self.base_dir.join(data_type); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            if let Err(e) = fs::create_dir_all(&type_dir) {
+                tracing::warn!("⚠️ Failed to create flagged directory {:?}: {}", type_dir, e);
+                continue;
+            }
+            let report_path = type_dir.join("report.txt"); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            if let Err(e) = fs::write(&report_path, &summary) {
+                tracing::warn!("⚠️ Failed to write quality report {:?}: {}", report_path, e);
+            }
         }
     }
 }
