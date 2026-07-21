@@ -80,6 +80,42 @@ describe('NlqActionApplier', () => {
         expect(callArg.entities).toHaveLength(1);
         expect(result.applied).toBe(1);
     });
+
+    describe('appliedTypes (regression discogsography-cu2.39)', () => {
+        it('includes only genuinely-applied action types, not sanitizer-rejected ones', () => {
+            const handlers = mockHandlers();
+            const applier = new NlqActionApplier({ handlers, snapshotter: mockSnapshotter() });
+            const result = applier.apply([
+                { type: 'switch_pane', pane: 'nonsense' }, // sanitizer rejects -> skipped
+                { type: 'focus_node', name: 'Kraftwerk', entity_type: 'artist' }, // applies
+            ]);
+            expect(result.appliedTypes).toEqual(['focus_node']);
+            expect(result.applied).toBe(1);
+            expect(result.skipped).toBe(1);
+        });
+
+        it('excludes types whose handler throws', () => {
+            const handlers = mockHandlers();
+            handlers.seedGraph.mockImplementation(() => { throw new Error('boom'); });
+            const applier = new NlqActionApplier({ handlers, snapshotter: mockSnapshotter() });
+            const result = applier.apply([{ type: 'seed_graph', entities: [{ name: 'K', entity_type: 'artist' }] }]);
+            expect(result.appliedTypes).toEqual([]);
+        });
+
+        it('excludes unknown action types', () => {
+            const handlers = mockHandlers();
+            const applier = new NlqActionApplier({ handlers, snapshotter: mockSnapshotter() });
+            const result = applier.apply([{ type: 'nonsense' }]);
+            expect(result.appliedTypes).toEqual([]);
+        });
+
+        it('is empty when no handler is registered for a sanitized action', () => {
+            const applier = new NlqActionApplier({ handlers: {}, snapshotter: mockSnapshotter() });
+            const result = applier.apply([{ type: 'focus_node', name: 'Kraftwerk', entity_type: 'artist' }]);
+            expect(result.appliedTypes).toEqual([]);
+            expect(result.skipped).toBe(1);
+        });
+    });
 });
 
 describe('NlqActionApplier — sanitizer coverage', () => {
