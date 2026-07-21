@@ -836,9 +836,10 @@ rules:
     assert!(flagged_dir.join("77.json").exists(), "Flagged JSON should be written");
     assert!(flagged_dir.join("violations.jsonl").exists(), "Violations JSONL should be written");
 
-    // Check report file
-    let report_path = temp_dir.path().join("flagged").join("20260301").join("report.txt");
-    assert!(report_path.exists(), "Report file should be written");
+    // Check report file — now scoped to the data type's subdir so concurrent
+    // per-file validators no longer overwrite a shared report (discogsography-cu2.48).
+    let report_path = temp_dir.path().join("flagged").join("20260301").join("artists").join("report.txt");
+    assert!(report_path.exists(), "Per-type report file should be written");
 }
 
 #[tokio::test]

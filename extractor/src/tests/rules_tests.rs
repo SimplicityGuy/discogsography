@@ -803,11 +803,53 @@ fn test_flagged_writer_write_report() {
 
     writer.write_report(&report, "20260301");
 
-    let report_path = temp_dir.path().join("flagged").join("20260301").join("report.txt");
-    assert!(report_path.exists(), "Report file should be created");
+    // The report is scoped to its data type's subdir (discogsography-cu2.48).
+    let report_path = temp_dir.path().join("flagged").join("20260301").join("releases").join("report.txt");
+    assert!(report_path.exists(), "Per-type report file should be created");
     let content = std::fs::read_to_string(report_path).unwrap();
     assert!(content.contains("test-rule"));
     assert!(content.contains("1 errors"));
+}
+
+#[test]
+fn test_flagged_writer_reports_do_not_overwrite_across_types() {
+    // Regression for discogsography-cu2.48: four concurrent per-file validators
+    // each construct their own FlaggedRecordWriter with the same version-keyed
+    // base_dir and call write_report with only their own type's data. When the
+    // report was a single shared base_dir/report.txt, whichever validator
+    // finished last truncated the others — including a clean file wiping out a
+    // report full of errors. Per-type report files must coexist.
+    use crate::rules::{FlaggedRecordWriter, QualityReport, Severity};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let base = temp_dir.path().join("flagged").join("20260301");
+
+    // "releases" validator: 5000-ish violations, finishes first.
+    let releases_writer = FlaggedRecordWriter::new(temp_dir.path(), "20260301");
+    let mut releases_report = QualityReport::new();
+    releases_report.record_violation("releases", "bad-genre", &Severity::Error);
+    releases_report.increment_total("releases");
+    releases_writer.write_report(&releases_report, "20260301");
+
+    // "labels" validator: zero violations, finishes LAST (would have truncated
+    // the shared report with "No data quality violations found").
+    let labels_writer = FlaggedRecordWriter::new(temp_dir.path(), "20260301");
+    let mut labels_report = QualityReport::new();
+    labels_report.increment_total("labels");
+    labels_writer.write_report(&labels_report, "20260301");
+
+    // The releases error report must survive the later clean labels write.
+    let releases_report_txt = std::fs::read_to_string(base.join("releases").join("report.txt")).unwrap();
+    assert!(releases_report_txt.contains("bad-genre"), "releases report lost: {releases_report_txt}");
+    assert!(releases_report_txt.contains("1 errors"));
+
+    // And the clean labels report lands in its own file without a collision.
+    let labels_report_txt = std::fs::read_to_string(base.join("labels").join("report.txt")).unwrap();
+    assert!(labels_report_txt.contains("No data quality violations found"), "labels report wrong: {labels_report_txt}");
+
+    // No shared top-level report.txt is written (would be the collision point).
+    assert!(!base.join("report.txt").exists(), "shared report.txt must not exist");
 }
 
 // ── QualityReport edge cases ─────────────────────────────────────────
