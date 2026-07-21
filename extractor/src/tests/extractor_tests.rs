@@ -916,6 +916,70 @@ rules:
     assert_eq!(report.total_records["artists"], 1);
 }
 
+// ── message_normalizer tests (cu2.43) ───────────────────────────────
+
+/// Regression for cu2.43: normalization + hashing must run unconditionally, not only inside
+/// the optional validator stage. Feeds the normalizer the raw xmltodict shape the parser emits
+/// (container-wrapped `members`, `@`-prefixed keys, empty sha256) and asserts the output carries
+/// the flat consumer-ready shape and a populated content hash — the exact guarantees the no-rules
+/// (else-branch) pipeline previously dropped.
+#[tokio::test]
+async fn test_message_normalizer_normalizes_and_hashes_without_rules() {
+    let (in_sender, in_receiver) = mpsc::channel::<DataMessage>(10);
+    let (out_sender, mut out_receiver) = mpsc::channel::<DataMessage>(10);
+
+    let msg = DataMessage {
+        id: "1".to_string(),
+        sha256: String::new(), // parser emits an empty hash — normalizer must fill it in
+        data: serde_json::json!({
+            "id": "1",
+            "name": "Aphex Twin",
+            "members": {"name": [{"@id": "7", "#text": "Richard D. James"}]}
+        }),
+        raw_xml: None,
+    };
+    in_sender.send(msg).await.unwrap();
+    drop(in_sender);
+
+    message_normalizer(in_receiver, out_sender, DataType::Artists).await.unwrap();
+
+    let got = out_receiver.recv().await.unwrap();
+
+    // Content hash is now populated so downstream change detection works.
+    assert!(!got.sha256.is_empty(), "normalizer must populate sha256");
+
+    // members is unwrapped into a flat array of objects with `@`/`#text` keys stripped —
+    // the shape graphinator's `[m for m in members if m.get('id')]` requires.
+    let members = got.data.get("members").expect("members present").as_array().expect("members is array");
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].get("id").unwrap(), "7");
+    assert_eq!(members[0].get("name").unwrap(), "Richard D. James");
+    assert!(members[0].get("@id").is_none(), "@-prefixed keys must be stripped");
+
+    // No more messages.
+    assert!(out_receiver.recv().await.is_none());
+}
+
+/// The normalizer must produce byte-identical output regardless of which upstream stage feeds it,
+/// so the rules and no-rules pipelines converge on the same published record + hash.
+#[tokio::test]
+async fn test_message_normalizer_hash_is_deterministic() {
+    async fn normalize_one(record: serde_json::Value) -> DataMessage {
+        let (in_sender, in_receiver) = mpsc::channel::<DataMessage>(1);
+        let (out_sender, mut out_receiver) = mpsc::channel::<DataMessage>(1);
+        in_sender.send(DataMessage { id: "1".to_string(), sha256: String::new(), data: record, raw_xml: None }).await.unwrap();
+        drop(in_sender);
+        message_normalizer(in_receiver, out_sender, DataType::Artists).await.unwrap();
+        out_receiver.recv().await.unwrap()
+    }
+
+    let record = serde_json::json!({"id": "1", "name": "Aphex Twin", "members": {"name": [{"@id": "7", "#text": "Richard"}]}});
+    let a = normalize_one(record.clone()).await;
+    let b = normalize_one(record).await;
+    assert_eq!(a.sha256, b.sha256);
+    assert!(!a.sha256.is_empty());
+}
+
 // ── wait_for_trigger tests ──────────────────────────────────────────
 
 #[tokio::test(start_paused = true)]

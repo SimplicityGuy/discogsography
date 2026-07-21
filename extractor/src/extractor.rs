@@ -448,6 +448,11 @@ pub async fn process_single_file(
     let file_base_name = Path::new(file_name).file_name().and_then(|n| n.to_str()).unwrap_or(file_name); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
     let version = extract_version_from_filename(file_base_name).unwrap_or_else(|| "unknown".to_string());
 
+    // Always-on normalization/hashing stage sits between the (optional) validator / parser and
+    // the batcher, so published records carry the normalized shape and a real sha256 in BOTH the
+    // rules and no-rules pipelines. (cu2.43)
+    let (normalized_sender, normalized_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
+
     let validator_handle = if let Some(rules) = compiled_rules {
         let (validated_sender, validated_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
         let rules = rules.clone();
@@ -460,6 +465,9 @@ pub async fn process_single_file(
                 async move { message_validator(parse_receiver, validated_sender, rules, &data_type_str, &discogs_root, &version_clone).await },
             );
 
+        // parser -> validator (skip/filter/rules) -> normalizer (normalize + hash) -> batcher
+        let normalizer_handle = tokio::spawn(async move { message_normalizer(validated_receiver, normalized_sender, data_type).await });
+
         let batcher_config = BatcherConfig {
             batch_size: config.batch_size,
             data_type,
@@ -469,7 +477,7 @@ pub async fn process_single_file(
             file_name: file_name.to_string(),
             state_save_interval: config.state_save_interval,
         };
-        let batcher_handle = tokio::spawn(async move { message_batcher(validated_receiver, batch_sender, batcher_config).await });
+        let batcher_handle = tokio::spawn(async move { message_batcher(normalized_receiver, batch_sender, batcher_config).await });
 
         let parser_handle = tokio::spawn({
             let file_path = config.discogs_root.join(file_name); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
@@ -485,10 +493,11 @@ pub async fn process_single_file(
             async move { message_publisher(batch_receiver, mq, data_type, state).await }
         });
 
-        let (parser_result, validator_result, batcher_result, publisher_result) =
-            tokio::try_join!(parser_handle, handle, batcher_handle, publisher_handle)?;
+        let (parser_result, validator_result, normalizer_result, batcher_result, publisher_result) =
+            tokio::try_join!(parser_handle, handle, normalizer_handle, batcher_handle, publisher_handle)?;
         let total_count = parser_result?;
         let report: QualityReport = validator_result?;
+        normalizer_result?;
         batcher_result?;
         publisher_result?;
 
@@ -503,6 +512,8 @@ pub async fn process_single_file(
 
         Some(total_count)
     } else {
+        // parser -> normalizer (normalize + hash) -> batcher — no validator, but normalization
+        // and hashing still happen so consumers receive the same shape as the rules path. (cu2.43)
         let parser_handle = tokio::spawn({
             let file_path = config.discogs_root.join(file_name);
             async move {
@@ -510,6 +521,8 @@ pub async fn process_single_file(
                 parser.parse_file(&file_path).await
             }
         });
+
+        let normalizer_handle = tokio::spawn(async move { message_normalizer(parse_receiver, normalized_sender, data_type).await });
 
         let batcher_config = BatcherConfig {
             batch_size: config.batch_size,
@@ -520,7 +533,7 @@ pub async fn process_single_file(
             file_name: file_name.to_string(),
             state_save_interval: config.state_save_interval,
         };
-        let batcher_handle = tokio::spawn(async move { message_batcher(parse_receiver, batch_sender, batcher_config).await });
+        let batcher_handle = tokio::spawn(async move { message_batcher(normalized_receiver, batch_sender, batcher_config).await });
 
         let publisher_handle = tokio::spawn({
             let mq = mq.clone();
@@ -529,6 +542,7 @@ pub async fn process_single_file(
         });
 
         let total_count = parser_handle.await??;
+        normalizer_handle.await??;
         batcher_handle.await??;
         publisher_handle.await??;
 
@@ -681,18 +695,13 @@ pub async fn message_validator(
             );
         }
 
-        // Evaluate rules on pre-normalized (XML-shaped) data — rules use
-        // dot-notation paths like "genres.genre" that match the XML structure.
+        // Evaluate rules on XML-shaped (pre-normalization) data — rules use dot-notation
+        // paths like "genres.genre" that match the raw XML structure. Normalization and
+        // content hashing are NOT done here anymore: they run unconditionally in
+        // `message_normalizer`, downstream of this optional stage, so they happen even when
+        // DATA_QUALITY_RULES is unset and this validator never runs. (cu2.43)
         let violations = evaluate_rules(&rules, data_type, &message.data);
 
-        // Normalize XML-shaped JSON into flat, consumer-ready format.
-        // Runs after both filters and rules (which operate on XML shape)
-        // and before hash calculation (so hash reflects what consumers see).
-        crate::normalize::normalize_record(data_type, &mut message.data);
-
-        // Compute content hash from post-normalization data so consumers
-        // detect changes caused by filter or normalization updates.
-        message.sha256 = calculate_content_hash(&message.data);
         for violation in &violations {
             report.record_violation(data_type, &violation.rule_name, &violation.severity);
             let capture_files = matches!(violation.severity, Severity::Error | Severity::Warning);
@@ -707,6 +716,32 @@ pub async fn message_validator(
     writer.flush();
     writer.write_report(&report, version);
     Ok(report)
+}
+
+/// Normalize XML-shaped records into the flat, consumer-ready shape and compute the content
+/// hash — UNCONDITIONALLY, as an always-on pipeline stage between the parser/validator and the
+/// batcher.
+///
+/// Previously `normalize_record` + `calculate_content_hash` ran only inside `message_validator`,
+/// which is spawned only when DATA_QUALITY_RULES is set. Without that env var the no-rules
+/// pipeline published raw xmltodict-shaped records (`@`-prefixed keys, `{"name": [...]}`
+/// container wrappers) with an empty `sha256`. That crashed graphinator (AttributeError iterating
+/// container dicts) and defeated change detection (`"" == ""` skips every future update). Running
+/// this stage in both branches keeps the published shape identical regardless of rules config.
+/// (cu2.43)
+pub async fn message_normalizer(mut receiver: mpsc::Receiver<DataMessage>, sender: mpsc::Sender<DataMessage>, data_type: DataType) -> Result<()> {
+    let data_type_str = data_type.as_str();
+    while let Some(mut message) = receiver.recv().await {
+        // Normalize the XML-shaped JSON into the flat, consumer-ready format, then compute the
+        // content hash from the post-normalization data so consumers detect real changes.
+        crate::normalize::normalize_record(data_type_str, &mut message.data);
+        message.sha256 = calculate_content_hash(&message.data);
+        if sender.send(message).await.is_err() {
+            warn!("⚠️ Normalizer: downstream receiver dropped");
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// Publish batched messages to AMQP
