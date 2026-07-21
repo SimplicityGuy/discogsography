@@ -349,6 +349,19 @@ class TestPurgeStaleRowsGuards:
         assert mock_cursor.execute.call_count == 1
         mock_cursor.fetchall.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_no_stale_rows_no_delete(self, mock_async_pool: Any) -> None:
+        """A populated table with zero stale rows performs no DELETE and returns early."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=0)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=100)
+
+        # Both count queries ran, but the stale count was 0 so no DELETE followed.
+        assert mock_cursor.execute.call_count == 2
+        mock_cursor.fetchall.assert_not_awaited()
+
 
 class TestMain:
     """Test main function."""

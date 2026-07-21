@@ -1169,6 +1169,34 @@ class TestTwoFactorStateMachineRegressions:
         # The live secret/recovery-code columns must NOT have been overwritten.
         assert not any("SET totp_secret" in sql for sql in self._executed_sql(mock_cur))
 
+    def test_setup_refuses_on_concurrent_enable_race(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """cu2.24: the SELECT sees 2FA disabled, but a concurrent enable wins the race so
+        the guarded UPDATE matches zero rows — setup must then reject with 400 rather
+        than returning a secret it never persisted."""
+        mock_redis.get = AsyncMock(return_value=None)
+        # SELECT totp_enabled -> FALSE (first guard passes), but the guarded UPDATE
+        # matches no row because a concurrent request enabled 2FA in between.
+        mock_cur.fetchone = AsyncMock(return_value={"totp_enabled": False})
+        mock_cur.rowcount = 0
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post("/api/auth/2fa/setup", headers=auth_headers)
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 400
+        assert "already enabled" in response.json()["detail"].lower()
+        # The UPDATE was attempted (the race is only detectable post-UPDATE).
+        assert any("SET totp_secret" in sql for sql in self._executed_sql(mock_cur))
+
     def test_setup_update_is_guarded_by_totp_enabled(
         self,
         test_client: TestClient,
