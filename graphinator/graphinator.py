@@ -702,6 +702,25 @@ async def compute_genre_style_stats() -> bool:
     return True
 
 
+async def cleanup_all_stub_nodes() -> bool:
+    """Clean up stub nodes for every entity label once all data is imported.
+
+    Called only after every data type has delivered extraction_complete, so no
+    consumer is still MERGEing cross-type stubs. Runs cleanup for all labels
+    (Artist, Label, Master, Release) rather than a single type, because release
+    batches create stubs of every other type.
+
+    Returns:
+        True if all label cleanups succeeded, False if any failed — so the
+        caller can nack and retry (each cleanup is idempotent).
+    """
+    ok = True
+    for data_type in DATA_TYPES:
+        if not await cleanup_stub_nodes(data_type):
+            ok = False
+    return ok
+
+
 async def cleanup_stub_nodes(data_type: str) -> bool:
     """Delete stub nodes that have no sha256 property.
 

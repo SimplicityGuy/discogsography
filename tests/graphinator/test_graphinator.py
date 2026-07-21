@@ -4302,3 +4302,57 @@ class TestRecoverConsumersClearsTags:
 
         g.consumer_tags = {}
         g.queues = {}
+
+
+class TestStubCleanupBatchAndOrdering:
+    """Regression tests for the stub-cleanup batch.
+
+    Covers three linked defects in graphinator stub cleanup:
+      - cu2.68: the DETACH DELETE ran in one unbounded transaction (no batching)
+      - cu2.49 / cu2.67: per-type cleanup raced still-draining release batches
+        that re-create Artist/Label/Master stubs, leaving permanent phantoms.
+    """
+
+    @staticmethod
+    def _make_graph_mock(fail: bool = False) -> tuple[MagicMock, list[str]]:
+        """Return (graph_mock, run_calls) recording every cypher passed to run()."""
+        run_calls: list[str] = []
+
+        class _Result:
+            async def consume(self) -> MagicMock:
+                summary = MagicMock()
+                summary.counters.nodes_deleted = 5
+                return summary
+
+        class _Session:
+            async def __aenter__(self) -> "_Session":
+                return self
+
+            async def __aexit__(self, *args: Any) -> None:
+                return None
+
+            async def run(self, cypher: str, *_args: Any, **_kwargs: Any) -> "_Result":
+                run_calls.append(cypher)
+                if fail:
+                    raise RuntimeError("transaction memory limit exceeded")
+                return _Result()
+
+        graph_mock = MagicMock()
+        graph_mock.session = MagicMock(return_value=_Session())
+        return graph_mock, run_calls
+
+    @pytest.mark.asyncio
+    async def test_cleanup_all_covers_every_entity_label(self) -> None:
+        """cu2.49: cleanup runs across all labels, not just the completed type."""
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._make_graph_mock()
+        with patch.object(g, "graph", graph_mock):
+            ok = await g.cleanup_all_stub_nodes()
+
+        assert ok is True
+        assert len(run_calls) == 4
+        joined = "\n".join(run_calls)
+        for label in ("Artist", "Label", "Master", "Release"):
+            assert label in joined, f"cleanup must cover {label} stubs"
+
