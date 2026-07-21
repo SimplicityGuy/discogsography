@@ -40,6 +40,11 @@ message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
 last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
 completed_files: set[str] = set()  # Track which files have completed processing
+# Track which data types have delivered an extraction_complete signal. Stub
+# cleanup and aggregate stats are deferred until EVERY type has signalled, so
+# cross-type stub creation (release batches MERGE Artist/Label/Master stubs)
+# has fully stopped before we DETACH DELETE.
+extraction_complete_signals: set[str] = set()
 current_task = None
 current_progress = 0.0
 
@@ -504,21 +509,49 @@ async def check_file_completion(
         if batch_processor is not None:
             await batch_processor.flush_queue(data_type)
 
+        # Record this type's completion signal (idempotent — safe under
+        # nack/requeue redelivery).
+        extraction_complete_signals.add(data_type)
+
+        # Defer stub cleanup and stats until EVERY data type has signalled
+        # extraction_complete. The four fanout queues drain at very different
+        # rates (releases is by far the largest and finishes last), and every
+        # release batch MERGEs sha256-less Artist/Label/Master stubs for
+        # dangling references. Cleaning per-type as each queue completes would
+        # race those still-running release writers: stubs re-created after an
+        # early cleanup persist forever, and DETACH DELETE can interleave with
+        # freshly written release edges. Running once — after all four signals
+        # — guarantees no consumer is still creating stubs.
+        if not extraction_complete_signals.issuperset(DATA_TYPES):
+            logger.info(
+                "⏳ Deferring stub cleanup until all data types complete",
+                data_type=data_type,
+                received=sorted(extraction_complete_signals),
+                pending=sorted(set(DATA_TYPES) - extraction_complete_signals),
+            )
+            await message.ack()
+            return True
+
+        logger.info(
+            "🏁 All data types complete — running post-import maintenance",
+            received=sorted(extraction_complete_signals),
+        )
+
         # Post-import maintenance is coupled to the extraction_complete ack:
         # both steps are idempotent, so on failure we nack(requeue=True) to
         # retry rather than acking (and silently skipping) the sole trigger.
         maintenance_ok = True
 
-        # Clean up stub nodes created by cross-type MERGE operations
-        if graph is not None and not await cleanup_stub_nodes(data_type):
+        # Clean up stub nodes created by cross-type MERGE operations, across
+        # EVERY entity label — not just this type's — because release batches
+        # create Artist/Label/Master stubs regardless of which signal arrived
+        # last.
+        if graph is not None and not await cleanup_all_stub_nodes():
             maintenance_ok = False
 
-        # After releases are fully imported, compute aggregate stats on Genre/Style nodes
-        if (
-            graph is not None
-            and data_type == "releases"
-            and not await compute_genre_style_stats()
-        ):
+        # All releases are now imported — compute aggregate stats on
+        # Genre/Style/Label nodes.
+        if graph is not None and not await compute_genre_style_stats():
             maintenance_ok = False
 
         if maintenance_ok:
@@ -702,6 +735,25 @@ async def compute_genre_style_stats() -> bool:
     return True
 
 
+async def cleanup_all_stub_nodes() -> bool:
+    """Clean up stub nodes for every entity label once all data is imported.
+
+    Called only after every data type has delivered extraction_complete, so no
+    consumer is still MERGEing cross-type stubs. Runs cleanup for all labels
+    (Artist, Label, Master, Release) rather than a single type, because release
+    batches create stubs of every other type.
+
+    Returns:
+        True if all label cleanups succeeded, False if any failed — so the
+        caller can nack and retry (each cleanup is idempotent).
+    """
+    ok = True
+    for data_type in DATA_TYPES:
+        if not await cleanup_stub_nodes(data_type):
+            ok = False
+    return ok
+
+
 async def cleanup_stub_nodes(data_type: str) -> bool:
     """Delete stub nodes that have no sha256 property.
 
@@ -729,11 +781,27 @@ async def cleanup_stub_nodes(data_type: str) -> bool:
     if not label:
         return True
 
+    # Batch the deletion with CALL {} IN TRANSACTIONS so a large stub-node set
+    # (cross-type MERGEs can leave hundreds of thousands to millions of
+    # property-less stubs after a full import) does not run in one implicit
+    # transaction — a single unbatched DETACH DELETE blows the Neo4j
+    # transaction memory limit (dbms.memory.transaction.total.max) or the
+    # default 120s timeout, and the swallowed error would leave the stubs
+    # forever. Mirrors the compute_genre_style_stats batching in this file: the
+    # driving MATCH sits OUTSIDE the transactional subquery and the node is
+    # re-imported via WITH, so each inner transaction deletes at most one chunk.
+    cleanup_cypher = f"""
+    MATCH (n:{label})
+    WHERE n.sha256 IS NULL
+    CALL {{
+        WITH n
+        DETACH DELETE n
+    }} IN TRANSACTIONS OF 10000 ROWS
+    """
+
     try:
         async with graph.session(database="neo4j") as session:
-            result = await session.run(
-                f"MATCH (n:{label}) WHERE n.sha256 IS NULL DETACH DELETE n",
-            )
+            result = await session.run(cleanup_cypher)
             summary = await result.consume()
             deleted = summary.counters.nodes_deleted
 

@@ -953,7 +953,12 @@ class TestCheckFileCompletion:
 
     @pytest.mark.asyncio
     async def test_extraction_complete_triggers_stub_cleanup(self) -> None:
-        """Test extraction_complete triggers stub node cleanup."""
+        """Test extraction_complete triggers stub cleanup once ALL types complete.
+
+        Cleanup is deferred until every data type has signalled
+        extraction_complete (cu2.49 / cu2.67), then runs across every entity
+        label. Seed the other three signals and send the final one.
+        """
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         completion_data = {
             "type": "extraction_complete",
@@ -961,33 +966,44 @@ class TestCheckFileCompletion:
         }
 
         mock_driver = AsyncMock()
-        mock_session_ctx = AsyncMock()
         mock_session = AsyncMock()
-        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_driver.session = MagicMock(return_value=mock_session_ctx)
 
+        def _session(*_args: Any, **_kwargs: Any) -> AsyncMock:
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            return ctx
+
+        mock_driver.session = MagicMock(side_effect=_session)
+
+        mock_summary = MagicMock()
+        mock_summary.counters.nodes_deleted = 5
         mock_result = AsyncMock()
-        mock_record = {"deleted": 5}
-        mock_result.single = AsyncMock(return_value=mock_record)
+        mock_result.consume = AsyncMock(return_value=mock_summary)
         mock_session.run = AsyncMock(return_value=mock_result)
 
         import graphinator.graphinator
 
         graphinator.graphinator.batch_processor = None
         graphinator.graphinator.graph = mock_driver
+        # All other types already signalled; this releases signal is the last.
+        graphinator.graphinator.extraction_complete_signals = {"artists", "labels", "masters"}
 
         from graphinator.graphinator import check_file_completion
 
-        result = await check_file_completion(completion_data, "artists", mock_message)
+        with patch("graphinator.graphinator.compute_genre_style_stats", AsyncMock(return_value=True)):
+            result = await check_file_completion(completion_data, "releases", mock_message)
 
         assert result is True
-        # Verify cleanup query was run for Artist nodes
-        mock_session.run.assert_called_once()
-        call_args = mock_session.run.call_args[0][0]
-        assert "Artist" in call_args
-        assert "sha256 IS NULL" in call_args
-        assert "DETACH DELETE" in call_args
+        # Cleanup runs for EVERY entity label, not just the triggering type.
+        cleanup_cyphers = [call.args[0] for call in mock_session.run.call_args_list]
+        joined = "\n".join(cleanup_cyphers)
+        for label in ("Artist", "Label", "Master", "Release"):
+            assert label in joined
+        assert "sha256 IS NULL" in joined
+        assert "DETACH DELETE" in joined
+        assert "IN TRANSACTIONS" in joined
+        mock_message.ack.assert_called_once()
 
         # Reset
         graphinator.graphinator.graph = None
@@ -1247,13 +1263,16 @@ class TestCheckFileCompletionComputeGenreStyleStats:
         graphinator.graphinator.batch_processor = None
         mock_driver = AsyncMock()
         graphinator.graphinator.graph = mock_driver
+        # releases is the final signal — the other three already arrived.
+        graphinator.graphinator.extraction_complete_signals = {"artists", "labels", "masters"}
 
         from graphinator.graphinator import check_file_completion
 
         result = await check_file_completion(completion_data, "releases", mock_message)
 
         assert result is True
-        mock_cleanup.assert_called_once_with("releases")
+        # Cleanup now runs for every entity label; stats compute exactly once.
+        assert {c.args[0] for c in mock_cleanup.call_args_list} == {"artists", "labels", "masters", "releases"}
         mock_compute.assert_called_once()
 
         # Reset
@@ -1262,8 +1281,8 @@ class TestCheckFileCompletionComputeGenreStyleStats:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.compute_genre_style_stats", new_callable=AsyncMock)
     @patch("graphinator.graphinator.cleanup_stub_nodes", new_callable=AsyncMock)
-    async def test_does_not_call_compute_genre_style_stats_for_artists(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
-        """Test compute_genre_style_stats is NOT called for non-release data types."""
+    async def test_defers_maintenance_until_all_types_complete(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
+        """cu2.49 / cu2.67: a single type's signal must NOT trigger any maintenance."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         completion_data = {
             "type": "extraction_complete",
@@ -1275,14 +1294,20 @@ class TestCheckFileCompletionComputeGenreStyleStats:
         graphinator.graphinator.batch_processor = None
         mock_driver = AsyncMock()
         graphinator.graphinator.graph = mock_driver
+        # Fresh run: only this artists signal has arrived so far.
+        graphinator.graphinator.extraction_complete_signals = set()
 
         from graphinator.graphinator import check_file_completion
 
         result = await check_file_completion(completion_data, "artists", mock_message)
 
         assert result is True
-        mock_cleanup.assert_called_once_with("artists")
+        # Neither cleanup nor stats may run while release batches could still
+        # be MERGEing cross-type stubs.
+        mock_cleanup.assert_not_called()
         mock_compute.assert_not_called()
+        mock_message.ack.assert_called_once()
+        mock_message.nack.assert_not_called()
 
         # Reset
         graphinator.graphinator.graph = None
@@ -1309,6 +1334,7 @@ class TestCheckFileCompletionMaintenanceFailure:
 
         graphinator.graphinator.batch_processor = None
         graphinator.graphinator.graph = AsyncMock()
+        graphinator.graphinator.extraction_complete_signals = {"artists", "labels", "masters"}
 
         from graphinator.graphinator import check_file_completion
 
@@ -1333,6 +1359,7 @@ class TestCheckFileCompletionMaintenanceFailure:
 
         graphinator.graphinator.batch_processor = None
         graphinator.graphinator.graph = AsyncMock()
+        graphinator.graphinator.extraction_complete_signals = {"artists", "labels", "masters"}
 
         from graphinator.graphinator import check_file_completion
 
@@ -1357,10 +1384,11 @@ class TestCheckFileCompletionMaintenanceFailure:
 
         graphinator.graphinator.batch_processor = None
         graphinator.graphinator.graph = AsyncMock()
+        # artists is the final signal — cleanup runs for all labels and fails.
+        graphinator.graphinator.extraction_complete_signals = {"labels", "masters", "releases"}
 
         from graphinator.graphinator import check_file_completion
 
-        # Use a non-releases type so only cleanup runs (compute is releases-only)
         result = await check_file_completion(completion_data, "artists", mock_message)
 
         assert result is True
@@ -4302,3 +4330,161 @@ class TestRecoverConsumersClearsTags:
 
         g.consumer_tags = {}
         g.queues = {}
+
+
+class TestStubCleanupBatchAndOrdering:
+    """Regression tests for the stub-cleanup batch.
+
+    Covers three linked defects in graphinator stub cleanup:
+      - cu2.68: the DETACH DELETE ran in one unbounded transaction (no batching)
+      - cu2.49 / cu2.67: per-type cleanup raced still-draining release batches
+        that re-create Artist/Label/Master stubs, leaving permanent phantoms.
+    """
+
+    @staticmethod
+    def _make_graph_mock(fail: bool = False) -> tuple[MagicMock, list[str]]:
+        """Return (graph_mock, run_calls) recording every cypher passed to run()."""
+        run_calls: list[str] = []
+
+        class _Result:
+            async def consume(self) -> MagicMock:
+                summary = MagicMock()
+                summary.counters.nodes_deleted = 5
+                return summary
+
+        class _Session:
+            async def __aenter__(self) -> "_Session":
+                return self
+
+            async def __aexit__(self, *args: Any) -> None:
+                return None
+
+            async def run(self, cypher: str, *_args: Any, **_kwargs: Any) -> "_Result":
+                run_calls.append(cypher)
+                if fail:
+                    raise RuntimeError("transaction memory limit exceeded")
+                return _Result()
+
+        graph_mock = MagicMock()
+        graph_mock.session = MagicMock(return_value=_Session())
+        return graph_mock, run_calls
+
+    @pytest.mark.asyncio
+    async def test_cleanup_all_covers_every_entity_label(self) -> None:
+        """cu2.49: cleanup runs across all labels, not just the completed type."""
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._make_graph_mock()
+        with patch.object(g, "graph", graph_mock):
+            ok = await g.cleanup_all_stub_nodes()
+
+        assert ok is True
+        assert len(run_calls) == 4
+        joined = "\n".join(run_calls)
+        for label in ("Artist", "Label", "Master", "Release"):
+            assert label in joined, f"cleanup must cover {label} stubs"
+
+    @pytest.mark.asyncio
+    async def test_cleanup_uses_batched_transactions(self) -> None:
+        """cu2.68: the delete is batched via CALL {} IN TRANSACTIONS, not one big tx."""
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._make_graph_mock()
+        with patch.object(g, "graph", graph_mock):
+            ok = await g.cleanup_stub_nodes("artists")
+
+        assert ok is True
+        assert len(run_calls) == 1
+        cypher = run_calls[0]
+        assert "IN TRANSACTIONS" in cypher, "delete must be batched to survive scale"
+        assert "DETACH DELETE" in cypher
+        assert "Artist" in cypher
+        assert "n.sha256 IS NULL" in cypher
+
+    @pytest.mark.asyncio
+    async def test_cleanup_failure_returns_false_for_retry(self) -> None:
+        """cu2.68: a failed delete must return False so the caller nacks/retries."""
+        import graphinator.graphinator as g
+
+        graph_mock, _ = self._make_graph_mock(fail=True)
+        with patch.object(g, "graph", graph_mock), patch.object(g, "logger"):
+            ok = await g.cleanup_stub_nodes("artists")
+
+        assert ok is False
+
+    @pytest.mark.asyncio
+    async def test_cleanup_deferred_until_all_types_complete(self) -> None:
+        """cu2.49 / cu2.67: no cleanup until every type signals extraction_complete."""
+        import graphinator.graphinator as g
+
+        g.extraction_complete_signals = set()
+        graph_mock, _ = self._make_graph_mock()
+        called: list[str] = []
+
+        async def fake_cleanup_all() -> bool:
+            called.append("cleanup")
+            return True
+
+        async def fake_stats() -> bool:
+            called.append("stats")
+            return True
+
+        with (
+            patch.object(g, "graph", graph_mock),
+            patch.object(g, "cleanup_all_stub_nodes", fake_cleanup_all),
+            patch.object(g, "compute_genre_style_stats", fake_stats),
+            patch.object(g, "logger"),
+        ):
+            # First three signals must NOT trigger cleanup — release batches may
+            # still be MERGEing stubs.
+            for data_type in ("artists", "labels", "masters"):
+                message = AsyncMock(spec=AbstractIncomingMessage)
+                data = {"type": "extraction_complete", "version": "v1"}
+                handled = await g.check_file_completion(data, data_type, message)
+                assert handled is True
+                message.ack.assert_called_once()
+                message.nack.assert_not_called()
+            assert called == [], "cleanup must be deferred until all types complete"
+
+            # The final signal (releases, drains last) triggers the single pass.
+            message = AsyncMock(spec=AbstractIncomingMessage)
+            data = {"type": "extraction_complete", "version": "v1"}
+            handled = await g.check_file_completion(data, "releases", message)
+            assert handled is True
+            message.ack.assert_called_once()
+            message.nack.assert_not_called()
+            assert called == ["cleanup", "stats"]
+
+        g.extraction_complete_signals = set()
+
+    @pytest.mark.asyncio
+    async def test_final_signal_nacks_when_maintenance_fails(self) -> None:
+        """cu2.67: failed maintenance nacks for retry and keeps the signal latch."""
+        import graphinator.graphinator as g
+
+        g.extraction_complete_signals = {"artists", "labels", "masters"}
+        graph_mock, _ = self._make_graph_mock()
+
+        async def failing_cleanup_all() -> bool:
+            return False
+
+        async def fake_stats() -> bool:
+            return True
+
+        with (
+            patch.object(g, "graph", graph_mock),
+            patch.object(g, "cleanup_all_stub_nodes", failing_cleanup_all),
+            patch.object(g, "compute_genre_style_stats", fake_stats),
+            patch.object(g, "logger"),
+        ):
+            message = AsyncMock(spec=AbstractIncomingMessage)
+            data = {"type": "extraction_complete", "version": "v1"}
+            handled = await g.check_file_completion(data, "releases", message)
+
+        assert handled is True
+        message.nack.assert_called_once_with(requeue=True)
+        message.ack.assert_not_called()
+        # Idempotent latch retained so the requeued message retries cleanly.
+        assert "releases" in g.extraction_complete_signals
+
+        g.extraction_complete_signals = set()
