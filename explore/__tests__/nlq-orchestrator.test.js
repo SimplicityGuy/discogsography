@@ -193,6 +193,28 @@ describe('initNlq orchestrator', () => {
         }
     });
 
+    it('does not show a sanitizer-rejected action as "✓ applied" or offer Undo for it (regression discogsography-cu2.39)', async () => {
+        const apiClient = makeApiClient({
+            enabled: true,
+            streamMode: 'result',
+            // sanitizeSwitchPane rejects an unknown pane -> counts as skipped,
+            // and nothing else in this action list actually applies.
+            result: { summary: 'done', entities: [], actions: [{ type: 'switch_pane', pane: 'nonsense' }] },
+        });
+        const app = makeApp();
+        initNlq({ app, apiClient, mountId: 'nlqPillMount' });
+        await flush();
+
+        openAndSubmit('switch to nonsense pane');
+
+        const answerSlot = document.querySelector('[data-testid="nlq-pill-answer"]');
+        expect(answerSlot.textContent).not.toContain('✓ switch_pane');
+        expect(answerSlot.textContent).toContain('1 action(s) skipped');
+        expect(app._switchPane).not.toHaveBeenCalledWith('nonsense');
+        // Nothing was actually applied, so no Undo affordance should render.
+        expect(document.querySelector('[data-testid="nlq-answer-undo"]')).toBeNull();
+    });
+
     it('collapsing after an answer leaves a receipt that reopens the answer', async () => {
         const apiClient = makeApiClient({
             enabled: true,

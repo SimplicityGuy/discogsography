@@ -67,6 +67,11 @@ export class NlqActionApplier {
         this._lastSnapshot = this.snapshotter.capture();
         let applied = 0;
         let skipped = 0;
+        // Types of actions that were ACTUALLY applied — the caller must use
+        // this (not a map over the raw input) to render the "✓ applied" log,
+        // or a sanitizer-rejected/failed action shows as applied while also
+        // being counted as skipped (discogsography-cu2.39).
+        const appliedTypes = [];
 
         for (const raw of sorted) {
             const sanitizer = SANITIZERS[raw.type];
@@ -89,13 +94,14 @@ export class NlqActionApplier {
                 const { type: _type, ...payload } = clean;
                 handler(payload);
                 applied += 1;
+                appliedTypes.push(clean.type);
             } catch (err) {
                 console.error('❌ NLQ action handler failed', clean.type, err);
                 skipped += 1;
             }
         }
 
-        return { applied, skipped };
+        return { applied, skipped, appliedTypes };
     }
 
     _handlerFor(type) {

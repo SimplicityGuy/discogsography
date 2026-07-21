@@ -37,8 +37,6 @@ export function initNlq({ app, apiClient, mountId = 'nlqPillMount' }) {
 function _submit({ query, app, apiClient, applier, pill }) {
     pill.setLoading();
 
-    const appliedActionTypes = [];
-
     apiClient.askNlqStream(
         query,
         {
@@ -48,12 +46,15 @@ function _submit({ query, app, apiClient, applier, pill }) {
         () => {},
         (result) => {
             const actions = result.actions || [];
-            appliedActionTypes.push(...actions.map((a) => a.type));
             const counts = applier.apply(actions);
             pill.setAnswer({
                 summary: result.summary || '',
                 entities: result.entities || [],
-                appliedActions: appliedActionTypes,
+                // Use the applier's own record of what it actually applied —
+                // NOT a map over the raw stream payload — or a
+                // sanitizer-rejected/failed action renders as "✓ applied"
+                // while simultaneously counted in "N skipped".
+                appliedActions: counts.appliedTypes,
                 skipped: counts.skipped,
             });
         },

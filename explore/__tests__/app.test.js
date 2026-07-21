@@ -2076,6 +2076,37 @@ describe('ExploreApp helper methods', () => {
             // d3 mock's selectAll and each should be called
             expect(app.graph.g.selectAll).toHaveBeenCalledWith('g');
         });
+
+        it('should not throw on undated container <g> elements and should still highlight matching nodes (regression discogsography-cu2.36)', () => {
+            const app = new ExploreApp();
+            const classedSpy = vi.fn();
+
+            // graph.js's _render() creates two undated wrapper <g> containers
+            // (links, nodes) alongside the real per-node <g> elements bound to
+            // data via .data(this.nodes). selectAll('g') matches all three.
+            const iterations = [
+                { d: undefined, el: { classed: classedSpy } }, // link container
+                { d: undefined, el: { classed: classedSpy } }, // node container
+                { d: { type: 'genre', name: 'Electronic' }, el: { classed: classedSpy } },
+                { d: { type: 'artist', name: 'Radiohead' }, el: { classed: classedSpy } },
+            ];
+            app.graph.g.selectAll = vi.fn(() => ({
+                each(callback) {
+                    for (const { d, el } of iterations) callback.call(el, d);
+                    return this;
+                },
+            }));
+            const originalSelect = globalThis.d3.select;
+            globalThis.d3.select = vi.fn((node) => node);
+
+            try {
+                expect(() => app._onGenreEmergence(['Electronic'])).not.toThrow();
+                expect(classedSpy).toHaveBeenCalledWith('node-emergence', true);
+                expect(classedSpy).toHaveBeenCalledTimes(1);
+            } finally {
+                globalThis.d3.select = originalSelect;
+            }
+        });
     });
 
     describe('ExploreApp._loadTrends - compare mode', () => {

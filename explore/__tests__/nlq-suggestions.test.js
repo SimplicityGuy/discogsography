@@ -84,4 +84,42 @@ describe('NlqSuggestions', () => {
         const rows = container.querySelectorAll('.nlq-chip-row');
         expect(rows.length).toBe(0);
     });
+
+    describe('addRecent storage failure resilience (regression discogsography-cu2.64)', () => {
+        it('does not throw when localStorage.setItem raises QuotaExceededError', () => {
+            const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+                throw new DOMException('quota exceeded', 'QuotaExceededError');
+            });
+            try {
+                expect(() => NlqSuggestions.addRecent('a query that cannot be persisted')).not.toThrow();
+            } finally {
+                setItemSpy.mockRestore();
+            }
+        });
+
+        it('does not throw when localStorage.setItem raises SecurityError (storage denied)', () => {
+            const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+                throw new DOMException('storage access denied', 'SecurityError');
+            });
+            try {
+                expect(() => NlqSuggestions.addRecent('another query')).not.toThrow();
+            } finally {
+                setItemSpy.mockRestore();
+            }
+        });
+
+        it('does not throw when loadRecent needs to clear storage but removeItem also throws (total storage denial)', () => {
+            const getItemSpy = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue('not json');
+            const removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+                throw new DOMException('storage access denied', 'SecurityError');
+            });
+            try {
+                expect(() => NlqSuggestions.loadRecent()).not.toThrow();
+                expect(NlqSuggestions.loadRecent()).toEqual([]);
+            } finally {
+                getItemSpy.mockRestore();
+                removeItemSpy.mockRestore();
+            }
+        });
+    });
 });

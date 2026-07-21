@@ -188,6 +188,57 @@ describe('SettingsPane', () => {
             window.settingsPane.init();
             expect(document.getElementById('settingsEmail').textContent).toBe('');
         });
+
+        describe('transient 2FA flow preservation (regression discogsography-cu2.40)', () => {
+            it('should NOT clobber the recovery state on re-activation, even once totp_enabled flips true', () => {
+                window.settingsPane.init();
+                window.settingsPane._twoFaState = 'recovery';
+                window.settingsPane._recoveryCodes = ['code1', 'code2'];
+
+                // Simulate _confirmSetup's real effect: the user record now
+                // reports totp_enabled = true.
+                window.authManager.getUser.mockReturnValue({ id: 1, email: 'user@test.com', totp_enabled: true });
+
+                // Re-activating Settings (e.g. clicking another nav item and
+                // back) calls init() -> _loadProfile() again.
+                window.settingsPane.init();
+
+                expect(window.settingsPane._twoFaState).toBe('recovery');
+                expect(window.settingsPane._recoveryCodes).toEqual(['code1', 'code2']);
+            });
+
+            it('should NOT clobber the setup state on re-activation', () => {
+                window.settingsPane.init();
+                window.settingsPane._twoFaState = 'setup';
+                window.settingsPane._setupData = { secret: 'JBSWY3DPEHPK3PXP', otpauth_uri: 'otpauth://totp/test' };
+
+                window.settingsPane.init();
+
+                expect(window.settingsPane._twoFaState).toBe('setup');
+            });
+
+            it('should NOT clobber the disableConfirm state on re-activation', () => {
+                window.authManager.getUser.mockReturnValue({ id: 1, email: 'user@test.com', totp_enabled: true });
+                window.settingsPane.init();
+                window.settingsPane._twoFaState = 'disableConfirm';
+
+                window.settingsPane.init();
+
+                expect(window.settingsPane._twoFaState).toBe('disableConfirm');
+            });
+
+            it('should still derive state from totp_enabled once no transient flow is active', () => {
+                window.settingsPane.init();
+                window.settingsPane._twoFaState = 'recovery';
+
+                window.authManager.getUser.mockReturnValue({ id: 1, email: 'user@test.com', totp_enabled: true });
+                window.settingsPane._twoFaState = 'enabled'; // flow completed normally
+
+                window.settingsPane.init();
+
+                expect(window.settingsPane._twoFaState).toBe('enabled');
+            });
+        });
     });
 
     // ------------------------------------------------------------------ //

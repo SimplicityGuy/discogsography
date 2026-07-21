@@ -186,6 +186,10 @@ class GraphVisualization {
         this.expandedCategories.clear();
         this._pendingExpands = 0;
         this._categoryMeta.clear();
+        // A fresh explore session must not inherit a timeline scrub from the
+        // previous session — timeline.init() resets the UI label to 'All'
+        // but does not itself clear graph state (discogsography-cu2.38).
+        this.beforeYear = null;
 
         // Reset zoom to identity
         this.svg.call(this.zoom.transform, d3.zoomIdentity);
@@ -615,6 +619,11 @@ class GraphVisualization {
         this.links = [];
         this.expandedCategories.clear();
         this._pendingExpands = 0;
+        this._categoryMeta.clear();
+        // Same stale-filter leak as setExploreData (discogsography-cu2.38):
+        // a snapshot restore must not carry over a beforeYear scrubbed
+        // during the prior session.
+        this.beforeYear = null;
 
         this.svg.call(this.zoom.transform, d3.zoomIdentity);
 

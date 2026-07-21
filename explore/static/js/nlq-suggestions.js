@@ -48,19 +48,30 @@ export class NlqSuggestions {
         this.container.appendChild(row);
     }
 
+    /** Best-effort removeItem — storage access can be fully denied (e.g. a
+     * sandboxed iframe), in which case even removeItem throws. Never let
+     * cleanup itself become an unhandled throw. */
+    static _clearStorage() {
+        try {
+            localStorage.removeItem(STORAGE_KEY);
+        } catch {
+            // storage access denied entirely — nothing more we can do
+        }
+    }
+
     static loadRecent() {
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
             if (!raw) return [];
             const parsed = JSON.parse(raw);
             if (!Array.isArray(parsed)) {
-                localStorage.removeItem(STORAGE_KEY);
+                NlqSuggestions._clearStorage();
                 console.info('ℹ️ NLQ history reset (not an array)');
                 return [];
             }
             return parsed;
         } catch {
-            localStorage.removeItem(STORAGE_KEY);
+            NlqSuggestions._clearStorage();
             console.info('ℹ️ NLQ history reset (corrupt)');
             return [];
         }
@@ -72,6 +83,14 @@ export class NlqSuggestions {
         const current = NlqSuggestions.loadRecent().filter((q) => q !== trimmed);
         current.unshift(trimmed);
         const capped = current.slice(0, HISTORY_CAP);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(capped));
+        // localStorage.setItem throws QuotaExceededError when storage is
+        // full and SecurityError when storage access is denied. This runs
+        // in the query-submit path BEFORE the query is dispatched — an
+        // uncaught throw here must never drop the submit. Log and continue.
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(capped));
+        } catch (err) {
+            console.warn('🤷 NLQ recent-history save failed', err);
+        }
     }
 }
