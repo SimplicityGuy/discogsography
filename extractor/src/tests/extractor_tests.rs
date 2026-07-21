@@ -916,6 +916,39 @@ rules:
     assert_eq!(report.total_records["artists"], 1);
 }
 
+// ── failed-check status reset tests (cu2.41) ────────────────────────
+
+/// Regression for cu2.41: after a periodic/triggered extraction returns `Err`, the loop must
+/// reset a stuck `Running` status to `Failed`. Without this the status set up-front in
+/// `process_discogs_data` survives an early-`?` error for the whole multi-day periodic sleep,
+/// wedging `/trigger` recovery and starving the MusicBrainz idle-wait.
+#[tokio::test]
+async fn test_reset_status_after_failed_check_clears_running() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    // Simulate the stuck state: process_discogs_data set Running, then an early `?` propagated.
+    state.write().await.extraction_status = ExtractionStatus::Running;
+
+    reset_status_after_failed_check(&state).await;
+
+    assert_eq!(state.read().await.extraction_status, ExtractionStatus::Failed, "a failed check must not leave the status stuck at Running");
+}
+
+/// The reset lands on `Failed` (not `Running`, not `Completed`) so downstream consumers treat it
+/// as a terminal, recoverable state: health.rs stops returning 409 `already_running`, and
+/// `wait_for_discogs_idle` (which treats only `running` as busy) proceeds.
+#[tokio::test]
+async fn test_reset_status_after_failed_check_is_not_running() {
+    for start in [ExtractionStatus::Running, ExtractionStatus::Completed, ExtractionStatus::Waiting] {
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+        state.write().await.extraction_status = start;
+        reset_status_after_failed_check(&state).await;
+        let got = state.read().await.extraction_status;
+        assert_eq!(got, ExtractionStatus::Failed);
+        assert_ne!(got, ExtractionStatus::Running);
+    }
+}
+
 // ── message_normalizer tests (cu2.43) ───────────────────────────────
 
 /// Regression for cu2.43: normalization + hashing must run unconditionally, not only inside

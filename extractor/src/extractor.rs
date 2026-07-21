@@ -850,6 +850,23 @@ async fn wait_for_trigger(trigger: &Arc<tokio::sync::Mutex<Option<bool>>>) -> bo
 }
 
 /// Main extraction loop with periodic checks
+/// Reset a stuck `Running` extraction status to `Failed` after a periodic or API-triggered
+/// check returns `Err`.
+///
+/// `process_discogs_data` / `process_musicbrainz_data` set the status to `Running` up-front but
+/// only reset it on their fall-through tail; any early `?` error short-circuits before that reset,
+/// leaving the status at `Running`. The periodic loops swallow the `Err` and sleep for
+/// `periodic_check_days`, so without this backstop the status stays `Running` for the entire sleep —
+/// wedging the manual `/trigger` recovery (health.rs returns 409 `already_running` before enqueuing
+/// the trigger), starving the MusicBrainz extractor's `wait_for_discogs_idle` (which treats
+/// `running` as busy), and misreporting `/health`. `Failed` is a terminal, non-`Running` state that
+/// the periodic loop preserves (it only rewrites `Completed` -> `Waiting`) until the next successful
+/// run. (cu2.41)
+async fn reset_status_after_failed_check(state: &Arc<RwLock<ExtractorState>>) {
+    let mut s = state.write().await;
+    s.extraction_status = ExtractionStatus::Failed;
+}
+
 pub async fn run_extraction_loop(
     config: Arc<ExtractorConfig>,
     state: Arc<RwLock<ExtractorState>>,
@@ -918,6 +935,10 @@ pub async fn run_extraction_loop(
                     }
                     Err(e) => {
                         error!("❌ Periodic check failed: {}", e);
+                        // Backstop: an early `?` in process_discogs_data leaves status at Running.
+                        // Reset to Failed so /trigger recovery and the MusicBrainz idle-wait unblock
+                        // instead of staying wedged for the whole periodic sleep. (cu2.41)
+                        reset_status_after_failed_check(&state).await;
                     }
                 }
             }
@@ -934,7 +955,10 @@ pub async fn run_extraction_loop(
                 match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), trigger_force_reprocess, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => info!("✅ Triggered extraction completed successfully in {:?}", start.elapsed()),
                     Ok(false) => error!("❌ Triggered extraction completed with errors"),
-                    Err(e) => error!("❌ Triggered extraction failed: {}", e),
+                    Err(e) => {
+                        error!("❌ Triggered extraction failed: {}", e);
+                        reset_status_after_failed_check(&state).await; // (cu2.41)
+                    }
                 }
             }
             _ = shutdown.notified() => {
@@ -1083,6 +1107,7 @@ pub async fn run_musicbrainz_loop(
                     }
                     Err(e) => {
                         error!("❌ Periodic MusicBrainz check failed: {}", e);
+                        reset_status_after_failed_check(&state).await; // (cu2.41)
                     }
                 }
             }
@@ -1096,7 +1121,10 @@ pub async fn run_musicbrainz_loop(
                 match process_musicbrainz_data(config.clone(), state.clone(), shutdown_flag.clone(), trigger_force_reprocess, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => info!("✅ Triggered MusicBrainz extraction completed in {:?}", start.elapsed()),
                     Ok(false) => error!("❌ Triggered MusicBrainz extraction completed with errors"),
-                    Err(e) => error!("❌ Triggered MusicBrainz extraction failed: {}", e),
+                    Err(e) => {
+                        error!("❌ Triggered MusicBrainz extraction failed: {}", e);
+                        reset_status_after_failed_check(&state).await; // (cu2.41)
+                    }
                 }
             }
             _ = shutdown.notified() => {
