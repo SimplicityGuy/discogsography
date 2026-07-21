@@ -395,10 +395,15 @@ async def execute_search(
 
     key = cache_key(q, types, genres, year_min, year_max, limit, offset)
 
+    # Cache-aside read — Redis is a pure optimization. A Redis outage (or a
+    # corrupt cache entry) must degrade to a fresh PostgreSQL query, never 500.
     if redis is not None:
-        cached = await redis.get(key)
-        if cached:
-            return json.loads(cached)  # type: ignore[no-any-return]
+        try:
+            cached = await redis.get(key)
+            if cached:
+                return json.loads(cached)  # type: ignore[no-any-return]
+        except Exception:
+            logger.debug("⚠️ Search cache read failed, falling through to DB", key=key)
 
     logger.debug("🔍 Search cache miss, querying DB", q=q, types=types)
 
@@ -426,7 +431,12 @@ async def execute_search(
         },
     }
 
+    # Best-effort cache write — a Redis outage must not fail an otherwise
+    # successful, fully PostgreSQL-backed search response.
     if redis is not None:
-        await redis.setex(key, _SEARCH_CACHE_TTL, json.dumps(response))
+        try:
+            await redis.setex(key, _SEARCH_CACHE_TTL, json.dumps(response))
+        except Exception:
+            logger.debug("⚠️ Search cache write failed", key=key)
 
     return response

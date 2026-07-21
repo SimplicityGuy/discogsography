@@ -674,3 +674,95 @@ class TestSearchQueryAsyncFunctions:
             result = await execute_search(mock_pool, None, "blue", ["artist"], [], None, None, 20, 0)
 
         assert result["query"] == "blue"
+
+    @staticmethod
+    def _db_mocks() -> MagicMock:
+        """A pool whose cursor returns empty result sets for every _run_* query."""
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[])
+        mock_cursor.fetchone = AsyncMock(return_value={"total": 0})
+        mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor.__aexit__ = AsyncMock(return_value=False)
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+        return mock_pool
+
+    @pytest.mark.asyncio
+    async def test_execute_search_degrades_when_redis_get_raises(self) -> None:
+        """discogsography-cu2.23: a Redis read outage must fall through to the DB,
+        not propagate a 500 — search is fully PostgreSQL-backed.
+        """
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        from api.queries.search_queries import execute_search
+
+        mock_pool = self._db_mocks()
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(side_effect=RedisConnectionError("Connection refused"))
+        mock_redis.setex = AsyncMock()
+
+        with patch("api.queries.search_queries.execute_sql", new_callable=AsyncMock):
+            result = await execute_search(mock_pool, mock_redis, "blue", ["artist"], [], None, None, 20, 0)
+
+        # Answered from PostgreSQL despite the Redis outage.
+        assert result["query"] == "blue"
+        assert result["total"] == 0
+        mock_redis.get.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_search_returns_when_redis_setex_raises(self) -> None:
+        """discogsography-cu2.23: a Redis write outage must not fail an otherwise
+        successful search response.
+        """
+        from redis.exceptions import ConnectionError as RedisConnectionError
+
+        from api.queries.search_queries import execute_search
+
+        mock_pool = self._db_mocks()
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock(side_effect=RedisConnectionError("Connection refused"))
+
+        with patch("api.queries.search_queries.execute_sql", new_callable=AsyncMock):
+            result = await execute_search(mock_pool, mock_redis, "blue", ["artist"], [], None, None, 20, 0)
+
+        assert result["query"] == "blue"
+        mock_redis.setex.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_search_treats_corrupt_cache_entry_as_miss(self) -> None:
+        """discogsography-cu2.23: a corrupt (non-JSON) cache entry must be treated
+        as a miss rather than raising.
+        """
+        from api.queries.search_queries import execute_search
+
+        mock_pool = self._db_mocks()
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value="{not valid json")
+        mock_redis.setex = AsyncMock()
+
+        with patch("api.queries.search_queries.execute_sql", new_callable=AsyncMock):
+            result = await execute_search(mock_pool, mock_redis, "blue", ["artist"], [], None, None, 20, 0)
+
+        assert result["query"] == "blue"
+
+    @pytest.mark.asyncio
+    async def test_run_results_final_order_has_unique_tiebreaker(self) -> None:
+        """discogsography-cu2.56: the outer paginated query must sort by a unique
+        secondary key so OFFSET pagination is page-consistent across executions.
+        """
+        from api.queries.search_queries import _run_results
+
+        mock_pool = self._db_mocks()
+        with patch("api.queries.search_queries.execute_sql", new_callable=AsyncMock) as mock_exec:
+            await _run_results(mock_pool, "Rock", ["artist"], [], None, None, 10, 10)
+
+        rendered = mock_exec.call_args[0][1].as_string(None)
+        # Final ordering carries the unique `id` tiebreaker; the per-table cap
+        # carries the unique `data_id` tiebreaker.
+        assert "ORDER BY rank DESC, id" in rendered
+        assert "ORDER BY rank DESC, data_id LIMIT" in rendered
