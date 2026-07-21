@@ -748,11 +748,27 @@ async def cleanup_stub_nodes(data_type: str) -> bool:
     if not label:
         return True
 
+    # Batch the deletion with CALL {} IN TRANSACTIONS so a large stub-node set
+    # (cross-type MERGEs can leave hundreds of thousands to millions of
+    # property-less stubs after a full import) does not run in one implicit
+    # transaction — a single unbatched DETACH DELETE blows the Neo4j
+    # transaction memory limit (dbms.memory.transaction.total.max) or the
+    # default 120s timeout, and the swallowed error would leave the stubs
+    # forever. Mirrors the compute_genre_style_stats batching in this file: the
+    # driving MATCH sits OUTSIDE the transactional subquery and the node is
+    # re-imported via WITH, so each inner transaction deletes at most one chunk.
+    cleanup_cypher = f"""
+    MATCH (n:{label})
+    WHERE n.sha256 IS NULL
+    CALL {{
+        WITH n
+        DETACH DELETE n
+    }} IN TRANSACTIONS OF 10000 ROWS
+    """
+
     try:
         async with graph.session(database="neo4j") as session:
-            result = await session.run(
-                f"MATCH (n:{label}) WHERE n.sha256 IS NULL DETACH DELETE n",
-            )
+            result = await session.run(cleanup_cypher)
             summary = await result.consume()
             deleted = summary.counters.nodes_deleted
 

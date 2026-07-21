@@ -4356,3 +4356,31 @@ class TestStubCleanupBatchAndOrdering:
         for label in ("Artist", "Label", "Master", "Release"):
             assert label in joined, f"cleanup must cover {label} stubs"
 
+    @pytest.mark.asyncio
+    async def test_cleanup_uses_batched_transactions(self) -> None:
+        """cu2.68: the delete is batched via CALL {} IN TRANSACTIONS, not one big tx."""
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._make_graph_mock()
+        with patch.object(g, "graph", graph_mock):
+            ok = await g.cleanup_stub_nodes("artists")
+
+        assert ok is True
+        assert len(run_calls) == 1
+        cypher = run_calls[0]
+        assert "IN TRANSACTIONS" in cypher, "delete must be batched to survive scale"
+        assert "DETACH DELETE" in cypher
+        assert "Artist" in cypher
+        assert "n.sha256 IS NULL" in cypher
+
+    @pytest.mark.asyncio
+    async def test_cleanup_failure_returns_false_for_retry(self) -> None:
+        """cu2.68: a failed delete must return False so the caller nacks/retries."""
+        import graphinator.graphinator as g
+
+        graph_mock, _ = self._make_graph_mock(fail=True)
+        with patch.object(g, "graph", graph_mock), patch.object(g, "logger"):
+            ok = await g.cleanup_stub_nodes("artists")
+
+        assert ok is False
+
