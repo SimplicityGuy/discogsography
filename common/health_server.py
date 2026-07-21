@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from datetime import UTC, datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
 from threading import Thread
@@ -14,6 +14,13 @@ logger = logging.getLogger(__name__)
 
 class HealthHandler(BaseHTTPRequestHandler):
     """HTTP request handler for health checks and optional Prometheus metrics."""
+
+    # Bound how long a connected-but-silent peer (e.g. a TCP-connect port scan or a
+    # half-open connection after a network partition) can hold this handler's
+    # rfile.readline() before it is dropped. Without this, a single such peer blocks
+    # indefinitely; combined with a threading server this only ties up one worker
+    # thread instead of wedging the entire accept loop.
+    timeout = 5
 
     def do_GET(self) -> None:
         """Handle GET requests."""
@@ -42,8 +49,15 @@ class HealthHandler(BaseHTTPRequestHandler):
         pass
 
 
-class HealthServer(HTTPServer):
-    """HTTP server with health check endpoint and optional Prometheus metrics endpoint."""
+class HealthServer(ThreadingHTTPServer):
+    """HTTP server with health check endpoint and optional Prometheus metrics endpoint.
+
+    Uses ThreadingHTTPServer (rather than the single-threaded HTTPServer) so one
+    connection stuck in a blocking read (see HealthHandler.timeout) cannot wedge the
+    accept loop for every other client — each connection gets its own daemon thread.
+    """
+
+    daemon_threads = True
 
     def __init__(
         self,
