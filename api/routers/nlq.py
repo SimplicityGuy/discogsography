@@ -129,7 +129,14 @@ async def nlq_query(request: Request, body: NLQQueryRequest) -> Any:
     # Extract optional user_id from Bearer token
     user_id = _extract_user_id(request)
 
+    # Determine the response mode BEFORE consulting the cache. A streaming client
+    # must ALWAYS receive an event stream — never a plain JSON cache body, which
+    # its SSE parser cannot read, hanging the Ask UI. See discogsography-cu2.27.
+    accept = request.headers.get("accept", "")
+    wants_stream = "text/event-stream" in accept
+
     # Check Redis cache for public (unauthenticated) queries
+    cached_data: dict[str, Any] | None = None
     if user_id is None and _redis is not None:
         cache_k = _cache_key(body.query)
         try:
@@ -137,14 +144,16 @@ async def nlq_query(request: Request, body: NLQQueryRequest) -> Any:
             if cached is not None:
                 cached_data = json.loads(cached)
                 cached_data["cached"] = True
-                return JSONResponse(content=cached_data)
         except Exception:
             logger.debug("⚠️ NLQ cache read failed", key=cache_k)
 
-    # Check for SSE request
-    accept = request.headers.get("accept", "")
-    if "text/event-stream" in accept:
-        return _stream_response(body.query, user_id, body.context)
+    # Streaming clients get an event stream regardless of cache state — a cache
+    # hit is replayed as synthetic SSE events inside _stream_response.
+    if wants_stream:
+        return _stream_response(body.query, user_id, body.context, cached=cached_data)
+
+    if cached_data is not None:
+        return JSONResponse(content=cached_data)
 
     # Build context
     ctx = NLQContext(
@@ -176,10 +185,38 @@ async def nlq_query(request: Request, body: NLQQueryRequest) -> Any:
     return JSONResponse(content=response_data)
 
 
-def _stream_response(query: str, user_id: str | None, context: dict[str, Any] | None) -> EventSourceResponse:
-    """Return an SSE EventSourceResponse that streams NLQ status and result."""
+def _stream_response(
+    query: str,
+    user_id: str | None,
+    context: dict[str, Any] | None,
+    cached: dict[str, Any] | None = None,
+) -> EventSourceResponse:
+    """Return an SSE EventSourceResponse that streams NLQ status and result.
+
+    When ``cached`` is provided (a prior JSON cache hit), the cached result is
+    replayed as synthetic actions/result SSE events instead of re-running the
+    engine — so a streaming client always receives a well-formed event stream.
+    """
 
     async def event_generator() -> Any:
+        # Replay a cached result as synthetic SSE events so a streaming client
+        # never hangs on a plain JSON cache body. See discogsography-cu2.27.
+        if cached is not None:
+            yield {"event": "actions", "data": json.dumps({"actions": cached.get("actions", [])})}
+            yield {
+                "event": "result",
+                "data": json.dumps(
+                    {
+                        "query": cached.get("query", query),
+                        "summary": cached.get("summary"),
+                        "entities": cached.get("entities"),
+                        "tools_used": cached.get("tools_used"),
+                        "cached": True,
+                    }
+                ),
+            }
+            return
+
         ctx = NLQContext(
             user_id=user_id,
             current_entity_id=context.get("entity_id") if context else None,

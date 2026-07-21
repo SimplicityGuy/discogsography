@@ -39,3 +39,34 @@ async def test_sse_emits_actions_event_before_result() -> None:
     actions_event = events[actions_idx]
     payload = json.loads(actions_event["data"])
     assert payload["actions"][0]["type"] == "seed_graph"
+
+
+@pytest.mark.asyncio
+async def test_sse_replays_cached_result_without_running_engine() -> None:
+    """discogsography-cu2.27: when a streaming request hits a cache entry (written
+    by a prior JSON request), the cached result must be replayed as synthetic
+    actions/result SSE events — never run the engine, never emit a JSON body.
+    """
+    from api.routers import nlq as nlq_router
+
+    engine = MagicMock()
+    engine.run = AsyncMock(side_effect=AssertionError("engine must not run for a cache hit"))
+    nlq_router._engine = engine
+
+    cached = {
+        "query": "who produced Thriller",
+        "summary": "Quincy Jones",
+        "entities": [],
+        "tools_used": ["search"],
+        "actions": [{"type": "seed_graph"}],
+        "cached": True,
+    }
+    response = nlq_router._stream_response("who produced Thriller", None, None, cached=cached)
+    events = [event async for event in response.body_iterator]
+
+    kinds = [e.get("event") for e in events]
+    assert kinds == ["actions", "result"]
+    result_payload = json.loads(events[1]["data"])
+    assert result_payload["summary"] == "Quincy Jones"
+    assert result_payload["cached"] is True
+    engine.run.assert_not_called()
