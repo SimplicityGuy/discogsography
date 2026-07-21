@@ -408,6 +408,78 @@ class TestDashboardAppBroadcast:
             assert mock_ws_working in app.websocket_connections
             assert mock_ws_failing not in app.websocket_connections
 
+    @pytest.mark.asyncio
+    async def test_broadcast_metrics_stalled_client_does_not_block_others(self) -> None:
+        """discogsography-cu2.62: broadcast_metrics used to hold _ws_lock while awaiting
+        send_text serially, so one stalled client (e.g. a sleeping laptop applying TCP
+        backpressure) blocked delivery to every other client. A stalled send must not
+        delay a well-behaved client's send, and the stalled client must still be
+        dropped afterwards.
+        """
+        mock_config = Mock()
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+
+            fast_ws = AsyncMock()
+            stalled_ws = AsyncMock()
+
+            async def _hang(_message: str) -> None:
+                # Simulate TCP backpressure: never resolves within the send timeout.
+                await asyncio.sleep(3600)
+
+            stalled_ws.send_text.side_effect = _hang
+
+            app.websocket_connections.add(fast_ws)
+            app.websocket_connections.add(stalled_ws)
+
+            metrics = SystemMetrics(pipelines={}, databases=[], timestamp=datetime.now())
+
+            with patch("dashboard.dashboard._WS_SEND_TIMEOUT_SECONDS", 0.05):
+                start = asyncio.get_event_loop().time()
+                await app.broadcast_metrics(metrics)
+                elapsed = asyncio.get_event_loop().time() - start
+
+            # Bounded by the per-client send timeout, not the stalled client's hang.
+            assert elapsed < 1
+            fast_ws.send_text.assert_called_once()
+            assert fast_ws in app.websocket_connections
+            assert stalled_ws not in app.websocket_connections
+
+    @pytest.mark.asyncio
+    async def test_broadcast_metrics_sends_outside_the_lock(self) -> None:
+        """discogsography-cu2.62: the lock must only guard the connection-set snapshot
+        and cleanup, not the network sends — a new /ws registration (which needs the
+        same lock) must be able to proceed concurrently with an in-flight broadcast.
+        """
+        mock_config = Mock()
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+
+            send_started = asyncio.Event()
+            release_send = asyncio.Event()
+
+            async def _send_text(_message: str) -> None:
+                send_started.set()
+                await release_send.wait()
+
+            slow_ws = AsyncMock()
+            slow_ws.send_text.side_effect = _send_text
+            app.websocket_connections.add(slow_ws)
+
+            metrics = SystemMetrics(pipelines={}, databases=[], timestamp=datetime.now())
+            broadcast_task = asyncio.create_task(app.broadcast_metrics(metrics))
+
+            await asyncio.wait_for(send_started.wait(), timeout=1)
+
+            # The lock must be free while the send is in flight.
+            assert app._ws_lock is not None
+            assert not app._ws_lock.locked()
+
+            release_send.set()
+            await asyncio.wait_for(broadcast_task, timeout=1)
+
 
 class TestDashboardAppDataCollection:
     """Test data collection methods."""
