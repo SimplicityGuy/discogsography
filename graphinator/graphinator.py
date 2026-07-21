@@ -461,6 +461,11 @@ async def _recover_consumers() -> None:
         active_connection = None  # noqa: F841
         active_channel = None  # noqa: F841
         queues = {}  # noqa: F841
+        # Clear stale consumer tags: any consumers registered before the error
+        # died with the now-closed connection. Leaving them behind would keep
+        # len(consumer_tags) > 0 forever, permanently gating off both recovery
+        # routes (stuck-check requires 0 tags) while health still reads healthy.
+        consumer_tags.clear()
 
 
 async def check_file_completion(

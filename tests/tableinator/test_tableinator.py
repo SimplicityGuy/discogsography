@@ -2335,6 +2335,58 @@ class TestRecoverConsumersTableinator:
         t.queues = {}
 
     @pytest.mark.asyncio
+    async def test_error_after_partial_registration_clears_consumer_tags(self) -> None:
+        """Regression (cu2.54): if recovery errors after ≥1 consumer registered,
+        the except block must clear consumer_tags.
+
+        The consumers registered before the error died with the now-closed
+        connection; leaving their tags behind keeps len(consumer_tags) > 0
+        forever, permanently gating off both recovery routes (the stuck-check
+        requires 0 tags) while health still reports healthy.
+        """
+        import tableinator.tableinator as t
+
+        t.active_connection = None
+        t.active_channel = None
+        t.consumer_tags = {}
+        t.completed_files = set()
+        t.queues = {}
+        t.last_message_time = dict.fromkeys(["artists", "labels", "masters", "releases"], 0.0)
+
+        def declare_queue(**kwargs: Any) -> Any:
+            name = kwargs.get("name", "")
+            if kwargs.get("passive"):
+                q = MagicMock()
+                q.declaration_result.message_count = 100  # all have a backlog
+                return q
+            q = AsyncMock()
+            q.bind = AsyncMock()
+            # artists registers fine; labels raises mid-loop (broker flap).
+            if name.endswith("-labels"):
+                q.consume = AsyncMock(side_effect=RuntimeError("channel closed mid-recovery"))
+            else:
+                q.consume = AsyncMock(return_value=f"tag-{name}")
+            return q
+
+        mock_channel = AsyncMock()
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue)
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.set_qos = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_rmq = AsyncMock()
+        mock_rmq.connect = AsyncMock(return_value=mock_connection)
+
+        with patch.object(t, "rabbitmq_manager", mock_rmq), patch.object(t, "logger"):
+            await t._recover_consumers()
+
+        assert t.consumer_tags == {}, "stale consumer tags must be cleared so recovery can re-fire"
+        assert t.active_connection is None
+
+        t.consumer_tags = {}
+        t.queues = {}
+
+    @pytest.mark.asyncio
     async def test_exception_during_recovery_closes_temp_connection(self) -> None:
         """Test that exception during recovery closes temp connection (lines 457-464)."""
         import tableinator.tableinator
