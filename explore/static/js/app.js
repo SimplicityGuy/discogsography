@@ -1005,10 +1005,15 @@ class ExploreApp {
     }
 
     _onGenreEmergence(newGenres) {
-        // Highlight genre/style nodes that just appeared
+        // Highlight genre/style nodes that just appeared.
+        // this.graph.g.selectAll('g') also matches the undated link/node
+        // container <g> elements created in graph.js's _render(), which have
+        // no bound datum (d === undefined) — guard against those before
+        // touching d.type, or the very first iteration throws.
         const genreSet = new Set(newGenres.map(n => n.toLowerCase()));
         this.graph.g.selectAll('g').each(function(d) {
-            if ((d.type === 'genre' || d.type === 'style') && genreSet.has(d.name.toLowerCase())) {
+            if (!d || (d.type !== 'genre' && d.type !== 'style')) return;
+            if (genreSet.has(d.name.toLowerCase())) {
                 d3.select(this).classed('node-emergence', true);
                 setTimeout(() => d3.select(this).classed('node-emergence', false), 2000);
             }
