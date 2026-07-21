@@ -949,6 +949,46 @@ async fn test_reset_status_after_failed_check_is_not_running() {
     }
 }
 
+// ── shutdown-flag monitor tests (cu2.44) ────────────────────────────
+
+/// Regression for cu2.44: the Discogs path lost SIGTERM/SIGINT delivered mid-run because nothing
+/// converted the one-shot `Notify` into a pollable flag. `spawn_shutdown_flag_monitor` must flip
+/// its `AtomicBool` when the `Notify` fires, so processing code can observe a shutdown between
+/// files without consuming the signal the outer `select!` needs.
+#[tokio::test]
+async fn test_spawn_shutdown_flag_monitor_flips_on_notify() {
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let flag = spawn_shutdown_flag_monitor(shutdown.clone());
+
+    assert!(!flag.load(Ordering::SeqCst), "flag starts clear");
+
+    // notify_waiters() wakes only currently-parked waiters and stores no permit, so retry until
+    // the monitor task has parked and observed the signal (or fail after a bounded wait).
+    let mut fired = false;
+    for _ in 0..200 {
+        shutdown.notify_waiters();
+        tokio::task::yield_now().await;
+        if flag.load(Ordering::SeqCst) {
+            fired = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+
+    assert!(fired, "monitor must set the shutdown flag once the Notify fires");
+}
+
+/// The flag stays clear until the signal actually fires — a spurious early poll must not report a
+/// shutdown, otherwise the first file would be skipped on every run.
+#[tokio::test]
+async fn test_spawn_shutdown_flag_monitor_stays_clear_without_signal() {
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let flag = spawn_shutdown_flag_monitor(shutdown);
+    tokio::task::yield_now().await;
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    assert!(!flag.load(Ordering::SeqCst), "flag must remain clear until shutdown fires");
+}
+
 // ── message_normalizer tests (cu2.43) ───────────────────────────────
 
 /// Regression for cu2.43: normalization + hashing must run unconditionally, not only inside

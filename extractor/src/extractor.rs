@@ -86,6 +86,9 @@ pub async fn process_discogs_data(
     config: Arc<ExtractorConfig>,
     state: Arc<RwLock<ExtractorState>>,
     shutdown: Arc<tokio::sync::Notify>,
+    // Pollable shutdown flag (set by the loop's monitor task on SIGTERM/SIGINT). Checked between
+    // files so a signal delivered mid-run stops starting new files instead of being lost. (cu2.44)
+    shutdown_flag: Arc<AtomicBool>,
     force_reprocess: bool,
     downloader: &mut dyn DataSource,
     mq_factory: Arc<dyn MessageQueueFactory>,
@@ -288,9 +291,18 @@ pub async fn process_discogs_data(
         let state_marker_arc = state_marker_arc.clone();
         let mq_factory = mq_factory.clone();
         let compiled_rules = compiled_rules.clone();
+        let shutdown_flag = shutdown_flag.clone();
 
         let task: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             let _permit = semaphore.acquire().await?;
+            // Graceful shutdown: stop starting new files once a SIGTERM/SIGINT arrives. Files
+            // already past this guard run to completion; skipped files never call
+            // start_file_processing, so they stay pending in the state marker and a restart
+            // resumes them. (cu2.44)
+            if shutdown_flag.load(Ordering::SeqCst) {
+                info!("🛑 Shutdown requested — skipping not-yet-started file: {}", file);
+                return Ok(());
+            }
             let mq = mq_factory
                 .create(&config.amqp_connection, &config.discogs_exchange_prefix)
                 .await
@@ -332,6 +344,16 @@ pub async fn process_discogs_data(
 
     reporter.abort();
 
+    // A shutdown signal delivered mid-run is a graceful stop, not a processing failure: in-flight
+    // files (already past the per-task guard) finish, but files skipped by that guard stay pending.
+    // Fold it into `success` so the completion/broadcast/status logic below does NOT finalize the
+    // run — while logging it as a shutdown rather than an error. (cu2.44)
+    let shutdown_requested = shutdown_flag.load(Ordering::SeqCst);
+    if shutdown_requested {
+        warn!("🛑 Shutdown requested during Discogs processing — saving progress for resume, not finalizing this run");
+        success = false;
+    }
+
     // Only mark processing as complete if all tasks succeeded
     {
         let mut state_marker = state_marker_arc.lock().await;
@@ -343,7 +365,11 @@ pub async fn process_discogs_data(
         } else {
             // Save current progress without marking complete — allows restart to resume
             state_marker.save(&marker_path).await?;
-            error!("❌ Processing phase finished with errors — not marking complete");
+            if shutdown_requested {
+                info!("🛑 Processing interrupted by shutdown — progress saved for resume, not marking complete");
+            } else {
+                error!("❌ Processing phase finished with errors — not marking complete");
+            }
         }
     } // Drop state_marker lock before re-acquiring below
 
@@ -388,7 +414,11 @@ pub async fn process_discogs_data(
             }
         } else {
             drop(s);
-            error!("❌ Skipping extraction_complete broadcast — processing had failures");
+            if shutdown_requested {
+                info!("🛑 Skipping extraction_complete broadcast — shutdown in progress");
+            } else {
+                error!("❌ Skipping extraction_complete broadcast — processing had failures");
+            }
         }
     }
 
@@ -849,7 +879,6 @@ async fn wait_for_trigger(trigger: &Arc<tokio::sync::Mutex<Option<bool>>>) -> bo
     }
 }
 
-/// Main extraction loop with periodic checks
 /// Reset a stuck `Running` extraction status to `Failed` after a periodic or API-triggered
 /// check returns `Err`.
 ///
@@ -867,6 +896,24 @@ async fn reset_status_after_failed_check(state: &Arc<RwLock<ExtractorState>>) {
     s.extraction_status = ExtractionStatus::Failed;
 }
 
+/// Spawn a task that watches `shutdown` and flips an `AtomicBool` when it fires.
+///
+/// `Notify::notified()` consumes its permit and `notify_waiters()` stores none, so long-running
+/// processing code cannot await the `Notify` directly without stealing the signal from the loop's
+/// outer `select!`. The monitor parks on the `Notify` once (before any multi-hour work) and records
+/// the shutdown in a flag that processing code polls between files without side effects. Shared by
+/// both the Discogs and MusicBrainz loops. (cu2.44)
+fn spawn_shutdown_flag_monitor(shutdown: Arc<tokio::sync::Notify>) -> Arc<AtomicBool> {
+    let flag = Arc::new(AtomicBool::new(false));
+    let flag_for_monitor = flag.clone();
+    tokio::spawn(async move {
+        shutdown.notified().await;
+        flag_for_monitor.store(true, Ordering::SeqCst);
+    });
+    flag
+}
+
+/// Main extraction loop with periodic checks
 pub async fn run_extraction_loop(
     config: Arc<ExtractorConfig>,
     state: Arc<RwLock<ExtractorState>>,
@@ -878,18 +925,32 @@ pub async fn run_extraction_loop(
 ) -> Result<()> {
     info!("📥 Starting initial data processing...");
 
+    // Convert the one-shot shutdown Notify into a pollable flag. Without this a SIGTERM delivered
+    // during process_discogs_data (hours of multi-GB XML) is lost: notify_waiters() wakes only
+    // currently-parked waiters and stores no permit, so the periodic loop's fresh shutdown arm
+    // never fires and the process enters the multi-day sleep, unstoppable. (cu2.44)
+    let shutdown_flag = spawn_shutdown_flag_monitor(shutdown.clone());
+
     // Process initial data
     let mut downloader = Downloader::new(config.discogs_root.clone()).await?;
     let success = process_discogs_data(
         config.clone(),
         state.clone(),
         shutdown.clone(),
+        shutdown_flag.clone(),
         force_reprocess,
         &mut downloader,
         mq_factory.clone(),
         compiled_rules.clone(),
     )
     .await?;
+
+    // A shutdown during the initial run is a clean exit, not a failure — returning Err here would
+    // send main into the failure cooldown + non-zero exit. (cu2.44)
+    if shutdown_flag.load(Ordering::SeqCst) {
+        info!("🛑 Shutdown requested during initial Discogs processing — exiting cleanly");
+        return Ok(());
+    }
 
     if !success {
         error!("❌ Initial data processing failed");
@@ -900,6 +961,14 @@ pub async fn run_extraction_loop(
 
     // Start periodic check loop
     loop {
+        // If a shutdown arrived during processing (or between iterations), stop before sleeping.
+        // The periodic select! below also has a shutdown arm for signals that arrive mid-sleep,
+        // but this poll catches signals delivered while process_discogs_data was running. (cu2.44)
+        if shutdown_flag.load(Ordering::SeqCst) {
+            info!("🛑 Shutdown detected, exiting Discogs periodic check loop");
+            break;
+        }
+
         // Transition Completed → Waiting before sleeping so downstream observers
         // (MusicBrainz extractor, admin dashboard tracker) can tell the difference
         // between "just finished" and "on periodic schedule". Failed is preserved
@@ -926,7 +995,7 @@ pub async fn run_extraction_loop(
                         continue;
                     }
                 };
-                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), false, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
+                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), shutdown_flag.clone(), false, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => {
                         info!("✅ Periodic check completed successfully in {:?}", start.elapsed());
                     }
@@ -952,7 +1021,7 @@ pub async fn run_extraction_loop(
                         continue;
                     }
                 };
-                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), trigger_force_reprocess, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
+                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), shutdown_flag.clone(), trigger_force_reprocess, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => info!("✅ Triggered extraction completed successfully in {:?}", start.elapsed()),
                     Ok(false) => error!("❌ Triggered extraction completed with errors"),
                     Err(e) => {
@@ -1042,17 +1111,10 @@ pub async fn run_musicbrainz_loop(
     trigger: Arc<tokio::sync::Mutex<Option<bool>>>,
     compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<()> {
-    // AtomicBool for non-consuming shutdown checks. Notify::notified() consumes the
-    // permit, so polling it inside process_musicbrainz_data would steal the signal from
-    // the outer select!. The monitor task listens on the Notify and sets the flag;
-    // process_musicbrainz_data polls the flag without side effects.
-    let shutdown_flag = Arc::new(AtomicBool::new(false));
-    let flag_for_monitor = shutdown_flag.clone();
-    let shutdown_for_monitor = shutdown.clone();
-    tokio::spawn(async move {
-        shutdown_for_monitor.notified().await;
-        flag_for_monitor.store(true, Ordering::SeqCst);
-    });
+    // AtomicBool for non-consuming shutdown checks — see spawn_shutdown_flag_monitor. The monitor
+    // parks on the Notify and sets the flag; process_musicbrainz_data polls the flag without side
+    // effects, so the outer select! keeps its own shutdown arm.
+    let shutdown_flag = spawn_shutdown_flag_monitor(shutdown.clone());
 
     info!("🎵 Starting MusicBrainz extraction...");
 
