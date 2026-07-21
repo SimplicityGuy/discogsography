@@ -656,3 +656,88 @@ fn test_parse_mb_jsonl_file_receiver_dropped() {
     // Count should be 0 since the very first blocking_send should fail (receiver dropped)
     assert_eq!(count, 0);
 }
+
+// ─── truncated/corrupt .jsonl.xz: read errors must be fatal, not busy-loop ──────
+//
+// Regression for discogsography-cu2.14 (parse_mb_jsonl_file) and
+// discogsography-cu2.46 (build_mbid_discogs_map_from_file). A corrupt or truncated
+// xz stream makes XzDecoder return the *same* io::Error on every subsequent read;
+// the old `continue` arm spun forever at 100% CPU. Both functions must instead
+// surface the error. Each test runs the call on a worker thread and asserts it
+// TERMINATES within a timeout — a reintroduced busy-loop would never return and
+// fail the recv_timeout rather than hanging CI indefinitely.
+
+/// Build a valid xz stream from `content`, then truncate the compressed bytes so
+/// the decoder hits a premature-EOF error partway through the stream.
+fn truncated_xz_bytes(content: &str) -> Vec<u8> {
+    use std::io::Write;
+    use xz2::write::XzEncoder;
+
+    let mut encoder = XzEncoder::new(Vec::new(), 1);
+    encoder.write_all(content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    // Drop the trailing quarter of the stream (index + footer + tail of the block)
+    // so the decoder never reaches StreamEnd and returns a persistent read error.
+    let keep = (compressed.len() * 3) / 4;
+    compressed[..keep].to_vec()
+}
+
+#[test]
+fn test_build_mbid_discogs_map_truncated_xz_is_fatal_not_busyloop() {
+    use std::io::Write;
+    use std::sync::mpsc;
+    use std::time::Duration;
+    use tempfile::NamedTempFile;
+
+    // Many lines so the compressed stream is large enough to truncate mid-body.
+    let line = r#"{"id":"mbid-x","relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/artist/42"}}]}"#;
+    let content = std::iter::repeat_n(line, 500).collect::<Vec<_>>().join("\n") + "\n";
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    temp_file.write_all(&truncated_xz_bytes(&content)).unwrap();
+    temp_file.flush().unwrap();
+    let path = temp_file.path().to_path_buf();
+
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = build_mbid_discogs_map_from_file(&path, "artist");
+        let _ = tx.send(result.is_err());
+    });
+
+    match rx.recv_timeout(Duration::from_secs(10)) {
+        Ok(is_err) => assert!(is_err, "truncated xz must yield Err, not Ok"),
+        Err(_) => panic!("build_mbid_discogs_map_from_file busy-looped on a truncated xz stream (never returned)"),
+    }
+}
+
+#[test]
+fn test_parse_mb_jsonl_file_truncated_xz_is_fatal_not_busyloop() {
+    use std::io::Write;
+    use std::sync::mpsc as std_mpsc;
+    use std::time::Duration;
+    use tempfile::NamedTempFile;
+    use tokio::sync::mpsc;
+
+    let line = r#"{"id":"mbid-1","name":"Artist","sort-name":"Artist","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[]}"#;
+    let content = std::iter::repeat_n(line, 500).collect::<Vec<_>>().join("\n") + "\n";
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    temp_file.write_all(&truncated_xz_bytes(&content)).unwrap();
+    temp_file.flush().unwrap();
+    let path = temp_file.path().to_path_buf();
+
+    let (tx, rx) = std_mpsc::channel();
+    std::thread::spawn(move || {
+        // Generous channel so blocking_send never blocks; we want the read error, not backpressure.
+        let (sender, _receiver) = mpsc::channel(100_000);
+        // Keep the receiver alive for the duration of the parse.
+        let result = parse_mb_jsonl_file(&path, DataType::Artists, sender, None);
+        let _ = tx.send(result.is_err());
+        drop(_receiver);
+    });
+
+    match rx.recv_timeout(Duration::from_secs(10)) {
+        Ok(is_err) => assert!(is_err, "truncated xz must yield Err, not Ok"),
+        Err(_) => panic!("parse_mb_jsonl_file busy-looped on a truncated xz stream (never returned)"),
+    }
+}

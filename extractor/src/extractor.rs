@@ -183,6 +183,21 @@ pub async fn process_discogs_data(
         state_marker.processing_phase.files_total = data_files.len();
         state_marker.save(&marker_path).await?;
         info!("🔄 Resuming processing phase: {} total files, {} already completed", data_files.len(), state_marker.processing_phase.files_processed);
+
+        // Rehydrate the per-run progress counters from the persisted per-file progress so the
+        // /health endpoint reports true totals for types already completed before the crash.
+        // Those files are skipped (pending_files) and never re-incremented this run, so without
+        // this they would surface as 0 on the dashboard. (cu2.92)
+        {
+            let mut s = state.write().await;
+            for (file_name, file_state) in &state_marker.processing_phase.progress_by_file {
+                if file_state.status == PhaseStatus::Completed
+                    && let Some(dt) = extract_data_type(file_name)
+                {
+                    s.extraction_progress.add(dt, file_state.records_extracted);
+                }
+            }
+        }
     }
 
     // Use the ORIGINAL processing start time persisted in the state marker for the
@@ -203,29 +218,49 @@ pub async fn process_discogs_data(
         // Only send extraction_complete on the first completion, not on
         // subsequent periodic checks where the version is already complete.
         if state_marker.summary.overall_status != PhaseStatus::Completed {
+            // Mark processing (files are genuinely all done) but NOT extraction yet —
+            // extraction is only "complete" once the extraction_complete broadcast lands.
+            // Committing the marker fully Completed here (before the AMQP send) is a
+            // split-commit ordering bug: a single AMQP failure would flip the marker to
+            // Completed, every later cycle would Skip, and the completion signal would be
+            // lost forever. Mirror the normal completion path: send first, finalize on
+            // success, and on failure leave overall_status non-Completed so the next
+            // cycle re-enters via Continue and retries. (cu2.42)
             state_marker.complete_processing();
-            state_marker.complete_extraction();
             state_marker.save(&marker_path).await?;
 
-            // Send extraction_complete with actual record counts from state marker
-            // Use data type names (e.g., "artists") as keys — consistent with the normal
-            // completion path (lines 288-292) so consumers can look up counts reliably.
+            // Build record counts from the persisted per-file progress. Use data type
+            // names (e.g., "artists") as keys — consistent with the normal completion
+            // path so consumers can look up counts reliably.
             let mut record_counts = HashMap::new();
             for (file_name, file_state) in &state_marker.processing_phase.progress_by_file {
                 if let Some(dt) = extract_data_type(file_name) {
                     record_counts.insert(dt.to_string(), file_state.records_extracted);
                 }
             }
+
+            let mut sent = false;
             match mq_factory.create(&config.amqp_connection, &config.discogs_exchange_prefix).await {
                 Ok(mq) => {
-                    if let Err(e) = mq.send_extraction_complete(&version, processing_started_at, record_counts, &DataType::discogs()).await {
-                        error!("❌ Failed to send extraction_complete message: {}", e);
+                    match mq.send_extraction_complete(&version, processing_started_at, record_counts, &DataType::discogs()).await {
+                        Ok(_) => sent = true,
+                        Err(e) => error!("❌ Failed to send extraction_complete message: {}", e),
                     }
                     let _ = mq.close().await;
                 }
                 Err(e) => {
                     error!("❌ Failed to connect to AMQP for extraction_complete: {}", e);
                 }
+            }
+
+            if sent {
+                // Broadcast succeeded — now it is safe to durably mark extraction complete.
+                state_marker.complete_extraction();
+                state_marker.save(&marker_path).await?;
+            } else {
+                // Leave overall_status non-Completed so should_process() returns Continue and
+                // the next cycle retries the broadcast instead of Skipping forever.
+                error!("❌ extraction_complete not sent — leaving version incomplete to retry on next cycle");
             }
         }
 
@@ -319,15 +354,25 @@ pub async fn process_discogs_data(
         info!("📊 Final statistics: {} total records extracted", s.extraction_progress.total());
 
         if success {
-            // Build per-type record counts from extraction progress
-            let mut record_counts = HashMap::new();
-            record_counts.insert("artists".to_string(), s.extraction_progress.artists);
-            record_counts.insert("labels".to_string(), s.extraction_progress.labels);
-            record_counts.insert("masters".to_string(), s.extraction_progress.masters);
-            record_counts.insert("releases".to_string(), s.extraction_progress.releases);
+            // Build per-type record counts from the PERSISTED per-file progress, NOT the
+            // per-run ExtractionProgress. That counter is reset at the top of every
+            // process_discogs_data call and only tallies files processed in THIS run, so
+            // after a crash-and-resume the types completed in an earlier session (skipped
+            // via pending_files) would report 0. progress_by_file holds the true totals for
+            // every completed file — matching the all-files-already-processed early path. (cu2.92)
+            drop(s); // Release read lock before locking the state marker / async MQ operations
+            let record_counts = {
+                let state_marker = state_marker_arc.lock().await;
+                let mut rc = HashMap::new();
+                for (file_name, file_state) in &state_marker.processing_phase.progress_by_file {
+                    if let Some(dt) = extract_data_type(file_name) {
+                        rc.insert(dt.to_string(), file_state.records_extracted);
+                    }
+                }
+                rc
+            };
 
             // Send extraction_complete to all consumer queues
-            drop(s); // Release read lock before async MQ operations
             match mq_factory.create(&config.amqp_connection, &config.discogs_exchange_prefix).await {
                 Ok(mq) => {
                     if let Err(e) = mq.send_extraction_complete(&version, processing_started_at, record_counts, &DataType::discogs()).await {
@@ -1124,6 +1169,21 @@ pub async fn process_musicbrainz_data(
             "🔄 Resuming MusicBrainz processing phase: {} dump file(s), {} already completed",
             file_count, state_marker.processing_phase.files_processed
         );
+
+        // Rehydrate the per-run progress counters from the persisted per-file progress so the
+        // /health endpoint reports true totals for types already completed before the crash.
+        // MB dump filenames don't parse via extract_data_type, so map through dump_files. (cu2.92)
+        {
+            let mut s = state.write().await;
+            for (dt, path) in &dump_files {
+                if let Some(fname) = path.file_name().and_then(|n| n.to_str())
+                    && let Some(file_state) = state_marker.processing_phase.progress_by_file.get(fname)
+                    && file_state.status == PhaseStatus::Completed
+                {
+                    s.extraction_progress.add(*dt, file_state.records_extracted);
+                }
+            }
+        }
     }
 
     // Use the ORIGINAL processing start time persisted in the state marker (never this
@@ -1166,6 +1226,10 @@ pub async fn process_musicbrainz_data(
                 && status.status == PhaseStatus::Completed
             {
                 info!("✅ Skipping already-completed file: {}", file_name);
+                // Still report the persisted count so a resumed run's extraction_complete
+                // carries true totals for types completed in an earlier session. Without this
+                // the skipped type's key is omitted from the message entirely. (cu2.92)
+                record_counts.insert(data_type.to_string(), status.records_extracted);
                 continue;
             }
         }

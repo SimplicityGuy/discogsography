@@ -255,6 +255,11 @@ impl MbDownloader {
 
     /// Check whether a version directory contains all expected entity JSONL files.
     /// Recognizes both uncompressed `.jsonl` and compressed `.jsonl.xz` variants.
+    ///
+    /// Existence is a sufficient completeness signal *because* the download path never
+    /// materializes a final `{entity}.jsonl.xz` until it is fully extracted and SHA256-verified:
+    /// [`Self::stream_download_verify_extract`] streams to a `.tmp` sibling and atomically renames
+    /// only on success. A crashed run leaves a `.tmp` (ignored here), never a truncated final file.
     pub(crate) fn is_version_complete(&self, version_dir: &Path) -> bool {
         if !version_dir.is_dir() {
             return false;
@@ -276,12 +281,18 @@ impl MbDownloader {
         use futures::TryStreamExt;
         use tokio_util::io::{StreamReader, SyncIoBridge};
 
+        // Durability: never write the compressed output at its FINAL path while it is still
+        // partial/unverified. Stream to a sibling `.tmp` and atomically rename to `out_path`
+        // only after SHA256 passes. A hard crash (OOM/SIGKILL/power loss) mid-extraction then
+        // leaves only a `{entity}.jsonl.xz.tmp` — which is_version_complete does NOT accept —
+        // instead of a truncated `{entity}.jsonl.xz` that would be forever trusted as complete.
+        let tmp_path = tmp_download_path(out_path);
         let mut last_error: Option<anyhow::Error> = None;
 
         for attempt in 1..=MB_MAX_DOWNLOAD_RETRIES {
             if attempt > 1 {
-                if out_path.exists() {
-                    let _ = fs::remove_file(out_path).await;
+                if tmp_path.exists() {
+                    let _ = fs::remove_file(&tmp_path).await;
                 }
                 let delay_ms = MB_RETRY_BASE_DELAY_MS * (1u64 << (attempt - 2));
                 warn!("🔄 Retry {}/{} for {} (waiting {}ms)...", attempt - 1, MB_MAX_DOWNLOAD_RETRIES - 1, entity, delay_ms);
@@ -315,7 +326,7 @@ impl MbDownloader {
 
             let entity_owned = entity.to_string();
             let expected_hash_owned = expected_sha256.to_string();
-            let out_path_owned = out_path.to_path_buf();
+            let out_path_owned = tmp_path.to_path_buf();
             let attempt_start = std::time::Instant::now();
 
             let extract_result = tokio::task::spawn_blocking(move || -> Result<(u64, u64)> {
@@ -347,6 +358,15 @@ impl MbDownloader {
 
             match extract_result {
                 Ok((total_bytes, compressed_out)) => {
+                    // SHA256 verified inside the blocking task — now atomically publish the
+                    // fully-written, checksum-verified file at its final path.
+                    if let Err(e) = fs::rename(&tmp_path, out_path).await {
+                        let msg = format!("Failed to atomically rename {:?} -> {:?}: {}", tmp_path, out_path, e);
+                        warn!("⚠️ {}", msg);
+                        last_error = Some(anyhow::anyhow!(msg));
+                        let _ = fs::remove_file(&tmp_path).await;
+                        continue;
+                    }
                     let elapsed = attempt_start.elapsed().as_secs_f64();
                     let speed = if elapsed > 0.0 { (total_bytes as f64 / 1_048_576.0) / elapsed } else { 0.0 };
                     info!(
@@ -363,8 +383,8 @@ impl MbDownloader {
                 Err(e) => {
                     warn!("⚠️ Attempt {}/{} failed for {}: {}", attempt, MB_MAX_DOWNLOAD_RETRIES, entity, e);
                     last_error = Some(e);
-                    if out_path.exists() {
-                        let _ = fs::remove_file(out_path).await;
+                    if tmp_path.exists() {
+                        let _ = fs::remove_file(&tmp_path).await;
                     }
                     continue;
                 }
@@ -436,15 +456,33 @@ pub fn parse_sha256sums(content: &str) -> HashMap<String, String> {
         .collect()
 }
 
+/// Derive the temporary staging path for a final `{entity}.jsonl.xz` output.
+///
+/// Appends a `.tmp` suffix so the in-progress file never matches the `.jsonl` / `.jsonl.xz`
+/// existence check in [`MbDownloader::is_version_complete`]. A crash mid-write therefore leaves
+/// a `.tmp` artifact that is correctly treated as incomplete, and the final path only ever
+/// appears via an atomic rename after full extraction and (for the network path) SHA256 verification.
+fn tmp_download_path(out_path: &Path) -> PathBuf {
+    let mut name = out_path.as_os_str().to_os_string();
+    name.push(".tmp");
+    PathBuf::from(name)
+}
+
 /// Extract `mbdump/<entity>` from a `.tar.xz` file on disk into a compressed `.jsonl.xz`
 /// output file. Thin wrapper around [`extract_entity_from_reader`] — kept as a stable public
 /// entry point so existing disk-based tests and any standalone callers keep working.
+///
+/// Writes to a `.tmp` sibling and atomically renames to `out_path` only after extraction
+/// completes, so an interrupted run never leaves a truncated file at the final path.
 #[allow(dead_code)]
 pub fn extract_entity_from_tarball(tar_path: &Path, entity: &str, out_path: &Path) -> Result<()> {
     // `tar_path` and `out_path` come from operator-controlled config (CLI/env var), not HTTP input.
     let file = std::fs::File::open(tar_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
         .with_context(|| format!("Failed to open tarball: {:?}", tar_path))?;
-    extract_entity_from_reader(file, entity, out_path).map(|_| ())
+    let tmp_path = tmp_download_path(out_path);
+    extract_entity_from_reader(file, entity, &tmp_path).map(|_| ())?;
+    std::fs::rename(&tmp_path, out_path).with_context(|| format!("Failed to rename {:?} -> {:?}", tmp_path, out_path))?;
+    Ok(())
 }
 
 /// Core extraction: pull a `.tar.xz` byte stream through an XZ decoder, locate

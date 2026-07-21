@@ -6,7 +6,7 @@ use extractor::extractor::{
 };
 use extractor::message_queue::MockMessagePublisher;
 use extractor::rules::{CompiledRulesConfig, RulesConfig};
-use extractor::state_marker::StateMarker;
+use extractor::state_marker::{PhaseStatus, ProcessingDecision, StateMarker};
 use extractor::types::S3FileInfo;
 use extractor::types::{DataMessage, DataType, Source};
 use flate2::Compression;
@@ -414,6 +414,162 @@ async fn test_process_discogs_data_mq_factory_create_fails_on_all_processed() {
     // Should still succeed (extraction_complete failure is logged, not fatal)
     assert!(result.is_ok());
     assert!(result.unwrap());
+}
+
+/// Build a MockDataSource for the resumed all-files-already-processed Discogs path that
+/// hands `marker` back after the (no-op) download. Mirrors the fixtures used by the
+/// all-files-already-processed tests above.
+fn mock_dl_returning_marker(marker: StateMarker) -> MockDataSource {
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_CHECKSUM.txt".to_string(), size: 100 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
+    mock_dl.expect_take_state_marker().times(1).returning(move || Some(marker.clone()));
+    mock_dl
+}
+
+/// Regression for discogsography-cu2.42: on the resumed all-files-already-processed
+/// completion path, a failed extraction_complete broadcast must NOT flip the state marker
+/// to fully Completed — otherwise should_process() returns Skip forever and the completion
+/// signal is permanently lost. The marker must stay retryable, and a later successful send
+/// must then finalize it.
+#[tokio::test]
+async fn test_process_discogs_data_resumed_completion_amqp_failure_stays_retryable() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let marker_path = StateMarker::file_path(&config.discogs_root, "20260101");
+
+    // Marker: processing started, the single file complete → resumed-empty branch,
+    // overall_status still InProgress (extraction not yet broadcast).
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_processing(1);
+    marker.start_file_processing("discogs_20260101_artists.xml.gz");
+    marker.complete_file_processing("discogs_20260101_artists.xml.gz", 1000);
+    assert_ne!(marker.summary.overall_status, PhaseStatus::Completed);
+
+    // Phase 1: AMQP broadcast fails (RabbitMQ restarting).
+    struct FailingMqFactory;
+    #[async_trait::async_trait]
+    impl extractor::extractor::MessageQueueFactory for FailingMqFactory {
+        async fn create(&self, _url: &str, _prefix: &str) -> anyhow::Result<Arc<dyn extractor::message_queue::MessagePublisher>> {
+            Err(anyhow::anyhow!("AMQP connection refused"))
+        }
+    }
+    let mut mock_dl = mock_dl_returning_marker(marker.clone());
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let result =
+        extractor::extractor::process_discogs_data(config.clone(), state, shutdown.clone(), false, &mut mock_dl, Arc::new(FailingMqFactory), None)
+            .await;
+    assert!(result.is_ok(), "a send failure is logged, not fatal");
+
+    let persisted = StateMarker::load(&marker_path).await.unwrap().expect("marker must be persisted");
+    assert_ne!(
+        persisted.summary.overall_status,
+        PhaseStatus::Completed,
+        "must not mark Completed when extraction_complete failed to send — it would Skip forever"
+    );
+    assert!(matches!(persisted.should_process(), ProcessingDecision::Continue), "unsent completion must remain retryable (Continue), not Skip");
+
+    // Phase 2: next cycle, RabbitMQ is back — the broadcast succeeds and finalizes the marker.
+    let mut mock_ok = MockMessagePublisher::new();
+    mock_ok.expect_send_extraction_complete().times(1).returning(|_, _, _, _| Ok(()));
+    mock_ok.expect_close().returning(|| Ok(()));
+    let ok_factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_ok) });
+
+    let mut mock_dl2 = mock_dl_returning_marker(persisted);
+    let state2 = Arc::new(RwLock::new(ExtractorState::default()));
+    let result2 = extractor::extractor::process_discogs_data(config.clone(), state2, shutdown, false, &mut mock_dl2, ok_factory, None).await;
+    assert!(result2.is_ok() && result2.unwrap());
+
+    let finalized = StateMarker::load(&marker_path).await.unwrap().expect("marker must be persisted");
+    assert_eq!(finalized.summary.overall_status, PhaseStatus::Completed, "a successful retry broadcast must finalize the marker as Completed");
+}
+
+/// Regression for discogsography-cu2.92: after a crash-and-resume, extraction_complete's
+/// record_counts must carry the TRUE per-type totals for types completed in an earlier
+/// session — not 0. The per-run ExtractionProgress is reset each run, so counts must come
+/// from the persisted progress_by_file. This also verifies the /health rehydration: the
+/// resumed run's ExtractionProgress reflects the pre-crash totals rather than 0.
+#[tokio::test]
+async fn test_process_discogs_data_resumed_record_counts_from_persisted_progress() {
+    use std::collections::HashMap;
+    use std::sync::Mutex as StdMutex;
+
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    // Marker from an earlier session: artists + labels completed (real counts), processing
+    // still InProgress (complete_processing was never reached before the crash).
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_processing(2);
+    marker.start_file_processing("discogs_20260101_artists.xml.gz");
+    marker.complete_file_processing("discogs_20260101_artists.xml.gz", 1000);
+    marker.start_file_processing("discogs_20260101_labels.xml.gz");
+    marker.complete_file_processing("discogs_20260101_labels.xml.gz", 2000);
+    assert_eq!(marker.processing_phase.status, PhaseStatus::InProgress);
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
+    mock_dl
+        .expect_download_discogs_data()
+        .times(1)
+        .returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string(), "discogs_20260101_labels.xml.gz".to_string()]));
+    mock_dl.expect_take_state_marker().times(1).returning(move || Some(marker.clone()));
+
+    // Capture the record_counts actually broadcast.
+    let captured: Arc<StdMutex<Option<HashMap<String, u64>>>> = Arc::new(StdMutex::new(None));
+    let captured_clone = captured.clone();
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_send_extraction_complete().times(1).returning(move |_version, _started, counts, _types| {
+        *captured_clone.lock().unwrap() = Some(counts);
+        Ok(())
+    });
+    mock_mq.expect_close().returning(|| Ok(()));
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = extractor::extractor::process_discogs_data(config, state.clone(), shutdown, false, &mut mock_dl, factory, None).await;
+    assert!(result.is_ok() && result.unwrap());
+
+    // The broadcast must report the true pre-crash totals, NOT 0.
+    let counts = captured.lock().unwrap().clone().expect("extraction_complete must have been sent");
+    assert_eq!(counts.get("artists").copied(), Some(1000), "artists count must come from persisted progress, not the reset per-run counter");
+    assert_eq!(counts.get("labels").copied(), Some(2000), "labels count must come from persisted progress, not the reset per-run counter");
+
+    // /health rehydration: the resumed run's ExtractionProgress reflects the pre-crash totals.
+    let s = state.read().await;
+    assert_eq!(s.extraction_progress.artists, 1000, "resume must rehydrate artists progress for /health");
+    assert_eq!(s.extraction_progress.labels, 2000, "resume must rehydrate labels progress for /health");
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
