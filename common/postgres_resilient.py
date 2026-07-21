@@ -633,26 +633,32 @@ class AsyncPostgreSQLPool:
         finally:
             # Return connection to pool if it's still good
             if conn and not conn.closed and not self._closed:
+                autocommit_ok = True
                 try:
                     # Restore autocommit=True before returning to pool
                     # Callers using conn.transaction() must set autocommit=False,
                     # and we reset it here to prevent poisoning the pool
                     await conn.set_autocommit(True)
                 except Exception:
-                    # set_autocommit failed — connection is dead, discard it
+                    # set_autocommit failed — connection is dead, discard it.
+                    # Fall through WITHOUT `return`: a bare `return` in a `finally`
+                    # block silently swallows any exception propagating from the
+                    # `yield conn` body, so use a guard flag to skip the put-back
+                    # instead of short-circuiting the whole finally clause.
+                    autocommit_ok = False
                     with contextlib.suppress(Exception):
                         await conn.close()
                     async with self._lock:
                         self.active_connections = max(0, self.active_connections - 1)
-                    return
-                try:
-                    self.connections.put_nowait(conn)
-                except asyncio.QueueFull:
-                    # Pool is full, close connection
-                    with contextlib.suppress(Exception):
-                        await conn.close()
-                    async with self._lock:
-                        self.active_connections = max(0, self.active_connections - 1)
+                if autocommit_ok:
+                    try:
+                        self.connections.put_nowait(conn)
+                    except asyncio.QueueFull:
+                        # Pool is full, close connection
+                        with contextlib.suppress(Exception):
+                            await conn.close()
+                        async with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
             elif conn:
                 # Close bad connections
                 with contextlib.suppress(Exception):
