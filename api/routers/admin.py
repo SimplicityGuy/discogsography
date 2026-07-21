@@ -406,6 +406,18 @@ async def _track_extraction(extraction_id: str) -> None:
                 except (httpx.ConnectError, httpx.RequestError):
                     consecutive_failures += 1
                     logger.warning("⚠️ Extractor unreachable", extraction_id=extraction_id, attempt=consecutive_failures)
+                except Exception as exc:
+                    # Any other per-iteration fault — a non-JSON 200 body
+                    # (resp.json()) or a transient PG error on the progress
+                    # UPDATE — must not kill the tracker. Count it as a failure
+                    # and let the max_failures gate below write a terminal status.
+                    consecutive_failures += 1
+                    logger.warning(
+                        "⚠️ Extraction tracking iteration failed",
+                        extraction_id=extraction_id,
+                        attempt=consecutive_failures,
+                        error=str(exc),
+                    )
 
                 if consecutive_failures >= max_failures:
                     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
@@ -434,6 +446,19 @@ async def _track_extraction(extraction_id: str) -> None:
                 )
         except Exception:
             logger.warning("⚠️ Could not mark cancelled extraction as failed", extraction_id=extraction_id)
+    except Exception as exc:
+        # Final safety net — an unexpected crash must never leave the record
+        # stuck in 'running' forever. Mirror the CancelledError handler and mark
+        # it failed so the admin dashboard shows a terminal state.
+        logger.error("❌ Extraction tracking crashed", extraction_id=extraction_id, error=str(exc), exc_info=True)
+        try:
+            async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+                await cur.execute(
+                    "UPDATE extraction_history SET status = 'failed', completed_at = NOW(), error_message = %s WHERE id = %s AND status = 'running'",
+                    ("Tracking task crashed", extraction_id),
+                )
+        except Exception:
+            logger.warning("⚠️ Could not mark crashed extraction as failed", extraction_id=extraction_id)
     finally:
         _tracking_tasks.pop(extraction_id, None)
 

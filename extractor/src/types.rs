@@ -113,6 +113,20 @@ impl ExtractionProgress {
         }
     }
 
+    /// Add `count` records to the given data type's tally at once.
+    ///
+    /// Used to rehydrate per-run progress from a persisted state marker on resume, so the
+    /// `/health` endpoint reports true totals for types completed before a crash rather than 0.
+    pub fn add(&mut self, data_type: DataType, count: u64) {
+        match data_type {
+            DataType::Artists => self.artists += count,
+            DataType::Labels => self.labels += count,
+            DataType::Masters => self.masters += count,
+            DataType::ReleaseGroups => self.release_groups += count,
+            DataType::Releases => self.releases += count,
+        }
+    }
+
     #[allow(dead_code)]
     pub fn get(&self, data_type: DataType) -> u64 {
         match data_type {

@@ -20,6 +20,7 @@ from tableinator.tableinator import (
     main,
     make_data_handler,
     on_data_message,
+    purge_stale_rows,
     schedule_consumer_cancellation,
     signal_handler,
 )
@@ -186,6 +187,180 @@ class TestOnDataMessage:
 
         # Should nack without requeue for bad messages
         mock_message.nack.assert_called_once_with(requeue=False)
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_batch_mode_nack_callback_uses_requeue_false(self) -> None:
+        """Regression (cu2.52): the batch-mode add_message nack callback must use
+        requeue=False.
+
+        add_message invokes nack_callback only for permanently-invalid input
+        (unknown data_type, missing 'id', normalize failure). requeue=True sent
+        such a poison record around x-delivery-limit (20) futile redeliveries
+        before the DLQ; requeue=False routes it to the DLQ in one hop, matching
+        the non-batch validation path and the mirrored graphinator fix.
+        """
+        import tableinator.tableinator as t
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"id": "1", "sha256": "h"}).encode()
+
+        captured: dict[str, Any] = {}
+
+        async def fake_add(**kwargs: Any) -> bool:
+            captured["nack"] = kwargs["nack_callback"]
+            return True
+
+        proc = MagicMock()
+        proc.add_message = AsyncMock(side_effect=fake_add)
+
+        with patch.object(t, "BATCH_MODE", True), patch.object(t, "batch_processor", proc):
+            await on_data_message(mock_message, "artists")
+
+        # Simulate add_message rejecting a permanently-invalid message.
+        await captured["nack"]()
+        mock_message.nack.assert_called_once_with(requeue=False)
+
+
+def _make_purge_connection(total_count: int, stale_count: int) -> tuple[MagicMock, AsyncMock]:
+    """Build a mock connection wired for purge_stale_rows.
+
+    fetchone yields the total-row count then the would-be-deleted count; fetchall
+    (only reached if the purge is not vetoed) returns stale_count data_id rows.
+    """
+    mock_cursor = AsyncMock()
+    mock_cursor.execute = AsyncMock()
+    mock_cursor.fetchone = AsyncMock(side_effect=[(total_count,), (stale_count,)])
+    mock_cursor.fetchall = AsyncMock(return_value=[(f"id-{i}",) for i in range(stale_count)])
+
+    cursor_cm = AsyncMock()
+    cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+    cursor_cm.__aexit__ = AsyncMock(return_value=None)
+
+    tx_cm = AsyncMock()
+    tx_cm.__aenter__ = AsyncMock(return_value=None)
+    tx_cm.__aexit__ = AsyncMock(return_value=None)
+
+    mock_conn = MagicMock()
+    mock_conn.set_autocommit = AsyncMock()
+    mock_conn.transaction = MagicMock(return_value=tx_cm)
+    mock_conn.cursor = MagicMock(return_value=cursor_cm)
+    return mock_conn, mock_cursor
+
+
+class TestPurgeStaleRowsGuards:
+    """Regression tests for discogsography-cu2.2 — resumed-extraction mass data loss.
+
+    On a resumed extraction the extractor skips files completed in an earlier session,
+    so a data type can receive an extraction_complete signal while zero records were
+    streamed this run. Purging blindly then deletes every row written before the
+    restart. purge_stale_rows must refuse those wipes.
+    """
+
+    @pytest.mark.asyncio
+    async def test_purges_partial_stale_rows(self, mock_async_pool: Any) -> None:
+        """Normal case: a small stale fraction is deleted (dump genuinely shrank)."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=5)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=95)
+
+        # 2 count queries + 1 DELETE = 3 executes; the DELETE actually ran.
+        assert mock_cursor.execute.call_count == 3
+        mock_cursor.fetchall.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_vetoes_full_table_wipe(self, mock_async_pool: Any) -> None:
+        """The all-files-complete-before-crash variant: every row is 'stale'.
+
+        record_counts are non-zero here, so the count-based guard alone would miss it —
+        the fraction cap is what prevents the wipe.
+        """
+        mock_conn, mock_cursor = _make_purge_connection(total_count=9_000_000, stale_count=9_000_000)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=9_000_000)
+
+        # Only the two count queries ran — the DELETE was vetoed.
+        assert mock_cursor.execute.call_count == 2
+        mock_cursor.fetchall.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_vetoes_at_fraction_boundary(self, mock_async_pool: Any) -> None:
+        """The cap is inclusive: exactly 90% of the table is refused."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=90)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=10)
+
+        assert mock_cursor.execute.call_count == 2
+        mock_cursor.fetchall.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_purges_just_below_boundary(self, mock_async_pool: Any) -> None:
+        """Just under the cap (89%) still purges."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=89)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=11)
+
+        assert mock_cursor.execute.call_count == 3
+        mock_cursor.fetchall.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_skips_when_zero_records_this_session(self, mock_async_pool: Any) -> None:
+        """record_count == 0 (resumed run re-sent nothing) short-circuits before any query."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=100)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=0)
+
+        # No connection acquired, no query executed.
+        pool.connection.assert_not_called()
+        mock_cursor.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_skips_empty_started_at(self, mock_async_pool: Any) -> None:
+        """Missing started_at short-circuits before touching the database."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=5)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "", record_count=95)
+
+        pool.connection.assert_not_called()
+        mock_cursor.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_empty_table_no_delete(self, mock_async_pool: Any) -> None:
+        """An empty table performs no DELETE."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=0, stale_count=0)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=50)
+
+        # Only the total-count query ran; short-circuited before counting stale rows.
+        assert mock_cursor.execute.call_count == 1
+        mock_cursor.fetchall.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_stale_rows_no_delete(self, mock_async_pool: Any) -> None:
+        """A populated table with zero stale rows performs no DELETE and returns early."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=0)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=100)
+
+        # Both count queries ran, but the stale count was 0 so no DELETE followed.
+        assert mock_cursor.execute.call_count == 2
+        mock_cursor.fetchall.assert_not_awaited()
 
 
 class TestMain:
@@ -621,7 +796,8 @@ class TestOnDataMessageExtended:
         ):
             await on_data_message(mock_message, "artists")
 
-        mock_purge.assert_called_once_with("artists", "2026-01-01T00:00:00Z")
+        # No record_counts in the message → third positional arg is None.
+        mock_purge.assert_called_once_with("artists", "2026-01-01T00:00:00Z", None)
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1700,8 +1876,11 @@ class TestPurgeStaleRows:
 
     @pytest.mark.asyncio
     async def test_purges_stale_rows(self) -> None:
-        """Test deletes rows older than started_at."""
+        """Test deletes rows older than started_at (small stale fraction → real shrink)."""
         mock_cursor = AsyncMock()
+        # fetchone answers the total-count then the stale-count queries; 2 of 100 rows
+        # are stale (2% ≪ safety cap), so the DELETE proceeds and returns those 2 rows.
+        mock_cursor.fetchone = AsyncMock(side_effect=[(100,), (2,)])
         mock_cursor.fetchall = AsyncMock(return_value=[("old_id_1",), ("old_id_2",)])
 
         mock_cursor_cm = MagicMock()
@@ -1725,12 +1904,13 @@ class TestPurgeStaleRows:
 
         from tableinator.tableinator import purge_stale_rows
 
-        await purge_stale_rows("artists", "2026-01-01T00:00:00Z")
+        await purge_stale_rows("artists", "2026-01-01T00:00:00Z", record_count=98)
 
         # Verify autocommit was disabled before transaction
         mock_conn.set_autocommit.assert_called_once_with(False)
 
-        mock_cursor.execute.assert_called_once()
+        # 2 count queries + 1 DELETE; the DELETE (last call) carries the parsed timestamp.
+        assert mock_cursor.execute.call_count == 3
         call_args = mock_cursor.execute.call_args
         param = call_args[0][1]
         # After fix, started_at is parsed to a datetime with UTC timezone
@@ -1774,7 +1954,9 @@ class TestPurgeStaleRows:
     async def test_purge_with_naive_datetime_adds_utc(self) -> None:
         """Test purge_stale_rows with a timezone-naive timestamp adds UTC."""
         mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(return_value=[])
+        # 3 of 100 rows stale → DELETE proceeds; fetchall returns the deleted rows.
+        mock_cursor.fetchone = AsyncMock(side_effect=[(100,), (3,)])
+        mock_cursor.fetchall = AsyncMock(return_value=[("a",), ("b",), ("c",)])
 
         mock_cursor_cm = MagicMock()
         mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
@@ -1798,9 +1980,10 @@ class TestPurgeStaleRows:
         from tableinator.tableinator import purge_stale_rows
 
         # Pass a timezone-naive timestamp (no trailing Z or +00:00)
-        await purge_stale_rows("artists", "2026-01-01T00:00:00")
+        await purge_stale_rows("artists", "2026-01-01T00:00:00", record_count=97)
 
-        mock_cursor.execute.assert_called_once()
+        # The DELETE (last execute) receives the UTC-normalized timestamp.
+        assert mock_cursor.execute.call_count == 3
         call_args = mock_cursor.execute.call_args
         param = call_args[0][1]
         if isinstance(param, tuple):
@@ -1810,6 +1993,8 @@ class TestPurgeStaleRows:
         # Should have been converted to UTC-aware datetime
         assert param == datetime(2026, 1, 1, tzinfo=UTC)
         assert param.tzinfo is not None
+
+        tableinator.tableinator.connection_pool = None
 
         tableinator.tableinator.connection_pool = None
 
@@ -2111,6 +2296,108 @@ class TestRecoverConsumersTableinator:
         # Temp channel and connection should be closed since no messages
         mock_temp_channel.close.assert_called_once()
         mock_temp_connection.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_recovers_all_types_not_just_backlogged(self) -> None:
+        """Regression (cu2.53): recovery must start consumers for ALL data types,
+        not only those with a backlog at the passive-declare instant.
+
+        With a partial backlog (only 'artists' has messages), the old loop over
+        queues_with_messages started a consumer for 'artists' only, then set
+        active_connection — permanently gating off both periodic recovery routes,
+        so labels/masters/releases published later were never consumed.
+        """
+        import tableinator.tableinator as t
+
+        t.active_connection = None
+        t.active_channel = None
+        t.consumer_tags = {}
+        t.completed_files = set()
+        t.queues = {}
+        t.last_message_time = dict.fromkeys(["artists", "labels", "masters", "releases"], 0.0)
+
+        def declare_queue(**kwargs: Any) -> Any:
+            if kwargs.get("passive"):
+                q = MagicMock()
+                # Only 'artists' has a backlog at the check instant.
+                q.declaration_result.message_count = 100 if kwargs["name"].endswith("-artists") else 0
+                return q
+            q = AsyncMock()
+            q.consume = AsyncMock(return_value=f"tag-{kwargs.get('name')}")
+            q.bind = AsyncMock()
+            return q
+
+        mock_channel = AsyncMock()
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue)
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.set_qos = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_rmq = AsyncMock()
+        mock_rmq.connect = AsyncMock(return_value=mock_connection)
+
+        with patch.object(t, "rabbitmq_manager", mock_rmq), patch.object(t, "logger"):
+            await t._recover_consumers()
+
+        assert set(t.consumer_tags.keys()) == {"artists", "labels", "masters", "releases"}
+
+        # Reset shared module state
+        t.consumer_tags = {}
+        t.active_connection = None
+        t.active_channel = None
+        t.queues = {}
+
+    @pytest.mark.asyncio
+    async def test_error_after_partial_registration_clears_consumer_tags(self) -> None:
+        """Regression (cu2.54): if recovery errors after ≥1 consumer registered,
+        the except block must clear consumer_tags.
+
+        The consumers registered before the error died with the now-closed
+        connection; leaving their tags behind keeps len(consumer_tags) > 0
+        forever, permanently gating off both recovery routes (the stuck-check
+        requires 0 tags) while health still reports healthy.
+        """
+        import tableinator.tableinator as t
+
+        t.active_connection = None
+        t.active_channel = None
+        t.consumer_tags = {}
+        t.completed_files = set()
+        t.queues = {}
+        t.last_message_time = dict.fromkeys(["artists", "labels", "masters", "releases"], 0.0)
+
+        def declare_queue(**kwargs: Any) -> Any:
+            name = kwargs.get("name", "")
+            if kwargs.get("passive"):
+                q = MagicMock()
+                q.declaration_result.message_count = 100  # all have a backlog
+                return q
+            q = AsyncMock()
+            q.bind = AsyncMock()
+            # artists registers fine; labels raises mid-loop (broker flap).
+            if name.endswith("-labels"):
+                q.consume = AsyncMock(side_effect=RuntimeError("channel closed mid-recovery"))
+            else:
+                q.consume = AsyncMock(return_value=f"tag-{name}")
+            return q
+
+        mock_channel = AsyncMock()
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue)
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.set_qos = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_rmq = AsyncMock()
+        mock_rmq.connect = AsyncMock(return_value=mock_connection)
+
+        with patch.object(t, "rabbitmq_manager", mock_rmq), patch.object(t, "logger"):
+            await t._recover_consumers()
+
+        assert t.consumer_tags == {}, "stale consumer tags must be cleared so recovery can re-fire"
+        assert t.active_connection is None
+
+        t.consumer_tags = {}
+        t.queues = {}
 
     @pytest.mark.asyncio
     async def test_exception_during_recovery_closes_temp_connection(self) -> None:
@@ -2686,3 +2973,193 @@ class TestCoverageGaps:
 
         # Should delegate to batch processor without error
         mock_batch.add_message.assert_called_once()
+
+
+class TestMainFullRun:
+    """Drive main() all the way through RabbitMQ connect, queue/exchange
+    declaration, consumer start, the run loop, and the finally teardown.
+
+    The existing TestMain.test_main_execution trips shutdown_requested on the
+    STARTUP_DELAY sleep, which short-circuits before the connect loop. Here
+    STARTUP_DELAY=0 skips that sleep so the full body executes, and shutdown is
+    tripped on the run-loop's own sleep instead.
+    """
+
+    @pytest.mark.asyncio
+    async def test_main_full_run_batch_mode(self) -> None:
+        import tableinator.tableinator as mod
+
+        # Reset the module-level shutdown flag (earlier tests may have left it True).
+        original_shutdown = mod.shutdown_requested
+        mod.shutdown_requested = False
+
+        # Resilient RabbitMQ manager whose connect() returns an async-context connection.
+        mock_amqp_connection = AsyncMock()
+        mock_channel = AsyncMock()
+        mock_amqp_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_channel.set_qos = AsyncMock()
+        mock_exchange = AsyncMock()
+        mock_channel.declare_exchange = AsyncMock(return_value=mock_exchange)
+        mock_queue = AsyncMock()
+        mock_queue.bind = AsyncMock()
+        mock_queue.consume = AsyncMock(return_value="ctag")
+        mock_channel.declare_queue = AsyncMock(return_value=mock_queue)
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_instance.connect = AsyncMock(return_value=mock_amqp_connection)
+
+        mock_pool = MagicMock()
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        # Trip shutdown on the run-loop sleep so the loop exits after one iteration.
+        real_sleep = asyncio.sleep
+
+        async def sleep_trips_shutdown(delay: float) -> None:
+            if delay == 1.0:
+                mod.shutdown_requested = True
+            await real_sleep(0)
+
+        try:
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("tableinator.tableinator.setup_logging"),
+                patch("tableinator.tableinator.HealthServer") as mock_hs,
+                patch("tableinator.tableinator.AsyncPostgreSQLPool", return_value=mock_pool),
+                patch("tableinator.tableinator.AsyncResilientRabbitMQ", return_value=mock_rabbitmq_instance),
+                patch("tableinator.tableinator.BATCH_MODE", True),
+                patch("tableinator.tableinator.progress_reporter", new=AsyncMock()),
+                patch("tableinator.tableinator.periodic_queue_checker", new=AsyncMock()),
+                patch("tableinator.tableinator.close_rabbitmq_connection", new=AsyncMock()),
+                patch.object(mod.PostgreSQLBatchProcessor, "periodic_flush", new=AsyncMock()),
+                patch.object(mod.PostgreSQLBatchProcessor, "flush_all", new=AsyncMock()),
+                patch("tableinator.tableinator.asyncio.sleep", side_effect=sleep_trips_shutdown),
+                patch("tableinator.tableinator.signal.signal"),
+            ):
+                mock_hs.return_value = MagicMock()
+                await main()
+
+            # Connect + channel + QoS were configured.
+            mock_rabbitmq_instance.connect.assert_awaited()
+            mock_channel.set_qos.assert_awaited_once()
+            # Exchanges/queues declared and consumers started for every data type.
+            assert mock_channel.declare_exchange.await_count >= len(mod.DATA_TYPES)
+            assert mock_queue.consume.await_count == len(mod.DATA_TYPES)
+            # Pool was closed during teardown.
+            mock_pool.close.assert_awaited()
+        finally:
+            mod.shutdown_requested = original_shutdown
+
+    @pytest.mark.asyncio
+    async def test_main_full_run_no_amqp_connection(self) -> None:
+        """When every startup connect attempt fails, main() logs and returns without
+        entering the consume block."""
+        import tableinator.tableinator as mod
+
+        original_shutdown = mod.shutdown_requested
+        mod.shutdown_requested = False
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_instance.connect = AsyncMock(side_effect=Exception("broker down"))
+
+        mock_pool = MagicMock()
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        real_sleep = asyncio.sleep
+
+        async def fast_sleep(_delay: float) -> None:
+            await real_sleep(0)
+
+        try:
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("tableinator.tableinator.setup_logging"),
+                patch("tableinator.tableinator.HealthServer") as mock_hs,
+                patch("tableinator.tableinator.AsyncPostgreSQLPool", return_value=mock_pool),
+                patch("tableinator.tableinator.AsyncResilientRabbitMQ", return_value=mock_rabbitmq_instance),
+                patch("tableinator.tableinator.asyncio.sleep", side_effect=fast_sleep),
+                patch("tableinator.tableinator.signal.signal"),
+            ):
+                mock_hs.return_value = MagicMock()
+                await main()
+
+            # All startup retries were attempted, then main returned at the
+            # "No AMQP connection available" guard (never opening the channel).
+            assert mock_rabbitmq_instance.connect.await_count >= 1
+            mock_rabbitmq_instance.channel.assert_not_called()
+        finally:
+            mod.shutdown_requested = original_shutdown
+
+    @pytest.mark.asyncio
+    async def test_main_full_run_teardown_error_paths(self) -> None:
+        """Exercise the defensive teardown error-handlers: a KeyboardInterrupt in the
+        run loop, an exception while flushing the batch processor, a pending
+        consumer-cancellation task, and an exception while closing the pool. None may
+        escape main()."""
+        import tableinator.tableinator as mod
+
+        original_shutdown = mod.shutdown_requested
+        original_cancel_tasks = dict(mod.consumer_cancel_tasks)
+        mod.shutdown_requested = False
+
+        mock_channel = AsyncMock()
+        mock_channel.set_qos = AsyncMock()
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_queue = AsyncMock()
+        mock_queue.bind = AsyncMock()
+        mock_queue.consume = AsyncMock(return_value="ctag")
+        mock_channel.declare_queue = AsyncMock(return_value=mock_queue)
+        mock_amqp_connection = AsyncMock()
+        mock_amqp_connection.channel = AsyncMock(return_value=mock_channel)
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_instance.connect = AsyncMock(return_value=mock_amqp_connection)
+
+        mock_pool = MagicMock()
+        mock_pool.initialize = AsyncMock()
+        # Pool close raises → covers the "Error closing connection pool" handler.
+        mock_pool.close = AsyncMock(side_effect=RuntimeError("pool close failed"))
+
+        real_sleep = asyncio.sleep
+
+        async def sleep_raises_keyboard_interrupt(delay: float) -> None:
+            if delay == 1.0:
+                raise KeyboardInterrupt
+            await real_sleep(0)
+
+        # Seed a pending consumer-cancellation task so the cancel loop body runs.
+        pending_task = MagicMock()
+
+        try:
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("tableinator.tableinator.setup_logging"),
+                patch("tableinator.tableinator.HealthServer") as mock_hs,
+                patch("tableinator.tableinator.AsyncPostgreSQLPool", return_value=mock_pool),
+                patch("tableinator.tableinator.AsyncResilientRabbitMQ", return_value=mock_rabbitmq_instance),
+                patch("tableinator.tableinator.BATCH_MODE", True),
+                patch("tableinator.tableinator.progress_reporter", new=AsyncMock()),
+                patch("tableinator.tableinator.periodic_queue_checker", new=AsyncMock()),
+                patch("tableinator.tableinator.close_rabbitmq_connection", new=AsyncMock()),
+                patch.object(mod.PostgreSQLBatchProcessor, "periodic_flush", new=AsyncMock()),
+                # flush_all raises → covers the "Error flushing batch processor" handler.
+                patch.object(mod.PostgreSQLBatchProcessor, "flush_all", new=AsyncMock(side_effect=RuntimeError("flush failed"))),
+                patch.object(mod.PostgreSQLBatchProcessor, "shutdown", new=MagicMock()),
+                patch("tableinator.tableinator.asyncio.sleep", side_effect=sleep_raises_keyboard_interrupt),
+                patch("tableinator.tableinator.signal.signal"),
+            ):
+                mock_hs.return_value = MagicMock()
+                mod.consumer_cancel_tasks.clear()
+                mod.consumer_cancel_tasks["artists"] = pending_task
+                # Must not raise despite KeyboardInterrupt + two teardown exceptions.
+                await main()
+
+            # The pending consumer-cancellation task was cancelled during teardown.
+            pending_task.cancel.assert_called_once()
+            # The pool close was attempted (and its failure swallowed).
+            mock_pool.close.assert_awaited()
+        finally:
+            mod.shutdown_requested = original_shutdown
+            mod.consumer_cancel_tasks.clear()
+            mod.consumer_cancel_tasks.update(original_cancel_tasks)

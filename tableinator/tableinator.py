@@ -53,6 +53,16 @@ CONSUMER_CANCEL_DELAY = int(
     os.environ.get("CONSUMER_CANCEL_DELAY", "300")
 )  # Default 5 minutes
 
+# Safety cap for the stale-row purge. A resumed extraction skips files completed in an
+# earlier session, so those data types receive zero messages this run while still getting
+# an extraction_complete signal. Purging then would delete every row written before the
+# restart. If a purge would remove at least this fraction of a non-empty table, it is
+# almost certainly a resumed-extraction artifact (Discogs dumps grow, they do not shrink
+# by ~100%), so we veto it rather than wipe the table.
+PURGE_MAX_DELETE_FRACTION = float(
+    os.environ.get("PURGE_MAX_DELETE_FRACTION", "0.90")
+)  # Default 90% - refuse purges that would delete this share or more of a table
+
 # Periodic queue checking settings
 QUEUE_CHECK_INTERVAL = int(
     os.environ.get("QUEUE_CHECK_INTERVAL", "3600")
@@ -427,19 +437,27 @@ async def _recover_consumers() -> None:
                 await queue.bind(exchange)
                 queues[data_type] = queue
 
-            # Start consumers for queues with messages
-            for data_type, msg_count in queues_with_messages:
+            # Start consumers for ALL data types lacking one — not just those
+            # with a current backlog. A type whose queue was empty at the
+            # passive-declare instant still needs a consumer; otherwise messages
+            # that arrive later are never consumed, because once active_connection
+            # is set and consumer_tags is non-empty both periodic recovery routes
+            # are permanently gated off, silently starving that data type.
+            pending_counts = dict(queues_with_messages)
+            for data_type in DATA_TYPES:
                 if data_type in queues and data_type not in consumer_tags:
                     handler = make_data_handler(data_type)
                     consumer_tag = await queues[data_type].consume(handler)
                     consumer_tags[data_type] = consumer_tag
-                    # Remove from completed files so it will be processed
-                    completed_files.discard(data_type)
+                    # Only un-complete a type that actually has a backlog, so
+                    # genuinely-finished types stay marked complete.
+                    if data_type in pending_counts:
+                        completed_files.discard(data_type)
                     last_message_time[data_type] = time.time()
                     logger.info(
                         f"✅ Started consumer for {data_type}",
                         data_type=data_type,
-                        pending_messages=msg_count,
+                        pending_messages=pending_counts.get(data_type, 0),
                     )
 
             logger.info(
@@ -466,14 +484,33 @@ async def _recover_consumers() -> None:
         active_connection = None  # noqa: F841
         active_channel = None  # noqa: F841
         queues = {}  # noqa: F841
+        # Clear stale consumer tags: any consumers registered before the error
+        # died with the now-closed connection. Leaving them behind would keep
+        # len(consumer_tags) > 0 forever, permanently gating off both recovery
+        # routes (stuck-check requires 0 tags) while health still reads healthy.
+        consumer_tags.clear()
 
 
-async def purge_stale_rows(data_type: str, started_at: str) -> None:
+async def purge_stale_rows(
+    data_type: str, started_at: str, record_count: int | None = None
+) -> None:
     """Delete rows from prior extractions that were not updated in the current run.
 
     The extraction_complete message includes started_at — the time the extraction
     began. Any row with updated_at < started_at was not touched by the current
     extraction and is stale (removed from the Discogs dump or from a prior run).
+
+    Defense-in-depth against resumed extractions (see PURGE_MAX_DELETE_FRACTION): a
+    restarted extractor skips files completed in an earlier session, so this data type
+    can receive an extraction_complete signal while zero records were streamed this run.
+    Purging blindly would then delete every row written before the restart. Two guards
+    prevent that mass data loss:
+
+    1. If the extractor reported zero records for this type this session, skip entirely —
+       nothing this run could have refreshed, so there is no safe basis to purge.
+    2. If the purge would delete at least PURGE_MAX_DELETE_FRACTION of a non-empty table,
+       veto it — a near-total wipe is the resumed-extraction signature, not a real dump
+       shrink.
     """
     if connection_pool is None:
         return
@@ -481,6 +518,17 @@ async def purge_stale_rows(data_type: str, started_at: str) -> None:
     if not started_at:
         logger.warning(
             "⚠️ No started_at in extraction_complete, skipping stale row purge",
+            data_type=data_type,
+        )
+        return
+
+    # Guard 1: the extractor streamed zero records for this type this session. On a
+    # resumed run this means the type's file was already completed earlier and not
+    # re-sent, so every current row predates started_at — purging would wipe the table.
+    if record_count == 0:
+        logger.warning(
+            "⚠️ Skipping stale row purge — extractor reported 0 records this session "
+            "(resumed extraction?)",
             data_type=data_type,
         )
         return
@@ -495,6 +543,53 @@ async def purge_stale_rows(data_type: str, started_at: str) -> None:
             await conn.set_autocommit(False)
             async with conn.transaction():
                 async with conn.cursor() as cursor:
+                    # Count the table and the would-be-deleted rows BEFORE deleting so a
+                    # near-total wipe can be vetoed inside the same transaction.
+                    await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
+                        sql.SQL("SELECT count(*) FROM {table}").format(
+                            table=sql.Identifier(data_type)
+                        )
+                    )
+                    total_row = await cursor.fetchone()
+                    total_count = total_row[0] if total_row else 0
+
+                    if total_count == 0:
+                        logger.info(
+                            f"✅ No {data_type} rows to purge (table empty)",
+                            data_type=data_type,
+                        )
+                        return
+
+                    await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
+                        sql.SQL(
+                            "SELECT count(*) FROM {table} WHERE updated_at < %s"
+                        ).format(table=sql.Identifier(data_type)),
+                        (started_at_dt,),
+                    )
+                    stale_row = await cursor.fetchone()
+                    stale_count = stale_row[0] if stale_row else 0
+
+                    if stale_count == 0:
+                        logger.info(
+                            f"✅ No stale {data_type} rows to purge",
+                            data_type=data_type,
+                        )
+                        return
+
+                    # Guard 2: veto near-total wipes — the resumed-extraction signature.
+                    delete_fraction = stale_count / total_count
+                    if delete_fraction >= PURGE_MAX_DELETE_FRACTION:
+                        logger.error(
+                            f"🛡️ Refusing to purge {stale_count}/{total_count} "
+                            f"{data_type} rows ({delete_fraction:.1%} of table) — exceeds "
+                            f"safety cap, likely a resumed extraction not a dump shrink",
+                            data_type=data_type,
+                            stale=stale_count,
+                            total=total_count,
+                            fraction=round(delete_fraction, 4),
+                        )
+                        return
+
                     await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
                         sql.SQL(
                             "DELETE FROM {table} WHERE updated_at < %s RETURNING data_id"
@@ -504,18 +599,12 @@ async def purge_stale_rows(data_type: str, started_at: str) -> None:
                     deleted_rows = await cursor.fetchall()
                     deleted_count = len(deleted_rows)
 
-                    if deleted_count > 0:
-                        logger.info(
-                            f"🧹 Purged {deleted_count} stale {data_type} rows "
-                            f"(not updated since extraction started)",
-                            data_type=data_type,
-                            deleted=deleted_count,
-                        )
-                    else:
-                        logger.info(
-                            f"✅ No stale {data_type} rows to purge",
-                            data_type=data_type,
-                        )
+                    logger.info(
+                        f"🧹 Purged {deleted_count} stale {data_type} rows "
+                        f"(not updated since extraction started)",
+                        data_type=data_type,
+                        deleted=deleted_count,
+                    )
     except Exception as e:
         logger.error(
             f"❌ Failed to purge stale {data_type} rows",
@@ -583,7 +672,12 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
             purge_ok = True
             if connection_pool is not None:
                 try:
-                    await purge_stale_rows(data_type, data.get("started_at", ""))
+                    record_counts = data.get("record_counts", {})
+                    await purge_stale_rows(
+                        data_type,
+                        data.get("started_at", ""),
+                        record_counts.get(data_type),
+                    )
                 except Exception as purge_exc:
                     logger.error(
                         "❌ Purge failed, nacking extraction_complete for retry",
@@ -610,7 +704,13 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                 data_type=data_type,
                 data=data,
                 ack_callback=message.ack,
-                nack_callback=lambda: message.nack(requeue=True),
+                # requeue=False: this callback nacks permanently-invalid input
+                # (unknown data_type, missing 'id', normalize failure, poison
+                # batch) — send it straight to the DLQ instead of cycling
+                # x-delivery-limit (20) futile redeliveries. Matches the
+                # non-batch validation path above. Transient failures are handled
+                # by _flush_queue's re-enqueue+backoff, which never nacks.
+                nack_callback=lambda: message.nack(requeue=False),
             )
 
             # Only update progress tracking when message was actually accepted

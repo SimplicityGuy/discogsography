@@ -300,6 +300,12 @@ async def enrich_artist(
         s["entities_skipped_no_discogs_match"] += 1
         return True  # Deliberately skipped, not an error
 
+    # Discogs nodes store `id` as a String property (graphinator writes it
+    # from DataMessage.id, always a str); MusicBrainz emits discogs_*_id as a
+    # JSON integer. Coerce to the graph's string convention before matching,
+    # or the MATCH silently never finds the node.
+    discogs_id = str(discogs_id)
+
     result = await tx.run(
         "MATCH (a:Artist {id: $discogs_id}) "
         "SET a.mbid = $mbid, "
@@ -354,6 +360,9 @@ async def enrich_label(
         s["entities_skipped_no_discogs_match"] += 1
         return True
 
+    # See enrich_artist: coerce to the graph's string `id` convention.
+    discogs_id = str(discogs_id)
+
     result = await tx.run(
         "MATCH (l:Label {id: $discogs_id}) "
         "SET l.mbid = $mbid, "
@@ -397,6 +406,9 @@ async def enrich_release(
         s["entities_skipped_no_discogs_match"] += 1
         return True
 
+    # See enrich_artist: coerce to the graph's string `id` convention.
+    discogs_id = str(discogs_id)
+
     result = await tx.run(
         "MATCH (r:Release {id: $discogs_id}) "
         "SET r.mbid = $mbid, "
@@ -423,7 +435,7 @@ async def enrich_release(
 
 async def create_relationship_edges(
     tx: Any,
-    source_discogs_id: int,
+    source_discogs_id: str,
     relations: list[dict[str, Any]],
     stats: dict[str, int] | None = None,
 ) -> None:
@@ -433,6 +445,10 @@ async def create_relationship_edges(
     - Look up the Neo4j edge type in MB_RELATIONSHIP_MAP
     - Skip unknown relationship types
     - If target_discogs_artist_id is None, skip
+    - Swap source/target when the relation's direction is "backward" — the
+      current entity is the relationship's target in that case, not its
+      source (see MB_RELATIONSHIP_MAP types, all of which are canonically
+      oriented, e.g. member->band for "member of band")
     - MERGE the edge with source: 'musicbrainz' property
 
     Cypher can't parameterize relationship types, so we format the edge type
@@ -451,14 +467,26 @@ async def create_relationship_edges(
             s["relationships_skipped_missing_side"] += 1
             continue
 
+        # Discogs nodes key on a String `id`; MB targets resolve to an int
+        # discogs id (see enrich_artist). Coerce both sides consistently.
+        edge_source_id = str(source_discogs_id)
+        edge_target_id = str(target_discogs_id)
+
+        # MusicBrainz relations are directional and materialized on both
+        # endpoints. direction == "backward" means the record being
+        # processed is the relation's TARGET, not its source — swap so the
+        # edge is created in the canonical orientation (e.g. member->band).
+        if relation.get("direction") == "backward":
+            edge_source_id, edge_target_id = edge_target_id, edge_source_id
+
         # Safe: edge_type comes from MB_RELATIONSHIP_MAP, not user input
         result = await tx.run(
             f"MATCH (a:Artist {{id: $source_id}}) "  # noqa: S608
             f"MATCH (b:Artist {{id: $target_id}}) "
             f"MERGE (a)-[r:{edge_type}]->(b) "
             f"SET r.source = 'musicbrainz'",
-            source_id=source_discogs_id,
-            target_id=target_discogs_id,
+            source_id=edge_source_id,
+            target_id=edge_target_id,
         )
         summary = await result.consume()
         if summary.counters.relationships_created > 0:
@@ -483,6 +511,9 @@ async def enrich_release_group(
     if discogs_id is None:
         s["entities_skipped_no_discogs_match"] += 1
         return True
+
+    # See enrich_artist: coerce to the graph's string `id` convention.
+    discogs_id = str(discogs_id)
 
     result = await tx.run(
         "MATCH (m:Master {id: $discogs_id}) "
@@ -824,7 +855,14 @@ async def _recover_consumers() -> None:
                 await queue.bind(exchange)
                 queues[data_type] = queue
 
-            for data_type, msg_count in queues_with_messages:
+            # Start consumers for ALL data types lacking one — not just those
+            # with a current backlog. A type whose queue was empty at the
+            # passive-declare instant still needs a consumer; otherwise messages
+            # that arrive later are never consumed, because once active_connection
+            # is set and consumer_tags is non-empty both periodic recovery routes
+            # are permanently gated off, silently starving that data type.
+            pending_counts = dict(queues_with_messages)
+            for data_type in MUSICBRAINZ_DATA_TYPES:
                 if data_type in queues and data_type not in consumer_tags:
                     handler = HANDLERS.get(data_type)
                     if handler:
@@ -832,11 +870,14 @@ async def _recover_consumers() -> None:
                             handler, consumer_tag=f"brainzgraphinator-{data_type}"
                         )
                         consumer_tags[data_type] = consumer_tag
-                        completed_files.discard(data_type)
+                        # Only un-complete a type that actually has a backlog, so
+                        # genuinely-finished types stay marked complete.
+                        if data_type in pending_counts:
+                            completed_files.discard(data_type)
                         last_message_time[data_type] = time.time()
                         logger.info(
                             f"✅ Started consumer for {data_type} "
-                            f"(pending: {msg_count})"
+                            f"(pending: {pending_counts.get(data_type, 0)})"
                         )
 
             logger.info(
@@ -858,6 +899,11 @@ async def _recover_consumers() -> None:
         active_connection = None
         active_channel = None
         queues = {}
+        # Clear stale consumer tags: any consumers registered before the error
+        # died with the now-closed connection. Leaving them behind would keep
+        # len(consumer_tags) > 0 forever, permanently gating off both recovery
+        # routes (stuck-check requires 0 tags) while health still reads healthy.
+        consumer_tags.clear()
 
 
 async def main() -> None:

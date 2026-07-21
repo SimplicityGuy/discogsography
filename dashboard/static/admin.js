@@ -1,15 +1,35 @@
 'use strict';
 
-const DLQ_NAMES = [
-    'graphinator-artists-dlq', 'graphinator-labels-dlq',
-    'graphinator-masters-dlq', 'graphinator-releases-dlq',
-    'tableinator-artists-dlq', 'tableinator-labels-dlq',
-    'tableinator-masters-dlq', 'tableinator-releases-dlq',
-    'brainzgraphinator-artists-dlq', 'brainzgraphinator-labels-dlq',
-    'brainzgraphinator-releases-dlq', 'brainzgraphinator-release-groups-dlq',
-    'brainztableinator-artists-dlq', 'brainztableinator-labels-dlq',
-    'brainztableinator-releases-dlq', 'brainztableinator-release-groups-dlq',
+// DLQ naming contract MUST mirror the backend's _VALID_DLQ_NAMES construction
+// (api/routers/admin.py): f"{source-exchange-prefix}-{consumer}-{data_type}.dlq".
+// Keep these prefixes/types in lockstep with common/config.py's
+// DISCOGS_EXCHANGE_PREFIX / MUSICBRAINZ_EXCHANGE_PREFIX / DATA_TYPES /
+// MUSICBRAINZ_DATA_TYPES defaults — a drift here reproduces the "every Purge
+// button 404s" bug (discogsography-cu2.35).
+const DLQ_SOURCE_PREFIXES = {
+    discogs: 'discogsography-discogs',
+    musicbrainz: 'discogsography-musicbrainz',
+};
+
+const DLQ_CONSUMER_GROUPS = [
+    { source: 'discogs', consumer: 'graphinator', types: ['artists', 'labels', 'masters', 'releases'] },
+    { source: 'discogs', consumer: 'tableinator', types: ['artists', 'labels', 'masters', 'releases'] },
+    { source: 'musicbrainz', consumer: 'brainzgraphinator', types: ['artists', 'labels', 'release-groups', 'releases'] },
+    { source: 'musicbrainz', consumer: 'brainztableinator', types: ['artists', 'labels', 'release-groups', 'releases'] },
 ];
+
+// Structured items (queue/service/type) generated directly — NOT parsed back
+// out of the queue name string, which is brittle against multi-segment
+// prefixes (e.g. "discogsography-discogs-graphinator-artists.dlq").
+const DLQ_ITEMS = DLQ_CONSUMER_GROUPS.flatMap(({ source, consumer, types }) =>
+    types.map(type => ({
+        queue: `${DLQ_SOURCE_PREFIXES[source]}-${consumer}-${type}.dlq`,
+        service: consumer,
+        type,
+    }))
+);
+
+const DLQ_NAMES = DLQ_ITEMS.map(item => item.queue);
 
 const QUEUE_CHART_COLORS = [
     '#818cf8', '#34d399', '#f59e0b', '#f87171',
@@ -473,11 +493,7 @@ class AdminDashboard {
         const container = document.getElementById('dlq-list');
         if (!container) return;
 
-        const items = DLQ_NAMES.map(queue => {
-            const parts = queue.replace('-dlq', '').split('-');
-            const service = parts[0];
-            const type = parts[1];
-
+        const items = DLQ_ITEMS.map(({ queue, service, type }) => {
             const row = document.createElement('div');
             row.className = 'flex items-center justify-between py-3.5 border-b b-row';
 

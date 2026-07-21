@@ -41,6 +41,11 @@ async def _get_current_user(
         # Reject admin tokens
         if payload.get("type") == "admin":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin tokens cannot be used for user endpoints")
+        # Allowlist: only pure access tokens (which carry NO `type` claim) may
+        # authenticate. A 2FA challenge token (type="2fa_challenge") proves only the
+        # password and must be rejected before TOTP verification.
+        if payload.get("type") is not None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"})
         # Check jti blacklist (revoked tokens via logout)
         jti: str | None = payload.get("jti")
         if jti and _redis:

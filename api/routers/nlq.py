@@ -57,7 +57,9 @@ def _extract_user_id(request: Request) -> str | None:
         if _jwt_secret is None:
             return None
         payload = decode_token(token, _jwt_secret)
-        if payload.get("type") == "admin":
+        # Allowlist: only pure access tokens (no `type` claim) resolve to a user.
+        # Admin and 2FA challenge tokens must not be treated as an authenticated user.
+        if payload.get("type") is not None:
             return None
         return payload.get("sub")
     except (ValueError, Exception):
@@ -127,7 +129,14 @@ async def nlq_query(request: Request, body: NLQQueryRequest) -> Any:
     # Extract optional user_id from Bearer token
     user_id = _extract_user_id(request)
 
+    # Determine the response mode BEFORE consulting the cache. A streaming client
+    # must ALWAYS receive an event stream — never a plain JSON cache body, which
+    # its SSE parser cannot read, hanging the Ask UI. See discogsography-cu2.27.
+    accept = request.headers.get("accept", "")
+    wants_stream = "text/event-stream" in accept
+
     # Check Redis cache for public (unauthenticated) queries
+    cached_data: dict[str, Any] | None = None
     if user_id is None and _redis is not None:
         cache_k = _cache_key(body.query)
         try:
@@ -135,14 +144,16 @@ async def nlq_query(request: Request, body: NLQQueryRequest) -> Any:
             if cached is not None:
                 cached_data = json.loads(cached)
                 cached_data["cached"] = True
-                return JSONResponse(content=cached_data)
         except Exception:
             logger.debug("⚠️ NLQ cache read failed", key=cache_k)
 
-    # Check for SSE request
-    accept = request.headers.get("accept", "")
-    if "text/event-stream" in accept:
-        return _stream_response(body.query, user_id, body.context)
+    # Streaming clients get an event stream regardless of cache state — a cache
+    # hit is replayed as synthetic SSE events inside _stream_response.
+    if wants_stream:
+        return _stream_response(body.query, user_id, body.context, cached=cached_data)
+
+    if cached_data is not None:
+        return JSONResponse(content=cached_data)
 
     # Build context
     ctx = NLQContext(
@@ -174,10 +185,38 @@ async def nlq_query(request: Request, body: NLQQueryRequest) -> Any:
     return JSONResponse(content=response_data)
 
 
-def _stream_response(query: str, user_id: str | None, context: dict[str, Any] | None) -> EventSourceResponse:
-    """Return an SSE EventSourceResponse that streams NLQ status and result."""
+def _stream_response(
+    query: str,
+    user_id: str | None,
+    context: dict[str, Any] | None,
+    cached: dict[str, Any] | None = None,
+) -> EventSourceResponse:
+    """Return an SSE EventSourceResponse that streams NLQ status and result.
+
+    When ``cached`` is provided (a prior JSON cache hit), the cached result is
+    replayed as synthetic actions/result SSE events instead of re-running the
+    engine — so a streaming client always receives a well-formed event stream.
+    """
 
     async def event_generator() -> Any:
+        # Replay a cached result as synthetic SSE events so a streaming client
+        # never hangs on a plain JSON cache body. See discogsography-cu2.27.
+        if cached is not None:
+            yield {"event": "actions", "data": json.dumps({"actions": cached.get("actions", [])})}
+            yield {
+                "event": "result",
+                "data": json.dumps(
+                    {
+                        "query": cached.get("query", query),
+                        "summary": cached.get("summary"),
+                        "entities": cached.get("entities"),
+                        "tools_used": cached.get("tools_used"),
+                        "cached": True,
+                    }
+                ),
+            }
+            return
+
         ctx = NLQContext(
             user_id=user_id,
             current_entity_id=context.get("entity_id") if context else None,
@@ -195,40 +234,50 @@ def _stream_response(query: str, user_id: str | None, context: dict[str, Any] | 
         # Run engine in background so status events can be yielded as they arrive
         engine_task = asyncio.create_task(_engine.run(query, ctx, on_status=emit_status))
 
-        # Yield status events as they arrive
-        while not engine_task.done():
-            try:
-                step = await asyncio.wait_for(status_queue.get(), timeout=0.1)
-                yield {"event": "status", "data": json.dumps({"step": step})}
-            except TimeoutError:
-                continue
-
-        # Drain any remaining status events
-        while not status_queue.empty():
-            step = status_queue.get_nowait()
-            yield {"event": "status", "data": json.dumps({"step": step})}
-
         try:
-            result = await engine_task
-        except Exception as exc:
-            logger.error("❌ NLQ engine error", error=str(exc), exc_info=True)
-            yield {"event": "error", "data": json.dumps({"error": "An internal error occurred"})}
-            return
+            # Yield status events as they arrive
+            while not engine_task.done():
+                try:
+                    step = await asyncio.wait_for(status_queue.get(), timeout=0.1)
+                    yield {"event": "status", "data": json.dumps({"step": step})}
+                except TimeoutError:
+                    continue
 
-        # Emit actions event before result so the client can snapshot and apply
-        yield {
-            "event": "actions",
-            "data": json.dumps({"actions": [action.model_dump(by_alias=True, mode="json") for action in result.actions]}),
-        }
+            # Drain any remaining status events
+            while not status_queue.empty():
+                step = status_queue.get_nowait()
+                yield {"event": "status", "data": json.dumps({"step": step})}
 
-        # Emit final result
-        response_data = {
-            "query": query,
-            "summary": result.summary,
-            "entities": result.entities,
-            "tools_used": result.tools_used,
-            "cached": False,
-        }
-        yield {"event": "result", "data": json.dumps(response_data)}
+            try:
+                result = await engine_task
+            except Exception as exc:
+                logger.error("❌ NLQ engine error", error=str(exc), exc_info=True)
+                yield {"event": "error", "data": json.dumps({"error": "An internal error occurred"})}
+                return
+
+            # Emit actions event before result so the client can snapshot and apply
+            yield {
+                "event": "actions",
+                "data": json.dumps({"actions": [action.model_dump(by_alias=True, mode="json") for action in result.actions]}),
+            }
+
+            # Emit final result
+            response_data = {
+                "query": query,
+                "summary": result.summary,
+                "entities": result.entities,
+                "tools_used": result.tools_used,
+                "cached": False,
+            }
+            yield {"event": "result", "data": json.dumps(response_data)}
+        finally:
+            # Client disconnect raises GeneratorExit at the current yield; cancel
+            # the still-running engine task so the Anthropic/Neo4j work does not
+            # leak and the pending task cannot be GC'd mid-flight. gather with
+            # return_exceptions swallows the resulting CancelledError. See
+            # discogsography-cu2.28.
+            if not engine_task.done():
+                engine_task.cancel()
+                await asyncio.gather(engine_task, return_exceptions=True)
 
     return EventSourceResponse(event_generator())

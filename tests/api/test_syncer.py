@@ -7,6 +7,7 @@ import pytest
 
 from api.syncer import (
     MAX_RATE_LIMIT_RETRIES,
+    DiscogsSyncError,
     _auth_header,
     run_full_sync,
     sync_collection,
@@ -186,7 +187,9 @@ class TestSyncCollection:
 
         assert result == 1
         mock_pg_pool._mock_cur.executemany.assert_awaited_once()
-        mock_neo4j._mock_session.run.assert_awaited_once()
+        # 2 session.run calls: the per-page upsert MERGE, then the post-loop
+        # stale-row reconciliation DELETE (discogsography-cu2.9).
+        assert mock_neo4j._mock_session.run.await_count == 2
 
     @pytest.mark.asyncio
     async def test_rate_limited_429_retries(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
@@ -225,7 +228,9 @@ class TestSyncCollection:
 
     @pytest.mark.asyncio
     async def test_rate_limit_retries_exhausted(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
-        """Persistent 429 responses break the loop after MAX_RATE_LIMIT_RETRIES."""
+        """discogsography-cu2.30: persistent 429s must raise (not silently break)
+        so run_full_sync records the sync as 'failed', not 'completed'.
+        """
         rate_limited = MagicMock()
         rate_limited.status_code = 429
 
@@ -239,20 +244,23 @@ class TestSyncCollection:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            result = await sync_collection(
-                TEST_USER_UUID,
-                TEST_DISCOGS_USERNAME,
-                TEST_CONSUMER_KEY,
-                TEST_CONSUMER_SECRET,
-                TEST_ACCESS_TOKEN,
-                TEST_TOKEN_SECRET,
-                TEST_USER_AGENT,
-                mock_pg_pool,
-                mock_neo4j,
-            )
+            with pytest.raises(DiscogsSyncError, match="rate limit retries exhausted"):
+                await sync_collection(
+                    TEST_USER_UUID,
+                    TEST_DISCOGS_USERNAME,
+                    TEST_CONSUMER_KEY,
+                    TEST_CONSUMER_SECRET,
+                    TEST_ACCESS_TOKEN,
+                    TEST_TOKEN_SECRET,
+                    TEST_USER_AGENT,
+                    mock_pg_pool,
+                    mock_neo4j,
+                )
 
-        assert result == 0
         assert mock_sleep.await_count == MAX_RATE_LIMIT_RETRIES
+        # A raised sync must NOT trigger reconciliation deletes — the fetched
+        # data was incomplete, so we cannot tell what's genuinely stale.
+        mock_pg_pool._mock_cur.execute.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_rate_limit_counter_resets_on_success(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
@@ -297,7 +305,10 @@ class TestSyncCollection:
         assert result == 1
 
     @pytest.mark.asyncio
-    async def test_non_200_breaks_loop(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+    async def test_non_200_raises(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """discogsography-cu2.30: a non-200 response must raise (not silently
+        break) so run_full_sync records the sync as 'failed', not 'completed'.
+        """
         error_response = MagicMock()
         error_response.status_code = 500
 
@@ -308,19 +319,21 @@ class TestSyncCollection:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            result = await sync_collection(
-                TEST_USER_UUID,
-                TEST_DISCOGS_USERNAME,
-                TEST_CONSUMER_KEY,
-                TEST_CONSUMER_SECRET,
-                TEST_ACCESS_TOKEN,
-                TEST_TOKEN_SECRET,
-                TEST_USER_AGENT,
-                mock_pg_pool,
-                mock_neo4j,
-            )
+            with pytest.raises(DiscogsSyncError, match="status=500"):
+                await sync_collection(
+                    TEST_USER_UUID,
+                    TEST_DISCOGS_USERNAME,
+                    TEST_CONSUMER_KEY,
+                    TEST_CONSUMER_SECRET,
+                    TEST_ACCESS_TOKEN,
+                    TEST_TOKEN_SECRET,
+                    TEST_USER_AGENT,
+                    mock_pg_pool,
+                    mock_neo4j,
+                )
 
-        assert result == 0
+        # A raised sync must NOT trigger reconciliation deletes.
+        mock_pg_pool._mock_cur.execute.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_empty_releases_breaks_loop(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
@@ -455,6 +468,91 @@ class TestSyncCollection:
 
         assert result == 1
 
+    @pytest.mark.asyncio
+    async def test_reconciles_stale_rows_after_successful_sync(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """discogsography-cu2.9 regression: after a fully successful sync, stale
+        rows/edges (items removed from Discogs since the last sync, or orphaned
+        by a remove+re-add under a new instance_id) must be deleted — sync is
+        not allowed to stay upsert-only.
+        """
+        release = _make_release_item(123)
+        response_data = _make_collection_response([release], page=1, pages=1)
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = response_data
+
+        with patch("api.syncer.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            await sync_collection(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        # PG: a DELETE ... WHERE updated_at < <sync_started> sweep.
+        mock_pg_pool._mock_cur.execute.assert_awaited_once()
+        pg_call = mock_pg_pool._mock_cur.execute.await_args
+        pg_sql = pg_call.args[0]
+        assert "DELETE FROM user_collections" in pg_sql
+        assert "updated_at" in pg_sql
+        assert str(TEST_USER_UUID) in pg_call.args[1]
+
+        # Neo4j: the reconciliation DELETE is the LAST session.run call (after
+        # the per-page upsert MERGE).
+        assert mock_neo4j._mock_session.run.await_count == 2
+        reconcile_call = mock_neo4j._mock_session.run.await_args_list[-1]
+        reconcile_cypher = reconcile_call[0][0]
+        reconcile_params = reconcile_call[0][1]
+        assert "DELETE c" in reconcile_cypher
+        assert "COLLECTED" in reconcile_cypher
+        assert reconcile_params["user_id"] == str(TEST_USER_UUID)
+        assert "sync_started" in reconcile_params
+
+    @pytest.mark.asyncio
+    async def test_no_reconciliation_when_rate_limit_exhausted(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """A raised sync (rate limit exhausted) must skip reconciliation entirely
+        — deleting rows based on an incomplete fetch would destroy valid data.
+        """
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+
+        with (
+            patch("api.syncer.httpx.AsyncClient") as mock_client_cls,
+            patch("api.syncer.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=rate_limited)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            with pytest.raises(DiscogsSyncError):
+                await sync_collection(
+                    TEST_USER_UUID,
+                    TEST_DISCOGS_USERNAME,
+                    TEST_CONSUMER_KEY,
+                    TEST_CONSUMER_SECRET,
+                    TEST_ACCESS_TOKEN,
+                    TEST_TOKEN_SECRET,
+                    TEST_USER_AGENT,
+                    mock_pg_pool,
+                    mock_neo4j,
+                )
+
+        mock_pg_pool._mock_cur.execute.assert_not_awaited()
+        mock_neo4j._mock_session.run.assert_not_awaited()
+
 
 class TestSyncWantlist:
     """Tests for sync_wantlist."""
@@ -490,7 +588,9 @@ class TestSyncWantlist:
         assert mock_pg_pool._mock_cur.executemany.await_count == 1
         first_sql = mock_pg_pool._mock_cur.executemany.await_args_list[0].args[0]
         assert "user_wantlists" in first_sql
-        mock_neo4j._mock_session.run.assert_awaited_once()
+        # 2 session.run calls: the per-page upsert MERGE, then the post-loop
+        # stale-row reconciliation DELETE (discogsography-cu2.9).
+        assert mock_neo4j._mock_session.run.await_count == 2
 
     @pytest.mark.asyncio
     async def test_rate_limited_429(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
@@ -528,7 +628,9 @@ class TestSyncWantlist:
 
     @pytest.mark.asyncio
     async def test_rate_limit_retries_exhausted(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
-        """Persistent 429 responses break the wantlist loop after MAX_RATE_LIMIT_RETRIES."""
+        """discogsography-cu2.30: persistent 429s must raise (not silently
+        break) so run_full_sync records the sync as 'failed', not 'completed'.
+        """
         rate_limited = MagicMock()
         rate_limited.status_code = 429
 
@@ -542,23 +644,27 @@ class TestSyncWantlist:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            result = await sync_wantlist(
-                TEST_USER_UUID,
-                TEST_DISCOGS_USERNAME,
-                TEST_CONSUMER_KEY,
-                TEST_CONSUMER_SECRET,
-                TEST_ACCESS_TOKEN,
-                TEST_TOKEN_SECRET,
-                TEST_USER_AGENT,
-                mock_pg_pool,
-                mock_neo4j,
-            )
+            with pytest.raises(DiscogsSyncError, match="rate limit retries exhausted"):
+                await sync_wantlist(
+                    TEST_USER_UUID,
+                    TEST_DISCOGS_USERNAME,
+                    TEST_CONSUMER_KEY,
+                    TEST_CONSUMER_SECRET,
+                    TEST_ACCESS_TOKEN,
+                    TEST_TOKEN_SECRET,
+                    TEST_USER_AGENT,
+                    mock_pg_pool,
+                    mock_neo4j,
+                )
 
-        assert result == 0
         assert mock_sleep.await_count == MAX_RATE_LIMIT_RETRIES
+        mock_pg_pool._mock_cur.execute.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_non_200_breaks(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+    async def test_non_200_raises(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """discogsography-cu2.30: a non-200 response must raise (not silently
+        break) so run_full_sync records the sync as 'failed', not 'completed'.
+        """
         error = MagicMock()
         error.status_code = 403
 
@@ -569,19 +675,20 @@ class TestSyncWantlist:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            result = await sync_wantlist(
-                TEST_USER_UUID,
-                TEST_DISCOGS_USERNAME,
-                TEST_CONSUMER_KEY,
-                TEST_CONSUMER_SECRET,
-                TEST_ACCESS_TOKEN,
-                TEST_TOKEN_SECRET,
-                TEST_USER_AGENT,
-                mock_pg_pool,
-                mock_neo4j,
-            )
+            with pytest.raises(DiscogsSyncError, match="status=403"):
+                await sync_wantlist(
+                    TEST_USER_UUID,
+                    TEST_DISCOGS_USERNAME,
+                    TEST_CONSUMER_KEY,
+                    TEST_CONSUMER_SECRET,
+                    TEST_ACCESS_TOKEN,
+                    TEST_TOKEN_SECRET,
+                    TEST_USER_AGENT,
+                    mock_pg_pool,
+                    mock_neo4j,
+                )
 
-        assert result == 0
+        mock_pg_pool._mock_cur.execute.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_empty_wants_breaks(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
@@ -677,6 +784,46 @@ class TestSyncWantlist:
             )
 
         assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_reconciles_stale_wants_after_successful_sync(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """discogsography-cu2.9 regression: after a fully successful wantlist
+        sync, items removed from the wantlist (e.g. after purchase) must be
+        deleted from both PostgreSQL and Neo4j, not persisted forever.
+        """
+        want = _make_want_item(456)
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = _make_wantlist_response([want])
+
+        with patch("api.syncer.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            await sync_wantlist(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        mock_pg_pool._mock_cur.execute.assert_awaited_once()
+        pg_sql = mock_pg_pool._mock_cur.execute.await_args.args[0]
+        assert "DELETE FROM user_wantlists" in pg_sql
+        assert "updated_at" in pg_sql
+
+        assert mock_neo4j._mock_session.run.await_count == 2
+        reconcile_call = mock_neo4j._mock_session.run.await_args_list[-1]
+        assert "DELETE wnt" in reconcile_call[0][0]
+        assert "WANTS" in reconcile_call[0][0]
 
 
 class TestRunFullSync:
@@ -776,6 +923,54 @@ class TestRunFullSync:
 
         assert result["status"] == "failed"
         assert result["error"] == "boom"
+
+    @pytest.mark.asyncio
+    async def test_revoked_oauth_token_records_failed_not_completed(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """discogsography-cu2.30 regression: a real (unmocked) sync_collection
+        hitting a 401 (revoked OAuth token) must leave run_full_sync's status
+        as 'failed' with a populated error — not silently 'completed' with
+        items_synced=0 and error=None, which would hide the failure from the
+        UI and never prompt re-authorization.
+        """
+        mock_pg_pool._mock_cur.fetchone.return_value = {
+            "access_token": "at",
+            "access_secret": "as",
+            "provider_username": "user",
+        }
+        mock_pg_pool._mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ck"},
+            {"key": "discogs_consumer_secret", "value": "cs"},
+        ]
+
+        unauthorized = MagicMock()
+        unauthorized.status_code = 401
+
+        with (
+            patch("api.syncer.httpx.AsyncClient") as mock_client_cls,
+            patch("api.syncer.decrypt_oauth_token", side_effect=lambda val, _key: val),
+        ):
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=unauthorized)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            result = await run_full_sync(
+                TEST_USER_UUID,
+                "sync-401",
+                mock_pg_pool,
+                mock_neo4j,
+                TEST_USER_AGENT,
+            )
+
+        assert result["status"] == "failed"
+        assert result["error"] is not None
+        assert "401" in result["error"]
+        assert result["collection_count"] == 0
+        # sync_history UPDATE must record the failure, not silently 'completed'.
+        history_update = mock_pg_pool._mock_cur.execute.await_args_list[-1]
+        assert "sync_history" in history_update.args[0]
+        assert history_update.args[1][0] == "failed"
 
     @pytest.mark.asyncio
     async def test_sync_history_update_failure_handled(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
@@ -940,8 +1135,10 @@ class TestCatalogNumberCapture:
                 mock_neo4j,
             )
 
-        # Cypher params live in the second positional arg of session.run(cypher, params)
-        run_call = mock_neo4j._mock_session.run.await_args
+        # Cypher params live in the second positional arg of session.run(cypher, params).
+        # Call [0] is the per-page upsert MERGE; the post-loop reconciliation
+        # DELETE (discogsography-cu2.9) is the subsequent call.
+        run_call = mock_neo4j._mock_session.run.await_args_list[0]
         cypher_text = run_call[0][0]
         cypher_params = run_call[0][1]
         assert "r += rel.metadata" in cypher_text
@@ -978,7 +1175,7 @@ class TestCatalogNumberCapture:
 
         batch_params = mock_pg_pool._mock_cur.executemany.await_args[0][1]
         assert batch_params[0][11] is None
-        cypher_params = mock_neo4j._mock_session.run.await_args[0][1]
+        cypher_params = mock_neo4j._mock_session.run.await_args_list[0][0][1]
         assert cypher_params["releases"][0]["metadata"] == {}
 
     @pytest.mark.asyncio
@@ -1042,7 +1239,7 @@ class TestCatalogNumberCapture:
                 mock_neo4j,
             )
 
-        run_call = mock_neo4j._mock_session.run.await_args
+        run_call = mock_neo4j._mock_session.run.await_args_list[0]
         cypher_text = run_call[0][0]
         cypher_params = run_call[0][1]
         assert "r += w.metadata" in cypher_text
@@ -1078,5 +1275,5 @@ class TestCatalogNumberCapture:
                 mock_neo4j,
             )
 
-        cypher_params = mock_neo4j._mock_session.run.await_args[0][1]
+        cypher_params = mock_neo4j._mock_session.run.await_args_list[0][0][1]
         assert cypher_params["wants"][0]["metadata"] == {}

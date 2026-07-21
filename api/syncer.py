@@ -37,6 +37,16 @@ PAGE_SIZE = 100
 MAX_RATE_LIMIT_RETRIES = 5
 
 
+class DiscogsSyncError(Exception):
+    """Raised when a Discogs collection/wantlist sync fails part-way through.
+
+    Non-200 responses and exhausted rate-limit retries must raise (not just
+    break the pagination loop) so run_full_sync's except-block records the
+    sync as 'failed' with a populated error_message instead of silently
+    reporting a partial/zero-item sync as 'completed'.
+    """
+
+
 def _auth_header(
     method: str,
     url: str,
@@ -92,6 +102,11 @@ async def sync_collection(
     total_synced = 0
     page = 1
     rate_limit_retries = 0
+    # Captured once, before the loop — used both as the Neo4j synced_at stamp
+    # for every page of this run and as the reconciliation cutoff below, so
+    # rows/edges untouched by this run (removed on Discogs, or superseded by
+    # a duplicate instance_id) can be identified and deleted.
+    sync_started = datetime.now(UTC)
 
     logger.info("📋 Starting collection sync", user=discogs_username)
 
@@ -114,7 +129,7 @@ async def sync_collection(
                 rate_limit_retries += 1
                 if rate_limit_retries > MAX_RATE_LIMIT_RETRIES:
                     logger.error("❌ Rate limit retries exhausted for collection sync", user=discogs_username, retries=rate_limit_retries)
-                    break
+                    raise DiscogsSyncError(f"Discogs rate limit retries exhausted for collection sync (user={discogs_username})")
                 logger.warning("⚠️ Rate limited by Discogs, waiting 60s...", retry=rate_limit_retries, max_retries=MAX_RATE_LIMIT_RETRIES)
                 await asyncio.sleep(60)
                 continue
@@ -126,7 +141,7 @@ async def sync_collection(
                     status=response.status_code,
                     page=page,
                 )
-                break
+                raise DiscogsSyncError(f"Discogs collection API error: status={response.status_code} page={page} user={discogs_username}")
 
             data = response.json()
             releases = data.get("releases", [])
@@ -252,7 +267,7 @@ async def sync_collection(
                     "user_id": str(user_uuid),
                     "discogs_username": discogs_username,
                     "releases": neo4j_releases,
-                    "synced_at": datetime.now(UTC).isoformat(),
+                    "synced_at": sync_started.isoformat(),
                 }
                 log_cypher_query(
                     cypher,
@@ -275,8 +290,46 @@ async def sync_collection(
             page += 1
             await asyncio.sleep(SYNC_DELAY_SECONDS)
 
+    # Reached only when the loop completed normally (no DiscogsSyncError raised
+    # above) — reconcile away rows/edges this run never touched: items removed
+    # from Discogs since the last sync, and stale duplicate instance_id rows
+    # left behind when an item was removed and re-added.
+    await _reconcile_stale_collection(user_uuid, pg_pool, neo4j_driver, sync_started)
+
     logger.info("✅ Collection sync complete", user=discogs_username, total=total_synced)
     return total_synced
+
+
+async def _reconcile_stale_collection(
+    user_uuid: UUID,
+    pg_pool: AsyncPostgreSQLPool,
+    neo4j_driver: AsyncResilientNeo4jDriver,
+    sync_started: datetime,
+) -> None:
+    """Delete collection rows/edges for this user untouched by the current sync run.
+
+    Every row/edge touched by sync_collection gets updated_at=NOW() (PG) /
+    synced_at=sync_started (Neo4j). Anything still stamped from before
+    sync_started was NOT present in the freshly-fetched Discogs data — either
+    the item was removed from the collection, or it was removed-and-re-added
+    under a new instance_id (leaving the old instance_id row/edge orphaned).
+    Only called after a fully successful pagination run (see sync_collection).
+    """
+    async with pg_pool.connection() as conn, conn.cursor() as cur:
+        await execute_sql(
+            cur,
+            "DELETE FROM user_collections WHERE user_id = %s::uuid AND updated_at < %s",
+            (str(user_uuid), sync_started),
+        )
+
+    cypher = """
+    MATCH (u:User {id: $user_id})-[c:COLLECTED]->()
+    WHERE c.synced_at < $sync_started
+    DELETE c
+    """
+    async with neo4j_driver.session() as session:
+        result = await session.run(cypher, {"user_id": str(user_uuid), "sync_started": sync_started.isoformat()})
+        await result.consume()
 
 
 async def sync_wantlist(
@@ -302,6 +355,8 @@ async def sync_wantlist(
     total_synced = 0
     page = 1
     rate_limit_retries = 0
+    # Captured once, before the loop — see sync_collection for why.
+    sync_started = datetime.now(UTC)
 
     logger.info("📋 Starting wantlist sync", user=discogs_username)
 
@@ -324,7 +379,7 @@ async def sync_wantlist(
                 rate_limit_retries += 1
                 if rate_limit_retries > MAX_RATE_LIMIT_RETRIES:
                     logger.error("❌ Rate limit retries exhausted for wantlist sync", user=discogs_username, retries=rate_limit_retries)
-                    break
+                    raise DiscogsSyncError(f"Discogs rate limit retries exhausted for wantlist sync (user={discogs_username})")
                 logger.warning("⚠️ Rate limited by Discogs, waiting 60s...", retry=rate_limit_retries, max_retries=MAX_RATE_LIMIT_RETRIES)
                 await asyncio.sleep(60)
                 continue
@@ -336,7 +391,7 @@ async def sync_wantlist(
                     status=response.status_code,
                     page=page,
                 )
-                break
+                raise DiscogsSyncError(f"Discogs wantlist API error: status={response.status_code} page={page} user={discogs_username}")
 
             data = response.json()
             wants = data.get("wants", [])
@@ -442,7 +497,7 @@ async def sync_wantlist(
                     "user_id": str(user_uuid),
                     "discogs_username": discogs_username,
                     "wants": neo4j_wants,
-                    "synced_at": datetime.now(UTC).isoformat(),
+                    "synced_at": sync_started.isoformat(),
                 }
                 log_cypher_query(
                     cypher,
@@ -464,8 +519,44 @@ async def sync_wantlist(
             page += 1
             await asyncio.sleep(SYNC_DELAY_SECONDS)
 
+    # Reached only when the loop completed normally — reconcile away rows/edges
+    # this run never touched (items removed from the wantlist since the last
+    # sync). See sync_collection's _reconcile_stale_collection for the same
+    # pattern.
+    await _reconcile_stale_wantlist(user_uuid, pg_pool, neo4j_driver, sync_started)
+
     logger.info("✅ Wantlist sync complete", user=discogs_username, total=total_synced)
     return total_synced
+
+
+async def _reconcile_stale_wantlist(
+    user_uuid: UUID,
+    pg_pool: AsyncPostgreSQLPool,
+    neo4j_driver: AsyncResilientNeo4jDriver,
+    sync_started: datetime,
+) -> None:
+    """Delete wantlist rows/edges for this user untouched by the current sync run.
+
+    Same reconciliation pattern as _reconcile_stale_collection: anything still
+    stamped from before sync_started was not present in the freshly-fetched
+    Discogs wantlist (removed from the wantlist, typically after purchase).
+    Only called after a fully successful pagination run (see sync_wantlist).
+    """
+    async with pg_pool.connection() as conn, conn.cursor() as cur:
+        await execute_sql(
+            cur,
+            "DELETE FROM user_wantlists WHERE user_id = %s::uuid AND updated_at < %s",
+            (str(user_uuid), sync_started),
+        )
+
+    cypher = """
+    MATCH (u:User {id: $user_id})-[wnt:WANTS]->()
+    WHERE wnt.synced_at < $sync_started
+    DELETE wnt
+    """
+    async with neo4j_driver.session() as session:
+        result = await session.run(cypher, {"user_id": str(user_uuid), "sync_started": sync_started.isoformat()})
+        await result.consume()
 
 
 async def run_full_sync(

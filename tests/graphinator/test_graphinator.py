@@ -37,10 +37,11 @@ class TestOnArtistMessage:
 
         # Mock transaction to indicate new artist
         mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
 
         async def mock_tx_func(func: Any) -> Any:
-            mock_tx.run.return_value.single.return_value = None  # No existing artist
-            return func(mock_tx)
+            mock_tx.run.return_value.single = AsyncMock(return_value=None)  # No existing artist
+            return await func(mock_tx)
 
         mock_session.execute_write.side_effect = mock_tx_func
 
@@ -52,6 +53,56 @@ class TestOnArtistMessage:
 
         # Verify session was used
         mock_session.execute_write.assert_called()
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_non_batch_mode_awaits_async_transaction(self, sample_artist_data: dict[str, Any], mock_neo4j_driver: MagicMock) -> None:
+        """Regression (cu2.18): non-batch mode must await tx.run()/result.single().
+
+        The service runs on AsyncResilientNeo4jDriver, whose execute_write hands
+        the tx function a real AsyncManagedTransaction where ``tx.run()`` is a
+        coroutine. The old sync ``process_artist`` did ``tx.run(...).single()``
+        with no await, raising ``AttributeError: 'coroutine' object has no
+        attribute 'single'`` on the first statement of every message — nacking
+        the whole dataset to the DLQ. This test drives the real handler with a
+        faithful async transaction and asserts the message is acked (written),
+        never nacked.
+        """
+        import inspect
+
+        from graphinator.graphinator import process_artist
+
+        # process_artist must be a coroutine function so tx_fn can await it.
+        assert inspect.iscoroutinefunction(process_artist)
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+
+        mock_context_manager = mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
+        # Faithful AsyncManagedTransaction: run() is an async def, so calling it
+        # WITHOUT await yields a coroutine (as the real driver does). The single()
+        # on the awaited result is also a coroutine.
+        async def async_run(*_args: Any, **_kwargs: Any) -> Any:
+            result = MagicMock()
+            result.single = AsyncMock(return_value=None)  # no existing artist
+            return result
+
+        real_tx = MagicMock()
+        real_tx.run = MagicMock(side_effect=async_run)
+
+        async def execute_write(tx_fn: Any, *_a: Any, **_k: Any) -> Any:
+            # AsyncSession.execute_write awaits the (async) tx function.
+            return await tx_fn(real_tx)
+
+        mock_session.execute_write.side_effect = execute_write
+
+        with patch("graphinator.graphinator.graph", mock_neo4j_driver), patch("graphinator.graphinator.BATCH_MODE", False):
+            await on_artist_message(mock_message)
+
+        mock_message.ack.assert_called_once()
+        mock_message.nack.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
@@ -67,11 +118,12 @@ class TestOnArtistMessage:
 
         # Mock transaction to return existing hash
         mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
 
         async def mock_tx_func(func: Any) -> Any:
             # Return existing artist with same hash
-            mock_tx.run.return_value.single.return_value = {"hash": sample_artist_data["sha256"]}
-            return func(mock_tx)
+            mock_tx.run.return_value.single = AsyncMock(return_value={"hash": sample_artist_data["sha256"]})
+            return await func(mock_tx)
 
         mock_session.execute_write.side_effect = mock_tx_func
 
@@ -108,6 +160,35 @@ class TestOnArtistMessage:
 
         mock_message.nack.assert_called_once_with(requeue=False)
         mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_batch_mode_nack_callback_uses_requeue_false(self) -> None:
+        """Regression (cu2.52): the batch-mode add_message nack callback must use
+        requeue=False so permanently-invalid input goes straight to the DLQ
+        instead of cycling x-delivery-limit (20) futile redeliveries.
+        """
+        import graphinator.graphinator as g
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"id": "1", "sha256": "h", "name": "x"}).encode()
+
+        captured: dict[str, Any] = {}
+
+        async def fake_add(*args: Any) -> bool:
+            # add_message(data_type, record, ack_callback, nack_callback)
+            captured["nack"] = args[3]
+            return True
+
+        proc = MagicMock()
+        proc.add_message = AsyncMock(side_effect=fake_add)
+
+        with patch.object(g, "BATCH_MODE", True), patch.object(g, "batch_processor", proc):
+            await on_artist_message(mock_message)
+
+        # Simulate add_message rejecting a permanently-invalid message.
+        await captured["nack"]()
+        mock_message.nack.assert_called_once_with(requeue=False)
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
@@ -872,7 +953,12 @@ class TestCheckFileCompletion:
 
     @pytest.mark.asyncio
     async def test_extraction_complete_triggers_stub_cleanup(self) -> None:
-        """Test extraction_complete triggers stub node cleanup."""
+        """Test extraction_complete triggers stub cleanup once ALL types complete.
+
+        Cleanup is deferred until every data type has signalled
+        extraction_complete (cu2.49 / cu2.67), then runs across every entity
+        label. Seed the other three signals and send the final one.
+        """
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         completion_data = {
             "type": "extraction_complete",
@@ -880,33 +966,44 @@ class TestCheckFileCompletion:
         }
 
         mock_driver = AsyncMock()
-        mock_session_ctx = AsyncMock()
         mock_session = AsyncMock()
-        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_driver.session = MagicMock(return_value=mock_session_ctx)
 
+        def _session(*_args: Any, **_kwargs: Any) -> AsyncMock:
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            return ctx
+
+        mock_driver.session = MagicMock(side_effect=_session)
+
+        mock_summary = MagicMock()
+        mock_summary.counters.nodes_deleted = 5
         mock_result = AsyncMock()
-        mock_record = {"deleted": 5}
-        mock_result.single = AsyncMock(return_value=mock_record)
+        mock_result.consume = AsyncMock(return_value=mock_summary)
         mock_session.run = AsyncMock(return_value=mock_result)
 
         import graphinator.graphinator
 
         graphinator.graphinator.batch_processor = None
         graphinator.graphinator.graph = mock_driver
+        # All other types already signalled; this releases signal is the last.
+        graphinator.graphinator.extraction_complete_signals = {"artists", "labels", "masters"}
 
         from graphinator.graphinator import check_file_completion
 
-        result = await check_file_completion(completion_data, "artists", mock_message)
+        with patch("graphinator.graphinator.compute_genre_style_stats", AsyncMock(return_value=True)):
+            result = await check_file_completion(completion_data, "releases", mock_message)
 
         assert result is True
-        # Verify cleanup query was run for Artist nodes
-        mock_session.run.assert_called_once()
-        call_args = mock_session.run.call_args[0][0]
-        assert "Artist" in call_args
-        assert "sha256 IS NULL" in call_args
-        assert "DETACH DELETE" in call_args
+        # Cleanup runs for EVERY entity label, not just the triggering type.
+        cleanup_cyphers = [call.args[0] for call in mock_session.run.call_args_list]
+        joined = "\n".join(cleanup_cyphers)
+        for label in ("Artist", "Label", "Master", "Release"):
+            assert label in joined
+        assert "sha256 IS NULL" in joined
+        assert "DETACH DELETE" in joined
+        assert "IN TRANSACTIONS" in joined
+        mock_message.ack.assert_called_once()
 
         # Reset
         graphinator.graphinator.graph = None
@@ -1032,6 +1129,59 @@ class TestComputeGenreStyleStats:
         graphinator.graphinator.graph = None
 
     @pytest.mark.asyncio
+    async def test_driving_match_is_outside_transactional_subquery(self) -> None:
+        """Regression (cu2.17): the driving MATCH must sit OUTSIDE ``CALL {} IN
+        TRANSACTIONS`` so the update batches one node per inner transaction.
+
+        If the MATCH is the first statement *inside* the transactional subquery
+        (``CALL { MATCH (g:Genre) ... } IN TRANSACTIONS``) then nothing precedes
+        the CALL, exactly one implicit input row drives it, and the entire update
+        runs in a single transaction — defeating the batching and hitting the
+        120s transaction timeout at production scale.
+        """
+        mock_driver = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_driver.session = MagicMock(return_value=mock_session_ctx)
+
+        result = AsyncMock()
+        result.consume = AsyncMock(return_value=MagicMock(counters="properties_set=0"))
+        mock_session.run = AsyncMock(return_value=result)
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = mock_driver
+
+        from graphinator.graphinator import compute_genre_style_stats
+
+        await compute_genre_style_stats()
+
+        # (query string, driving-match snippet) for each of the three queries
+        cases = [
+            (mock_session.run.call_args_list[0][0][0], "MATCH (g:Genre)"),
+            (mock_session.run.call_args_list[1][0][0], "MATCH (s:Style)"),
+            (mock_session.run.call_args_list[2][0][0], "MATCH (l:Label)"),
+        ]
+        for query, driving_match in cases:
+            match_idx = query.index(driving_match)
+            call_idx = query.index("CALL {")
+            # Driving MATCH must appear before the transactional CALL block.
+            assert match_idx < call_idx, (
+                f"driving MATCH {driving_match!r} must precede 'CALL {{' — otherwise the whole update runs in one transaction"
+            )
+            # The transactional subquery must import the node with WITH, not
+            # re-MATCH the full label set inside the CALL.
+            after_call = query[call_idx + len("CALL {") :]
+            first_stmt = after_call.strip().split("\n", 1)[0].strip()
+            assert first_stmt.startswith("WITH "), f"first statement inside 'CALL {{' should be a WITH import, got {first_stmt!r}"
+            assert "IN TRANSACTIONS" in query
+
+        # Reset
+        graphinator.graphinator.graph = None
+
+    @pytest.mark.asyncio
     async def test_skips_when_no_driver(self) -> None:
         """Test does nothing when graph driver is None."""
         import graphinator.graphinator
@@ -1113,13 +1263,16 @@ class TestCheckFileCompletionComputeGenreStyleStats:
         graphinator.graphinator.batch_processor = None
         mock_driver = AsyncMock()
         graphinator.graphinator.graph = mock_driver
+        # releases is the final signal — the other three already arrived.
+        graphinator.graphinator.extraction_complete_signals = {"artists", "labels", "masters"}
 
         from graphinator.graphinator import check_file_completion
 
         result = await check_file_completion(completion_data, "releases", mock_message)
 
         assert result is True
-        mock_cleanup.assert_called_once_with("releases")
+        # Cleanup now runs for every entity label; stats compute exactly once.
+        assert {c.args[0] for c in mock_cleanup.call_args_list} == {"artists", "labels", "masters", "releases"}
         mock_compute.assert_called_once()
 
         # Reset
@@ -1128,8 +1281,8 @@ class TestCheckFileCompletionComputeGenreStyleStats:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.compute_genre_style_stats", new_callable=AsyncMock)
     @patch("graphinator.graphinator.cleanup_stub_nodes", new_callable=AsyncMock)
-    async def test_does_not_call_compute_genre_style_stats_for_artists(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
-        """Test compute_genre_style_stats is NOT called for non-release data types."""
+    async def test_defers_maintenance_until_all_types_complete(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
+        """cu2.49 / cu2.67: a single type's signal must NOT trigger any maintenance."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         completion_data = {
             "type": "extraction_complete",
@@ -1141,16 +1294,106 @@ class TestCheckFileCompletionComputeGenreStyleStats:
         graphinator.graphinator.batch_processor = None
         mock_driver = AsyncMock()
         graphinator.graphinator.graph = mock_driver
+        # Fresh run: only this artists signal has arrived so far.
+        graphinator.graphinator.extraction_complete_signals = set()
 
         from graphinator.graphinator import check_file_completion
 
         result = await check_file_completion(completion_data, "artists", mock_message)
 
         assert result is True
-        mock_cleanup.assert_called_once_with("artists")
+        # Neither cleanup nor stats may run while release batches could still
+        # be MERGEing cross-type stubs.
+        mock_cleanup.assert_not_called()
         mock_compute.assert_not_called()
+        mock_message.ack.assert_called_once()
+        mock_message.nack.assert_not_called()
 
         # Reset
+        graphinator.graphinator.graph = None
+
+
+class TestCheckFileCompletionMaintenanceFailure:
+    """Regression (cu2.50): extraction_complete must NOT be acked when post-import
+    maintenance (cleanup_stub_nodes / compute_genre_style_stats) fails — it must
+    nack(requeue=True) so the idempotent maintenance is retried, since the
+    extraction_complete signal is emitted exactly once per run.
+    """
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.compute_genre_style_stats", new_callable=AsyncMock)
+    @patch("graphinator.graphinator.cleanup_stub_nodes", new_callable=AsyncMock)
+    async def test_acks_when_maintenance_succeeds(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
+        """Both maintenance steps succeed → ack, no nack."""
+        mock_cleanup.return_value = True
+        mock_compute.return_value = True
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {"type": "extraction_complete", "version": "20260101"}
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.batch_processor = None
+        graphinator.graphinator.graph = AsyncMock()
+        graphinator.graphinator.extraction_complete_signals = {"artists", "labels", "masters"}
+
+        from graphinator.graphinator import check_file_completion
+
+        result = await check_file_completion(completion_data, "releases", mock_message)
+
+        assert result is True
+        mock_message.ack.assert_called_once()
+        mock_message.nack.assert_not_called()
+        graphinator.graphinator.graph = None
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.compute_genre_style_stats", new_callable=AsyncMock)
+    @patch("graphinator.graphinator.cleanup_stub_nodes", new_callable=AsyncMock)
+    async def test_nacks_when_compute_stats_fails(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
+        """compute_genre_style_stats fails → nack(requeue=True), never ack."""
+        mock_cleanup.return_value = True
+        mock_compute.return_value = False  # stats computation failed at scale
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {"type": "extraction_complete", "version": "20260101"}
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.batch_processor = None
+        graphinator.graphinator.graph = AsyncMock()
+        graphinator.graphinator.extraction_complete_signals = {"artists", "labels", "masters"}
+
+        from graphinator.graphinator import check_file_completion
+
+        result = await check_file_completion(completion_data, "releases", mock_message)
+
+        assert result is True
+        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.ack.assert_not_called()
+        graphinator.graphinator.graph = None
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.compute_genre_style_stats", new_callable=AsyncMock)
+    @patch("graphinator.graphinator.cleanup_stub_nodes", new_callable=AsyncMock)
+    async def test_nacks_when_cleanup_fails(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
+        """cleanup_stub_nodes fails → nack(requeue=True), never ack."""
+        mock_cleanup.return_value = False  # DETACH DELETE failed
+        mock_compute.return_value = True
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {"type": "extraction_complete", "version": "20260101"}
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.batch_processor = None
+        graphinator.graphinator.graph = AsyncMock()
+        # artists is the final signal — cleanup runs for all labels and fails.
+        graphinator.graphinator.extraction_complete_signals = {"labels", "masters", "releases"}
+
+        from graphinator.graphinator import check_file_completion
+
+        result = await check_file_completion(completion_data, "artists", mock_message)
+
+        assert result is True
+        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.ack.assert_not_called()
         graphinator.graphinator.graph = None
 
 
@@ -1319,12 +1562,13 @@ class TestLabelTransactionLogic:
 
         # Create a mock transaction function that will be called
         mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
         # Return existing hash that matches
-        mock_tx.run.return_value.single.return_value = {"hash": sample_label_data["sha256"]}
+        mock_tx.run.return_value.single = AsyncMock(return_value={"hash": sample_label_data["sha256"]})
 
         # When execute_write is called, execute the transaction function
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1359,11 +1603,12 @@ class TestLabelTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
         # No existing label
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1401,10 +1646,11 @@ class TestLabelTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1439,10 +1685,11 @@ class TestLabelTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1471,10 +1718,11 @@ class TestMasterTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = {"hash": sample_master_data["sha256"]}
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value={"hash": sample_master_data["sha256"]})
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1511,10 +1759,11 @@ class TestMasterTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1554,10 +1803,11 @@ class TestMasterTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1586,10 +1836,11 @@ class TestReleaseTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = {"hash": sample_release_data["sha256"]}
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value={"hash": sample_release_data["sha256"]})
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1627,10 +1878,11 @@ class TestReleaseTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1674,10 +1926,11 @@ class TestReleaseTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1722,10 +1975,11 @@ class TestReleaseTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -1758,10 +2012,11 @@ class TestReleaseTransactionLogic:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -2100,10 +2355,11 @@ class TestArtistTransactionEdgeCases:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -2136,10 +2392,11 @@ class TestArtistTransactionEdgeCases:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -2171,10 +2428,11 @@ class TestArtistTransactionEdgeCases:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -2248,10 +2506,11 @@ class TestLabelTransactionEdgeCases:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -2283,10 +2542,11 @@ class TestLabelTransactionEdgeCases:
         mock_session = await mock_context_manager.__aenter__()
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         async def execute_tx(tx_func: Any) -> Any:
-            return tx_func(mock_tx)
+            return await tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
 
@@ -2633,12 +2893,14 @@ class TestRecoverConsumersEdgeCases:
 class TestProcessArtistEdgeCases:
     """Test process_artist edge cases with normalized data."""
 
-    def test_member_with_id_creates_relationship(self) -> None:
+    @pytest.mark.asyncio
+    async def test_member_with_id_creates_relationship(self) -> None:
         """Test normalized member with ID creates MEMBER_OF relationship."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "artist-1",
@@ -2647,17 +2909,19 @@ class TestProcessArtistEdgeCases:
             "members": [{"id": "string-member-id"}],
         }
 
-        result = process_artist(mock_tx, record)
+        result = await process_artist(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert any("MEMBER_OF" in c for c in calls)
 
-    def test_member_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_member_without_id_skipped(self) -> None:
         """Test normalized member without ID is silently skipped."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "artist-1",
@@ -2666,17 +2930,19 @@ class TestProcessArtistEdgeCases:
             "members": [{"name": "No ID Member"}],
         }
 
-        result = process_artist(mock_tx, record)
+        result = await process_artist(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("MEMBER_OF" in c for c in calls)
 
-    def test_group_with_id_creates_relationship(self) -> None:
+    @pytest.mark.asyncio
+    async def test_group_with_id_creates_relationship(self) -> None:
         """Test normalized group with ID creates MEMBER_OF relationship."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "artist-1",
@@ -2685,17 +2951,19 @@ class TestProcessArtistEdgeCases:
             "groups": [{"id": "string-group-id"}],
         }
 
-        result = process_artist(mock_tx, record)
+        result = await process_artist(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert any("MEMBER_OF" in c for c in calls)
 
-    def test_group_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_group_without_id_skipped(self) -> None:
         """Test normalized group without ID is silently skipped."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "artist-1",
@@ -2704,17 +2972,19 @@ class TestProcessArtistEdgeCases:
             "groups": [{"name": "No ID Group"}],
         }
 
-        result = process_artist(mock_tx, record)
+        result = await process_artist(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("MEMBER_OF" in c for c in calls)
 
-    def test_alias_with_id_creates_relationship(self) -> None:
+    @pytest.mark.asyncio
+    async def test_alias_with_id_creates_relationship(self) -> None:
         """Test normalized alias with ID creates ALIAS_OF relationship."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "artist-1",
@@ -2723,17 +2993,19 @@ class TestProcessArtistEdgeCases:
             "aliases": [{"id": "string-alias-id"}],
         }
 
-        result = process_artist(mock_tx, record)
+        result = await process_artist(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert any("ALIAS_OF" in c for c in calls)
 
-    def test_alias_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_alias_without_id_skipped(self) -> None:
         """Test normalized alias without ID is silently skipped."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "artist-1",
@@ -2742,7 +3014,7 @@ class TestProcessArtistEdgeCases:
             "aliases": [{"name": "No ID Alias"}],
         }
 
-        result = process_artist(mock_tx, record)
+        result = await process_artist(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("ALIAS_OF" in c for c in calls)
@@ -2751,12 +3023,14 @@ class TestProcessArtistEdgeCases:
 class TestProcessLabelEdgeCases:
     """Test process_label edge cases with normalized data."""
 
-    def test_sublabel_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_sublabel_without_id_skipped(self) -> None:
         """Test normalized sublabel without ID is silently skipped."""
         from graphinator.graphinator import process_label
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "label-1",
@@ -2765,17 +3039,19 @@ class TestProcessLabelEdgeCases:
             "sublabels": [{"name": "No ID Sublabel"}],
         }
 
-        result = process_label(mock_tx, record)
+        result = await process_label(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("SUBLABEL_OF" in c for c in calls)
 
-    def test_parent_label_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_parent_label_without_id_skipped(self) -> None:
         """Test normalized parent label without ID is silently skipped."""
         from graphinator.graphinator import process_label
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "label-1",
@@ -2784,7 +3060,7 @@ class TestProcessLabelEdgeCases:
             "parentLabel": {"name": "No ID Parent"},
         }
 
-        result = process_label(mock_tx, record)
+        result = await process_label(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("SUBLABEL_OF" in c for c in calls)
@@ -2793,12 +3069,14 @@ class TestProcessLabelEdgeCases:
 class TestProcessMasterEdgeCases:
     """Test process_master edge cases with normalized data."""
 
-    def test_artist_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_artist_without_id_skipped(self) -> None:
         """Test normalized artist without ID is silently skipped."""
         from graphinator.graphinator import process_master
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "master-1",
@@ -2808,7 +3086,7 @@ class TestProcessMasterEdgeCases:
             "artists": [{"name": "Unknown Artist"}],
         }
 
-        result = process_master(mock_tx, record)
+        result = await process_master(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("BY" in c and "artist" in c for c in calls)
@@ -2817,12 +3095,14 @@ class TestProcessMasterEdgeCases:
 class TestProcessLabelSublabelsString:
     """Test process_label with normalized sublabels."""
 
-    def test_sublabels_list_creates_relationship(self) -> None:
+    @pytest.mark.asyncio
+    async def test_sublabels_list_creates_relationship(self) -> None:
         """Test normalized sublabels list creates SUBLABEL_OF relationship."""
         from graphinator.graphinator import process_label
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "label-str-1",
@@ -2831,7 +3111,7 @@ class TestProcessLabelSublabelsString:
             "sublabels": [{"id": "SubLabel As String"}],
         }
 
-        result = process_label(mock_tx, record)
+        result = await process_label(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert any("SUBLABEL_OF" in c for c in calls)
@@ -2840,12 +3120,14 @@ class TestProcessLabelSublabelsString:
 class TestProcessReleaseArtistNoId:
     """Test process_release with normalized artist missing ID."""
 
-    def test_artist_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_artist_without_id_skipped(self) -> None:
         """Test normalized artist without ID is silently skipped."""
         from graphinator.graphinator import process_release
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "release-no-artist-id",
@@ -2856,7 +3138,7 @@ class TestProcessReleaseArtistNoId:
             ],
         }
 
-        result = process_release(mock_tx, record)
+        result = await process_release(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("BY" in c and "artist" in c for c in calls)
@@ -2865,12 +3147,14 @@ class TestProcessReleaseArtistNoId:
 class TestProcessReleaseLabelNoId:
     """Test process_release with normalized label missing ID."""
 
-    def test_label_without_id_skipped(self) -> None:
+    @pytest.mark.asyncio
+    async def test_label_without_id_skipped(self) -> None:
         """Test normalized label without ID is silently skipped."""
         from graphinator.graphinator import process_release
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "release-no-label-id",
@@ -2881,7 +3165,7 @@ class TestProcessReleaseLabelNoId:
             ],
         }
 
-        result = process_release(mock_tx, record)
+        result = await process_release(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any(")-[:ON]->" in c for c in calls)
@@ -2890,12 +3174,14 @@ class TestProcessReleaseLabelNoId:
 class TestProcessReleaseMasterNoId:
     """Test process_release with no master_id."""
 
-    def test_no_master_id_skips_relationship(self) -> None:
+    @pytest.mark.asyncio
+    async def test_no_master_id_skips_relationship(self) -> None:
         """Test that missing master_id skips DERIVED_FROM relationship."""
         from graphinator.graphinator import process_release
 
         mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
 
         record = {
             "id": "release-no-master-text",
@@ -2903,7 +3189,7 @@ class TestProcessReleaseMasterNoId:
             "title": "Test Release",
         }
 
-        result = process_release(mock_tx, record)
+        result = await process_release(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert not any("DERIVED_FROM" in c for c in calls)
@@ -3951,3 +4237,254 @@ class TestCoverageGaps:
 
             # UTC timestamps end with +00:00
             assert result["timestamp"].endswith("+00:00")
+
+
+class TestRecoverConsumersAllTypes:
+    """Regression (cu2.53): _recover_consumers must start consumers for ALL data
+    types, not just those with a backlog at the passive-declare instant."""
+
+    @pytest.mark.asyncio
+    async def test_recovers_all_types_not_just_backlogged(self) -> None:
+        import graphinator.graphinator as g
+
+        g.active_connection = None
+        g.active_channel = None
+        g.consumer_tags = {}
+        g.completed_files = set()
+        g.queues = {}
+        g.last_message_time = dict.fromkeys(["artists", "labels", "masters", "releases"], 0.0)
+
+        def declare_queue(**kwargs: Any) -> Any:
+            if kwargs.get("passive"):
+                q = MagicMock()
+                q.declaration_result.message_count = 100 if kwargs["name"].endswith("-artists") else 0
+                return q
+            q = AsyncMock()
+            q.consume = AsyncMock(return_value=f"tag-{kwargs.get('name')}")
+            q.bind = AsyncMock()
+            return q
+
+        mock_channel = AsyncMock()
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue)
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.set_qos = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_rmq = AsyncMock()
+        mock_rmq.connect = AsyncMock(return_value=mock_connection)
+
+        with patch.object(g, "rabbitmq_manager", mock_rmq), patch.object(g, "logger"):
+            await g._recover_consumers()
+
+        assert set(g.consumer_tags.keys()) == {"artists", "labels", "masters", "releases"}
+
+        g.consumer_tags = {}
+        g.active_connection = None
+        g.active_channel = None
+        g.queues = {}
+
+
+class TestRecoverConsumersClearsTags:
+    """Regression (cu2.54): recovery errors after ≥1 consumer registered must
+    clear consumer_tags so the stuck-state detector can re-fire."""
+
+    @pytest.mark.asyncio
+    async def test_error_after_partial_registration_clears_consumer_tags(self) -> None:
+        import graphinator.graphinator as g
+
+        g.active_connection = None
+        g.active_channel = None
+        g.consumer_tags = {}
+        g.completed_files = set()
+        g.queues = {}
+        g.last_message_time = dict.fromkeys(["artists", "labels", "masters", "releases"], 0.0)
+
+        def declare_queue(**kwargs: Any) -> Any:
+            name = kwargs.get("name", "")
+            if kwargs.get("passive"):
+                q = MagicMock()
+                q.declaration_result.message_count = 100
+                return q
+            q = AsyncMock()
+            q.bind = AsyncMock()
+            if name.endswith("-labels"):
+                q.consume = AsyncMock(side_effect=RuntimeError("channel closed mid-recovery"))
+            else:
+                q.consume = AsyncMock(return_value=f"tag-{name}")
+            return q
+
+        mock_channel = AsyncMock()
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue)
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.set_qos = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_rmq = AsyncMock()
+        mock_rmq.connect = AsyncMock(return_value=mock_connection)
+
+        with patch.object(g, "rabbitmq_manager", mock_rmq), patch.object(g, "logger"):
+            await g._recover_consumers()
+
+        assert g.consumer_tags == {}, "stale consumer tags must be cleared"
+        assert g.active_connection is None
+
+        g.consumer_tags = {}
+        g.queues = {}
+
+
+class TestStubCleanupBatchAndOrdering:
+    """Regression tests for the stub-cleanup batch.
+
+    Covers three linked defects in graphinator stub cleanup:
+      - cu2.68: the DETACH DELETE ran in one unbounded transaction (no batching)
+      - cu2.49 / cu2.67: per-type cleanup raced still-draining release batches
+        that re-create Artist/Label/Master stubs, leaving permanent phantoms.
+    """
+
+    @staticmethod
+    def _make_graph_mock(fail: bool = False) -> tuple[MagicMock, list[str]]:
+        """Return (graph_mock, run_calls) recording every cypher passed to run()."""
+        run_calls: list[str] = []
+
+        class _Result:
+            async def consume(self) -> MagicMock:
+                summary = MagicMock()
+                summary.counters.nodes_deleted = 5
+                return summary
+
+        class _Session:
+            async def __aenter__(self) -> "_Session":
+                return self
+
+            async def __aexit__(self, *args: Any) -> None:
+                return None
+
+            async def run(self, cypher: str, *_args: Any, **_kwargs: Any) -> "_Result":
+                run_calls.append(cypher)
+                if fail:
+                    raise RuntimeError("transaction memory limit exceeded")
+                return _Result()
+
+        graph_mock = MagicMock()
+        graph_mock.session = MagicMock(return_value=_Session())
+        return graph_mock, run_calls
+
+    @pytest.mark.asyncio
+    async def test_cleanup_all_covers_every_entity_label(self) -> None:
+        """cu2.49: cleanup runs across all labels, not just the completed type."""
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._make_graph_mock()
+        with patch.object(g, "graph", graph_mock):
+            ok = await g.cleanup_all_stub_nodes()
+
+        assert ok is True
+        assert len(run_calls) == 4
+        joined = "\n".join(run_calls)
+        for label in ("Artist", "Label", "Master", "Release"):
+            assert label in joined, f"cleanup must cover {label} stubs"
+
+    @pytest.mark.asyncio
+    async def test_cleanup_uses_batched_transactions(self) -> None:
+        """cu2.68: the delete is batched via CALL {} IN TRANSACTIONS, not one big tx."""
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._make_graph_mock()
+        with patch.object(g, "graph", graph_mock):
+            ok = await g.cleanup_stub_nodes("artists")
+
+        assert ok is True
+        assert len(run_calls) == 1
+        cypher = run_calls[0]
+        assert "IN TRANSACTIONS" in cypher, "delete must be batched to survive scale"
+        assert "DETACH DELETE" in cypher
+        assert "Artist" in cypher
+        assert "n.sha256 IS NULL" in cypher
+
+    @pytest.mark.asyncio
+    async def test_cleanup_failure_returns_false_for_retry(self) -> None:
+        """cu2.68: a failed delete must return False so the caller nacks/retries."""
+        import graphinator.graphinator as g
+
+        graph_mock, _ = self._make_graph_mock(fail=True)
+        with patch.object(g, "graph", graph_mock), patch.object(g, "logger"):
+            ok = await g.cleanup_stub_nodes("artists")
+
+        assert ok is False
+
+    @pytest.mark.asyncio
+    async def test_cleanup_deferred_until_all_types_complete(self) -> None:
+        """cu2.49 / cu2.67: no cleanup until every type signals extraction_complete."""
+        import graphinator.graphinator as g
+
+        g.extraction_complete_signals = set()
+        graph_mock, _ = self._make_graph_mock()
+        called: list[str] = []
+
+        async def fake_cleanup_all() -> bool:
+            called.append("cleanup")
+            return True
+
+        async def fake_stats() -> bool:
+            called.append("stats")
+            return True
+
+        with (
+            patch.object(g, "graph", graph_mock),
+            patch.object(g, "cleanup_all_stub_nodes", fake_cleanup_all),
+            patch.object(g, "compute_genre_style_stats", fake_stats),
+            patch.object(g, "logger"),
+        ):
+            # First three signals must NOT trigger cleanup — release batches may
+            # still be MERGEing stubs.
+            for data_type in ("artists", "labels", "masters"):
+                message = AsyncMock(spec=AbstractIncomingMessage)
+                data = {"type": "extraction_complete", "version": "v1"}
+                handled = await g.check_file_completion(data, data_type, message)
+                assert handled is True
+                message.ack.assert_called_once()
+                message.nack.assert_not_called()
+            assert called == [], "cleanup must be deferred until all types complete"
+
+            # The final signal (releases, drains last) triggers the single pass.
+            message = AsyncMock(spec=AbstractIncomingMessage)
+            data = {"type": "extraction_complete", "version": "v1"}
+            handled = await g.check_file_completion(data, "releases", message)
+            assert handled is True
+            message.ack.assert_called_once()
+            message.nack.assert_not_called()
+            assert called == ["cleanup", "stats"]
+
+        g.extraction_complete_signals = set()
+
+    @pytest.mark.asyncio
+    async def test_final_signal_nacks_when_maintenance_fails(self) -> None:
+        """cu2.67: failed maintenance nacks for retry and keeps the signal latch."""
+        import graphinator.graphinator as g
+
+        g.extraction_complete_signals = {"artists", "labels", "masters"}
+        graph_mock, _ = self._make_graph_mock()
+
+        async def failing_cleanup_all() -> bool:
+            return False
+
+        async def fake_stats() -> bool:
+            return True
+
+        with (
+            patch.object(g, "graph", graph_mock),
+            patch.object(g, "cleanup_all_stub_nodes", failing_cleanup_all),
+            patch.object(g, "compute_genre_style_stats", fake_stats),
+            patch.object(g, "logger"),
+        ):
+            message = AsyncMock(spec=AbstractIncomingMessage)
+            data = {"type": "extraction_complete", "version": "v1"}
+            handled = await g.check_file_completion(data, "releases", message)
+
+        assert handled is True
+        message.nack.assert_called_once_with(requeue=True)
+        message.ack.assert_not_called()
+        # Idempotent latch retained so the requeued message retries cleanly.
+        assert "releases" in g.extraction_complete_signals
+
+        g.extraction_complete_signals = set()

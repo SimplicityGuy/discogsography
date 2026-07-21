@@ -598,6 +598,14 @@ DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogs
 # In production, supply via ENCRYPTION_MASTER_KEY_FILE (Docker secret)
 ENCRYPTION_MASTER_KEY="your-master-key-here"
 
+# Shared secret gating the internal /api/internal/insights/* router.
+# These endpoints are mounted on the public app and reachable through the explore proxy,
+# so the /api/internal prefix alone provides NO isolation. Callers must present this value
+# as the X-Internal-Secret header; the insights service is configured with the same value.
+# When unset, the router fails closed (rejects every caller). Supply via
+# INSIGHTS_INTERNAL_SECRET_FILE (Docker secret) in production.
+INSIGHTS_INTERNAL_SECRET="change-me-in-production"
+
 # Optional — Brevo transactional email for password reset notifications
 # When not set, password reset links are logged to stdout instead of emailed.
 # Get your API key from https://app.brevo.com/settings/keys/api
@@ -797,6 +805,13 @@ POSTGRES_DATABASE="discogsography"
 
 # Optional - Redis Caching
 REDIS_HOST="localhost"                        # Redis hostname for result caching (default: localhost)
+
+# Internal API authentication — MUST match the API service's INSIGHTS_INTERNAL_SECRET.
+# The API's /api/internal/insights/* router is mounted on the public app and reachable
+# through the explore proxy, so it is gated by this shared secret (sent as the
+# X-Internal-Secret header). When unset on the API, the router fails closed (rejects all
+# callers); when unset here, the insights service cannot fetch its computation data.
+INSIGHTS_INTERNAL_SECRET="change-me-in-production"
 
 # Optional - Scheduler
 INSIGHTS_SCHEDULE_HOURS=24                    # Computation interval in hours (default: 24)

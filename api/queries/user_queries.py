@@ -227,9 +227,9 @@ async def get_user_collection_timeline(
     WITH bucket, r, collect(DISTINCT g.name) AS rg,
          collect(DISTINCT s.name) AS rs, collect(DISTINCT l.name) AS rl
     WITH bucket, count(DISTINCT r) AS count,
-         collect(DISTINCT rg) AS genre_lists,
+         collect(rg) AS genre_lists,
          collect(DISTINCT rs) AS style_lists,
-         collect(DISTINCT rl) AS label_lists
+         collect(rl) AS label_lists
     RETURN bucket AS year, count,
            reduce(acc = [], lst IN genre_lists | acc + lst) AS genres,
            reduce(acc = [], lst IN style_lists | acc + lst) AS styles,

@@ -6,7 +6,7 @@ use extractor::extractor::{
 };
 use extractor::message_queue::MockMessagePublisher;
 use extractor::rules::{CompiledRulesConfig, RulesConfig};
-use extractor::state_marker::StateMarker;
+use extractor::state_marker::{PhaseStatus, ProcessingDecision, StateMarker};
 use extractor::types::S3FileInfo;
 use extractor::types::{DataMessage, DataType, Source};
 use flate2::Compression;
@@ -120,7 +120,9 @@ async fn test_process_discogs_data_empty_files() {
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = extractor::extractor::process_discogs_data(config, state, shutdown, false, &mut mock_dl, factory, None).await;
+    let result =
+        extractor::extractor::process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), false, &mut mock_dl, factory, None)
+            .await;
 
     assert!(result.is_ok());
     assert!(result.unwrap());
@@ -162,7 +164,9 @@ async fn test_process_discogs_data_skip_when_already_complete() {
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = extractor::extractor::process_discogs_data(config, state, shutdown, false, &mut mock_dl, factory, None).await;
+    let result =
+        extractor::extractor::process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), false, &mut mock_dl, factory, None)
+            .await;
 
     assert!(result.is_ok());
     assert!(result.unwrap());
@@ -220,7 +224,9 @@ async fn test_process_discogs_data_force_reprocess_bypasses_skip() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = extractor::extractor::process_discogs_data(config, state, shutdown, true, &mut mock_dl, factory, None).await;
+    let result =
+        extractor::extractor::process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), true, &mut mock_dl, factory, None)
+            .await;
 
     // Result may be Ok or Err — key assertion is download_discogs_data was called (verified by mock times(1))
     let _ = result;
@@ -270,7 +276,9 @@ async fn test_process_discogs_data_take_state_marker_none() {
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = extractor::extractor::process_discogs_data(config, state, shutdown, true, &mut mock_dl, factory, None).await;
+    let result =
+        extractor::extractor::process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), true, &mut mock_dl, factory, None)
+            .await;
 
     assert!(result.is_err());
     let err_msg = format!("{}", result.err().unwrap());
@@ -310,7 +318,9 @@ async fn test_process_discogs_data_no_data_files() {
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = extractor::extractor::process_discogs_data(config, state, shutdown, true, &mut mock_dl, factory, None).await;
+    let result =
+        extractor::extractor::process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), true, &mut mock_dl, factory, None)
+            .await;
 
     // Should return Ok(true) — "No data files to process"
     assert!(result.is_ok());
@@ -358,7 +368,9 @@ async fn test_process_discogs_data_all_files_already_processed() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = extractor::extractor::process_discogs_data(config, state, shutdown, true, &mut mock_dl, factory, None).await;
+    let result =
+        extractor::extractor::process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), true, &mut mock_dl, factory, None)
+            .await;
 
     assert!(result.is_ok());
     assert!(result.unwrap());
@@ -409,11 +421,197 @@ async fn test_process_discogs_data_mq_factory_create_fails_on_all_processed() {
     }
     let factory = Arc::new(FailingMqFactory);
 
-    let result = extractor::extractor::process_discogs_data(config, state, shutdown, true, &mut mock_dl, factory, None).await;
+    let result =
+        extractor::extractor::process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), true, &mut mock_dl, factory, None)
+            .await;
 
     // Should still succeed (extraction_complete failure is logged, not fatal)
     assert!(result.is_ok());
     assert!(result.unwrap());
+}
+
+/// Build a MockDataSource for the resumed all-files-already-processed Discogs path that
+/// hands `marker` back after the (no-op) download. Mirrors the fixtures used by the
+/// all-files-already-processed tests above.
+fn mock_dl_returning_marker(marker: StateMarker) -> MockDataSource {
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_CHECKSUM.txt".to_string(), size: 100 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
+    mock_dl.expect_take_state_marker().times(1).returning(move || Some(marker.clone()));
+    mock_dl
+}
+
+/// Regression for discogsography-cu2.42: on the resumed all-files-already-processed
+/// completion path, a failed extraction_complete broadcast must NOT flip the state marker
+/// to fully Completed — otherwise should_process() returns Skip forever and the completion
+/// signal is permanently lost. The marker must stay retryable, and a later successful send
+/// must then finalize it.
+#[tokio::test]
+async fn test_process_discogs_data_resumed_completion_amqp_failure_stays_retryable() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let marker_path = StateMarker::file_path(&config.discogs_root, "20260101");
+
+    // Marker: processing started, the single file complete → resumed-empty branch,
+    // overall_status still InProgress (extraction not yet broadcast).
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_processing(1);
+    marker.start_file_processing("discogs_20260101_artists.xml.gz");
+    marker.complete_file_processing("discogs_20260101_artists.xml.gz", 1000);
+    assert_ne!(marker.summary.overall_status, PhaseStatus::Completed);
+
+    // Phase 1: AMQP broadcast fails (RabbitMQ restarting).
+    struct FailingMqFactory;
+    #[async_trait::async_trait]
+    impl extractor::extractor::MessageQueueFactory for FailingMqFactory {
+        async fn create(&self, _url: &str, _prefix: &str) -> anyhow::Result<Arc<dyn extractor::message_queue::MessagePublisher>> {
+            Err(anyhow::anyhow!("AMQP connection refused"))
+        }
+    }
+    let mut mock_dl = mock_dl_returning_marker(marker.clone());
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let result = extractor::extractor::process_discogs_data(
+        config.clone(),
+        state,
+        shutdown.clone(),
+        Arc::new(AtomicBool::new(false)),
+        false,
+        &mut mock_dl,
+        Arc::new(FailingMqFactory),
+        None,
+    )
+    .await;
+    assert!(result.is_ok(), "a send failure is logged, not fatal");
+
+    let persisted = StateMarker::load(&marker_path).await.unwrap().expect("marker must be persisted");
+    assert_ne!(
+        persisted.summary.overall_status,
+        PhaseStatus::Completed,
+        "must not mark Completed when extraction_complete failed to send — it would Skip forever"
+    );
+    assert!(matches!(persisted.should_process(), ProcessingDecision::Continue), "unsent completion must remain retryable (Continue), not Skip");
+
+    // Phase 2: next cycle, RabbitMQ is back — the broadcast succeeds and finalizes the marker.
+    let mut mock_ok = MockMessagePublisher::new();
+    mock_ok.expect_send_extraction_complete().times(1).returning(|_, _, _, _| Ok(()));
+    mock_ok.expect_close().returning(|| Ok(()));
+    let ok_factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_ok) });
+
+    let mut mock_dl2 = mock_dl_returning_marker(persisted);
+    let state2 = Arc::new(RwLock::new(ExtractorState::default()));
+    let result2 = extractor::extractor::process_discogs_data(
+        config.clone(),
+        state2,
+        shutdown,
+        Arc::new(AtomicBool::new(false)),
+        false,
+        &mut mock_dl2,
+        ok_factory,
+        None,
+    )
+    .await;
+    assert!(result2.is_ok() && result2.unwrap());
+
+    let finalized = StateMarker::load(&marker_path).await.unwrap().expect("marker must be persisted");
+    assert_eq!(finalized.summary.overall_status, PhaseStatus::Completed, "a successful retry broadcast must finalize the marker as Completed");
+}
+
+/// Regression for discogsography-cu2.92: after a crash-and-resume, extraction_complete's
+/// record_counts must carry the TRUE per-type totals for types completed in an earlier
+/// session — not 0. The per-run ExtractionProgress is reset each run, so counts must come
+/// from the persisted progress_by_file. This also verifies the /health rehydration: the
+/// resumed run's ExtractionProgress reflects the pre-crash totals rather than 0.
+#[tokio::test]
+async fn test_process_discogs_data_resumed_record_counts_from_persisted_progress() {
+    use std::collections::HashMap;
+    use std::sync::Mutex as StdMutex;
+
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    // Marker from an earlier session: artists + labels completed (real counts), processing
+    // still InProgress (complete_processing was never reached before the crash).
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_processing(2);
+    marker.start_file_processing("discogs_20260101_artists.xml.gz");
+    marker.complete_file_processing("discogs_20260101_artists.xml.gz", 1000);
+    marker.start_file_processing("discogs_20260101_labels.xml.gz");
+    marker.complete_file_processing("discogs_20260101_labels.xml.gz", 2000);
+    assert_eq!(marker.processing_phase.status, PhaseStatus::InProgress);
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
+    mock_dl
+        .expect_download_discogs_data()
+        .times(1)
+        .returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string(), "discogs_20260101_labels.xml.gz".to_string()]));
+    mock_dl.expect_take_state_marker().times(1).returning(move || Some(marker.clone()));
+
+    // Capture the record_counts actually broadcast.
+    let captured: Arc<StdMutex<Option<HashMap<String, u64>>>> = Arc::new(StdMutex::new(None));
+    let captured_clone = captured.clone();
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_send_extraction_complete().times(1).returning(move |_version, _started, counts, _types| {
+        *captured_clone.lock().unwrap() = Some(counts);
+        Ok(())
+    });
+    mock_mq.expect_close().returning(|| Ok(()));
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = extractor::extractor::process_discogs_data(
+        config,
+        state.clone(),
+        shutdown,
+        Arc::new(AtomicBool::new(false)),
+        false,
+        &mut mock_dl,
+        factory,
+        None,
+    )
+    .await;
+    assert!(result.is_ok() && result.unwrap());
+
+    // The broadcast must report the true pre-crash totals, NOT 0.
+    let counts = captured.lock().unwrap().clone().expect("extraction_complete must have been sent");
+    assert_eq!(counts.get("artists").copied(), Some(1000), "artists count must come from persisted progress, not the reset per-run counter");
+    assert_eq!(counts.get("labels").copied(), Some(2000), "labels count must come from persisted progress, not the reset per-run counter");
+
+    // /health rehydration: the resumed run's ExtractionProgress reflects the pre-crash totals.
+    let s = state.read().await;
+    assert_eq!(s.extraction_progress.artists, 1000, "resume must rehydrate artists progress for /health");
+    assert_eq!(s.extraction_progress.labels, 2000, "resume must rehydrate labels progress for /health");
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1216,7 +1414,7 @@ async fn test_process_discogs_data_all_processed_extraction_complete_send_fails(
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_discogs_data(config, state, shutdown, true, &mut mock_dl, factory, None).await;
+    let result = process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), true, &mut mock_dl, factory, None).await;
 
     // Still returns Ok(true) — failure of extraction_complete is logged but not fatal in this path
     assert!(result.is_ok());
@@ -1437,7 +1635,7 @@ async fn test_process_discogs_data_reprocess_decision() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_discogs_data(config, state, shutdown, false, &mut mock_dl, factory, None).await;
+    let result = process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), false, &mut mock_dl, factory, None).await;
 
     // Key assertion: download_discogs_data was called (Reprocess path taken)
     let _ = result;
@@ -1485,7 +1683,7 @@ async fn test_process_discogs_data_end_to_end_success() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_discogs_data(config, state.clone(), shutdown, false, &mut mock_dl, factory, None).await;
+    let result = process_discogs_data(config, state.clone(), shutdown, Arc::new(AtomicBool::new(false)), false, &mut mock_dl, factory, None).await;
 
     assert!(result.is_ok(), "End-to-end processing should succeed: {:?}", result);
     assert!(result.unwrap(), "Should return true for successful processing");
@@ -1494,6 +1692,62 @@ async fn test_process_discogs_data_end_to_end_success() {
     assert_eq!(s.extraction_status, ExtractionStatus::Completed);
     assert!(s.completed_files.contains("discogs_20260101_artists.xml.gz"));
     assert_eq!(s.extraction_progress.artists, 1);
+}
+
+/// Regression for cu2.44: a shutdown flag already set when process_discogs_data reaches the file
+/// loop must stop it from starting (and therefore finalizing) the run. The not-yet-started file is
+/// skipped so it stays pending in the state marker for a clean resume, the run is NOT marked
+/// Completed, and it returns Ok(false) — never Err (which would send main into the failure
+/// cooldown). Mirrors test_process_discogs_data_end_to_end_success but with the flag pre-set.
+#[tokio::test]
+async fn test_process_discogs_data_shutdown_before_files_does_not_finalize() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Test Artist</name>
+    </artist>
+</artists>"#;
+    create_gzipped_xml_file(temp_dir.path(), "discogs_20260101_artists.xml.gz", xml_content);
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    // Shutdown already requested by the time processing reaches the file loop.
+    let shutdown_flag = Arc::new(AtomicBool::new(true));
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl
+        .expect_list_s3_files()
+        .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl
+        .expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
+    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
+    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
+    mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = process_discogs_data(config, state.clone(), shutdown, shutdown_flag, false, &mut mock_dl, factory, None).await;
+
+    // Not promoted to Err — a graceful shutdown must not trip main's failure cooldown.
+    assert!(result.is_ok(), "shutdown must not surface as Err: {:?}", result);
+    assert!(!result.unwrap(), "a shutdown-interrupted run must return false (not complete)");
+
+    let s = state.read().await;
+    // The pending file was skipped, so nothing completed and the run is not marked Completed.
+    assert_ne!(s.extraction_status, ExtractionStatus::Completed, "an interrupted run must not report Completed");
+    assert!(!s.completed_files.contains("discogs_20260101_artists.xml.gz"), "skipped file must not be marked completed");
 }
 
 #[tokio::test]
@@ -1546,7 +1800,8 @@ rules:
 "#,
     );
 
-    let result = process_discogs_data(config, state.clone(), shutdown, false, &mut mock_dl, factory, Some(rules)).await;
+    let result =
+        process_discogs_data(config, state.clone(), shutdown, Arc::new(AtomicBool::new(false)), false, &mut mock_dl, factory, Some(rules)).await;
 
     assert!(result.is_ok(), "End-to-end with rules should succeed: {:?}", result);
     assert!(result.unwrap());
@@ -1598,7 +1853,7 @@ async fn test_process_discogs_data_extraction_complete_failure() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_discogs_data(config, state.clone(), shutdown, false, &mut mock_dl, factory, None).await;
+    let result = process_discogs_data(config, state.clone(), shutdown, Arc::new(AtomicBool::new(false)), false, &mut mock_dl, factory, None).await;
 
     // Should return Ok(false) — extraction_complete failure makes success=false
     assert!(result.is_ok());
@@ -1668,7 +1923,7 @@ async fn test_process_discogs_data_mq_factory_create_fails_at_extraction_complet
 
     let factory = Arc::new(CountingMqFactory { publisher: Arc::new(mock_mq), call_count });
 
-    let result = process_discogs_data(config, state.clone(), shutdown, false, &mut mock_dl, factory, None).await;
+    let result = process_discogs_data(config, state.clone(), shutdown, Arc::new(AtomicBool::new(false)), false, &mut mock_dl, factory, None).await;
 
     // Should return Ok(false) — extraction_complete MQ connection failure
     assert!(result.is_ok());
@@ -1731,7 +1986,7 @@ async fn test_process_discogs_data_multiple_files() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_discogs_data(config, state.clone(), shutdown, false, &mut mock_dl, factory, None).await;
+    let result = process_discogs_data(config, state.clone(), shutdown, Arc::new(AtomicBool::new(false)), false, &mut mock_dl, factory, None).await;
 
     assert!(result.is_ok());
     assert!(result.unwrap());
@@ -1765,7 +2020,7 @@ async fn test_process_discogs_data_version_extraction_failure() {
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_discogs_data(config, state, shutdown, false, &mut mock_dl, factory, None).await;
+    let result = process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), false, &mut mock_dl, factory, None).await;
 
     assert!(result.is_err());
 }
@@ -1787,7 +2042,7 @@ async fn test_process_discogs_data_list_s3_files_failure() {
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_discogs_data(config, state, shutdown, false, &mut mock_dl, factory, None).await;
+    let result = process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), false, &mut mock_dl, factory, None).await;
 
     assert!(result.is_err());
 }
@@ -1816,7 +2071,7 @@ async fn test_process_discogs_data_download_failure() {
     let mock_mq = MockMessagePublisher::new();
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_discogs_data(config, state, shutdown, false, &mut mock_dl, factory, None).await;
+    let result = process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), false, &mut mock_dl, factory, None).await;
 
     assert!(result.is_err());
 }

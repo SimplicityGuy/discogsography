@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
 import structlog
@@ -90,6 +90,10 @@ async def health_check() -> JSONResponse:
 
 _PROXY_SKIP_HEADERS = frozenset({"host", "content-length", "transfer-encoding"})
 
+# Content-Type prefix used by sse_starlette's EventSourceResponse (see
+# api/routers/nlq.py) for the NLQ 'Ask' streaming endpoint.
+_STREAMING_CONTENT_TYPE_PREFIX = "text/event-stream"
+
 _http_client: httpx.AsyncClient | None = None
 
 
@@ -102,26 +106,78 @@ def _get_http_client() -> httpx.AsyncClient:
 
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_api(path: str, request: Request) -> Response:
-    """Proxy /api/* requests to the API service."""
+    """Proxy /api/* requests to the API service.
+
+    Uses a streamed httpx request/response instead of the non-streaming
+    client.request()/.content, which used to buffer the ENTIRE upstream body
+    before returning. That broke Server-Sent-Event endpoints (e.g. the NLQ 'Ask'
+    endpoint /api/nlq/query): events were held back until the whole stream
+    finished, and a long-running answer that went quiet between events for
+    longer than the client's fixed total timeout was aborted with a 504,
+    discarding an otherwise-successful response. text/event-stream responses are
+    now forwarded chunk-by-chunk via StreamingResponse with the read timeout
+    disabled; every other response is still read fully and returned as before.
+    """
     client = _get_http_client()
     url = f"/api/{path}"
     forward_headers = {k: v for k, v in request.headers.items() if k.lower() not in _PROXY_SKIP_HEADERS}
+
+    req = client.build_request(
+        method=request.method,
+        url=url,
+        # request.query_params is a Starlette multi-dict — wrapping it in
+        # dict() keeps only the LAST value per repeated key (e.g.
+        # ?formats=Vinyl&formats=CD collapses to formats=CD), silently
+        # dropping multi-value filters. Build an httpx.QueryParams from
+        # the multi-item list so every repeated key is preserved.
+        params=httpx.QueryParams(tuple(request.query_params.multi_items())),
+        content=await request.body(),
+        headers=forward_headers,
+        # Disable the read timeout: an SSE response may legitimately go quiet
+        # between events for longer than the client's total 150s timeout without
+        # being stalled (e.g. a long Anthropic generation phase). Connect/write/pool
+        # timeouts are unchanged so a genuinely dead upstream is still caught.
+        timeout=httpx.Timeout(150.0, read=None),
+    )
+
     try:
-        proxied = await client.request(
-            method=request.method,
-            url=url,
-            params=dict(request.query_params),
-            content=await request.body(),
-            headers=forward_headers,
-        )
+        proxied = await client.send(req, stream=True)
     except httpx.TimeoutException:
         logger.warning("⚠️ Proxy request timed out", path=path)
         return JSONResponse(content={"error": "Request timed out"}, status_code=504)
     except httpx.HTTPError as exc:
         logger.error("❌ Proxy request failed", path=path, error=str(exc))
         return JSONResponse(content={"error": "Upstream service error"}, status_code=502)
+
     skip_response_headers = {"content-encoding", "transfer-encoding", "content-length"}
     response_headers = {k: v for k, v in proxied.headers.items() if k.lower() not in skip_response_headers}
+    content_type = proxied.headers.get("content-type", "")
+
+    if content_type.startswith(_STREAMING_CONTENT_TYPE_PREFIX):
+
+        async def _forward_stream() -> AsyncGenerator[bytes]:
+            try:
+                async for chunk in proxied.aiter_raw():
+                    yield chunk
+            except httpx.HTTPError as exc:
+                logger.warning("⚠️ Proxy stream interrupted", path=path, error=str(exc))
+            finally:
+                await proxied.aclose()
+
+        return StreamingResponse(_forward_stream(), status_code=proxied.status_code, headers=response_headers, media_type=content_type)
+
+    try:
+        await proxied.aread()
+    except httpx.TimeoutException:
+        await proxied.aclose()
+        logger.warning("⚠️ Proxy request timed out", path=path)
+        return JSONResponse(content={"error": "Request timed out"}, status_code=504)
+    except httpx.HTTPError as exc:
+        await proxied.aclose()
+        logger.error("❌ Proxy request failed", path=path, error=str(exc))
+        return JSONResponse(content={"error": "Upstream service error"}, status_code=502)
+    await proxied.aclose()
+
     return Response(content=proxied.content, status_code=proxied.status_code, headers=response_headers)
 
 

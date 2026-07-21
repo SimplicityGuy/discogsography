@@ -37,6 +37,7 @@ _TEST_MASTER_KEY = base64.urlsafe_b64encode(b"test-master-key-padded-to-32!!").d
 TEST_JWT_SECRET = "test-jwt-secret-for-unit-tests"
 TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 TEST_USER_EMAIL = "test@example.com"
+TEST_INTERNAL_SECRET = "test-internal-insights-secret"  # nosec B105
 
 
 def make_test_jwt(
@@ -130,6 +131,7 @@ def test_api_config() -> ApiConfig:
         neo4j_host="bolt://localhost:7687",
         neo4j_username="neo4j",
         neo4j_password="testpassword",  # noqa: S106
+        insights_internal_secret=TEST_INTERNAL_SECRET,
     )
 
 
@@ -196,7 +198,7 @@ def test_client(
 
     _search_router.configure(mock_pool, mock_redis)
     _recommend_router.configure(mock_neo4j, test_api_config.jwt_secret_key, mock_redis)
-    _insights_compute_router.configure(mock_neo4j, mock_pool, mock_redis)
+    _insights_compute_router.configure(mock_neo4j, mock_pool, mock_redis, test_api_config)
     _admin_router.configure(mock_pool, mock_redis, test_api_config, neo4j_driver=mock_neo4j)
     import api.routers.extraction_analysis as _extraction_analysis_router
 
@@ -259,7 +261,10 @@ def test_client(
         notification_channel=LogNotificationChannel(),
     )
 
-    with TestClient(app, raise_server_exceptions=False) as client:
+    # Default the internal-insights shared secret on every request so the existing
+    # /api/internal/insights/* tests keep passing; the header is ignored by all
+    # other routers. Tests that assert rejection build their own bare client.
+    with TestClient(app, raise_server_exceptions=False, headers={"X-Internal-Secret": TEST_INTERNAL_SECRET}) as client:
         yield client
 
     # Restore original state

@@ -416,18 +416,27 @@ async def _recover_consumers() -> None:
                 await queue.bind(exchange)
                 queues[data_type] = queue
 
-            # Start consumers for queues with messages
-            for data_type, msg_count in queues_with_messages:
+            # Start consumers for ALL data types lacking one — not just those
+            # with a current backlog. A type whose queue was empty at the
+            # passive-declare instant still needs a consumer; otherwise messages
+            # that arrive later are never consumed, because once active_connection
+            # is set and consumer_tags is non-empty both periodic recovery routes
+            # are permanently gated off, silently starving that data type.
+            pending_counts = dict(queues_with_messages)
+            for data_type in MUSICBRAINZ_DATA_TYPES:
                 if data_type in queues and data_type not in consumer_tags:
                     handler = make_data_handler(data_type)
                     consumer_tag = await queues[data_type].consume(handler)
                     consumer_tags[data_type] = consumer_tag
-                    completed_files.discard(data_type)
+                    # Only un-complete a type that actually has a backlog, so
+                    # genuinely-finished types stay marked complete.
+                    if data_type in pending_counts:
+                        completed_files.discard(data_type)
                     last_message_time[data_type] = time.time()
                     logger.info(
                         f"✅ Started consumer for {data_type}",
                         data_type=data_type,
-                        pending_messages=msg_count,
+                        pending_messages=pending_counts.get(data_type, 0),
                     )
 
             logger.info(
@@ -450,6 +459,11 @@ async def _recover_consumers() -> None:
         active_connection = None
         active_channel = None
         queues = {}
+        # Clear stale consumer tags: any consumers registered before the error
+        # died with the now-closed connection. Leaving them behind would keep
+        # len(consumer_tags) > 0 forever, permanently gating off both recovery
+        # routes (stuck-check requires 0 tags) while health still reads healthy.
+        consumer_tags.clear()
 
 
 async def _insert_relationships(
@@ -462,24 +476,42 @@ async def _insert_relationships(
     round-trip) per relationship. This keeps the per-message transaction short, which
     minimizes how long the connection sits ``idle in transaction`` holding a backend —
     the dominant pressure on the shared PgBouncer budget during a bulk import.
+
+    MusicBrainz relations are directional and materialized on both endpoints;
+    ``direction`` == "backward" means the entity being processed is the
+    relation's TARGET, not its source (mirrors the fix in
+    brainzgraphinator.create_relationship_edges). Swap source/target in that
+    case so the stored row always reflects the relationship's canonical
+    orientation (e.g. member->band for "member of band"), regardless of
+    which endpoint's record we happened to be processing.
     """
-    params = [
-        (
-            source_mbid,
-            source_type,
-            rel.get("target_mbid", ""),
-            rel.get("target_type", ""),
-            rel.get("type", ""),
-            Jsonb(rel.get("attributes", [])),
-            rel.get("begin_date"),
-            rel.get("end_date"),
-            rel.get("ended", False),
-        )
-        for rel in rels
+    params = []
+    for rel in rels:
         # Skip relations missing a target MBID (would fail UUID cast), target entity
         # type, or relationship type — these would violate NOT NULL / cast constraints.
-        if rel.get("target_mbid") and rel.get("target_type") and rel.get("type")
-    ]
+        if not (rel.get("target_mbid") and rel.get("target_type") and rel.get("type")):
+            continue
+
+        if rel.get("direction") == "backward":
+            row_source_mbid, row_source_type = rel["target_mbid"], rel["target_type"]
+            row_target_mbid, row_target_type = source_mbid, source_type
+        else:
+            row_source_mbid, row_source_type = source_mbid, source_type
+            row_target_mbid, row_target_type = rel["target_mbid"], rel["target_type"]
+
+        params.append(
+            (
+                row_source_mbid,
+                row_source_type,
+                row_target_mbid,
+                row_target_type,
+                rel.get("type", ""),
+                Jsonb(rel.get("attributes", [])),
+                rel.get("begin_date"),
+                rel.get("end_date"),
+                rel.get("ended", False),
+            )
+        )
     if not params:
         return
     async with conn.cursor() as cursor:

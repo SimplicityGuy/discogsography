@@ -127,8 +127,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     await _pool.initialize()
     logger.info("🐘 PostgreSQL pool initialized")
 
-    # Initialize HTTP client for API service
-    _http_client = httpx.AsyncClient(base_url=_config.api_base_url, timeout=300.0)
+    # Initialize HTTP client for API service. The API's /api/internal/insights/*
+    # endpoints are gated by a shared secret; present it on every request.
+    _client_headers: dict[str, str] = {}
+    if _config.internal_secret:
+        _client_headers["X-Internal-Secret"] = _config.internal_secret
+    else:
+        logger.warning("⚠️ INSIGHTS_INTERNAL_SECRET is not set — internal API calls will be rejected by the API")
+    _http_client = httpx.AsyncClient(base_url=_config.api_base_url, timeout=300.0, headers=_client_headers)
     logger.info("🔧 API HTTP client initialized", base_url=_config.api_base_url)
 
     # Initialize Redis cache

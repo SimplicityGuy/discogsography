@@ -323,6 +323,92 @@ class TestFlushQueue:
         assert processor.batch_counts["artists"] == 1
 
     @pytest.mark.asyncio
+    async def test_poison_batch_nacked_to_dlq_not_wedged(self) -> None:
+        """Regression (cu2.19): a deterministic (non-transient) batch error must
+        not be retried forever.
+
+        Before the fix, the generic except path re-enqueued the batch and backed
+        off without ever nacking, so a poison record (e.g. a data-induced Neo4j
+        ClientError) retried indefinitely; once its unacked deliveries filled the
+        prefetch window the consumer wedged permanently. After the fix, bounded
+        consecutive failures trigger a nack so the poison batch is routed to the
+        DLQ and the queue drains.
+        """
+        mock_driver = MagicMock()
+        config = BatchConfig(
+            batch_size=5,
+            max_poison_retries=3,
+            backoff_initial=0.0,
+            min_batch_size=1,
+        )
+        processor = Neo4jBatchProcessor(mock_driver, config)
+
+        # Deterministic non-transient failure on every batch.
+        processor._process_artists_batch = AsyncMock(  # type: ignore[method-assign]
+            side_effect=ValueError("data-induced ClientError")
+        )
+
+        acks: list[int] = []
+        nacks: list[int] = []
+
+        async def ack() -> None:
+            acks.append(1)
+
+        async def nack() -> None:
+            nacks.append(1)
+
+        for i in range(2):
+            processor.queues["artists"].append(PendingMessage("artists", {"id": str(i), "name": "x", "sha256": "h"}, ack, nack))
+
+        # Drive flushes; without the fix this loop never drains the queue.
+        for _ in range(50):
+            if not processor.queues["artists"]:
+                break
+            processor._backoff_until["artists"] = 0.0  # skip backoff sleeps in test
+            await processor._flush_queue("artists")
+
+        assert not processor.queues["artists"], "poison batch permanently wedged the queue"
+        assert len(nacks) == 2, "both poison messages must be nacked to the DLQ"
+        assert acks == [], "poison messages must never be acked"
+
+    @pytest.mark.asyncio
+    async def test_poison_batch_nack_failure_is_logged_and_swallowed(self) -> None:
+        """A failing nack_callback on the poison path must be caught and logged (not
+        raised), so a broken channel while routing poison to the DLQ does not crash
+        the flush loop or leave per-data-type state un-reset.
+        """
+        mock_driver = MagicMock()
+        config = BatchConfig(
+            batch_size=5,
+            max_poison_retries=1,
+            backoff_initial=0.0,
+            min_batch_size=1,
+        )
+        processor = Neo4jBatchProcessor(mock_driver, config)
+
+        processor._process_artists_batch = AsyncMock(  # type: ignore[method-assign]
+            side_effect=ValueError("data-induced ClientError")
+        )
+
+        async def failing_nack() -> None:
+            raise RuntimeError("channel closed")
+
+        processor.queues["artists"].append(PendingMessage("artists", {"id": "0", "name": "x", "sha256": "h"}, AsyncMock(), failing_nack))
+
+        with patch("graphinator.batch_processor.logger") as mock_logger:
+            for _ in range(10):
+                if not processor.queues["artists"]:
+                    break
+                processor._backoff_until["artists"] = 0.0
+                await processor._flush_queue("artists")
+
+        # The nack failure was logged as a warning, not propagated.
+        assert any("Failed to nack message" in str(c.args[0]) for c in mock_logger.warning.call_args_list)
+        # State was still reset and the queue drained despite the nack failure.
+        assert not processor.queues["artists"]
+        assert processor._consecutive_failures["artists"] == 0
+
+    @pytest.mark.asyncio
     async def test_flush_labels_batch_success(self) -> None:
         """Test successfully flushing labels batch."""
         mock_driver, _mock_session = create_async_session_mock()

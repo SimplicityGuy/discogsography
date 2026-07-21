@@ -86,6 +86,9 @@ pub async fn process_discogs_data(
     config: Arc<ExtractorConfig>,
     state: Arc<RwLock<ExtractorState>>,
     shutdown: Arc<tokio::sync::Notify>,
+    // Pollable shutdown flag (set by the loop's monitor task on SIGTERM/SIGINT). Checked between
+    // files so a signal delivered mid-run stops starting new files instead of being lost. (cu2.44)
+    shutdown_flag: Arc<AtomicBool>,
     force_reprocess: bool,
     downloader: &mut dyn DataSource,
     mq_factory: Arc<dyn MessageQueueFactory>,
@@ -183,7 +186,31 @@ pub async fn process_discogs_data(
         state_marker.processing_phase.files_total = data_files.len();
         state_marker.save(&marker_path).await?;
         info!("🔄 Resuming processing phase: {} total files, {} already completed", data_files.len(), state_marker.processing_phase.files_processed);
+
+        // Rehydrate the per-run progress counters from the persisted per-file progress so the
+        // /health endpoint reports true totals for types already completed before the crash.
+        // Those files are skipped (pending_files) and never re-incremented this run, so without
+        // this they would surface as 0 on the dashboard. (cu2.92)
+        {
+            let mut s = state.write().await;
+            for (file_name, file_state) in &state_marker.processing_phase.progress_by_file {
+                if file_state.status == PhaseStatus::Completed
+                    && let Some(dt) = extract_data_type(file_name)
+                {
+                    s.extraction_progress.add(dt, file_state.records_extracted);
+                }
+            }
+        }
     }
+
+    // Use the ORIGINAL processing start time persisted in the state marker for the
+    // extraction_complete signal — NOT this (possibly resumed) process's start time.
+    // On a resumed run, files already completed in an earlier session are not re-sent,
+    // so their rows retain updated_at from that earlier session. Broadcasting the
+    // resumed process's now() would make the downstream stale-row purge delete every
+    // row written before the restart (mass data loss). start_processing() sets this on
+    // the first run and it is preserved (never reset) across InProgress resumes.
+    let processing_started_at = state_marker.processing_phase.started_at.unwrap_or(extraction_started_at);
 
     // Get list of files that still need processing
     let pending_files = state_marker.pending_files(&data_files);
@@ -194,29 +221,49 @@ pub async fn process_discogs_data(
         // Only send extraction_complete on the first completion, not on
         // subsequent periodic checks where the version is already complete.
         if state_marker.summary.overall_status != PhaseStatus::Completed {
+            // Mark processing (files are genuinely all done) but NOT extraction yet —
+            // extraction is only "complete" once the extraction_complete broadcast lands.
+            // Committing the marker fully Completed here (before the AMQP send) is a
+            // split-commit ordering bug: a single AMQP failure would flip the marker to
+            // Completed, every later cycle would Skip, and the completion signal would be
+            // lost forever. Mirror the normal completion path: send first, finalize on
+            // success, and on failure leave overall_status non-Completed so the next
+            // cycle re-enters via Continue and retries. (cu2.42)
             state_marker.complete_processing();
-            state_marker.complete_extraction();
             state_marker.save(&marker_path).await?;
 
-            // Send extraction_complete with actual record counts from state marker
-            // Use data type names (e.g., "artists") as keys — consistent with the normal
-            // completion path (lines 288-292) so consumers can look up counts reliably.
+            // Build record counts from the persisted per-file progress. Use data type
+            // names (e.g., "artists") as keys — consistent with the normal completion
+            // path so consumers can look up counts reliably.
             let mut record_counts = HashMap::new();
             for (file_name, file_state) in &state_marker.processing_phase.progress_by_file {
                 if let Some(dt) = extract_data_type(file_name) {
                     record_counts.insert(dt.to_string(), file_state.records_extracted);
                 }
             }
+
+            let mut sent = false;
             match mq_factory.create(&config.amqp_connection, &config.discogs_exchange_prefix).await {
                 Ok(mq) => {
-                    if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::discogs()).await {
-                        error!("❌ Failed to send extraction_complete message: {}", e);
+                    match mq.send_extraction_complete(&version, processing_started_at, record_counts, &DataType::discogs()).await {
+                        Ok(_) => sent = true,
+                        Err(e) => error!("❌ Failed to send extraction_complete message: {}", e),
                     }
                     let _ = mq.close().await;
                 }
                 Err(e) => {
                     error!("❌ Failed to connect to AMQP for extraction_complete: {}", e);
                 }
+            }
+
+            if sent {
+                // Broadcast succeeded — now it is safe to durably mark extraction complete.
+                state_marker.complete_extraction();
+                state_marker.save(&marker_path).await?;
+            } else {
+                // Leave overall_status non-Completed so should_process() returns Continue and
+                // the next cycle retries the broadcast instead of Skipping forever.
+                error!("❌ extraction_complete not sent — leaving version incomplete to retry on next cycle");
             }
         }
 
@@ -244,9 +291,18 @@ pub async fn process_discogs_data(
         let state_marker_arc = state_marker_arc.clone();
         let mq_factory = mq_factory.clone();
         let compiled_rules = compiled_rules.clone();
+        let shutdown_flag = shutdown_flag.clone();
 
         let task: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             let _permit = semaphore.acquire().await?;
+            // Graceful shutdown: stop starting new files once a SIGTERM/SIGINT arrives. Files
+            // already past this guard run to completion; skipped files never call
+            // start_file_processing, so they stay pending in the state marker and a restart
+            // resumes them. (cu2.44)
+            if shutdown_flag.load(Ordering::SeqCst) {
+                info!("🛑 Shutdown requested — skipping not-yet-started file: {}", file);
+                return Ok(());
+            }
             let mq = mq_factory
                 .create(&config.amqp_connection, &config.discogs_exchange_prefix)
                 .await
@@ -288,6 +344,16 @@ pub async fn process_discogs_data(
 
     reporter.abort();
 
+    // A shutdown signal delivered mid-run is a graceful stop, not a processing failure: in-flight
+    // files (already past the per-task guard) finish, but files skipped by that guard stay pending.
+    // Fold it into `success` so the completion/broadcast/status logic below does NOT finalize the
+    // run — while logging it as a shutdown rather than an error. (cu2.44)
+    let shutdown_requested = shutdown_flag.load(Ordering::SeqCst);
+    if shutdown_requested {
+        warn!("🛑 Shutdown requested during Discogs processing — saving progress for resume, not finalizing this run");
+        success = false;
+    }
+
     // Only mark processing as complete if all tasks succeeded
     {
         let mut state_marker = state_marker_arc.lock().await;
@@ -299,7 +365,11 @@ pub async fn process_discogs_data(
         } else {
             // Save current progress without marking complete — allows restart to resume
             state_marker.save(&marker_path).await?;
-            error!("❌ Processing phase finished with errors — not marking complete");
+            if shutdown_requested {
+                info!("🛑 Processing interrupted by shutdown — progress saved for resume, not marking complete");
+            } else {
+                error!("❌ Processing phase finished with errors — not marking complete");
+            }
         }
     } // Drop state_marker lock before re-acquiring below
 
@@ -310,18 +380,28 @@ pub async fn process_discogs_data(
         info!("📊 Final statistics: {} total records extracted", s.extraction_progress.total());
 
         if success {
-            // Build per-type record counts from extraction progress
-            let mut record_counts = HashMap::new();
-            record_counts.insert("artists".to_string(), s.extraction_progress.artists);
-            record_counts.insert("labels".to_string(), s.extraction_progress.labels);
-            record_counts.insert("masters".to_string(), s.extraction_progress.masters);
-            record_counts.insert("releases".to_string(), s.extraction_progress.releases);
+            // Build per-type record counts from the PERSISTED per-file progress, NOT the
+            // per-run ExtractionProgress. That counter is reset at the top of every
+            // process_discogs_data call and only tallies files processed in THIS run, so
+            // after a crash-and-resume the types completed in an earlier session (skipped
+            // via pending_files) would report 0. progress_by_file holds the true totals for
+            // every completed file — matching the all-files-already-processed early path. (cu2.92)
+            drop(s); // Release read lock before locking the state marker / async MQ operations
+            let record_counts = {
+                let state_marker = state_marker_arc.lock().await;
+                let mut rc = HashMap::new();
+                for (file_name, file_state) in &state_marker.processing_phase.progress_by_file {
+                    if let Some(dt) = extract_data_type(file_name) {
+                        rc.insert(dt.to_string(), file_state.records_extracted);
+                    }
+                }
+                rc
+            };
 
             // Send extraction_complete to all consumer queues
-            drop(s); // Release read lock before async MQ operations
             match mq_factory.create(&config.amqp_connection, &config.discogs_exchange_prefix).await {
                 Ok(mq) => {
-                    if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::discogs()).await {
+                    if let Err(e) = mq.send_extraction_complete(&version, processing_started_at, record_counts, &DataType::discogs()).await {
                         error!("❌ Failed to send extraction_complete message: {}", e);
                         success = false;
                     }
@@ -334,7 +414,11 @@ pub async fn process_discogs_data(
             }
         } else {
             drop(s);
-            error!("❌ Skipping extraction_complete broadcast — processing had failures");
+            if shutdown_requested {
+                info!("🛑 Skipping extraction_complete broadcast — shutdown in progress");
+            } else {
+                error!("❌ Skipping extraction_complete broadcast — processing had failures");
+            }
         }
     }
 
@@ -394,6 +478,11 @@ pub async fn process_single_file(
     let file_base_name = Path::new(file_name).file_name().and_then(|n| n.to_str()).unwrap_or(file_name); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
     let version = extract_version_from_filename(file_base_name).unwrap_or_else(|| "unknown".to_string());
 
+    // Always-on normalization/hashing stage sits between the (optional) validator / parser and
+    // the batcher, so published records carry the normalized shape and a real sha256 in BOTH the
+    // rules and no-rules pipelines. (cu2.43)
+    let (normalized_sender, normalized_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
+
     let validator_handle = if let Some(rules) = compiled_rules {
         let (validated_sender, validated_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
         let rules = rules.clone();
@@ -406,6 +495,9 @@ pub async fn process_single_file(
                 async move { message_validator(parse_receiver, validated_sender, rules, &data_type_str, &discogs_root, &version_clone).await },
             );
 
+        // parser -> validator (skip/filter/rules) -> normalizer (normalize + hash) -> batcher
+        let normalizer_handle = tokio::spawn(async move { message_normalizer(validated_receiver, normalized_sender, data_type).await });
+
         let batcher_config = BatcherConfig {
             batch_size: config.batch_size,
             data_type,
@@ -415,7 +507,7 @@ pub async fn process_single_file(
             file_name: file_name.to_string(),
             state_save_interval: config.state_save_interval,
         };
-        let batcher_handle = tokio::spawn(async move { message_batcher(validated_receiver, batch_sender, batcher_config).await });
+        let batcher_handle = tokio::spawn(async move { message_batcher(normalized_receiver, batch_sender, batcher_config).await });
 
         let parser_handle = tokio::spawn({
             let file_path = config.discogs_root.join(file_name); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
@@ -431,10 +523,11 @@ pub async fn process_single_file(
             async move { message_publisher(batch_receiver, mq, data_type, state).await }
         });
 
-        let (parser_result, validator_result, batcher_result, publisher_result) =
-            tokio::try_join!(parser_handle, handle, batcher_handle, publisher_handle)?;
+        let (parser_result, validator_result, normalizer_result, batcher_result, publisher_result) =
+            tokio::try_join!(parser_handle, handle, normalizer_handle, batcher_handle, publisher_handle)?;
         let total_count = parser_result?;
         let report: QualityReport = validator_result?;
+        normalizer_result?;
         batcher_result?;
         publisher_result?;
 
@@ -449,6 +542,8 @@ pub async fn process_single_file(
 
         Some(total_count)
     } else {
+        // parser -> normalizer (normalize + hash) -> batcher — no validator, but normalization
+        // and hashing still happen so consumers receive the same shape as the rules path. (cu2.43)
         let parser_handle = tokio::spawn({
             let file_path = config.discogs_root.join(file_name);
             async move {
@@ -456,6 +551,8 @@ pub async fn process_single_file(
                 parser.parse_file(&file_path).await
             }
         });
+
+        let normalizer_handle = tokio::spawn(async move { message_normalizer(parse_receiver, normalized_sender, data_type).await });
 
         let batcher_config = BatcherConfig {
             batch_size: config.batch_size,
@@ -466,7 +563,7 @@ pub async fn process_single_file(
             file_name: file_name.to_string(),
             state_save_interval: config.state_save_interval,
         };
-        let batcher_handle = tokio::spawn(async move { message_batcher(parse_receiver, batch_sender, batcher_config).await });
+        let batcher_handle = tokio::spawn(async move { message_batcher(normalized_receiver, batch_sender, batcher_config).await });
 
         let publisher_handle = tokio::spawn({
             let mq = mq.clone();
@@ -475,6 +572,7 @@ pub async fn process_single_file(
         });
 
         let total_count = parser_handle.await??;
+        normalizer_handle.await??;
         batcher_handle.await??;
         publisher_handle.await??;
 
@@ -627,18 +725,13 @@ pub async fn message_validator(
             );
         }
 
-        // Evaluate rules on pre-normalized (XML-shaped) data — rules use
-        // dot-notation paths like "genres.genre" that match the XML structure.
+        // Evaluate rules on XML-shaped (pre-normalization) data — rules use dot-notation
+        // paths like "genres.genre" that match the raw XML structure. Normalization and
+        // content hashing are NOT done here anymore: they run unconditionally in
+        // `message_normalizer`, downstream of this optional stage, so they happen even when
+        // DATA_QUALITY_RULES is unset and this validator never runs. (cu2.43)
         let violations = evaluate_rules(&rules, data_type, &message.data);
 
-        // Normalize XML-shaped JSON into flat, consumer-ready format.
-        // Runs after both filters and rules (which operate on XML shape)
-        // and before hash calculation (so hash reflects what consumers see).
-        crate::normalize::normalize_record(data_type, &mut message.data);
-
-        // Compute content hash from post-normalization data so consumers
-        // detect changes caused by filter or normalization updates.
-        message.sha256 = calculate_content_hash(&message.data);
         for violation in &violations {
             report.record_violation(data_type, &violation.rule_name, &violation.severity);
             let capture_files = matches!(violation.severity, Severity::Error | Severity::Warning);
@@ -653,6 +746,32 @@ pub async fn message_validator(
     writer.flush();
     writer.write_report(&report, version);
     Ok(report)
+}
+
+/// Normalize XML-shaped records into the flat, consumer-ready shape and compute the content
+/// hash — UNCONDITIONALLY, as an always-on pipeline stage between the parser/validator and the
+/// batcher.
+///
+/// Previously `normalize_record` + `calculate_content_hash` ran only inside `message_validator`,
+/// which is spawned only when DATA_QUALITY_RULES is set. Without that env var the no-rules
+/// pipeline published raw xmltodict-shaped records (`@`-prefixed keys, `{"name": [...]}`
+/// container wrappers) with an empty `sha256`. That crashed graphinator (AttributeError iterating
+/// container dicts) and defeated change detection (`"" == ""` skips every future update). Running
+/// this stage in both branches keeps the published shape identical regardless of rules config.
+/// (cu2.43)
+pub async fn message_normalizer(mut receiver: mpsc::Receiver<DataMessage>, sender: mpsc::Sender<DataMessage>, data_type: DataType) -> Result<()> {
+    let data_type_str = data_type.as_str();
+    while let Some(mut message) = receiver.recv().await {
+        // Normalize the XML-shaped JSON into the flat, consumer-ready format, then compute the
+        // content hash from the post-normalization data so consumers detect real changes.
+        crate::normalize::normalize_record(data_type_str, &mut message.data);
+        message.sha256 = calculate_content_hash(&message.data);
+        if sender.send(message).await.is_err() {
+            warn!("⚠️ Normalizer: downstream receiver dropped");
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// Publish batched messages to AMQP
@@ -760,6 +879,63 @@ async fn wait_for_trigger(trigger: &Arc<tokio::sync::Mutex<Option<bool>>>) -> bo
     }
 }
 
+/// Reset a stuck `Running` extraction status to `Failed` after a periodic or API-triggered
+/// check returns `Err`.
+///
+/// `process_discogs_data` / `process_musicbrainz_data` set the status to `Running` up-front but
+/// only reset it on their fall-through tail; any early `?` error short-circuits before that reset,
+/// leaving the status at `Running`. The periodic loops swallow the `Err` and sleep for
+/// `periodic_check_days`, so without this backstop the status stays `Running` for the entire sleep —
+/// wedging the manual `/trigger` recovery (health.rs returns 409 `already_running` before enqueuing
+/// the trigger), starving the MusicBrainz extractor's `wait_for_discogs_idle` (which treats
+/// `running` as busy), and misreporting `/health`. `Failed` is a terminal, non-`Running` state that
+/// the periodic loop preserves (it only rewrites `Completed` -> `Waiting`) until the next successful
+/// run. (cu2.41)
+async fn reset_status_after_failed_check(state: &Arc<RwLock<ExtractorState>>) {
+    let mut s = state.write().await;
+    s.extraction_status = ExtractionStatus::Failed;
+}
+
+/// Spawn a task that watches `shutdown` and flips an `AtomicBool` when it fires.
+///
+/// `Notify::notified()` consumes its permit and `notify_waiters()` stores none, so long-running
+/// processing code cannot await the `Notify` directly without stealing the signal from the loop's
+/// outer `select!`. The monitor parks on the `Notify` once (before any multi-hour work) and records
+/// the shutdown in a flag that processing code polls between files without side effects. Shared by
+/// both the Discogs and MusicBrainz loops. (cu2.44)
+fn spawn_shutdown_flag_monitor(shutdown: Arc<tokio::sync::Notify>) -> Arc<AtomicBool> {
+    let flag = Arc::new(AtomicBool::new(false));
+    let flag_for_monitor = flag.clone();
+    tokio::spawn(async move {
+        shutdown.notified().await;
+        flag_for_monitor.store(true, Ordering::SeqCst);
+    });
+    flag
+}
+
+/// Decide the outcome of an initial (first-run) extraction from whether processing succeeded and
+/// whether a shutdown was requested.
+///
+/// The processing functions collapse "interrupted by shutdown" and "processing error" into a single
+/// `success: bool` — both surface as `Ok(false)`. Only the initial-run call sites promote `Ok(false)`
+/// to `Err`, which sends main into `apply_failure_cooldown` (default 600s) + `exit(1)`. An
+/// operator-requested SIGTERM would then be logged as a failure and hang ~10 min — long past Docker's
+/// stop grace period, so the container is SIGKILLed instead of stopping cleanly, and orchestrators
+/// that key on exit code may restart the service being stopped. A shutdown must therefore
+/// short-circuit to `Ok(())` BEFORE the failure check. Shared by the Discogs and MusicBrainz initial
+/// runs. (cu2.45)
+fn initial_run_outcome(success: bool, shutdown_requested: bool, source_label: &str) -> Result<()> {
+    if shutdown_requested {
+        info!("🛑 Shutdown requested during initial {source_label} processing — exiting cleanly");
+        return Ok(());
+    }
+    if !success {
+        error!("❌ Initial {source_label} processing failed");
+        return Err(anyhow::anyhow!("Initial {source_label} processing failed"));
+    }
+    Ok(())
+}
+
 /// Main extraction loop with periodic checks
 pub async fn run_extraction_loop(
     config: Arc<ExtractorConfig>,
@@ -772,12 +948,19 @@ pub async fn run_extraction_loop(
 ) -> Result<()> {
     info!("📥 Starting initial data processing...");
 
+    // Convert the one-shot shutdown Notify into a pollable flag. Without this a SIGTERM delivered
+    // during process_discogs_data (hours of multi-GB XML) is lost: notify_waiters() wakes only
+    // currently-parked waiters and stores no permit, so the periodic loop's fresh shutdown arm
+    // never fires and the process enters the multi-day sleep, unstoppable. (cu2.44)
+    let shutdown_flag = spawn_shutdown_flag_monitor(shutdown.clone());
+
     // Process initial data
     let mut downloader = Downloader::new(config.discogs_root.clone()).await?;
     let success = process_discogs_data(
         config.clone(),
         state.clone(),
         shutdown.clone(),
+        shutdown_flag.clone(),
         force_reprocess,
         &mut downloader,
         mq_factory.clone(),
@@ -785,15 +968,22 @@ pub async fn run_extraction_loop(
     )
     .await?;
 
-    if !success {
-        error!("❌ Initial data processing failed");
-        return Err(anyhow::anyhow!("Initial data processing failed"));
-    }
+    // A shutdown during the initial run is a clean exit, not a failure — returning Err would send
+    // main into the failure cooldown + non-zero exit. Short-circuit shutdown to Ok. (cu2.44/cu2.45)
+    initial_run_outcome(success, shutdown_flag.load(Ordering::SeqCst), "Discogs")?;
 
     info!("✅ Initial data processing completed successfully");
 
     // Start periodic check loop
     loop {
+        // If a shutdown arrived during processing (or between iterations), stop before sleeping.
+        // The periodic select! below also has a shutdown arm for signals that arrive mid-sleep,
+        // but this poll catches signals delivered while process_discogs_data was running. (cu2.44)
+        if shutdown_flag.load(Ordering::SeqCst) {
+            info!("🛑 Shutdown detected, exiting Discogs periodic check loop");
+            break;
+        }
+
         // Transition Completed → Waiting before sleeping so downstream observers
         // (MusicBrainz extractor, admin dashboard tracker) can tell the difference
         // between "just finished" and "on periodic schedule". Failed is preserved
@@ -820,7 +1010,7 @@ pub async fn run_extraction_loop(
                         continue;
                     }
                 };
-                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), false, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
+                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), shutdown_flag.clone(), false, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => {
                         info!("✅ Periodic check completed successfully in {:?}", start.elapsed());
                     }
@@ -829,6 +1019,10 @@ pub async fn run_extraction_loop(
                     }
                     Err(e) => {
                         error!("❌ Periodic check failed: {}", e);
+                        // Backstop: an early `?` in process_discogs_data leaves status at Running.
+                        // Reset to Failed so /trigger recovery and the MusicBrainz idle-wait unblock
+                        // instead of staying wedged for the whole periodic sleep. (cu2.41)
+                        reset_status_after_failed_check(&state).await;
                     }
                 }
             }
@@ -842,10 +1036,13 @@ pub async fn run_extraction_loop(
                         continue;
                     }
                 };
-                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), trigger_force_reprocess, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
+                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), shutdown_flag.clone(), trigger_force_reprocess, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => info!("✅ Triggered extraction completed successfully in {:?}", start.elapsed()),
                     Ok(false) => error!("❌ Triggered extraction completed with errors"),
-                    Err(e) => error!("❌ Triggered extraction failed: {}", e),
+                    Err(e) => {
+                        error!("❌ Triggered extraction failed: {}", e);
+                        reset_status_after_failed_check(&state).await; // (cu2.41)
+                    }
                 }
             }
             _ = shutdown.notified() => {
@@ -929,17 +1126,10 @@ pub async fn run_musicbrainz_loop(
     trigger: Arc<tokio::sync::Mutex<Option<bool>>>,
     compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<()> {
-    // AtomicBool for non-consuming shutdown checks. Notify::notified() consumes the
-    // permit, so polling it inside process_musicbrainz_data would steal the signal from
-    // the outer select!. The monitor task listens on the Notify and sets the flag;
-    // process_musicbrainz_data polls the flag without side effects.
-    let shutdown_flag = Arc::new(AtomicBool::new(false));
-    let flag_for_monitor = shutdown_flag.clone();
-    let shutdown_for_monitor = shutdown.clone();
-    tokio::spawn(async move {
-        shutdown_for_monitor.notified().await;
-        flag_for_monitor.store(true, Ordering::SeqCst);
-    });
+    // AtomicBool for non-consuming shutdown checks — see spawn_shutdown_flag_monitor. The monitor
+    // parks on the Notify and sets the flag; process_musicbrainz_data polls the flag without side
+    // effects, so the outer select! keeps its own shutdown arm.
+    let shutdown_flag = spawn_shutdown_flag_monitor(shutdown.clone());
 
     info!("🎵 Starting MusicBrainz extraction...");
 
@@ -950,10 +1140,10 @@ pub async fn run_musicbrainz_loop(
         process_musicbrainz_data(config.clone(), state.clone(), shutdown_flag.clone(), force_reprocess, mq_factory.clone(), compiled_rules.clone())
             .await?;
 
-    if !success {
-        error!("❌ Initial MusicBrainz processing failed");
-        return Err(anyhow::anyhow!("Initial MusicBrainz processing failed"));
-    }
+    // `process_musicbrainz_data` returns Ok(false) for BOTH a real failure and a between-files
+    // shutdown; only this initial path promoted Ok(false) to Err. Short-circuit shutdown to Ok(())
+    // so an operator-requested SIGTERM does not trigger the 600s failure cooldown + exit(1). (cu2.45)
+    initial_run_outcome(success, shutdown_flag.load(Ordering::SeqCst), "MusicBrainz")?;
 
     info!("✅ Initial MusicBrainz processing completed successfully");
 
@@ -994,6 +1184,7 @@ pub async fn run_musicbrainz_loop(
                     }
                     Err(e) => {
                         error!("❌ Periodic MusicBrainz check failed: {}", e);
+                        reset_status_after_failed_check(&state).await; // (cu2.41)
                     }
                 }
             }
@@ -1007,7 +1198,10 @@ pub async fn run_musicbrainz_loop(
                 match process_musicbrainz_data(config.clone(), state.clone(), shutdown_flag.clone(), trigger_force_reprocess, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => info!("✅ Triggered MusicBrainz extraction completed in {:?}", start.elapsed()),
                     Ok(false) => error!("❌ Triggered MusicBrainz extraction completed with errors"),
-                    Err(e) => error!("❌ Triggered MusicBrainz extraction failed: {}", e),
+                    Err(e) => {
+                        error!("❌ Triggered MusicBrainz extraction failed: {}", e);
+                        reset_status_after_failed_check(&state).await; // (cu2.41)
+                    }
                 }
             }
             _ = shutdown.notified() => {
@@ -1115,7 +1309,29 @@ pub async fn process_musicbrainz_data(
             "🔄 Resuming MusicBrainz processing phase: {} dump file(s), {} already completed",
             file_count, state_marker.processing_phase.files_processed
         );
+
+        // Rehydrate the per-run progress counters from the persisted per-file progress so the
+        // /health endpoint reports true totals for types already completed before the crash.
+        // MB dump filenames don't parse via extract_data_type, so map through dump_files. (cu2.92)
+        {
+            let mut s = state.write().await;
+            for (dt, path) in &dump_files {
+                if let Some(fname) = path.file_name().and_then(|n| n.to_str())
+                    && let Some(file_state) = state_marker.processing_phase.progress_by_file.get(fname)
+                    && file_state.status == PhaseStatus::Completed
+                {
+                    s.extraction_progress.add(*dt, file_state.records_extracted);
+                }
+            }
+        }
     }
+
+    // Use the ORIGINAL processing start time persisted in the state marker (never this
+    // possibly-resumed process's now()). On resume, already-completed files are skipped
+    // and not re-sent, so their rows keep updated_at from the earlier session; sending
+    // the resumed now() would make brainztableinator's stale-row purge wipe those rows.
+    let processing_started_at = state_marker.processing_phase.started_at.unwrap_or(extraction_started_at);
+
     let state_marker = Arc::new(tokio::sync::Mutex::new(state_marker));
 
     // First pass: build MBID→Discogs ID map for artist relationship target resolution
@@ -1150,6 +1366,10 @@ pub async fn process_musicbrainz_data(
                 && status.status == PhaseStatus::Completed
             {
                 info!("✅ Skipping already-completed file: {}", file_name);
+                // Still report the persisted count so a resumed run's extraction_complete
+                // carries true totals for types completed in an earlier session. Without this
+                // the skipped type's key is omitted from the message entirely. (cu2.92)
+                record_counts.insert(data_type.to_string(), status.records_extracted);
                 continue;
             }
         }
@@ -1275,7 +1495,7 @@ pub async fn process_musicbrainz_data(
     // Send extraction_complete to MusicBrainz exchanges only (no masters) — only if all succeeded
     if success {
         let mb_types = DataType::musicbrainz();
-        if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &mb_types).await {
+        if let Err(e) = mq.send_extraction_complete(&version, processing_started_at, record_counts, &mb_types).await {
             error!("❌ Failed to send extraction_complete: {}", e);
             success = false;
         }

@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import suppress
+from queue import Empty as Empty_
 import time
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -1202,6 +1203,50 @@ class TestAsyncPostgreSQLPool:
 
     @pytest.mark.asyncio
     @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
+    async def test_body_exception_propagates_when_set_autocommit_fails_on_release(self, mock_connect: Mock, connection_params: dict) -> None:
+        """Regression: a `return` in connection()'s finally block would silently swallow
+        any exception raised inside the caller's `async with` body when set_autocommit
+        also fails on release. The body exception MUST still propagate, and the
+        connection must still be discarded with the active slot released.
+        """
+        from psycopg import OperationalError
+
+        conn = AsyncMock()
+        conn.closed = False
+        conn.close = AsyncMock()
+        # Succeeds on creation, fails on release — the discard path that used `return`.
+        conn.set_autocommit = AsyncMock(side_effect=[None, OperationalError("connection lost")])
+        cursor = AsyncMock()
+        cursor.execute = AsyncMock()
+        cursor.fetchone = AsyncMock(return_value=(1,))
+        cursor.__aenter__ = AsyncMock(return_value=cursor)
+        cursor.__aexit__ = AsyncMock(return_value=None)
+        conn.cursor = Mock(return_value=cursor)
+
+        mock_connect.return_value = conn
+
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5)
+        await pool.initialize()
+
+        class BodyError(RuntimeError):
+            pass
+
+        # The caller's body raises; set_autocommit then fails during release.
+        with pytest.raises(BodyError, match="boom from body"):
+            async with pool.connection():
+                raise BodyError("boom from body")
+
+        await asyncio.sleep(0.1)
+
+        # Body exception survived the finally block AND the connection was discarded.
+        assert pool.connections.qsize() == 0
+        assert pool.active_connections == 0
+        conn.close.assert_called()
+
+        await pool.close()
+
+    @pytest.mark.asyncio
+    @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
     async def test_connection_pool_exhaustion_wait(self, mock_connect: Mock, connection_params: dict, mock_async_connection: AsyncMock) -> None:
         """Test waiting for connection when pool is exhausted."""
 
@@ -2040,6 +2085,52 @@ class TestSyncHealthCheckLoopDirect:
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
+    def test_health_check_loop_direct_replenish_queue_full_closes_and_decrements(
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+    ) -> None:
+        """Lines 164-168: during replenishment, if put_nowait raises Full the fresh
+        connection is closed, the reserved active slot is released, and the loop breaks.
+        """
+        from queue import Full
+
+        mock_connect.return_value = mock_connection
+
+        pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=2, max_connections=5, health_check_interval=1)
+
+        # Drain the pool so replenishment runs; the empty queue means no healthy
+        # connections are returned, so the only put_nowait calls come from replenishment.
+        while not pool.connections.empty():
+            try:
+                pool.connections.get_nowait()
+            except Exception:
+                break
+        pool.active_connections = 0
+
+        fresh_conn = Mock()
+        fresh_conn.close = Mock()
+        pool._create_connection = Mock(return_value=fresh_conn)  # type: ignore[method-assign]
+
+        original_put_nowait = pool.connections.put_nowait
+        original_qsize = pool.connections.qsize
+        pool.connections.put_nowait = Mock(side_effect=Full)  # type: ignore[method-assign]
+
+        def sleep_then_close(_interval: float) -> None:
+            pool._closed = True
+
+        with patch("common.postgres_resilient.time.sleep", side_effect=sleep_then_close):
+            pool._health_check_loop()
+
+        # The connection minted for replenishment must be closed on Full, and the
+        # reserved slot released (break stops after the first Full).
+        fresh_conn.close.assert_called_once()
+        assert pool.active_connections == 0
+
+        pool.connections.put_nowait = original_put_nowait  # type: ignore[method-assign]
+        pool.connections.qsize = original_qsize  # type: ignore[method-assign]
+        pool.close()
+
+    @patch("common.postgres_resilient.psycopg.connect")
+    @patch("common.postgres_resilient.threading.Thread")
     def test_health_check_loop_direct_replenish_failure(
         self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
     ) -> None:
@@ -2261,3 +2352,245 @@ class TestAsyncHealthCheckQueueEmpty:
         pool.connections.qsize = asyncio.Queue.qsize.__get__(pool.connections)  # type: ignore[attr-defined]
 
         await pool.close()
+
+
+def _make_sync_conn(*, healthy: bool = True) -> Mock:
+    """Build a mock sync psycopg connection whose health probe returns ``healthy``."""
+    conn = Mock()
+    conn.closed = False
+    conn.autocommit = True
+    conn.close = Mock()
+    cursor = Mock()
+    cursor.execute = Mock()
+    cursor.fetchone = Mock(return_value=(1,) if healthy else (0,))
+    cursor.__enter__ = Mock(return_value=cursor)
+    cursor.__exit__ = Mock(return_value=None)
+    conn.cursor = Mock(return_value=cursor)
+    return conn
+
+
+def _make_async_conn(*, healthy: bool = True) -> AsyncMock:
+    """Build a mock async psycopg connection whose health probe returns ``healthy``."""
+    conn = AsyncMock()
+    conn.closed = False
+    conn.set_autocommit = AsyncMock()
+    conn.close = AsyncMock()
+    cursor = AsyncMock()
+    cursor.execute = AsyncMock()
+    cursor.fetchone = AsyncMock(return_value=(1,) if healthy else (0,))
+    cursor.__aenter__ = AsyncMock(return_value=cursor)
+    cursor.__aexit__ = AsyncMock(return_value=None)
+    conn.cursor = Mock(return_value=cursor)
+    return conn
+
+
+class TestPgPoolBatchRegressions:
+    """Regression tests for the batch:pg-pool defect sweep (discogsography-cu2.*)."""
+
+    @pytest.fixture
+    def connection_params(self) -> dict:
+        return {"host": "localhost", "port": 5432, "dbname": "test", "user": "u", "password": "p"}
+
+    @pytest.mark.asyncio
+    async def test_cu2_34_failed_replacement_does_not_yield_closed_conn(self, connection_params: dict) -> None:
+        """discogsography-cu2.34: a failed replacement must raise, not yield a stale CLOSED connection.
+
+        A pooled connection fails its health check and every replacement create fails. The pool must
+        surface 'Failed to get PostgreSQL connection...' rather than yielding the closed connection,
+        and active_connections must be decremented exactly once (no double-decrement below the true count).
+        """
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5, max_retries=3)
+        await pool.initialize()
+        pool.backoff.get_delay = Mock(return_value=0)  # type: ignore[method-assign]
+
+        bad_conn = _make_async_conn(healthy=False)
+        pool.connections.put_nowait(bad_conn)
+        # Simulate 3 live connections: the bad one in the queue plus 2 held elsewhere.
+        pool.active_connections = 3
+
+        pool._create_connection = AsyncMock(side_effect=OperationalError("db down"))  # type: ignore[method-assign]
+
+        with pytest.raises(Exception, match="Failed to get PostgreSQL connection"):
+            async with pool.connection():
+                pytest.fail("connection() must not yield a connection when all replacements fail")
+
+        # The bad connection's slot is released exactly once; the 2 unrelated live slots survive.
+        assert pool.active_connections == 2
+        bad_conn.close.assert_awaited()
+
+        await pool.close()
+
+    @pytest.mark.asyncio
+    async def test_cu2_21_cancel_during_create_rolls_back_slot(self, connection_params: dict) -> None:
+        """discogsography-cu2.21: cancellation while creating a connection must not leak a slot.
+
+        The empty-pool path reserves a slot (active_connections += 1) before awaiting
+        _create_connection(). In Python 3.13 asyncio.CancelledError derives from BaseException, so an
+        `except Exception` guard would skip the rollback and strand the slot forever. The reservation
+        must be released on cancellation too.
+        """
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5)
+        await pool.initialize()
+        assert pool.active_connections == 0
+
+        pool._create_connection = AsyncMock(side_effect=asyncio.CancelledError())  # type: ignore[method-assign]
+
+        with pytest.raises(asyncio.CancelledError):
+            async with pool.connection():
+                pytest.fail("connection() must not yield when creation is cancelled")
+
+        assert pool.active_connections == 0
+
+        await pool.close()
+
+    @pytest.mark.asyncio
+    async def test_cu2_21_cancel_during_health_test_releases_conn(self, connection_params: dict) -> None:
+        """discogsography-cu2.21: cancellation during the health probe must release the checked-out slot."""
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5)
+        await pool.initialize()
+
+        held = _make_async_conn(healthy=True)
+        pool.connections.put_nowait(held)
+        pool.active_connections = 1
+
+        pool._test_connection = AsyncMock(side_effect=asyncio.CancelledError())  # type: ignore[method-assign]
+
+        with pytest.raises(asyncio.CancelledError):
+            async with pool.connection():
+                pytest.fail("connection() must not yield when the health probe is cancelled")
+
+        assert pool.active_connections == 0
+        held.close.assert_awaited()
+
+        await pool.close()
+
+    @pytest.mark.asyncio
+    async def test_cu2_11_async_replenish_respects_max_connections(self, connection_params: dict) -> None:
+        """discogsography-cu2.11: the async health-check replenisher must not mint past max_connections.
+
+        When the pool is saturated (all connections checked out) the queue is empty, so the
+        replenish branch fires every tick. Without a cap check it mints min_connections fresh
+        backends per tick, blowing past the shared PgBouncer session-mode cap. Reserve the slot
+        under the lock (active_connections < max_connections) before creating.
+        """
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=2, max_connections=3, health_check_interval=0)
+        # Manually stand up the primitives (skip initialize() so no background task races us).
+        pool.connections = asyncio.Queue(maxsize=3)
+        pool._lock = asyncio.Lock()
+        pool.active_connections = 3  # saturated & at cap; every connection checked out (queue empty)
+
+        create_mock = AsyncMock(return_value=_make_async_conn())
+        pool._create_connection = create_mock  # type: ignore[method-assign]
+
+        task = asyncio.create_task(pool._health_check_loop())
+        await asyncio.sleep(0.05)
+        pool._closed = True
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+        assert create_mock.call_count == 0
+        assert pool.active_connections == 3
+
+    @pytest.mark.asyncio
+    async def test_cu2_11_async_replenish_still_fills_up_to_max(self, connection_params: dict) -> None:
+        """discogsography-cu2.11: the cap gate must not block legitimate replenishment below max."""
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=2, max_connections=3, health_check_interval=0)
+        pool.connections = asyncio.Queue(maxsize=3)
+        pool._lock = asyncio.Lock()
+        pool.active_connections = 0  # empty pool, room to grow
+
+        create_mock = AsyncMock(side_effect=lambda: _make_async_conn())
+        pool._create_connection = create_mock  # type: ignore[method-assign]
+
+        task = asyncio.create_task(pool._health_check_loop())
+        await asyncio.sleep(0.05)
+        pool._closed = True
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+        # Replenished exactly up to min_connections and never past max_connections.
+        assert pool.active_connections == 2
+        assert pool.active_connections <= pool.max_connections
+
+    def test_cu2_11_sync_replenish_respects_max_connections(self, connection_params: dict) -> None:
+        """discogsography-cu2.11 (fix-one-fix-all): sync replenisher must also honor max_connections."""
+        import threading as _threading
+
+        with patch("common.postgres_resilient.threading.Thread"), patch("common.postgres_resilient.psycopg.connect") as mock_connect:
+            mock_connect.return_value = Mock(closed=False, autocommit=True)
+            pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=2, max_connections=3, health_check_interval=0)
+
+        # Drain the queue (simulate all connections checked out) and pin at the cap.
+        with suppress(Empty_):
+            while True:
+                pool.connections.get_nowait()
+        pool.active_connections = 3
+
+        create_mock = Mock(return_value=Mock(closed=False))
+        pool._create_connection = create_mock  # type: ignore[method-assign]
+
+        t = _threading.Thread(target=pool._health_check_loop, daemon=True)
+        t.start()
+        time.sleep(0.05)
+        pool._closed = True
+        t.join(timeout=1)
+
+        assert create_mock.call_count == 0
+        assert pool.active_connections == 3
+
+    def test_cu2_81_sync_exhausted_pool_raises_not_spins(self, connection_params: dict) -> None:
+        """discogsography-cu2.81: an exhausted sync pool must raise after max_retries, not busy-spin.
+
+        When the queue is Empty and active_connections >= max_connections, no branch produced a
+        connection or an exception, so retry_count never advanced and connection() spun a CPU core
+        forever. It must now block on get(timeout=...), count retries, and raise the terminal error.
+        """
+        import threading as _threading
+
+        with patch("common.postgres_resilient.threading.Thread"), patch("common.postgres_resilient.psycopg.connect"):
+            pool = ResilientPostgreSQLPool(
+                connection_params=connection_params, min_connections=0, max_connections=1, max_retries=3, health_check_interval=999
+            )
+
+        pool.backoff.get_delay = Mock(return_value=0.001)  # type: ignore[method-assign]
+        pool.active_connections = 1  # at cap, queue empty -> exhausted
+
+        result: dict[str, object] = {}
+
+        def worker() -> None:
+            try:
+                with pool.connection():
+                    result["yielded"] = True
+            except Exception as e:
+                result["error"] = e
+
+        t = _threading.Thread(target=worker, daemon=True)
+        t.start()
+        t.join(timeout=5)
+
+        assert not t.is_alive(), "connection() busy-spun / hung on an exhausted pool"
+        assert "yielded" not in result
+        assert "Failed to get PostgreSQL connection" in str(result.get("error"))
+
+    def test_cu2_82_sync_conn_death_during_use_decrements(self, connection_params: dict) -> None:
+        """discogsography-cu2.82: a connection dying mid-use must decrement active_connections.
+
+        The except (InterfaceError, OperationalError) block closed the connection and set conn=None
+        before the finally block, so neither finally branch ran and the slot was leaked forever.
+        After max_connections such failures the pool believes it is full while holding zero real
+        connections (and then degenerates into the exhaustion busy-spin). Decrement in the handler.
+        """
+        with patch("common.postgres_resilient.threading.Thread"), patch("common.postgres_resilient.psycopg.connect"):
+            pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5, health_check_interval=999)
+
+        conn = _make_sync_conn(healthy=True)
+        pool.connections.put_nowait(conn)
+        pool.active_connections = 1
+
+        with pytest.raises(OperationalError), pool.connection():
+            raise OperationalError("connection lost mid-query")
+
+        assert pool.active_connections == 0
+        conn.close.assert_called()

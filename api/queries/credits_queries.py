@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from api.queries.helpers import run_query, run_single
+from api.queries.neo4j_queries import _build_autocomplete_query
 
 
 if TYPE_CHECKING:
@@ -157,10 +158,11 @@ async def autocomplete_person(
     limit: int = 10,
 ) -> list[dict[str, Any]]:
     """Search credited people by name using fulltext index."""
-    # Build autocomplete query: add wildcard for partial matching
-    search_query = query.strip()
-    if search_query and not search_query.endswith("*"):
-        search_query = search_query + "*"
+    # Build the Lucene query with the shared escaper so metacharacters in names
+    # (AC/DC, C++, "Emerson, Lake (Palmer", bare ':' '/' '~' '(' ...) are escaped
+    # exactly as the artist/label/genre/style autocompletes do — otherwise a raw
+    # string with Lucene syntax triggers a ParseException and an unhandled 500.
+    search_query = _build_autocomplete_query(query)
 
     cypher = """
     CALL db.index.fulltext.queryNodes('person_name_fulltext', $query)

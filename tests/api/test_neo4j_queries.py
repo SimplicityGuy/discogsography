@@ -1103,6 +1103,28 @@ class TestFindShortestPath:
         assert len(result["nodes"]) == 1
         assert result["rels"] == []
 
+    @pytest.mark.asyncio
+    async def test_node_id_coalesces_to_name_for_name_keyed_nodes(self) -> None:
+        """Genre/Style path nodes have no `id` property; the Cypher must coalesce
+        to `name` so path nodes never carry id=None (sibling of discogsography-cu2.5).
+        """
+        from api.queries.neo4j_queries import find_shortest_path
+
+        mock_driver = AsyncMock()
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_driver.session = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+
+        await find_shortest_path(mock_driver, "1", "Rock", max_depth=10, from_type="artist", to_type="genre")
+
+        sent_query = mock_session.run.call_args[0][0]
+        # find_shortest_path always passes timeout=120, so sent_query is a
+        # neo4j.Query wrapper (see api/queries/helpers.py) rather than a bare str.
+        cypher = sent_query.text if hasattr(sent_query, "text") else sent_query
+        assert "coalesce(node.id, node.name)" in cypher
+
 
 # ---------------------------------------------------------------------------
 # get_year_range

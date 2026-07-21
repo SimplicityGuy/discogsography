@@ -659,14 +659,24 @@ class ApiConfig:
     snapshot_ttl_days: int = 28
     snapshot_max_nodes: int = 100
     encryption_master_key: str | None = None
+    # Shared secret gating the internal /api/internal/insights/* router. The
+    # insights service presents this as the X-Internal-Secret header; when unset
+    # the router fails closed (rejects all callers) so it is never anonymously
+    # reachable via the public explore proxy.
+    insights_internal_secret: str | None = None
 
     # Brevo email notifications
     brevo_api_key: str | None = None
     brevo_sender_email: str = "noreply@discogsography.com"
     brevo_sender_name: str = "Discogsography"
 
-    # Admin dashboard — extractor connection
-    extractor_host: str = "extractor"
+    # Admin dashboard — extractor connection.
+    # No service named bare "extractor" exists (extractor runs as the two split
+    # services extractor-discogs and extractor-musicbrainz per docker-compose.yml);
+    # default to extractor-discogs so the admin panel resolves out of the box.
+    # NOTE: this single field can still only ever address ONE of the two
+    # extractor services — see discogsography-cu2.32.
+    extractor_host: str = "extractor-discogs"
     extractor_health_port: int = 8000
 
     # Admin dashboard — RabbitMQ management API
@@ -744,6 +754,7 @@ class ApiConfig:
         pool_min, pool_max = resolve_postgres_pool_sizes(default_min=2, default_max=8)
 
         encryption_master_key = get_secret("ENCRYPTION_MASTER_KEY") or None
+        insights_internal_secret = get_secret("INSIGHTS_INTERNAL_SECRET") or None
         brevo_api_key = get_secret("BREVO_API_KEY") or None
         brevo_sender_email = getenv("BREVO_SENDER_EMAIL", "noreply@discogsography.com")
         brevo_sender_name = getenv("BREVO_SENDER_NAME", "Discogsography")
@@ -780,10 +791,11 @@ class ApiConfig:
             snapshot_ttl_days=snapshot_ttl_days,
             snapshot_max_nodes=snapshot_max_nodes,
             encryption_master_key=encryption_master_key,
+            insights_internal_secret=insights_internal_secret,
             brevo_api_key=brevo_api_key,
             brevo_sender_email=brevo_sender_email,
             brevo_sender_name=brevo_sender_name,
-            extractor_host=getenv("EXTRACTOR_HOST", "extractor"),
+            extractor_host=getenv("EXTRACTOR_HOST", "extractor-discogs"),
             extractor_health_port=int(getenv("EXTRACTOR_HEALTH_PORT", "8000")),
             rabbitmq_management_host=getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),
             rabbitmq_management_port=int(getenv("RABBITMQ_MANAGEMENT_PORT", "15672")),
@@ -832,6 +844,9 @@ class InsightsConfig:
     redis_host: str = "redis://localhost:6379/0"
     schedule_hours: int = 24
     milestone_years: tuple[int, ...] = (25, 30, 40, 50, 75, 100)
+    # Shared secret sent as the X-Internal-Secret header when calling the API's
+    # /api/internal/insights/* endpoints. Must match the API's value.
+    internal_secret: str | None = None
 
     @classmethod
     def from_env(cls) -> "InsightsConfig":
@@ -874,6 +889,8 @@ class InsightsConfig:
 
         pool_min, pool_max = resolve_postgres_pool_sizes(default_min=1, default_max=4)
 
+        internal_secret = get_secret("INSIGHTS_INTERNAL_SECRET") or None
+
         return cls(
             api_base_url=api_base_url,
             postgres_host=_build_postgres_connstr(),
@@ -885,6 +902,7 @@ class InsightsConfig:
             redis_host=redis_host,
             schedule_hours=schedule_hours,
             milestone_years=milestone_years,
+            internal_secret=internal_secret,
         )
 
 

@@ -149,6 +149,20 @@ class TestEnrichArtist:
             mock_tx.run.assert_not_called()
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
 
+    @pytest.mark.asyncio
+    async def test_enrich_artist_coerces_discogs_id_to_string(self, mock_tx: AsyncMock) -> None:
+        """discogs_artist_id (a JSON int from the extractor) is coerced to str before
+        matching, since graphinator always writes Discogs node `id` as a String.
+        Regression test for discogsography-cu2.10.
+        """
+        record = {"mbid": "abc", "discogs_artist_id": 12345}
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await enrich_artist(mock_tx, record)
+
+        call_kwargs = mock_tx.run.call_args_list[0].kwargs
+        assert call_kwargs["discogs_id"] == "12345"
+        assert isinstance(call_kwargs["discogs_id"], str)
+
 
 class TestEnrichLabel:
     """Tests for enrich_label."""
@@ -192,6 +206,19 @@ class TestEnrichLabel:
             await enrich_label(mock_tx, record)
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
 
+    @pytest.mark.asyncio
+    async def test_enrich_label_coerces_discogs_id_to_string(self, mock_tx: AsyncMock) -> None:
+        """discogs_label_id is coerced to str before matching. Regression test for
+        discogsography-cu2.10.
+        """
+        record = {"mbid": "abc", "discogs_label_id": 54321}
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await enrich_label(mock_tx, record)
+
+        call_kwargs = mock_tx.run.call_args_list[0].kwargs
+        assert call_kwargs["discogs_id"] == "54321"
+        assert isinstance(call_kwargs["discogs_id"], str)
+
 
 class TestEnrichRelease:
     """Tests for enrich_release."""
@@ -234,6 +261,19 @@ class TestEnrichRelease:
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
             assert bgmod.enrichment_stats["entities_enriched"] == 0
 
+    @pytest.mark.asyncio
+    async def test_enrich_release_coerces_discogs_id_to_string(self, mock_tx: AsyncMock) -> None:
+        """discogs_release_id is coerced to str before matching. Regression test for
+        discogsography-cu2.10.
+        """
+        record = {"mbid": "abc", "discogs_release_id": 99999}
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await enrich_release(mock_tx, record)
+
+        call_kwargs = mock_tx.run.call_args_list[0].kwargs
+        assert call_kwargs["discogs_id"] == "99999"
+        assert isinstance(call_kwargs["discogs_id"], str)
+
 
 # ── Release-group enrichment tests ────────────────────────────────────────
 
@@ -275,6 +315,19 @@ class TestEnrichReleaseGroup:
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
             result = await enrich_release_group(mock_tx, record)
             assert result is True
+
+    @pytest.mark.asyncio
+    async def test_enrich_release_group_coerces_discogs_id_to_string(self, mock_tx: AsyncMock) -> None:
+        """discogs_master_id is coerced to str before matching. Regression test for
+        discogsography-cu2.10.
+        """
+        record = {"mbid": "abc", "discogs_master_id": 23853}
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await enrich_release_group(mock_tx, record)
+
+        call_kwargs = mock_tx.run.call_args_list[0].kwargs
+        assert call_kwargs["discogs_id"] == "23853"
+        assert isinstance(call_kwargs["discogs_id"], str)
 
 
 # ── Relationship edge tests ───────────────────────────────────────────────
@@ -391,6 +444,64 @@ class TestRelationshipEdges:
             await create_relationship_edges(mock_tx, 12345, relations)
             assert bgmod.enrichment_stats["relationships_skipped_missing_side"] == 1
             assert bgmod.enrichment_stats["relationships_created"] == 0
+
+    @pytest.mark.asyncio
+    async def test_create_edge_coerces_ids_to_string(self, mock_tx: AsyncMock) -> None:
+        """source_id/target_id are coerced to str to match the graph's String `id`
+        convention on Discogs nodes. Regression test for discogsography-cu2.10.
+        """
+        relations = [{"type": "member of band", "target_discogs_artist_id": 67890}]
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await create_relationship_edges(mock_tx, 12345, relations)
+
+        call_kwargs = mock_tx.run.call_args.kwargs
+        assert call_kwargs["source_id"] == "12345"
+        assert call_kwargs["target_id"] == "67890"
+        assert isinstance(call_kwargs["source_id"], str)
+        assert isinstance(call_kwargs["target_id"], str)
+
+    @pytest.mark.asyncio
+    async def test_create_edge_forward_direction_keeps_source_target(self, mock_tx: AsyncMock) -> None:
+        """direction == 'forward' (or absent) keeps the processed record as the
+        relationship source. Regression test for discogsography-cu2.20.
+        """
+        relations = [
+            {
+                "type": "member of band",
+                "target_discogs_artist_id": 67890,
+                "direction": "forward",
+            }
+        ]
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await create_relationship_edges(mock_tx, 12345, relations)
+
+        call_kwargs = mock_tx.run.call_args.kwargs
+        assert call_kwargs["source_id"] == "12345"
+        assert call_kwargs["target_id"] == "67890"
+
+    @pytest.mark.asyncio
+    async def test_create_edge_backward_direction_swaps_source_target(self, mock_tx: AsyncMock) -> None:
+        """direction == 'backward' means the processed record is the relationship's
+        TARGET, not its source — source/target must be swapped so e.g. a band's own
+        record (direction=backward, target=member) still creates
+        (member)-[:MEMBER_OF]->(band), not the inverse. Regression test for
+        discogsography-cu2.20.
+        """
+        relations = [
+            {
+                "type": "member of band",
+                "target_discogs_artist_id": 67890,
+                "direction": "backward",
+            }
+        ]
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            await create_relationship_edges(mock_tx, 12345, relations)
+
+        call_kwargs = mock_tx.run.call_args.kwargs
+        # Swapped: the relation's target (67890) becomes the edge source,
+        # and the processed record (12345) becomes the edge target.
+        assert call_kwargs["source_id"] == "67890"
+        assert call_kwargs["target_id"] == "12345"
 
 
 # ── Message handling tests ────────────────────────────────────────────────
@@ -1903,3 +2014,99 @@ class TestHealthDataAdditional:
         ):
             data = get_health_data()
             assert data["status"] == "unhealthy"
+
+
+class TestRecoverConsumersAllTypesBrainzgraphinator:
+    """Regression (cu2.53): _recover_consumers must start consumers for ALL
+    MusicBrainz data types, not just those with a backlog at the check instant."""
+
+    @pytest.mark.asyncio
+    async def test_recovers_all_types_not_just_backlogged(self) -> None:
+        import brainzgraphinator.brainzgraphinator as bg
+
+        expected = {"artists", "labels", "release-groups", "releases"}
+
+        bg.active_connection = None
+        bg.active_channel = None
+        bg.consumer_tags = {}
+        bg.completed_files = set()
+        bg.queues = {}
+        bg.last_message_time = dict.fromkeys(expected, 0.0)
+
+        def declare_queue(**kwargs: Any) -> Any:
+            if kwargs.get("passive"):
+                q = MagicMock()
+                q.declaration_result.message_count = 100 if kwargs["name"].endswith("-artists") else 0
+                return q
+            q = AsyncMock()
+            q.consume = AsyncMock(return_value=f"tag-{kwargs.get('name')}")
+            q.bind = AsyncMock()
+            return q
+
+        mock_channel = AsyncMock()
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue)
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.set_qos = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_rmq = AsyncMock()
+        mock_rmq.connect = AsyncMock(return_value=mock_connection)
+
+        with patch.object(bg, "rabbitmq_manager", mock_rmq), patch.object(bg, "logger"):
+            await bg._recover_consumers()
+
+        assert set(bg.consumer_tags.keys()) == expected
+
+        bg.consumer_tags = {}
+        bg.active_connection = None
+        bg.active_channel = None
+        bg.queues = {}
+
+
+class TestRecoverConsumersClearsTagsBrainzgraphinator:
+    """Regression (cu2.54): recovery errors after ≥1 consumer registered must
+    clear consumer_tags so the stuck-state detector can re-fire."""
+
+    @pytest.mark.asyncio
+    async def test_error_after_partial_registration_clears_consumer_tags(self) -> None:
+        import brainzgraphinator.brainzgraphinator as bg
+
+        types = ["artists", "labels", "release-groups", "releases"]
+        bg.active_connection = None
+        bg.active_channel = None
+        bg.consumer_tags = {}
+        bg.completed_files = set()
+        bg.queues = {}
+        bg.last_message_time = dict.fromkeys(types, 0.0)
+
+        def declare_queue(**kwargs: Any) -> Any:
+            name = kwargs.get("name", "")
+            if kwargs.get("passive"):
+                q = MagicMock()
+                q.declaration_result.message_count = 100
+                return q
+            q = AsyncMock()
+            q.bind = AsyncMock()
+            if name.endswith("-labels"):
+                q.consume = AsyncMock(side_effect=RuntimeError("channel closed mid-recovery"))
+            else:
+                q.consume = AsyncMock(return_value=f"tag-{name}")
+            return q
+
+        mock_channel = AsyncMock()
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue)
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.set_qos = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_rmq = AsyncMock()
+        mock_rmq.connect = AsyncMock(return_value=mock_connection)
+
+        with patch.object(bg, "rabbitmq_manager", mock_rmq), patch.object(bg, "logger"):
+            await bg._recover_consumers()
+
+        assert bg.consumer_tags == {}, "stale consumer tags must be cleared"
+        assert bg.active_connection is None
+
+        bg.consumer_tags = {}
+        bg.queues = {}

@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
-use quick_xml::Reader;
+use quick_xml::encoding::Decoder;
 use quick_xml::events::Event;
+use quick_xml::{Reader, XmlVersion};
 use serde_json::{Map, Value};
 use std::fs::File;
 use std::io::BufReader;
@@ -24,12 +25,22 @@ impl ElementContext {
         Self { attributes: Map::new(), children: Map::new(), text_content: String::new() }
     }
 
-    /// Create a new element context, parsing attributes from an XML element
-    fn with_attributes(e: &quick_xml::events::BytesStart<'_>) -> Self {
+    /// Create a new element context, parsing attributes from an XML element.
+    ///
+    /// Attribute values are decoded and entity-unescaped through quick-xml's
+    /// unescape API so `&amp;`, `&lt;`, numeric char refs, etc. resolve the
+    /// same way they do for element text (see the `Event::GeneralRef`
+    /// handling in `parse_file`). Falls back to a raw, non-unescaped decode
+    /// if the escape sequence is malformed, so a single bad attribute cannot
+    /// abort parsing of an otherwise-valid record.
+    fn with_attributes(e: &quick_xml::events::BytesStart<'_>, decoder: Decoder) -> Self {
         let mut ctx = Self::new();
         for attr in e.attributes().flatten() {
             let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
-            let value = String::from_utf8_lossy(&attr.value).to_string();
+            let value = attr.decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder).map(|c| c.into_owned()).unwrap_or_else(|err| {
+                warn!("⚠️ Failed to unescape XML attribute '{}': {}", key, err);
+                String::from_utf8_lossy(&attr.value).into_owned()
+            });
             ctx.attributes.insert(key, Value::String(value));
         }
         ctx
@@ -153,7 +164,7 @@ impl XmlParser {
                     }
 
                     if in_target_element {
-                        element_stack.push(ElementContext::with_attributes(&e));
+                        element_stack.push(ElementContext::with_attributes(&e, reader.decoder()));
                     }
                 }
 
@@ -167,7 +178,7 @@ impl XmlParser {
                         element_stack.clear();
 
                         // Send immediately since it's self-closing
-                        let record = ElementContext::with_attributes(&e).into_value();
+                        let record = ElementContext::with_attributes(&e, reader.decoder()).into_value();
                         if let Value::Object(ref obj) = record {
                             let id = obj.get("@id").or_else(|| obj.get("id")).and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
                             let raw_xml = if self.capture_raw_xml {
@@ -187,7 +198,7 @@ impl XmlParser {
                         in_target_element = false;
                     } else if in_target_element {
                         // Self-closing child element
-                        let child_value = ElementContext::with_attributes(&e).into_value();
+                        let child_value = ElementContext::with_attributes(&e, reader.decoder()).into_value();
 
                         // Add to parent if we have one
                         if let Some(parent) = element_stack.last_mut() {

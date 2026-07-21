@@ -137,19 +137,34 @@ class ResilientPostgreSQLPool:
                     with self._lock:
                         self.active_connections = max(0, self.active_connections - 1)
 
-            # Ensure minimum connections
+            # Ensure minimum connections — but never mint past max_connections. qsize() counts
+            # only IDLE connections; checked-out connections are not in the queue, so gating on
+            # queue size alone would mint fresh backends past the cap under saturation. Reserve the
+            # slot under the lock first (active_connections < max_connections), mirroring checkout.
             current_size = self.connections.qsize()
             if current_size < self.min_connections:
                 logger.info(f"🔄 Replenishing connection pool ({current_size}/{self.min_connections} connections)")
                 for _ in range(self.min_connections - current_size):
+                    reserved = False
+                    with self._lock:
+                        if self.active_connections < self.max_connections:
+                            self.active_connections += 1
+                            reserved = True
+                    if not reserved:
+                        break
                     try:
                         conn = self._create_connection()
-                        if conn:
-                            self.connections.put_nowait(conn)
-                            with self._lock:
-                                self.active_connections += 1
                     except Exception as e:
+                        with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
                         logger.warning(f"⚠️ Failed to replenish connection: {e}")
+                        break
+                    try:
+                        self.connections.put_nowait(conn)
+                    except Full:
+                        conn.close()
+                        with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
                         break
 
     @contextmanager
@@ -169,14 +184,32 @@ class ResilientPostgreSQLPool:
                     conn = self.connections.get_nowait()
                 except Empty:
                     # Create new connection if pool is not at max
+                    created = False
                     with self._lock:
                         if self.active_connections < self.max_connections:
                             self.active_connections += 1
-                            try:
-                                conn = self._create_connection()
-                            except Exception:
-                                self.active_connections -= 1
-                                raise
+                            created = True
+                    if created:
+                        try:
+                            conn = self._create_connection()
+                        except Exception:
+                            with self._lock:
+                                self.active_connections = max(0, self.active_connections - 1)
+                            raise
+                    else:
+                        # Pool exhausted — block for a returned connection instead of
+                        # busy-spinning at 100% CPU. Without this branch neither a connection nor an
+                        # exception is produced, so retry_count never advances and max_retries is
+                        # unreachable. On timeout, count a retry and continue (mirrors the async pool).
+                        try:
+                            conn = self.connections.get(timeout=self.backoff.get_delay(retry_count))
+                        except Empty:
+                            retry_count += 1
+                            if retry_count < self.max_retries:
+                                logger.warning(
+                                    f"⚠️ Connection pool exhausted (attempt {retry_count}/{self.max_retries}), waiting for available connection..."
+                                )
+                            continue
 
                 # Test connection health
                 if conn and not self._test_connection(conn):
@@ -221,6 +254,12 @@ class ResilientPostgreSQLPool:
             logger.warning(f"⚠️ Connection error during operation: {e}")
             with contextlib.suppress(Exception):
                 conn.close()
+            # Decrement for the destroyed connection BEFORE clearing `conn`: once `conn` is None
+            # neither finally branch runs, so without this the slot is leaked permanently — after
+            # max_connections such failures the pool believes it is full while holding no live
+            # connections. Mirrors the async pool. (This is the last read of `conn`.)
+            with self._lock:
+                self.active_connections = max(0, self.active_connections - 1)
             conn = None
             raise
         finally:
@@ -447,23 +486,35 @@ class AsyncPostgreSQLPool:
                     async with self._lock:
                         self.active_connections = max(0, self.active_connections - 1)
 
-            # Ensure minimum connections
+            # Ensure minimum connections — but never mint past max_connections. qsize() counts
+            # only IDLE connections; checked-out connections are not in the queue, so gating on
+            # queue size alone mints fresh backends on every tick while the pool is saturated and
+            # blows past the shared PgBouncer session-mode backend cap. Reserve the slot under the
+            # lock first (active_connections < max_connections), mirroring the checkout path.
             current_size = self.connections.qsize()
             if current_size < self.min_connections:
                 logger.info(f"🔄 Replenishing connection pool ({current_size}/{self.min_connections} connections)")
                 for _ in range(self.min_connections - current_size):
+                    reserved = False
+                    async with self._lock:
+                        if self.active_connections < self.max_connections:
+                            self.active_connections += 1
+                            reserved = True
+                    if not reserved:
+                        break
                     try:
                         conn = await self._create_connection()
-                        if conn:
-                            try:
-                                self.connections.put_nowait(conn)
-                            except asyncio.QueueFull:
-                                await conn.close()
-                                break
-                            async with self._lock:
-                                self.active_connections += 1
                     except Exception as e:
+                        async with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
                         logger.warning(f"⚠️ Failed to replenish connection: {e}")
+                        break
+                    try:
+                        self.connections.put_nowait(conn)
+                    except asyncio.QueueFull:
+                        await conn.close()
+                        async with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
                         break
 
     @asynccontextmanager
@@ -495,9 +546,13 @@ class AsyncPostgreSQLPool:
                     if created:
                         try:
                             conn = await self._create_connection()
-                        except Exception:
+                        except BaseException:
+                            # BaseException (not just Exception) so asyncio.CancelledError —
+                            # which derives from BaseException in Python 3.13 and can land inside
+                            # AsyncConnection.connect() when the caller task is cancelled — also
+                            # rolls back the reserved slot instead of leaking capacity permanently.
                             async with self._lock:
-                                self.active_connections -= 1
+                                self.active_connections = max(0, self.active_connections - 1)
                             raise
                     else:
                         # Pool exhausted - wait for a connection to be returned
@@ -514,16 +569,37 @@ class AsyncPostgreSQLPool:
                                 )
                             continue
 
-                # Test connection health
-                if conn and not await self._test_connection(conn):
+                # Test connection health. Guard the probe against BaseException
+                # (e.g. asyncio.CancelledError): if the acquiring task is cancelled while
+                # health-checking a checked-out connection, close it and release its slot so
+                # the capacity is not stranded (active_connections leaked) forever.
+                try:
+                    healthy = True if conn is None else await self._test_connection(conn)
+                except BaseException:
+                    if conn is not None:
+                        with contextlib.suppress(Exception):
+                            await conn.close()
+                        async with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
+                        conn = None
+                    raise
+                if conn and not healthy:
                     logger.warning("⚠️ Got unhealthy connection from pool, creating new one")
                     with contextlib.suppress(Exception):
                         await conn.close()
+                    # Drop the stale reference before attempting a replacement. If the
+                    # replacement create fails on every retry, `conn` must stay falsy so the
+                    # post-loop `if not conn` guard fires and raises the intended "Failed to
+                    # get PostgreSQL connection" error instead of yielding a CLOSED connection
+                    # (which would also cause active_connections to be decremented twice).
+                    conn = None
                     # Replace unhealthy connection — no net change to active_connections
-                    # Keep counter stable to prevent TOCTOU races
+                    # Keep counter stable to prevent TOCTOU races. Catch BaseException so a
+                    # CancelledError landing in the replacement create also releases the slot
+                    # that belonged to the discarded connection instead of leaking it.
                     try:
                         conn = await self._create_connection()
-                    except Exception:
+                    except BaseException:
                         async with self._lock:
                             self.active_connections = max(0, self.active_connections - 1)
                         raise
@@ -557,26 +633,32 @@ class AsyncPostgreSQLPool:
         finally:
             # Return connection to pool if it's still good
             if conn and not conn.closed and not self._closed:
+                autocommit_ok = True
                 try:
                     # Restore autocommit=True before returning to pool
                     # Callers using conn.transaction() must set autocommit=False,
                     # and we reset it here to prevent poisoning the pool
                     await conn.set_autocommit(True)
                 except Exception:
-                    # set_autocommit failed — connection is dead, discard it
+                    # set_autocommit failed — connection is dead, discard it.
+                    # Fall through WITHOUT `return`: a bare `return` in a `finally`
+                    # block silently swallows any exception propagating from the
+                    # `yield conn` body, so use a guard flag to skip the put-back
+                    # instead of short-circuiting the whole finally clause.
+                    autocommit_ok = False
                     with contextlib.suppress(Exception):
                         await conn.close()
                     async with self._lock:
                         self.active_connections = max(0, self.active_connections - 1)
-                    return
-                try:
-                    self.connections.put_nowait(conn)
-                except asyncio.QueueFull:
-                    # Pool is full, close connection
-                    with contextlib.suppress(Exception):
-                        await conn.close()
-                    async with self._lock:
-                        self.active_connections = max(0, self.active_connections - 1)
+                if autocommit_ok:
+                    try:
+                        self.connections.put_nowait(conn)
+                    except asyncio.QueueFull:
+                        # Pool is full, close connection
+                        with contextlib.suppress(Exception):
+                            await conn.close()
+                        async with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
             elif conn:
                 # Close bad connections
                 with contextlib.suppress(Exception):

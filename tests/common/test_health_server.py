@@ -1,13 +1,16 @@
 """Tests for the health check server."""
 
 from http.client import HTTPConnection
+from http.server import ThreadingHTTPServer
 import json
+import socket
 import threading
+import time
 from unittest.mock import Mock, patch
 
 import pytest
 
-from common.health_server import HealthServer
+from common.health_server import HealthHandler, HealthServer
 
 
 class TestHealthServerInit:
@@ -34,6 +37,27 @@ class TestHealthServerInit:
             assert server.server_address[1] > 0
         finally:
             server.server_close()
+
+    def test_server_is_threading_http_server(self) -> None:
+        """discogsography-cu2.61: HealthServer must be a ThreadingHTTPServer (not the
+        single-threaded HTTPServer) so one blocked connection cannot wedge the accept
+        loop for every other client.
+        """
+        health_func = Mock(return_value={"status": "healthy"})
+
+        server = HealthServer(0, health_func)
+        try:
+            assert isinstance(server, ThreadingHTTPServer)
+            assert server.daemon_threads is True
+        finally:
+            server.server_close()
+
+    def test_handler_has_socket_timeout(self) -> None:
+        """discogsography-cu2.61: HealthHandler must bound how long it will block on
+        rfile.readline() for a connected-but-silent peer (e.g. a TCP-connect port scan
+        or a half-open connection), instead of blocking indefinitely.
+        """
+        assert HealthHandler.timeout == 5
 
 
 class TestHealthServerGetHealthData:
@@ -312,3 +336,47 @@ class TestHealthServerMetricsEndpoint:
         assert response.status == 200
         body = json.loads(response.read())
         assert body["status"] == "healthy"
+
+
+class TestHealthServerConcurrency:
+    """discogsography-cu2.61: an idle/half-open connection must not wedge the server."""
+
+    @pytest.fixture
+    def running_server(self):
+        """Start a HealthServer in a background thread and yield it."""
+        health_func = Mock(return_value={"status": "healthy"})
+        server = HealthServer(0, health_func)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        yield server
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+    def test_silent_connection_does_not_block_other_clients(self, running_server: HealthServer) -> None:
+        """Reproduces the failure scenario: a client completes the TCP handshake but
+        never sends a request (a port scan / half-open connection). With the
+        single-threaded HTTPServer this wedges the accept loop and every subsequent
+        /health request hangs. With ThreadingHTTPServer + a bounded handler timeout,
+        a second, well-behaved client must still get served promptly.
+        """
+        port = running_server.server_address[1]
+
+        # Open a TCP connection and send nothing — simulates the wedging peer.
+        silent_sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+        try:
+            # A concurrent, well-behaved client must not be blocked by the silent peer.
+            start = time.monotonic()
+            conn = HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.request("GET", "/health")
+            response = conn.getresponse()
+            elapsed = time.monotonic() - start
+
+            assert response.status == 200
+            body = json.loads(response.read())
+            assert body["status"] == "healthy"
+            # Must be served immediately, well under the silent handler's own timeout.
+            assert elapsed < 2
+            conn.close()
+        finally:
+            silent_sock.close()

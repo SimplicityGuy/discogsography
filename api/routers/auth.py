@@ -393,6 +393,25 @@ async def twofa_setup(
     user_id = current_user.get("sub")
     email = current_user.get("email", "")
 
+    # Refuse to overwrite a LIVE 2FA configuration. When totp_enabled is already
+    # TRUE, regenerating totp_secret / totp_recovery_codes would silently orphan
+    # the user's authenticator app and printed recovery codes while login still
+    # demands 2FA — a permanent lockout. Require an explicit disable first
+    # (mirrors the totp_enabled guard in twofa_disable).
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await execute_sql(
+            cur,
+            "SELECT totp_enabled FROM users WHERE id = %s::uuid",
+            (user_id,),
+        )
+        existing = await cur.fetchone()
+
+    if existing and existing.get("totp_enabled"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="2FA is already enabled — disable it first before setting up again",
+        )
+
     # Generate TOTP secret and encrypt it
     secret = generate_totp_secret()
     encrypted_secret = encrypt_totp_secret(secret, totp_key)
@@ -400,17 +419,23 @@ async def twofa_setup(
     # Generate recovery codes
     plaintext_codes, hashed_codes = generate_recovery_codes()
 
-    # Store encrypted secret and hashed recovery codes (but do NOT enable TOTP yet)
+    # Store encrypted secret and hashed recovery codes (but do NOT enable TOTP yet).
+    # Guarded WHERE totp_enabled IS NOT TRUE so a concurrent enable cannot be raced.
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,
             """
             UPDATE users
             SET totp_secret = %s, totp_recovery_codes = %s, updated_at = NOW()
-            WHERE id = %s::uuid
+            WHERE id = %s::uuid AND totp_enabled IS NOT TRUE
             """,
             (encrypted_secret, json.dumps(hashed_codes), user_id),
         )
+        if cur.rowcount == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="2FA is already enabled — disable it first before setting up again",
+            )
 
     otpauth_uri = f"otpauth://totp/Discogsography:{email}?secret={secret}&issuer=Discogsography"
 
@@ -515,34 +540,61 @@ async def twofa_verify(request: Request, body: TwoFactorVerifyModel) -> JSONResp
     if locked_until and locked_until > datetime.now(UTC):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Account temporarily locked due to failed 2FA attempts")
 
-    # Atomically consume challenge from Redis to prevent replay
-    challenge_data = await _redis.getdel(challenge_key)
-    if not challenge_data:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Challenge expired or already used")
-
     totp_key = get_totp_encryption_key(_config.encryption_master_key)
     if not totp_key:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Encryption not configured")
 
     secret = decrypt_totp_secret(user["totp_secret"], totp_key)
 
+    # NOTE: the challenge is intentionally NOT consumed until AFTER a successful
+    # verification (see success branch below). Consuming it here would burn the
+    # challenge on a single mistyped digit, forcing a full re-login for every typo.
     if not verify_totp_code(secret, body.code):
-        # Increment failed attempts
-        failed = (user.get("totp_failed_attempts") or 0) + 1
-        lock_sql = "UPDATE users SET totp_failed_attempts = %s, updated_at = NOW()"
-        params: list[Any] = [failed]
-        if failed >= 5:
-            lock_sql += ", totp_locked_until = NOW() + INTERVAL '15 minutes'"
-        lock_sql += " WHERE id = %s::uuid"
-        params.append(user_id)
-
+        # Increment the failed-attempt counter ATOMICALLY in SQL and derive the
+        # lock from the freshly-computed value. Parallel wrong-code submissions
+        # must each advance the counter — a Python read-then-blind-write lets K
+        # concurrent requests all write value+1, defeating the 5-strike lock.
+        #
+        # When a previous lock window has already elapsed (totp_locked_until is
+        # set but in the past — the gate above let us through), the counter is
+        # reset so each post-expiry window starts fresh instead of instantly
+        # re-locking at 5+1.
+        lock_sql = """
+            UPDATE users
+            SET totp_failed_attempts = CASE
+                    WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW() THEN 1
+                    ELSE COALESCE(totp_failed_attempts, 0) + 1
+                END,
+                totp_locked_until = CASE
+                    WHEN (CASE
+                            WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW() THEN 1
+                            ELSE COALESCE(totp_failed_attempts, 0) + 1
+                          END) >= 5
+                        THEN NOW() + INTERVAL '15 minutes'
+                    WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW()
+                        THEN NULL
+                    ELSE totp_locked_until
+                END,
+                updated_at = NOW()
+            WHERE id = %s::uuid
+            RETURNING totp_failed_attempts
+        """
         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-            await execute_sql(cur, lock_sql, tuple(params))
+            await execute_sql(cur, lock_sql, (user_id,))
+            updated = await cur.fetchone()
 
+        failed = updated["totp_failed_attempts"] if updated else None
         logger.warning("⚠️ Failed 2FA attempt", user_id=user_id, attempts=failed)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
 
-    # Success — reset attempts (challenge already consumed above)
+    # Success — consume the challenge NOW (only after a correct code) to prevent
+    # replay. getdel is atomic, so concurrent requests replaying the same valid
+    # challenge race here and exactly one wins; the loser gets None -> 401.
+    consumed = await _redis.getdel(challenge_key)
+    if not consumed:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Challenge expired or already used")
+
+    # Reset attempts
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,
@@ -582,47 +634,57 @@ async def twofa_recovery(request: Request, body: TwoFactorRecoveryModel) -> JSON
     if not jti:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid challenge token")
 
-    # Atomically consume challenge from Redis to prevent replay
-    challenge_data = await _redis.getdel(f"2fa_challenge:{jti}")
+    # Verify the challenge EXISTS (without consuming) before validating the code,
+    # so a mistyped recovery code does not burn the challenge token. The challenge
+    # is consumed only after the recovery code is successfully redeemed below.
+    challenge_key = f"2fa_challenge:{jti}"
+    challenge_data = await _redis.get(challenge_key)
     if not challenge_data:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Challenge expired or already used")
 
     user_id = payload["sub"]
     email = payload.get("email", "")
 
-    # Fetch recovery codes
-    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await execute_sql(
-            cur,
-            "SELECT totp_recovery_codes FROM users WHERE id = %s::uuid",
-            (user_id,),
-        )
-        user = await cur.fetchone()
-
-    if not user or not user.get("totp_recovery_codes"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No recovery codes available")
-
-    stored_hashes: list[str] = (
-        json.loads(user["totp_recovery_codes"]) if isinstance(user["totp_recovery_codes"], str) else user["totp_recovery_codes"]
-    )
     submitted_hash = hash_recovery_code(body.code)
 
-    if submitted_hash not in stored_hashes:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid recovery code")
-
-    # Remove used code (challenge already consumed above)
-    stored_hashes.remove(submitted_hash)
-
+    # Consume the recovery code ATOMICALLY in a single guarded statement. Recovery
+    # codes are one-time by contract; a Python read-modify-write across two
+    # autocommit round-trips loses updates under concurrency, letting a used code
+    # be resurrected (last-writer-wins) or the same code be redeemed twice.
+    #
+    # `totp_recovery_codes ? %s` guards that the hash is still present, and
+    # `totp_recovery_codes - %s` removes it in the same UPDATE. Under Postgres
+    # row locking, concurrent redemptions serialize and the WHERE qual is
+    # re-evaluated against the committed row, so only one redemption of a given
+    # code can ever match (rowcount 1); the rest match nothing (rowcount 0).
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,
-            "UPDATE users SET totp_recovery_codes = %s, updated_at = NOW() WHERE id = %s::uuid",
-            (json.dumps(stored_hashes), user_id),
+            """
+            UPDATE users
+            SET totp_recovery_codes = totp_recovery_codes - %s, updated_at = NOW()
+            WHERE id = %s::uuid
+              AND totp_recovery_codes IS NOT NULL
+              AND totp_recovery_codes ? %s
+            RETURNING totp_recovery_codes
+            """,
+            (submitted_hash, user_id, submitted_hash),
         )
+        updated = await cur.fetchone()
+
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid recovery code")
+
+    remaining: list[str] = (
+        json.loads(updated["totp_recovery_codes"]) if isinstance(updated["totp_recovery_codes"], str) else (updated["totp_recovery_codes"] or [])
+    )
+
+    # Recovery code redeemed — now consume the challenge so it cannot be replayed.
+    await _redis.getdel(challenge_key)
 
     # Issue access token
     access_token, expires_in = _create_access_token_fn(user_id, email)
-    logger.info("✅ 2FA recovery code used", user_id=user_id, remaining_codes=len(stored_hashes))
+    logger.info("✅ 2FA recovery code used", user_id=user_id, remaining_codes=len(remaining))
 
     content: dict[str, Any] = {
         "access_token": access_token,
@@ -630,7 +692,7 @@ async def twofa_recovery(request: Request, body: TwoFactorRecoveryModel) -> JSON
         "expires_in": expires_in,
     }
 
-    if len(stored_hashes) == 0:
+    if len(remaining) == 0:
         content["warning"] = "This was your last recovery code. Please set up new recovery codes."
 
     return JSONResponse(content=content)

@@ -61,6 +61,11 @@ def _get_or_create_counter(name: str, description: str, labels: list[str]) -> Co
 WEBSOCKET_CONNECTIONS = _get_or_create_gauge("dashboard_websocket_connections", "Number of active WebSocket connections")
 API_REQUESTS = _get_or_create_counter("dashboard_api_requests", "Total API requests", ["endpoint", "method"])
 
+# Per-client cap on how long broadcast_metrics waits on a single websocket.send_text().
+# send_text applies TCP backpressure and can block indefinitely for a stalled client
+# (sleeping laptop, zero-window peer); this bounds the blast radius to that one client.
+_WS_SEND_TIMEOUT_SECONDS = 5.0
+
 
 class ServiceStatus(BaseModel):
     """Model for service status information."""
@@ -476,17 +481,30 @@ class DashboardApp:
 
         if self._ws_lock is None:
             self._ws_lock = asyncio.Lock()
-        async with self._ws_lock:
-            disconnected = set()
-            for websocket in list(self.websocket_connections):
-                try:
-                    await websocket.send_text(message)
-                except Exception:
-                    disconnected.add(websocket)
 
-            # Remove disconnected websockets
-            self.websocket_connections -= disconnected
-            WEBSOCKET_CONNECTIONS.set(len(self.websocket_connections))
+        # Snapshot the connection set under the lock only (cheap, non-blocking).
+        # send_text is done OUTSIDE the lock: it applies TCP backpressure and can
+        # block on a stalled client, and holding the lock across that await would
+        # also block new /ws registrations (websocket_endpoint) and stall the 2s
+        # collect_metrics_loop for every other client, not just the stalled one.
+        async with self._ws_lock:
+            targets = list(self.websocket_connections)
+
+        async def _send(websocket: WebSocket) -> WebSocket | None:
+            try:
+                await asyncio.wait_for(websocket.send_text(message), timeout=_WS_SEND_TIMEOUT_SECONDS)
+            except Exception:
+                return websocket
+            return None
+
+        results = await asyncio.gather(*(_send(websocket) for websocket in targets))
+        disconnected = {websocket for websocket in results if websocket is not None}
+
+        if disconnected:
+            # Re-acquire the lock only to discard the failed sockets.
+            async with self._ws_lock:
+                self.websocket_connections -= disconnected
+                WEBSOCKET_CONNECTIONS.set(len(self.websocket_connections))
 
 
 # Create the dashboard app instance
