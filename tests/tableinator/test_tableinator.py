@@ -2973,3 +2973,120 @@ class TestCoverageGaps:
 
         # Should delegate to batch processor without error
         mock_batch.add_message.assert_called_once()
+
+
+class TestMainFullRun:
+    """Drive main() all the way through RabbitMQ connect, queue/exchange
+    declaration, consumer start, the run loop, and the finally teardown.
+
+    The existing TestMain.test_main_execution trips shutdown_requested on the
+    STARTUP_DELAY sleep, which short-circuits before the connect loop. Here
+    STARTUP_DELAY=0 skips that sleep so the full body executes, and shutdown is
+    tripped on the run-loop's own sleep instead.
+    """
+
+    @pytest.mark.asyncio
+    async def test_main_full_run_batch_mode(self) -> None:
+        import tableinator.tableinator as mod
+
+        # Reset the module-level shutdown flag (earlier tests may have left it True).
+        original_shutdown = mod.shutdown_requested
+        mod.shutdown_requested = False
+
+        # Resilient RabbitMQ manager whose connect() returns an async-context connection.
+        mock_amqp_connection = AsyncMock()
+        mock_channel = AsyncMock()
+        mock_amqp_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_channel.set_qos = AsyncMock()
+        mock_exchange = AsyncMock()
+        mock_channel.declare_exchange = AsyncMock(return_value=mock_exchange)
+        mock_queue = AsyncMock()
+        mock_queue.bind = AsyncMock()
+        mock_queue.consume = AsyncMock(return_value="ctag")
+        mock_channel.declare_queue = AsyncMock(return_value=mock_queue)
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_instance.connect = AsyncMock(return_value=mock_amqp_connection)
+
+        mock_pool = MagicMock()
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        # Trip shutdown on the run-loop sleep so the loop exits after one iteration.
+        real_sleep = asyncio.sleep
+
+        async def sleep_trips_shutdown(delay: float) -> None:
+            if delay == 1.0:
+                mod.shutdown_requested = True
+            await real_sleep(0)
+
+        try:
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("tableinator.tableinator.setup_logging"),
+                patch("tableinator.tableinator.HealthServer") as mock_hs,
+                patch("tableinator.tableinator.AsyncPostgreSQLPool", return_value=mock_pool),
+                patch("tableinator.tableinator.AsyncResilientRabbitMQ", return_value=mock_rabbitmq_instance),
+                patch("tableinator.tableinator.BATCH_MODE", True),
+                patch("tableinator.tableinator.progress_reporter", new=AsyncMock()),
+                patch("tableinator.tableinator.periodic_queue_checker", new=AsyncMock()),
+                patch("tableinator.tableinator.close_rabbitmq_connection", new=AsyncMock()),
+                patch.object(mod.PostgreSQLBatchProcessor, "periodic_flush", new=AsyncMock()),
+                patch.object(mod.PostgreSQLBatchProcessor, "flush_all", new=AsyncMock()),
+                patch("tableinator.tableinator.asyncio.sleep", side_effect=sleep_trips_shutdown),
+                patch("tableinator.tableinator.signal.signal"),
+            ):
+                mock_hs.return_value = MagicMock()
+                await main()
+
+            # Connect + channel + QoS were configured.
+            mock_rabbitmq_instance.connect.assert_awaited()
+            mock_channel.set_qos.assert_awaited_once()
+            # Exchanges/queues declared and consumers started for every data type.
+            assert mock_channel.declare_exchange.await_count >= len(mod.DATA_TYPES)
+            assert mock_queue.consume.await_count == len(mod.DATA_TYPES)
+            # Pool was closed during teardown.
+            mock_pool.close.assert_awaited()
+        finally:
+            mod.shutdown_requested = original_shutdown
+
+    @pytest.mark.asyncio
+    async def test_main_full_run_no_amqp_connection(self) -> None:
+        """When every startup connect attempt fails, main() logs and returns without
+        entering the consume block."""
+        import tableinator.tableinator as mod
+
+        original_shutdown = mod.shutdown_requested
+        mod.shutdown_requested = False
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_instance.connect = AsyncMock(side_effect=Exception("broker down"))
+
+        mock_pool = MagicMock()
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        real_sleep = asyncio.sleep
+
+        async def fast_sleep(_delay: float) -> None:
+            await real_sleep(0)
+
+        try:
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("tableinator.tableinator.setup_logging"),
+                patch("tableinator.tableinator.HealthServer") as mock_hs,
+                patch("tableinator.tableinator.AsyncPostgreSQLPool", return_value=mock_pool),
+                patch("tableinator.tableinator.AsyncResilientRabbitMQ", return_value=mock_rabbitmq_instance),
+                patch("tableinator.tableinator.asyncio.sleep", side_effect=fast_sleep),
+                patch("tableinator.tableinator.signal.signal"),
+            ):
+                mock_hs.return_value = MagicMock()
+                await main()
+
+            # All startup retries were attempted, then main returned at the
+            # "No AMQP connection available" guard (never opening the channel).
+            assert mock_rabbitmq_instance.connect.await_count >= 1
+            mock_rabbitmq_instance.channel.assert_not_called()
+        finally:
+            mod.shutdown_requested = original_shutdown
