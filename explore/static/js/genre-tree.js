@@ -103,9 +103,12 @@ class GenreTreeView {
     _navigateTo(name, type) {
         if (window.exploreApp) {
             window.exploreApp._setSearchType(type);
-            window.exploreApp._onSearch(name);
-            // Switch to explore pane
+            // Switch to the explore pane BEFORE calling _onSearch — _onSearch
+            // is pane-sensitive (it branches on activePane to decide between
+            // _loadExplore and _loadTrends), so switching after would leave
+            // it targeting whichever pane the user navigated from.
             window.exploreApp._switchPane('explore');
+            window.exploreApp._onSearch(name);
         }
     }
 }

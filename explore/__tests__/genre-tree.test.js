@@ -198,5 +198,17 @@ describe('GenreTreeView', () => {
             expect(window.exploreApp._setSearchType).toHaveBeenCalledWith('style');
             expect(window.exploreApp._onSearch).toHaveBeenCalledWith('Alternative Rock');
         });
+
+        it('should switch to the explore pane BEFORE calling _onSearch (regression discogsography-cu2.37)', () => {
+            // _onSearch is pane-sensitive: it loads Trends unless activePane
+            // is already 'explore' at the moment it runs. Calling it before
+            // _switchPane('explore') silently routes the click into the
+            // hidden Trends pane instead of populating the Explore graph.
+            window.genreTreeView._navigateTo('Rock', 'genre');
+
+            const switchPaneOrder = window.exploreApp._switchPane.mock.invocationCallOrder[0];
+            const onSearchOrder = window.exploreApp._onSearch.mock.invocationCallOrder[0];
+            expect(switchPaneOrder).toBeLessThan(onSearchOrder);
+        });
     });
 });
