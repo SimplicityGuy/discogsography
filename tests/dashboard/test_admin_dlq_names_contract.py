@@ -20,9 +20,7 @@ _SOURCE_PREFIXES = {
     "musicbrainz": MUSICBRAINZ_EXCHANGE_PREFIX,
 }
 
-_GROUP_RE = re.compile(
-    r"\{\s*source:\s*'(?P<source>\w+)',\s*consumer:\s*'(?P<consumer>[\w-]+)',\s*types:\s*\[(?P<types>[^\]]+)\]\s*\}"
-)
+_GROUP_RE = re.compile(r"\{\s*source:\s*'(?P<source>\w+)',\s*consumer:\s*'(?P<consumer>[\w-]+)',\s*types:\s*\[(?P<types>[^\]]+)\]\s*\}")
 _TYPE_RE = re.compile(r"'([\w-]+)'")
 
 
