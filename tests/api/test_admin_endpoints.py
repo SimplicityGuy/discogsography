@@ -1352,3 +1352,105 @@ class TestAdminAuthSecurity:
             assert resp.status_code == 403
         finally:
             deps._pool = original_pool
+
+
+class TestTrackExtractionResilience:
+    """discogsography-cu2.57: the tracker polls every 10s for up to 24h and does
+    resp.json() + PG writes inside the loop. A transient error (non-JSON body,
+    PG disconnect) that is not an httpx.RequestError must NOT kill the task and
+    leave the extraction_history row stuck in 'running' forever.
+    """
+
+    @staticmethod
+    def _pool(execute_side_effect: Any = None) -> tuple[MagicMock, AsyncMock]:
+        mock_cur = AsyncMock()
+        if execute_side_effect is not None:
+            mock_cur.execute = AsyncMock(side_effect=execute_side_effect)
+        else:
+            mock_cur.execute = AsyncMock()
+        mock_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(return_value=conn_ctx)
+        return mock_pool, mock_cur
+
+    @pytest.mark.asyncio
+    async def test_non_json_body_does_not_kill_tracker(self) -> None:
+        """A 200 body that isn't valid JSON is counted as a failure; after the
+        consecutive-failure gate trips, a terminal 'failed' status is written —
+        the row never stays 'running'."""
+        import api.routers.admin as admin_mod
+
+        mock_pool, mock_cur = self._pool()
+        mock_config = MagicMock(extractor_host="localhost", extractor_health_port=8000)
+        original_pool, original_config = admin_mod._pool, admin_mod._config
+        admin_mod._pool, admin_mod._config = mock_pool, mock_config
+
+        try:
+            with (
+                patch("api.routers.admin.asyncio.sleep", new_callable=AsyncMock),
+                patch("api.routers.admin.httpx.AsyncClient") as mock_client_cls,
+            ):
+                mock_response = MagicMock()
+                mock_response.status_code = 200
+                mock_response.json.side_effect = ValueError("not json")
+                mock_client = AsyncMock()
+                mock_client.get = AsyncMock(return_value=mock_response)
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=False)
+                mock_client_cls.return_value = mock_client
+
+                await admin_mod._track_extraction(str(uuid4()))
+        finally:
+            admin_mod._pool, admin_mod._config = original_pool, original_config
+
+        executed = [call.args[0] for call in mock_cur.execute.await_args_list]
+        terminal = [sql for sql in executed if "status = 'failed'" in sql and "completed_at = NOW()" in sql]
+        assert terminal, "tracker must write a terminal 'failed' status, not leave the row running"
+
+    @pytest.mark.asyncio
+    async def test_unexpected_crash_triggers_safety_net(self) -> None:
+        """If an unexpected exception escapes the poll loop entirely, the final
+        safety net marks the record 'failed' ('Tracking task crashed')."""
+        import api.routers.admin as admin_mod
+
+        executed_params: list[Any] = []
+
+        def flaky_execute(_sql: str, params: Any = None, *_args: Any, **_kwargs: Any) -> None:
+            executed_params.append(params)
+            # The max-failures terminal write blows up (e.g. transient PG error),
+            # escaping the loop and reaching the outer safety net.
+            if params and "Extractor became unreachable" in tuple(params):
+                raise RuntimeError("pool exhausted")
+            return None
+
+        mock_pool, _ = self._pool(execute_side_effect=flaky_execute)
+        mock_config = MagicMock(extractor_host="localhost", extractor_health_port=8000)
+        original_pool, original_config = admin_mod._pool, admin_mod._config
+        admin_mod._pool, admin_mod._config = mock_pool, mock_config
+
+        try:
+            with (
+                patch("api.routers.admin.asyncio.sleep", new_callable=AsyncMock),
+                patch("api.routers.admin.httpx.AsyncClient") as mock_client_cls,
+            ):
+                mock_client = AsyncMock()
+                # Unexpected (non-httpx) error on every poll → drives consecutive
+                # failures to the gate, whose terminal write then raises.
+                mock_client.get = AsyncMock(side_effect=RuntimeError("boom"))
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=False)
+                mock_client_cls.return_value = mock_client
+
+                # Must not raise — the safety net swallows and records the crash.
+                await admin_mod._track_extraction(str(uuid4()))
+        finally:
+            admin_mod._pool, admin_mod._config = original_pool, original_config
+
+        assert any(p and "Tracking task crashed" in tuple(p) for p in executed_params), "safety net must mark the crashed extraction failed"
