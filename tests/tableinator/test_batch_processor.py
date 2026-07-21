@@ -535,6 +535,51 @@ class TestPostgreSQLBatchProcessor:
         assert acks == [], "poison messages must never be acked"
 
     @pytest.mark.asyncio
+    async def test_poison_batch_nack_failure_is_logged_and_swallowed(self) -> None:
+        """A failing nack_callback on the poison path must be caught and logged (not
+        raised), so a broken channel while routing poison to the DLQ does not crash
+        the flush loop or leave per-data-type state un-reset.
+        """
+        config = BatchConfig(
+            batch_size=5,
+            max_poison_retries=1,
+            backoff_initial=0.0,
+            min_batch_size=1,
+        )
+        processor = PostgreSQLBatchProcessor(MagicMock(), config=config)
+
+        processor._process_batch = AsyncMock(  # type: ignore[method-assign]
+            side_effect=ValueError("invalid jsonb")
+        )
+
+        async def failing_nack() -> None:
+            raise RuntimeError("channel closed")
+
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="0",
+                data={"id": "0"},
+                sha256="h",
+                ack_callback=AsyncMock(),
+                nack_callback=failing_nack,
+            )
+        )
+
+        with patch("tableinator.batch_processor.logger") as mock_logger:
+            for _ in range(10):
+                if not processor.queues["artists"]:
+                    break
+                processor._backoff_until["artists"] = 0.0
+                await processor._flush_queue("artists")
+
+        # The nack failure was logged as a warning, not propagated.
+        assert any("Failed to nack message" in str(c.args[0]) for c in mock_logger.warning.call_args_list)
+        # State was still reset and the queue drained despite the nack failure.
+        assert not processor.queues["artists"]
+        assert processor._consecutive_failures["artists"] == 0
+
+    @pytest.mark.asyncio
     async def test_flush_queue_ack_callback_error(self) -> None:
         """Test handling errors in ack callback."""
         mock_connection = MagicMock()
