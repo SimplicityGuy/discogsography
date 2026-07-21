@@ -478,6 +478,63 @@ class TestPostgreSQLBatchProcessor:
         assert len(processor.queues["artists"]) == 1
 
     @pytest.mark.asyncio
+    async def test_poison_batch_nacked_to_dlq_not_wedged(self) -> None:
+        """Regression (cu2.19): a deterministic (non-transient) batch error must
+        not be retried forever.
+
+        Before the fix, the generic except path re-enqueued the batch and backed
+        off without ever nacking, so a poison record retried indefinitely; once
+        its unacked deliveries filled the prefetch window the consumer wedged
+        permanently. After the fix, bounded consecutive failures trigger a nack
+        so the poison (and its batch) is routed to the DLQ and the queue drains.
+        """
+        config = BatchConfig(
+            batch_size=5,
+            max_poison_retries=3,
+            backoff_initial=0.0,
+            min_batch_size=1,
+        )
+        processor = PostgreSQLBatchProcessor(MagicMock(), config=config)
+
+        # Deterministic non-transient failure on every batch (e.g. a DataError
+        # on a value PostgreSQL's jsonb rejects).
+        processor._process_batch = AsyncMock(  # type: ignore[method-assign]
+            side_effect=ValueError("invalid jsonb")
+        )
+
+        acks: list[int] = []
+        nacks: list[int] = []
+
+        async def ack() -> None:
+            acks.append(1)
+
+        async def nack() -> None:
+            nacks.append(1)
+
+        for i in range(2):
+            processor.queues["artists"].append(
+                PendingMessage(
+                    data_type="artists",
+                    data_id=str(i),
+                    data={"id": str(i)},
+                    sha256="h",
+                    ack_callback=ack,
+                    nack_callback=nack,
+                )
+            )
+
+        # Drive flushes; without the fix this loop never drains the queue.
+        for _ in range(50):
+            if not processor.queues["artists"]:
+                break
+            processor._backoff_until["artists"] = 0.0  # skip backoff sleeps in test
+            await processor._flush_queue("artists")
+
+        assert not processor.queues["artists"], "poison batch permanently wedged the queue"
+        assert len(nacks) == 2, "both poison messages must be nacked to the DLQ"
+        assert acks == [], "poison messages must never be acked"
+
+    @pytest.mark.asyncio
     async def test_flush_queue_ack_callback_error(self) -> None:
         """Test handling errors in ack callback."""
         mock_connection = MagicMock()

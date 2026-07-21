@@ -2014,3 +2014,99 @@ class TestHealthDataAdditional:
         ):
             data = get_health_data()
             assert data["status"] == "unhealthy"
+
+
+class TestRecoverConsumersAllTypesBrainzgraphinator:
+    """Regression (cu2.53): _recover_consumers must start consumers for ALL
+    MusicBrainz data types, not just those with a backlog at the check instant."""
+
+    @pytest.mark.asyncio
+    async def test_recovers_all_types_not_just_backlogged(self) -> None:
+        import brainzgraphinator.brainzgraphinator as bg
+
+        expected = {"artists", "labels", "release-groups", "releases"}
+
+        bg.active_connection = None
+        bg.active_channel = None
+        bg.consumer_tags = {}
+        bg.completed_files = set()
+        bg.queues = {}
+        bg.last_message_time = dict.fromkeys(expected, 0.0)
+
+        def declare_queue(**kwargs: Any) -> Any:
+            if kwargs.get("passive"):
+                q = MagicMock()
+                q.declaration_result.message_count = 100 if kwargs["name"].endswith("-artists") else 0
+                return q
+            q = AsyncMock()
+            q.consume = AsyncMock(return_value=f"tag-{kwargs.get('name')}")
+            q.bind = AsyncMock()
+            return q
+
+        mock_channel = AsyncMock()
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue)
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.set_qos = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_rmq = AsyncMock()
+        mock_rmq.connect = AsyncMock(return_value=mock_connection)
+
+        with patch.object(bg, "rabbitmq_manager", mock_rmq), patch.object(bg, "logger"):
+            await bg._recover_consumers()
+
+        assert set(bg.consumer_tags.keys()) == expected
+
+        bg.consumer_tags = {}
+        bg.active_connection = None
+        bg.active_channel = None
+        bg.queues = {}
+
+
+class TestRecoverConsumersClearsTagsBrainzgraphinator:
+    """Regression (cu2.54): recovery errors after ≥1 consumer registered must
+    clear consumer_tags so the stuck-state detector can re-fire."""
+
+    @pytest.mark.asyncio
+    async def test_error_after_partial_registration_clears_consumer_tags(self) -> None:
+        import brainzgraphinator.brainzgraphinator as bg
+
+        types = ["artists", "labels", "release-groups", "releases"]
+        bg.active_connection = None
+        bg.active_channel = None
+        bg.consumer_tags = {}
+        bg.completed_files = set()
+        bg.queues = {}
+        bg.last_message_time = dict.fromkeys(types, 0.0)
+
+        def declare_queue(**kwargs: Any) -> Any:
+            name = kwargs.get("name", "")
+            if kwargs.get("passive"):
+                q = MagicMock()
+                q.declaration_result.message_count = 100
+                return q
+            q = AsyncMock()
+            q.bind = AsyncMock()
+            if name.endswith("-labels"):
+                q.consume = AsyncMock(side_effect=RuntimeError("channel closed mid-recovery"))
+            else:
+                q.consume = AsyncMock(return_value=f"tag-{name}")
+            return q
+
+        mock_channel = AsyncMock()
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue)
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.set_qos = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_rmq = AsyncMock()
+        mock_rmq.connect = AsyncMock(return_value=mock_connection)
+
+        with patch.object(bg, "rabbitmq_manager", mock_rmq), patch.object(bg, "logger"):
+            await bg._recover_consumers()
+
+        assert bg.consumer_tags == {}, "stale consumer tags must be cleared"
+        assert bg.active_connection is None
+
+        bg.consumer_tags = {}
+        bg.queues = {}

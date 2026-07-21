@@ -855,7 +855,14 @@ async def _recover_consumers() -> None:
                 await queue.bind(exchange)
                 queues[data_type] = queue
 
-            for data_type, msg_count in queues_with_messages:
+            # Start consumers for ALL data types lacking one — not just those
+            # with a current backlog. A type whose queue was empty at the
+            # passive-declare instant still needs a consumer; otherwise messages
+            # that arrive later are never consumed, because once active_connection
+            # is set and consumer_tags is non-empty both periodic recovery routes
+            # are permanently gated off, silently starving that data type.
+            pending_counts = dict(queues_with_messages)
+            for data_type in MUSICBRAINZ_DATA_TYPES:
                 if data_type in queues and data_type not in consumer_tags:
                     handler = HANDLERS.get(data_type)
                     if handler:
@@ -863,11 +870,14 @@ async def _recover_consumers() -> None:
                             handler, consumer_tag=f"brainzgraphinator-{data_type}"
                         )
                         consumer_tags[data_type] = consumer_tag
-                        completed_files.discard(data_type)
+                        # Only un-complete a type that actually has a backlog, so
+                        # genuinely-finished types stay marked complete.
+                        if data_type in pending_counts:
+                            completed_files.discard(data_type)
                         last_message_time[data_type] = time.time()
                         logger.info(
                             f"✅ Started consumer for {data_type} "
-                            f"(pending: {msg_count})"
+                            f"(pending: {pending_counts.get(data_type, 0)})"
                         )
 
             logger.info(
@@ -889,6 +899,11 @@ async def _recover_consumers() -> None:
         active_connection = None
         active_channel = None
         queues = {}
+        # Clear stale consumer tags: any consumers registered before the error
+        # died with the now-closed connection. Leaving them behind would keep
+        # len(consumer_tags) > 0 forever, permanently gating off both recovery
+        # routes (stuck-check requires 0 tags) while health still reads healthy.
+        consumer_tags.clear()
 
 
 async def main() -> None:

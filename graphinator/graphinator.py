@@ -413,8 +413,14 @@ async def _recover_consumers() -> None:
                 await queue.bind(exchange)
                 queues[data_type] = queue
 
-            # Start consumers for queues with messages
-            for data_type, msg_count in queues_with_messages:
+            # Start consumers for ALL data types lacking one — not just those
+            # with a current backlog. A type whose queue was empty at the
+            # passive-declare instant still needs a consumer; otherwise messages
+            # that arrive later are never consumed, because once active_connection
+            # is set and consumer_tags is non-empty both periodic recovery routes
+            # are permanently gated off, silently starving that data type.
+            pending_counts = dict(queues_with_messages)
+            for data_type in DATA_TYPES:
                 if data_type in queues and data_type not in consumer_tags:
                     handler = HANDLERS.get(data_type)
                     if handler:
@@ -422,12 +428,14 @@ async def _recover_consumers() -> None:
                             handler, consumer_tag=f"graphinator-{data_type}"
                         )
                         consumer_tags[data_type] = consumer_tag
-                        # Remove from completed files so it will be processed
-                        completed_files.discard(data_type)
+                        # Only un-complete a type that actually has a backlog, so
+                        # genuinely-finished types stay marked complete.
+                        if data_type in pending_counts:
+                            completed_files.discard(data_type)
                         last_message_time[data_type] = time.time()
                         logger.info(
                             f"✅ Started consumer for {data_type} "
-                            f"(pending: {msg_count})"
+                            f"(pending: {pending_counts.get(data_type, 0)})"
                         )
 
             logger.info(
@@ -453,6 +461,11 @@ async def _recover_consumers() -> None:
         active_connection = None  # noqa: F841
         active_channel = None  # noqa: F841
         queues = {}  # noqa: F841
+        # Clear stale consumer tags: any consumers registered before the error
+        # died with the now-closed connection. Leaving them behind would keep
+        # len(consumer_tags) > 0 forever, permanently gating off both recovery
+        # routes (stuck-check requires 0 tags) while health still reads healthy.
+        consumer_tags.clear()
 
 
 async def check_file_completion(
@@ -491,21 +504,37 @@ async def check_file_completion(
         if batch_processor is not None:
             await batch_processor.flush_queue(data_type)
 
+        # Post-import maintenance is coupled to the extraction_complete ack:
+        # both steps are idempotent, so on failure we nack(requeue=True) to
+        # retry rather than acking (and silently skipping) the sole trigger.
+        maintenance_ok = True
+
         # Clean up stub nodes created by cross-type MERGE operations
-        if graph is not None:
-            await cleanup_stub_nodes(data_type)
+        if graph is not None and not await cleanup_stub_nodes(data_type):
+            maintenance_ok = False
 
         # After releases are fully imported, compute aggregate stats on Genre/Style nodes
-        if graph is not None and data_type == "releases":
-            await compute_genre_style_stats()
+        if (
+            graph is not None
+            and data_type == "releases"
+            and not await compute_genre_style_stats()
+        ):
+            maintenance_ok = False
 
-        await message.ack()
+        if maintenance_ok:
+            await message.ack()
+        else:
+            logger.error(
+                "❌ Post-import maintenance failed, nacking extraction_complete for retry",
+                data_type=data_type,
+            )
+            await message.nack(requeue=True)
         return True
 
     return False
 
 
-async def compute_genre_style_stats() -> None:
+async def compute_genre_style_stats() -> bool:
     """Pre-compute aggregate counts and first_year on Genre, Style, and Label nodes.
 
     Sets release_count, artist_count, label_count, style_count/genre_count,
@@ -521,17 +550,25 @@ async def compute_genre_style_stats() -> None:
       traversal (for Reprise Records with 55K releases) with ~3 DB hits.
 
     Should be called after all releases have been imported.
+
+    Returns:
+        True if all stats were computed (or there is no driver / no work),
+        False if the computation failed — so the caller can nack and retry.
     """
     if graph is None:
-        return
+        return True
 
-    # Use CALL {} IN TRANSACTIONS OF 1 ROWS to process each genre/style
-    # in its own transaction.  This avoids the default 120s transaction
-    # timeout — each individual node takes ~10-30s (even for Electronic/Rock
-    # with millions of releases), well within the limit.
+    # Drive the batching with an outer MATCH so CALL {} IN TRANSACTIONS actually
+    # commits one inner transaction per node (OF 1 ROWS = one genre/style per
+    # transaction).  The driving MATCH MUST sit OUTSIDE the transactional
+    # subquery, with the node re-imported via WITH; otherwise nothing precedes
+    # the CALL, exactly one implicit input row drives it, and the entire update
+    # runs in a SINGLE transaction — defeating the batching and hitting the
+    # default 120s transaction timeout (each node takes ~10-30s).
     genre_cypher = """
+    MATCH (g:Genre)
     CALL {
-        MATCH (g:Genre)
+        WITH g
         CALL {
             WITH g
             MATCH (g)<-[:IS]-(r:Release)
@@ -565,8 +602,9 @@ async def compute_genre_style_stats() -> None:
     """
 
     style_cypher = """
+    MATCH (s:Style)
     CALL {
-        MATCH (s:Style)
+        WITH s
         CALL {
             WITH s
             MATCH (s)<-[:IS]-(r:Release)
@@ -604,8 +642,9 @@ async def compute_genre_style_stats() -> None:
     # but most labels have <100 releases so each batch computes quickly.
     # Use IN TRANSACTIONS OF 100 ROWS for throughput.
     label_cypher = """
+    MATCH (l:Label)
     CALL {
-        MATCH (l:Label)
+        WITH l
         CALL {
             WITH l
             MATCH (l)<-[:ON]-(r:Release)
@@ -658,18 +697,25 @@ async def compute_genre_style_stats() -> None:
             "❌ Failed to compute genre/style/label stats",
             error=str(e),
         )
+        return False
+
+    return True
 
 
-async def cleanup_stub_nodes(data_type: str) -> None:
+async def cleanup_stub_nodes(data_type: str) -> bool:
     """Delete stub nodes that have no sha256 property.
 
     During extraction, MERGE operations in relationship queries create
     skeleton nodes for cross-referenced entities (e.g., a release referencing
     an artist that hasn't been processed yet). Primary records always set
     sha256, so nodes without it are stubs that were never filled.
+
+    Returns:
+        True if cleanup succeeded (or there is nothing to do), False if the
+        DETACH DELETE failed — so the caller can nack and retry (idempotent).
     """
     if graph is None:
-        return
+        return True
 
     # Map data types to their Neo4j labels
     label_map = {
@@ -681,7 +727,7 @@ async def cleanup_stub_nodes(data_type: str) -> None:
 
     label = label_map.get(data_type)
     if not label:
-        return
+        return True
 
     try:
         async with graph.session(database="neo4j") as session:
@@ -708,22 +754,25 @@ async def cleanup_stub_nodes(data_type: str) -> None:
             data_type=data_type,
             error=str(e),
         )
+        return False
+
+    return True
 
 
-def process_artist(tx: Any, record: dict[str, Any]) -> bool:
+async def process_artist(tx: Any, record: dict[str, Any]) -> bool:
     """Process artist within a single transaction for atomicity."""
-    existing_result = tx.run(
+    existing_result = await tx.run(
         "MATCH (a:Artist {id: $id}) RETURN a.sha256 AS hash",
         id=record["id"],
     )
-    existing_record = existing_result.single()
+    existing_record = await existing_result.single()
     if existing_record and existing_record["hash"] == record["sha256"]:
         return False  # No update needed
 
     resources: str = f"https://api.discogs.com/artists/{record['id']}"
     releases: str = f"{resources}/releases"
 
-    tx.run(
+    await tx.run(
         "MERGE (a:Artist {id: $id}) "
         "ON CREATE SET a.name = $name, a.resource_url = $resource_url, a.releases_url = $releases_url, a.sha256 = $sha256 "
         "ON MATCH SET a.name = $name, a.resource_url = $resource_url, a.releases_url = $releases_url, a.sha256 = $sha256",
@@ -739,7 +788,7 @@ def process_artist(tx: Any, record: dict[str, Any]) -> bool:
     if members:
         valid_members = [m for m in members if m.get("id")]
         if valid_members:
-            tx.run(
+            await tx.run(
                 "UNWIND $members AS member "
                 "MATCH (a:Artist {id: $artist_id}) "
                 "MERGE (m_a:Artist {id: member.id}) "
@@ -753,7 +802,7 @@ def process_artist(tx: Any, record: dict[str, Any]) -> bool:
     if groups:
         valid_groups = [g for g in groups if g.get("id")]
         if valid_groups:
-            tx.run(
+            await tx.run(
                 "UNWIND $groups AS group "
                 "MATCH (a:Artist {id: $artist_id}) "
                 "MERGE (g_a:Artist {id: group.id}) "
@@ -767,7 +816,7 @@ def process_artist(tx: Any, record: dict[str, Any]) -> bool:
     if aliases:
         valid_aliases = [a for a in aliases if a.get("id")]
         if valid_aliases:
-            tx.run(
+            await tx.run(
                 "UNWIND $aliases AS alias "
                 "MATCH (a:Artist {id: $artist_id}) "
                 "MERGE (a_a:Artist {id: alias.id}) "
@@ -779,16 +828,16 @@ def process_artist(tx: Any, record: dict[str, Any]) -> bool:
     return True  # Updated successfully
 
 
-def process_label(tx: Any, record: dict[str, Any]) -> bool:
+async def process_label(tx: Any, record: dict[str, Any]) -> bool:
     """Process label within a single transaction for atomicity."""
-    existing_result = tx.run(
+    existing_result = await tx.run(
         "MATCH (l:Label {id: $id}) RETURN l.sha256 AS hash", id=record["id"]
     )
-    existing_record = existing_result.single()
+    existing_record = await existing_result.single()
     if existing_record and existing_record["hash"] == record["sha256"]:
         return False  # No update needed
 
-    tx.run(
+    await tx.run(
         "MERGE (l:Label {id: $id}) "
         "ON CREATE SET l.name = $name, l.sha256 = $sha256 "
         "ON MATCH SET l.name = $name, l.sha256 = $sha256",
@@ -800,7 +849,7 @@ def process_label(tx: Any, record: dict[str, Any]) -> bool:
     # Handle parent label relationship (normalized to {"id": ...} dict)
     parent: dict[str, Any] | None = record.get("parentLabel")
     if parent and parent.get("id"):
-        tx.run(
+        await tx.run(
             "MATCH (l:Label {id: $id}) "
             "MERGE (p_l:Label {id: $p_id}) "
             "MERGE (l)-[:SUBLABEL_OF]->(p_l)",
@@ -813,7 +862,7 @@ def process_label(tx: Any, record: dict[str, Any]) -> bool:
     if sublabels:
         valid_sublabels = [s for s in sublabels if s.get("id")]
         if valid_sublabels:
-            tx.run(
+            await tx.run(
                 "UNWIND $sublabels AS sublabel "
                 "MATCH (l:Label {id: $label_id}) "
                 "MERGE (s_l:Label {id: sublabel.id}) "
@@ -825,17 +874,17 @@ def process_label(tx: Any, record: dict[str, Any]) -> bool:
     return True  # Updated successfully
 
 
-def process_master(tx: Any, record: dict[str, Any]) -> bool:
+async def process_master(tx: Any, record: dict[str, Any]) -> bool:
     """Process master within a single transaction for atomicity."""
-    existing_result = tx.run(
+    existing_result = await tx.run(
         "MATCH (m:Master {id: $id}) RETURN m.sha256 AS hash",
         id=record["id"],
     )
-    existing_record = existing_result.single()
+    existing_record = await existing_result.single()
     if existing_record and existing_record["hash"] == record["sha256"]:
         return False  # No update needed
 
-    tx.run(
+    await tx.run(
         "MERGE (m:Master {id: $id}) "
         "ON CREATE SET m.title = $title, m.year = $year, m.sha256 = $sha256 "
         "ON MATCH SET m.title = $title, m.year = $year, m.sha256 = $sha256",
@@ -850,7 +899,7 @@ def process_master(tx: Any, record: dict[str, Any]) -> bool:
     if artists:
         valid_artists = [a for a in artists if a.get("id")]
         if valid_artists:
-            tx.run(
+            await tx.run(
                 "UNWIND $artists AS artist "
                 "MATCH (m:Master {id: $master_id}) "
                 "MERGE (a_m:Artist {id: artist.id}) "
@@ -862,7 +911,7 @@ def process_master(tx: Any, record: dict[str, Any]) -> bool:
     # Handle genres and styles (normalized to string lists)
     genres_list: list[str] = record.get("genres", [])
     if genres_list:
-        tx.run(
+        await tx.run(
             "UNWIND $genres AS genre "
             "MATCH (m:Master {id: $master_id}) "
             "MERGE (g:Genre {name: genre.name}) "
@@ -873,7 +922,7 @@ def process_master(tx: Any, record: dict[str, Any]) -> bool:
 
     styles_list: list[str] = record.get("styles", [])
     if styles_list:
-        tx.run(
+        await tx.run(
             "UNWIND $styles AS style "
             "MATCH (m:Master {id: $master_id}) "
             "MERGE (s:Style {name: style.name}) "
@@ -884,7 +933,7 @@ def process_master(tx: Any, record: dict[str, Any]) -> bool:
 
     # Connect styles to genres if both exist
     if genres_list and styles_list:
-        tx.run(
+        await tx.run(
             "UNWIND $genre_style_pairs AS pair "
             "MERGE (g:Genre {name: pair.genre}) "
             "MERGE (s:Style {name: pair.style}) "
@@ -899,13 +948,13 @@ def process_master(tx: Any, record: dict[str, Any]) -> bool:
     return True  # Updated successfully
 
 
-def process_release(tx: Any, record: dict[str, Any]) -> bool:
+async def process_release(tx: Any, record: dict[str, Any]) -> bool:
     """Process release within a single transaction for atomicity."""
-    existing_result = tx.run(
+    existing_result = await tx.run(
         "MATCH (r:Release {id: $id}) RETURN r.sha256 AS hash",
         id=record["id"],
     )
-    existing_record = existing_result.single()
+    existing_record = await existing_result.single()
     if existing_record and existing_record["hash"] == record["sha256"]:
         return False  # No update needed
 
@@ -914,7 +963,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
         for f in record.get("formats", [])
         if isinstance(f, dict) and "name" in f
     ]
-    tx.run(
+    await tx.run(
         "MERGE (r:Release {id: $id}) "
         "ON CREATE SET r.title = $title, r.year = $year, r.formats = $formats, r.sha256 = $sha256 "
         "ON MATCH SET r.title = $title, r.year = $year, r.formats = $formats, r.sha256 = $sha256",
@@ -930,7 +979,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
     if artists:
         valid_artists = [a for a in artists if a.get("id")]
         if valid_artists:
-            tx.run(
+            await tx.run(
                 "UNWIND $artists AS artist "
                 "MATCH (r:Release {id: $release_id}) "
                 "MERGE (a_r:Artist {id: artist.id}) "
@@ -944,7 +993,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
     if labels:
         valid_labels = [lbl for lbl in labels if lbl.get("id")]
         if valid_labels:
-            tx.run(
+            await tx.run(
                 "UNWIND $labels AS label "
                 "MATCH (r:Release {id: $release_id}) "
                 "MERGE (l_r:Label {id: label.id}) "
@@ -956,7 +1005,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
     # Handle master relationship (normalized to string)
     master_id = record.get("master_id")
     if master_id:
-        tx.run(
+        await tx.run(
             "MATCH (r:Release {id: $id}) "
             "MERGE (m_r:Master {id: $m_id}) "
             "MERGE (r)-[:DERIVED_FROM]->(m_r)",
@@ -967,7 +1016,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
     # Handle genres and styles (normalized to string lists)
     genres_list: list[str] = record.get("genres", [])
     if genres_list:
-        tx.run(
+        await tx.run(
             "UNWIND $genres AS genre "
             "MATCH (r:Release {id: $release_id}) "
             "MERGE (g:Genre {name: genre.name}) "
@@ -978,7 +1027,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
 
     styles_list: list[str] = record.get("styles", [])
     if styles_list:
-        tx.run(
+        await tx.run(
             "UNWIND $styles AS style "
             "MATCH (r:Release {id: $release_id}) "
             "MERGE (s:Style {name: style.name}) "
@@ -989,7 +1038,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
 
     # Connect styles to genres if both exist
     if genres_list and styles_list:
-        tx.run(
+        await tx.run(
             "UNWIND $genre_style_pairs AS pair "
             "MERGE (g:Genre {name: pair.genre}) "
             "MERGE (s:Style {name: pair.style}) "
@@ -1022,7 +1071,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
                 credit_data.append(entry)
         if credit_data:
             # Create Person nodes and CREDITED_ON relationships
-            tx.run(
+            await tx.run(
                 "UNWIND $credits AS credit "
                 "MATCH (r:Release {id: credit.release_id}) "
                 "MERGE (p:Person {name: credit.name}) "
@@ -1032,7 +1081,7 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
             # Create SAME_AS relationships for credited people who are also performing artists
             artist_credits = [c for c in credit_data if c.get("artist_id")]
             if artist_credits:
-                tx.run(
+                await tx.run(
                     "UNWIND $credits AS credit "
                     "MATCH (p:Person {name: credit.name}) "
                     "MATCH (a:Artist {id: credit.artist_id}) "
@@ -1070,7 +1119,13 @@ def make_message_handler(
                     data_type,
                     record,
                     message.ack,
-                    lambda: message.nack(requeue=True),
+                    # requeue=False: this callback nacks permanently-invalid
+                    # input (unknown data_type, missing 'id', normalize failure,
+                    # poison batch) — send it straight to the DLQ instead of
+                    # cycling x-delivery-limit (20) futile redeliveries. Transient
+                    # failures are handled by _flush_queue's re-enqueue+backoff,
+                    # which never nacks.
+                    lambda: message.nack(requeue=False),
                 )
                 if accepted:
                     # Note: message_counts tracks received (not processed) messages in
@@ -1105,8 +1160,8 @@ def make_message_handler(
 
             async with graph.session(database="neo4j") as session:
 
-                def tx_fn(tx: Any) -> bool:
-                    return bool(process_fn(tx, record))
+                async def tx_fn(tx: Any) -> bool:
+                    return bool(await process_fn(tx, record))
 
                 updated = await session.execute_write(tx_fn)
 
