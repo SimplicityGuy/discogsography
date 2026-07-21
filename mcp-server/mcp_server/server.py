@@ -308,7 +308,7 @@ async def find_path(
         from_type: Type of starting entity (artist, genre, label, style).
         to_name: Name of the destination entity.
         to_type: Type of destination entity (artist, genre, label, style).
-        max_depth: Maximum path length to search (1-15, default 10).
+        max_depth: Maximum path length to search (1-10, default 10).
     """
     from_type_lower = from_type.lower()
     to_type_lower = to_type.lower()
@@ -325,7 +325,9 @@ async def find_path(
         from_type=from_type_lower,
         to_name=to_name,
         to_type=to_type_lower,
-        max_depth=min(max(int(max_depth) if str(max_depth).lstrip("-").isdigit() else 3, 1), 15),
+        # Clamp to the API's real ceiling (api/routers/explore.py:_MAX_PATH_DEPTH=10) —
+        # advertising a wider range here just makes 11-15 always fail with HTTP 422.
+        max_depth=min(max(int(max_depth) if str(max_depth).lstrip("-").isdigit() else 10, 1), 10),
     )
 
 

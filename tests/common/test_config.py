@@ -582,6 +582,32 @@ class TestApiConfig:
 
         assert config.insights_internal_secret == "shared-internal-secret"
 
+    def test_extractor_host_defaults_to_extractor_discogs(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """discogsography-cu2.32: no service named bare 'extractor' exists (the extractor
+        runs split as extractor-discogs / extractor-musicbrainz); the default must resolve
+        to a real hostname so the admin extractor status/trigger panel works out of the box.
+        """
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.delenv("EXTRACTOR_HOST", raising=False)
+
+        config = ApiConfig.from_env()
+
+        assert config.extractor_host == "extractor-discogs"
+        assert config.extractor_host != "extractor"
+
+    def test_extractor_host_read_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """discogsography-cu2.32: EXTRACTOR_HOST remains overridable."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("EXTRACTOR_HOST", "extractor-musicbrainz")
+
+        config = ApiConfig.from_env()
+
+        assert config.extractor_host == "extractor-musicbrainz"
+
     def test_discogs_oauth_callback_url_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """DISCOGS_OAUTH_CALLBACK_URL is read into the config."""
         from common.config import ApiConfig

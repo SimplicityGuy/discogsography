@@ -670,8 +670,13 @@ class ApiConfig:
     brevo_sender_email: str = "noreply@discogsography.com"
     brevo_sender_name: str = "Discogsography"
 
-    # Admin dashboard — extractor connection
-    extractor_host: str = "extractor"
+    # Admin dashboard — extractor connection.
+    # No service named bare "extractor" exists (extractor runs as the two split
+    # services extractor-discogs and extractor-musicbrainz per docker-compose.yml);
+    # default to extractor-discogs so the admin panel resolves out of the box.
+    # NOTE: this single field can still only ever address ONE of the two
+    # extractor services — see discogsography-cu2.32.
+    extractor_host: str = "extractor-discogs"
     extractor_health_port: int = 8000
 
     # Admin dashboard — RabbitMQ management API
@@ -790,7 +795,7 @@ class ApiConfig:
             brevo_api_key=brevo_api_key,
             brevo_sender_email=brevo_sender_email,
             brevo_sender_name=brevo_sender_name,
-            extractor_host=getenv("EXTRACTOR_HOST", "extractor"),
+            extractor_host=getenv("EXTRACTOR_HOST", "extractor-discogs"),
             extractor_health_port=int(getenv("EXTRACTOR_HEALTH_PORT", "8000")),
             rabbitmq_management_host=getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),
             rabbitmq_management_port=int(getenv("RABBITMQ_MANAGEMENT_PORT", "15672")),
