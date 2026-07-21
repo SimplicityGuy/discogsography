@@ -1454,3 +1454,44 @@ class TestTrackExtractionResilience:
             admin_mod._pool, admin_mod._config = original_pool, original_config
 
         assert any(p and "Tracking task crashed" in tuple(p) for p in executed_params), "safety net must mark the crashed extraction failed"
+
+    @pytest.mark.asyncio
+    async def test_safety_net_db_failure_is_swallowed(self) -> None:
+        """If the outer safety net's own 'Tracking task crashed' UPDATE also fails
+        (e.g. the pool is still down), the error must be logged and swallowed — the
+        tracker must never propagate an exception out of _track_extraction."""
+        import api.routers.admin as admin_mod
+
+        executed_params: list[Any] = []
+
+        def flaky_execute(_sql: str, params: Any = None, *_args: Any, **_kwargs: Any) -> None:
+            executed_params.append(params)
+            # Both the max-failures terminal write AND the safety-net recovery
+            # write blow up, exercising the inner except of the safety net.
+            if params and ("Extractor became unreachable" in tuple(params) or "Tracking task crashed" in tuple(params)):
+                raise RuntimeError("pool exhausted")
+            return None
+
+        mock_pool, _ = self._pool(execute_side_effect=flaky_execute)
+        mock_config = MagicMock(extractor_host="localhost", extractor_health_port=8000)
+        original_pool, original_config = admin_mod._pool, admin_mod._config
+        admin_mod._pool, admin_mod._config = mock_pool, mock_config
+
+        try:
+            with (
+                patch("api.routers.admin.asyncio.sleep", new_callable=AsyncMock),
+                patch("api.routers.admin.httpx.AsyncClient") as mock_client_cls,
+            ):
+                mock_client = AsyncMock()
+                mock_client.get = AsyncMock(side_effect=RuntimeError("boom"))
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=False)
+                mock_client_cls.return_value = mock_client
+
+                # Must not raise even though every recovery write fails.
+                await admin_mod._track_extraction(str(uuid4()))
+        finally:
+            admin_mod._pool, admin_mod._config = original_pool, original_config
+
+        # The safety net still attempted the recovery write before it failed.
+        assert any(p and "Tracking task crashed" in tuple(p) for p in executed_params)

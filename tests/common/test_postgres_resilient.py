@@ -1203,6 +1203,50 @@ class TestAsyncPostgreSQLPool:
 
     @pytest.mark.asyncio
     @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
+    async def test_body_exception_propagates_when_set_autocommit_fails_on_release(self, mock_connect: Mock, connection_params: dict) -> None:
+        """Regression: a `return` in connection()'s finally block would silently swallow
+        any exception raised inside the caller's `async with` body when set_autocommit
+        also fails on release. The body exception MUST still propagate, and the
+        connection must still be discarded with the active slot released.
+        """
+        from psycopg import OperationalError
+
+        conn = AsyncMock()
+        conn.closed = False
+        conn.close = AsyncMock()
+        # Succeeds on creation, fails on release — the discard path that used `return`.
+        conn.set_autocommit = AsyncMock(side_effect=[None, OperationalError("connection lost")])
+        cursor = AsyncMock()
+        cursor.execute = AsyncMock()
+        cursor.fetchone = AsyncMock(return_value=(1,))
+        cursor.__aenter__ = AsyncMock(return_value=cursor)
+        cursor.__aexit__ = AsyncMock(return_value=None)
+        conn.cursor = Mock(return_value=cursor)
+
+        mock_connect.return_value = conn
+
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5)
+        await pool.initialize()
+
+        class BodyError(RuntimeError):
+            pass
+
+        # The caller's body raises; set_autocommit then fails during release.
+        with pytest.raises(BodyError, match="boom from body"):
+            async with pool.connection():
+                raise BodyError("boom from body")
+
+        await asyncio.sleep(0.1)
+
+        # Body exception survived the finally block AND the connection was discarded.
+        assert pool.connections.qsize() == 0
+        assert pool.active_connections == 0
+        conn.close.assert_called()
+
+        await pool.close()
+
+    @pytest.mark.asyncio
+    @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
     async def test_connection_pool_exhaustion_wait(self, mock_connect: Mock, connection_params: dict, mock_async_connection: AsyncMock) -> None:
         """Test waiting for connection when pool is exhausted."""
 
@@ -2037,6 +2081,52 @@ class TestSyncHealthCheckLoopDirect:
 
         # Pool should have been replenished to min_connections
         assert pool.connections.qsize() == 2
+        pool.close()
+
+    @patch("common.postgres_resilient.psycopg.connect")
+    @patch("common.postgres_resilient.threading.Thread")
+    def test_health_check_loop_direct_replenish_queue_full_closes_and_decrements(
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+    ) -> None:
+        """Lines 164-168: during replenishment, if put_nowait raises Full the fresh
+        connection is closed, the reserved active slot is released, and the loop breaks.
+        """
+        from queue import Full
+
+        mock_connect.return_value = mock_connection
+
+        pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=2, max_connections=5, health_check_interval=1)
+
+        # Drain the pool so replenishment runs; the empty queue means no healthy
+        # connections are returned, so the only put_nowait calls come from replenishment.
+        while not pool.connections.empty():
+            try:
+                pool.connections.get_nowait()
+            except Exception:
+                break
+        pool.active_connections = 0
+
+        fresh_conn = Mock()
+        fresh_conn.close = Mock()
+        pool._create_connection = Mock(return_value=fresh_conn)  # type: ignore[method-assign]
+
+        original_put_nowait = pool.connections.put_nowait
+        original_qsize = pool.connections.qsize
+        pool.connections.put_nowait = Mock(side_effect=Full)  # type: ignore[method-assign]
+
+        def sleep_then_close(_interval: float) -> None:
+            pool._closed = True
+
+        with patch("common.postgres_resilient.time.sleep", side_effect=sleep_then_close):
+            pool._health_check_loop()
+
+        # The connection minted for replenishment must be closed on Full, and the
+        # reserved slot released (break stops after the first Full).
+        fresh_conn.close.assert_called_once()
+        assert pool.active_connections == 0
+
+        pool.connections.put_nowait = original_put_nowait  # type: ignore[method-assign]
+        pool.connections.qsize = original_qsize  # type: ignore[method-assign]
         pool.close()
 
     @patch("common.postgres_resilient.psycopg.connect")

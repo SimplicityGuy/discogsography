@@ -369,6 +369,16 @@ class TestResilientConnection:
         mock_conn.close.assert_called_once()
         assert manager._connection is None
 
+    def test_close_connection_none_is_noop(self) -> None:
+        """_close_connection(None) returns early without dispatching a close."""
+        from common.db_resilience import ResilientConnection
+
+        manager = ResilientConnection(Mock(), Mock(return_value=True))
+
+        # Must not raise when the current connection is None (e.g. replacing a
+        # never-established connection).
+        manager._close_connection(None)
+
 
 class TestAsyncResilientConnection:
     """Tests for AsyncResilientConnection class."""
@@ -508,6 +518,16 @@ class TestAsyncResilientConnection:
 
         # Connection should still be None even if close failed
         assert manager._connection is None
+
+    @pytest.mark.asyncio
+    async def test_aclose_connection_none_is_noop(self) -> None:
+        """_aclose_connection(None) returns early without dispatching a close."""
+        from common.db_resilience import AsyncResilientConnection
+
+        manager = AsyncResilientConnection(Mock(), Mock(return_value=True))
+
+        # Must not raise when the current connection is None.
+        await manager._aclose_connection(None)
 
     @pytest.mark.asyncio
     async def test_mixed_sync_async_factory_and_test(self) -> None:

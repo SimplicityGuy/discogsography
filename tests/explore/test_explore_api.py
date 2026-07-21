@@ -1295,3 +1295,80 @@ class TestExploreServiceEndpoints:
         # The buffering .aread() path must NOT be used for streaming responses.
         mock_proxied.aread.assert_not_called()
         mock_proxied.aclose.assert_awaited_once()
+
+    def test_proxy_stream_interrupted_closes_upstream(self, explore_client: TestClient) -> None:
+        """An httpx error raised mid-stream must be swallowed (logged, not propagated)
+        and the upstream response must still be closed via the finally block, so a
+        dropped SSE connection does not leak the upstream response.
+        """
+        import httpx
+
+        async def _chunks():
+            yield b"event: status\ndata: {}\n\n"
+            raise httpx.ReadError("upstream connection dropped")
+
+        mock_proxied = MagicMock()
+        mock_proxied.status_code = 200
+        mock_proxied.headers = {"content-type": "text/event-stream"}
+        mock_proxied.aiter_raw = MagicMock(return_value=_chunks())
+        mock_proxied.aread = AsyncMock()
+        mock_proxied.aclose = AsyncMock()
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.build_request = MagicMock(return_value=MagicMock())
+        mock_client.send = AsyncMock(return_value=mock_proxied)
+
+        with patch("explore.explore._get_http_client", return_value=mock_client):
+            response = explore_client.get("/api/nlq/query?q=test", headers={"Accept": "text/event-stream"})
+
+        assert response.status_code == 200
+        # The partial chunk delivered before the error must still reach the client,
+        # and the mid-stream error must not surface as a 500.
+        assert response.content == b"event: status\ndata: {}\n\n"
+        mock_proxied.aclose.assert_awaited_once()
+
+    def test_proxy_buffered_read_timeout_returns_504(self, explore_client: TestClient) -> None:
+        """A timeout while buffering a non-SSE response body returns 504 and closes
+        the upstream response.
+        """
+        import httpx
+
+        mock_proxied = MagicMock()
+        mock_proxied.status_code = 200
+        mock_proxied.headers = {"content-type": "application/json"}
+        mock_proxied.aread = AsyncMock(side_effect=httpx.TimeoutException("read timed out"))
+        mock_proxied.aclose = AsyncMock()
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.build_request = MagicMock(return_value=MagicMock())
+        mock_client.send = AsyncMock(return_value=mock_proxied)
+
+        with patch("explore.explore._get_http_client", return_value=mock_client):
+            response = explore_client.get("/api/autocomplete?q=radio")
+
+        assert response.status_code == 504
+        assert response.json()["error"] == "Request timed out"
+        mock_proxied.aclose.assert_awaited_once()
+
+    def test_proxy_buffered_read_error_returns_502(self, explore_client: TestClient) -> None:
+        """An HTTP error while buffering a non-SSE response body returns 502 and closes
+        the upstream response.
+        """
+        import httpx
+
+        mock_proxied = MagicMock()
+        mock_proxied.status_code = 200
+        mock_proxied.headers = {"content-type": "application/json"}
+        mock_proxied.aread = AsyncMock(side_effect=httpx.ReadError("connection reset"))
+        mock_proxied.aclose = AsyncMock()
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.build_request = MagicMock(return_value=MagicMock())
+        mock_client.send = AsyncMock(return_value=mock_proxied)
+
+        with patch("explore.explore._get_http_client", return_value=mock_client):
+            response = explore_client.get("/api/autocomplete?q=radio")
+
+        assert response.status_code == 502
+        assert response.json()["error"] == "Upstream service error"
+        mock_proxied.aclose.assert_awaited_once()
