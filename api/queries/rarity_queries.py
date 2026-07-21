@@ -410,7 +410,7 @@ async def get_rarity_leaderboard(
                 SELECT release_id, title, artist_name, year, rarity_score, tier, hidden_gem_score
                 FROM insights.release_rarity
                 WHERE tier = %s
-                ORDER BY rarity_score DESC
+                ORDER BY rarity_score DESC, release_id
                 LIMIT %s OFFSET %s
                 """,
                 (tier, page_size, offset),
@@ -426,7 +426,7 @@ async def get_rarity_leaderboard(
                 """
                 SELECT release_id, title, artist_name, year, rarity_score, tier, hidden_gem_score
                 FROM insights.release_rarity
-                ORDER BY rarity_score DESC
+                ORDER BY rarity_score DESC, release_id
                 LIMIT %s OFFSET %s
                 """,
                 (page_size, offset),
@@ -458,7 +458,7 @@ async def get_rarity_hidden_gems(
             SELECT release_id, title, artist_name, year, rarity_score, tier, hidden_gem_score
             FROM insights.release_rarity
             WHERE rarity_score >= %s AND hidden_gem_score IS NOT NULL
-            ORDER BY hidden_gem_score DESC
+            ORDER BY hidden_gem_score DESC, release_id
             LIMIT %s OFFSET %s
             """,
             (min_rarity, page_size, offset),
@@ -516,7 +516,7 @@ async def get_rarity_by_artist(
             SELECT release_id, title, artist_name, year, rarity_score, tier, hidden_gem_score
             FROM insights.release_rarity
             WHERE release_id = ANY(%s)
-            ORDER BY rarity_score DESC
+            ORDER BY rarity_score DESC, release_id
             LIMIT %s OFFSET %s
             """,
             (release_ids, page_size, offset),
@@ -574,7 +574,7 @@ async def get_rarity_by_label(
             SELECT release_id, title, artist_name, year, rarity_score, tier, hidden_gem_score
             FROM insights.release_rarity
             WHERE release_id = ANY(%s)
-            ORDER BY rarity_score DESC
+            ORDER BY rarity_score DESC, release_id
             LIMIT %s OFFSET %s
             """,
             (release_ids, page_size, offset),
