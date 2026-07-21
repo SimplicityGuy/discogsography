@@ -913,6 +913,29 @@ fn spawn_shutdown_flag_monitor(shutdown: Arc<tokio::sync::Notify>) -> Arc<Atomic
     flag
 }
 
+/// Decide the outcome of an initial (first-run) extraction from whether processing succeeded and
+/// whether a shutdown was requested.
+///
+/// The processing functions collapse "interrupted by shutdown" and "processing error" into a single
+/// `success: bool` — both surface as `Ok(false)`. Only the initial-run call sites promote `Ok(false)`
+/// to `Err`, which sends main into `apply_failure_cooldown` (default 600s) + `exit(1)`. An
+/// operator-requested SIGTERM would then be logged as a failure and hang ~10 min — long past Docker's
+/// stop grace period, so the container is SIGKILLed instead of stopping cleanly, and orchestrators
+/// that key on exit code may restart the service being stopped. A shutdown must therefore
+/// short-circuit to `Ok(())` BEFORE the failure check. Shared by the Discogs and MusicBrainz initial
+/// runs. (cu2.45)
+fn initial_run_outcome(success: bool, shutdown_requested: bool, source_label: &str) -> Result<()> {
+    if shutdown_requested {
+        info!("🛑 Shutdown requested during initial {source_label} processing — exiting cleanly");
+        return Ok(());
+    }
+    if !success {
+        error!("❌ Initial {source_label} processing failed");
+        return Err(anyhow::anyhow!("Initial {source_label} processing failed"));
+    }
+    Ok(())
+}
+
 /// Main extraction loop with periodic checks
 pub async fn run_extraction_loop(
     config: Arc<ExtractorConfig>,
@@ -945,17 +968,9 @@ pub async fn run_extraction_loop(
     )
     .await?;
 
-    // A shutdown during the initial run is a clean exit, not a failure — returning Err here would
-    // send main into the failure cooldown + non-zero exit. (cu2.44)
-    if shutdown_flag.load(Ordering::SeqCst) {
-        info!("🛑 Shutdown requested during initial Discogs processing — exiting cleanly");
-        return Ok(());
-    }
-
-    if !success {
-        error!("❌ Initial data processing failed");
-        return Err(anyhow::anyhow!("Initial data processing failed"));
-    }
+    // A shutdown during the initial run is a clean exit, not a failure — returning Err would send
+    // main into the failure cooldown + non-zero exit. Short-circuit shutdown to Ok. (cu2.44/cu2.45)
+    initial_run_outcome(success, shutdown_flag.load(Ordering::SeqCst), "Discogs")?;
 
     info!("✅ Initial data processing completed successfully");
 
@@ -1125,10 +1140,10 @@ pub async fn run_musicbrainz_loop(
         process_musicbrainz_data(config.clone(), state.clone(), shutdown_flag.clone(), force_reprocess, mq_factory.clone(), compiled_rules.clone())
             .await?;
 
-    if !success {
-        error!("❌ Initial MusicBrainz processing failed");
-        return Err(anyhow::anyhow!("Initial MusicBrainz processing failed"));
-    }
+    // `process_musicbrainz_data` returns Ok(false) for BOTH a real failure and a between-files
+    // shutdown; only this initial path promoted Ok(false) to Err. Short-circuit shutdown to Ok(())
+    // so an operator-requested SIGTERM does not trigger the 600s failure cooldown + exit(1). (cu2.45)
+    initial_run_outcome(success, shutdown_flag.load(Ordering::SeqCst), "MusicBrainz")?;
 
     info!("✅ Initial MusicBrainz processing completed successfully");
 

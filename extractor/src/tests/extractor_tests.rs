@@ -949,6 +949,36 @@ async fn test_reset_status_after_failed_check_is_not_running() {
     }
 }
 
+// ── initial-run outcome tests (cu2.45) ──────────────────────────────
+
+/// Regression for cu2.45: a between-files shutdown makes `process_musicbrainz_data` return
+/// `Ok(false)`, indistinguishable from a real failure. The initial-run path used to promote that
+/// to `Err`, sending main into the 600s failure cooldown + `exit(1)` on a clean operator shutdown.
+/// `initial_run_outcome` must return `Ok(())` whenever a shutdown was requested, regardless of the
+/// success flag — and only return `Err` for a genuine (non-shutdown) failure.
+#[test]
+fn test_initial_run_outcome_shutdown_is_not_failure() {
+    // Genuine failure, no shutdown → Err (main applies cooldown as intended).
+    assert!(initial_run_outcome(false, false, "MusicBrainz").is_err());
+
+    // Shutdown with success == false (the exact cu2.45 scenario) → Ok, NOT a failure.
+    assert!(initial_run_outcome(false, true, "MusicBrainz").is_ok());
+
+    // Shutdown with success == true → Ok.
+    assert!(initial_run_outcome(true, true, "MusicBrainz").is_ok());
+
+    // Clean success → Ok.
+    assert!(initial_run_outcome(true, false, "MusicBrainz").is_ok());
+}
+
+/// The same helper governs the Discogs initial run (fix-one-fix-all with cu2.44): a shutdown there
+/// must likewise short-circuit to Ok so it never trips the failure cooldown.
+#[test]
+fn test_initial_run_outcome_discogs_shutdown_is_ok() {
+    assert!(initial_run_outcome(false, true, "Discogs").is_ok());
+    assert!(initial_run_outcome(false, false, "Discogs").is_err());
+}
+
 // ── shutdown-flag monitor tests (cu2.44) ────────────────────────────
 
 /// Regression for cu2.44: the Discogs path lost SIGTERM/SIGINT delivered mid-run because nothing
