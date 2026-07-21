@@ -234,40 +234,50 @@ def _stream_response(
         # Run engine in background so status events can be yielded as they arrive
         engine_task = asyncio.create_task(_engine.run(query, ctx, on_status=emit_status))
 
-        # Yield status events as they arrive
-        while not engine_task.done():
-            try:
-                step = await asyncio.wait_for(status_queue.get(), timeout=0.1)
-                yield {"event": "status", "data": json.dumps({"step": step})}
-            except TimeoutError:
-                continue
-
-        # Drain any remaining status events
-        while not status_queue.empty():
-            step = status_queue.get_nowait()
-            yield {"event": "status", "data": json.dumps({"step": step})}
-
         try:
-            result = await engine_task
-        except Exception as exc:
-            logger.error("❌ NLQ engine error", error=str(exc), exc_info=True)
-            yield {"event": "error", "data": json.dumps({"error": "An internal error occurred"})}
-            return
+            # Yield status events as they arrive
+            while not engine_task.done():
+                try:
+                    step = await asyncio.wait_for(status_queue.get(), timeout=0.1)
+                    yield {"event": "status", "data": json.dumps({"step": step})}
+                except TimeoutError:
+                    continue
 
-        # Emit actions event before result so the client can snapshot and apply
-        yield {
-            "event": "actions",
-            "data": json.dumps({"actions": [action.model_dump(by_alias=True, mode="json") for action in result.actions]}),
-        }
+            # Drain any remaining status events
+            while not status_queue.empty():
+                step = status_queue.get_nowait()
+                yield {"event": "status", "data": json.dumps({"step": step})}
 
-        # Emit final result
-        response_data = {
-            "query": query,
-            "summary": result.summary,
-            "entities": result.entities,
-            "tools_used": result.tools_used,
-            "cached": False,
-        }
-        yield {"event": "result", "data": json.dumps(response_data)}
+            try:
+                result = await engine_task
+            except Exception as exc:
+                logger.error("❌ NLQ engine error", error=str(exc), exc_info=True)
+                yield {"event": "error", "data": json.dumps({"error": "An internal error occurred"})}
+                return
+
+            # Emit actions event before result so the client can snapshot and apply
+            yield {
+                "event": "actions",
+                "data": json.dumps({"actions": [action.model_dump(by_alias=True, mode="json") for action in result.actions]}),
+            }
+
+            # Emit final result
+            response_data = {
+                "query": query,
+                "summary": result.summary,
+                "entities": result.entities,
+                "tools_used": result.tools_used,
+                "cached": False,
+            }
+            yield {"event": "result", "data": json.dumps(response_data)}
+        finally:
+            # Client disconnect raises GeneratorExit at the current yield; cancel
+            # the still-running engine task so the Anthropic/Neo4j work does not
+            # leak and the pending task cannot be GC'd mid-flight. gather with
+            # return_exceptions swallows the resulting CancelledError. See
+            # discogsography-cu2.28.
+            if not engine_task.done():
+                engine_task.cancel()
+                await asyncio.gather(engine_task, return_exceptions=True)
 
     return EventSourceResponse(event_generator())
