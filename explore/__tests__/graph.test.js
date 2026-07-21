@@ -221,6 +221,25 @@ describe('GraphVisualization', () => {
 
             expect(window.apiClient.expand).toHaveBeenCalledWith('Radiohead', 'artist', 'releases', 30, 0, null);
         });
+
+        it('should reset a stale beforeYear from a prior timeline scrub (regression discogsography-cu2.38)', async () => {
+            graph.beforeYear = 1980;
+
+            const dataWithCount = {
+                center: { id: 'radiohead', name: 'Radiohead', type: 'artist' },
+                categories: [
+                    { id: 'cat-releases', name: 'Releases', category: 'releases', count: 5 },
+                ],
+            };
+            graph.setExploreData(dataWithCount);
+
+            expect(graph.beforeYear).toBeNull();
+
+            await new Promise(r => setTimeout(r, 10));
+            // The new entity's category expansion must not silently inherit
+            // the previous session's year filter.
+            expect(window.apiClient.expand).toHaveBeenCalledWith('Radiohead', 'artist', 'releases', 30, 0, null);
+        });
     });
 
     describe('_addLoadMoreNode', () => {
@@ -330,6 +349,14 @@ describe('GraphVisualization', () => {
             graph.restoreSnapshot([], { id: 'Test', type: 'artist' });
 
             expect(placeholder.classList.contains('hidden')).toBe(true);
+        });
+
+        it('should reset a stale beforeYear from a prior timeline scrub (regression discogsography-cu2.38)', () => {
+            graph.beforeYear = 1980;
+
+            graph.restoreSnapshot([{ id: 'Radiohead', type: 'artist' }], { id: 'Radiohead', type: 'artist' });
+
+            expect(graph.beforeYear).toBeNull();
         });
     });
 
