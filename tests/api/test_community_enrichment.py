@@ -315,6 +315,107 @@ class TestEnrichReleasesFromDiscogs:
         assert result["enriched"] == 1
         assert result["errors"] == 0
 
+    @staticmethod
+    def _two_release_pool() -> MagicMock:
+        """Pool whose first release fetch yields two release ids + config rows."""
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        call_count = 0
+
+        async def mock_fetchall() -> list[dict]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [{"release_id": 111}, {"release_id": 222}]
+            if call_count == 2:
+                return [
+                    {"key": "discogs_consumer_key", "value": "ck"},
+                    {"key": "discogs_consumer_secret", "value": "cs"},
+                ]
+            return []
+
+        mock_cur.fetchall = mock_fetchall
+        mock_cur.fetchone = AsyncMock(return_value={"access_token": "at", "access_secret": "as", "provider_username": "u"})
+        mock_cur.execute = AsyncMock()
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+        return mock_pool
+
+    @pytest.mark.asyncio
+    async def test_transient_httpx_error_counted_and_run_continues(self) -> None:
+        """discogsography-cu2.26: a transient transport error on one release must
+        be counted as an error and the run must continue to the next release,
+        not abort the whole invocation with an unhandled 500.
+        """
+        import httpx
+
+        from api.routers.insights_compute import _enrich_community_counts
+
+        mock_pool = self._two_release_pool()
+
+        ok_response = MagicMock()
+        ok_response.status_code = 200
+        ok_response.json = MagicMock(return_value={"community": {"have": 3, "want": 7}})
+
+        with (
+            patch("api.routers.insights_compute.decrypt_oauth_token", side_effect=lambda v, _k: v),
+            patch("api.routers.insights_compute._auth_header", return_value="OAuth ..."),
+            patch("asyncio.sleep", new=AsyncMock()),
+            patch("httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_client = AsyncMock()
+            # First release: transient read timeout; second: healthy 200.
+            mock_client.get = AsyncMock(side_effect=[httpx.ReadTimeout("boom"), ok_response])
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            result = await _enrich_community_counts(mock_pool, None, None)
+
+        assert result["errors"] == 1
+        assert result["enriched"] == 1
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_body_counted_and_run_continues(self) -> None:
+        """discogsography-cu2.26: a 200 response with a non-JSON body must be
+        counted as an error, not raise out of the loop.
+        """
+        import json
+
+        from api.routers.insights_compute import _enrich_community_counts
+
+        mock_pool = self._two_release_pool()
+
+        bad_response = MagicMock()
+        bad_response.status_code = 200
+        bad_response.json = MagicMock(side_effect=json.JSONDecodeError("bad", "", 0))
+
+        ok_response = MagicMock()
+        ok_response.status_code = 200
+        ok_response.json = MagicMock(return_value={"community": {"have": 1, "want": 2}})
+
+        with (
+            patch("api.routers.insights_compute.decrypt_oauth_token", side_effect=lambda v, _k: v),
+            patch("api.routers.insights_compute._auth_header", return_value="OAuth ..."),
+            patch("asyncio.sleep", new=AsyncMock()),
+            patch("httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(side_effect=[bad_response, ok_response])
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            result = await _enrich_community_counts(mock_pool, None, None)
+
+        assert result["errors"] == 1
+        assert result["enriched"] == 1
+
 
 class TestCommunityEnrichmentEndpoint:
     def test_community_enrichment_endpoint_not_ready(self, test_client: TestClient) -> None:

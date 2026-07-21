@@ -272,9 +272,18 @@ async def _enrich_community_counts(
                 "Accept": "application/json",
             }
 
-            # Retry loop for rate limiting — ensures the same release is retried
+            # Retry loop for rate limiting — ensures the same release is retried.
+            # A transient transport error (timeout, reset, truncated body) must
+            # count as an error for THIS release and move on, not abort the whole
+            # run — mirroring the non-200 branch below.
+            fetch_failed = False
             while True:
-                response = await client.get(url, headers=headers)
+                try:
+                    response = await client.get(url, headers=headers)
+                except httpx.HTTPError as exc:
+                    logger.warning("⚠️ Discogs API request failed for release", release_id=release_id, error=str(exc))
+                    fetch_failed = True
+                    break
 
                 if response.status_code == 429:
                     rate_limit_retries += 1
@@ -292,13 +301,24 @@ async def _enrich_community_counts(
             if exhausted:
                 break
 
+            if fetch_failed:
+                errors += 1
+                await asyncio.sleep(_ENRICHMENT_DELAY_SECONDS)
+                continue
+
             if response.status_code != 200:
                 logger.warning("⚠️ Discogs API error for release", release_id=release_id, status=response.status_code)
                 errors += 1
                 await asyncio.sleep(_ENRICHMENT_DELAY_SECONDS)
                 continue
 
-            data = response.json()
+            try:
+                data = response.json()
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.warning("⚠️ Discogs API returned a non-JSON body for release", release_id=release_id, error=str(exc))
+                errors += 1
+                await asyncio.sleep(_ENRICHMENT_DELAY_SECONDS)
+                continue
             community = data.get("community", {})
             have = community.get("have", 0)
             want = community.get("want", 0)
