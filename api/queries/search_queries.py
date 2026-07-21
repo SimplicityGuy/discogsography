@@ -129,7 +129,9 @@ def _entity_select(
     genres_col = sql.SQL("(data->'genres')") if has_genres else sql.SQL("NULL::jsonb")
     table = sql.Identifier(_ENTITY_CONFIG[entity_type][0])
     name_lit = sql.Literal(name_field)
-    limit_clause = sql.SQL(" ORDER BY rank DESC LIMIT {n}").format(n=sql.Literal(per_table_limit)) if per_table_limit else sql.SQL("")
+    # data_id is a unique tiebreaker so the per-table rank cap selects a
+    # deterministic subset among tied ts_rank values across page executions.
+    limit_clause = sql.SQL(" ORDER BY rank DESC, data_id LIMIT {n}").format(n=sql.Literal(per_table_limit)) if per_table_limit else sql.SQL("")
 
     year_clause, year_params = _year_filter_clause(year_min, year_max, column=year_col)
     genre_clause, genre_params = _genre_filter_clause(genres or [], column=genres_col)
@@ -227,7 +229,7 @@ async def _run_results(
         " results AS ({union_sql})"
         " SELECT type, id, name, rank, highlight, year, genres"
         " FROM results"
-        " ORDER BY rank DESC"
+        " ORDER BY rank DESC, id"
         " LIMIT %s OFFSET %s"
     ).format(union_sql=union_sql)
     params = [q, *union_params, limit, offset]

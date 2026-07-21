@@ -241,7 +241,7 @@ class TestSearchQueryModuleHelpers:
 
         frag, params = _entity_select("artist", "name", has_year=False, has_genres=False, per_table_limit=50)
         rendered = frag.as_string(None)
-        assert "ORDER BY rank DESC LIMIT 50" in rendered
+        assert "ORDER BY rank DESC, data_id LIMIT 50" in rendered
         assert params == []
 
     def test_entity_select_pushes_year_filter_before_limit(self) -> None:
@@ -254,7 +254,7 @@ class TestSearchQueryModuleHelpers:
         frag, params = _entity_select("release", "title", has_year=True, has_genres=True, per_table_limit=40, year_min=1960, year_max=1969)
         rendered = frag.as_string(None)
         where_idx = rendered.index("WHERE")
-        limit_idx = rendered.index("ORDER BY rank DESC LIMIT")
+        limit_idx = rendered.index("ORDER BY rank DESC, data_id LIMIT")
         assert where_idx < limit_idx
         # the year predicate text must appear before the LIMIT, not after
         assert "year" in rendered[where_idx:limit_idx].lower()
@@ -266,7 +266,7 @@ class TestSearchQueryModuleHelpers:
         frag, params = _entity_select("release", "title", has_year=True, has_genres=True, per_table_limit=40, genres=["Rock", "Jazz"])
         rendered = frag.as_string(None)
         where_idx = rendered.index("WHERE")
-        limit_idx = rendered.index("ORDER BY rank DESC LIMIT")
+        limit_idx = rendered.index("ORDER BY rank DESC, data_id LIMIT")
         assert "?|" in rendered[where_idx:limit_idx]
         assert params == [["Rock", "Jazz"]]
 
@@ -277,7 +277,7 @@ class TestSearchQueryModuleHelpers:
         rendered = frag.as_string(None)
         # No filters given -> WHERE clause should only be the tsvector match,
         # immediately followed by ORDER BY (no " AND (...)" filter tacked on).
-        assert "@@ q.tsq order by rank desc limit" in rendered.lower()
+        assert "@@ q.tsq order by rank desc, data_id limit" in rendered.lower()
         assert params == []
 
     def test_build_union_passes_per_table_limit(self) -> None:
@@ -392,7 +392,7 @@ class TestSearchQueryModuleHelpers:
         # The per-table subquery's own WHERE (with the filter) must precede its
         # ORDER BY rank LIMIT — not a trailing outer WHERE applied after the cap.
         subquery_where = rendered.index("WHERE")
-        subquery_limit = rendered.index("ORDER BY rank DESC LIMIT")
+        subquery_limit = rendered.index("ORDER BY rank DESC, data_id LIMIT")
         assert subquery_where < subquery_limit
         assert "year" in rendered[subquery_where:subquery_limit].lower()
         assert "?|" in rendered[subquery_where:subquery_limit]
