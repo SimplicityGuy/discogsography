@@ -71,8 +71,15 @@ class SettingsPane {
             }
         }
 
-        // Derive initial 2FA state from user data
-        this._twoFaState = user.totp_enabled ? 'enabled' : 'disabled';
+        // Derive 2FA state from user data — but never while a transient flow
+        // (setup / recovery / disableConfirm) is in progress. init() runs on
+        // EVERY pane activation, so re-entering Settings mid-flow would
+        // otherwise clobber the one-time recovery-codes screen (codes are
+        // returned once by /2fa/setup and cannot be re-fetched), mirroring
+        // the 'revealing' guard in _loadAppTokens above.
+        if (!['setup', 'recovery', 'disableConfirm'].includes(this._twoFaState)) {
+            this._twoFaState = user.totp_enabled ? 'enabled' : 'disabled';
+        }
     }
 
     // ------------------------------------------------------------------ //
