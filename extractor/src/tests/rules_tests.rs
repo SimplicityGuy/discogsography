@@ -1279,7 +1279,7 @@ filters:
 }
 
 #[test]
-fn test_filter_single_string_genre_not_array() {
+fn test_filter_single_string_genre_matching_removed() {
     let config = compile_filter_yaml(
         r#"
 filters:
@@ -1289,11 +1289,35 @@ filters:
       reason: "Numeric genres"
 "#,
     );
-    // genre is a single string, not an array — should be left untouched
+    // genre is a single string (one occurrence in the XML) that matches the
+    // filter — the key must be stripped, mirroring array-element removal
+    // (discogsography-cu2.47). Previously this scalar shape was silently skipped.
     let mut record = json!({"genres": {"genre": "123"}});
     let actions = apply_filters(&config, "releases", &mut record);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].removed_count, 1);
+    assert_eq!(actions[0].removed_values, vec!["123"]);
+    // The matching leaf key is removed; the parent object remains.
+    assert!(record["genres"].get("genre").is_none());
+    assert_eq!(record["genres"], json!({}));
+}
+
+#[test]
+fn test_filter_single_string_genre_non_matching_preserved() {
+    let config = compile_filter_yaml(
+        r#"
+filters:
+  releases:
+    - field: genres.genre
+      remove_matching: "^\\d+$"
+      reason: "Numeric genres"
+"#,
+    );
+    // A single, non-matching scalar genre is left untouched.
+    let mut record = json!({"genres": {"genre": "Rock"}});
+    let actions = apply_filters(&config, "releases", &mut record);
     assert!(actions.is_empty());
-    assert_eq!(record["genres"]["genre"], json!("123"));
+    assert_eq!(record["genres"]["genre"], json!("Rock"));
 }
 
 // ── Task 4: QualityReport — Skipped Records Tracking ────────────────

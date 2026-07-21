@@ -425,29 +425,52 @@ pub fn apply_filters(config: &CompiledRulesConfig, data_type: &str, record: &mut
                     }
                 };
 
-                // Get the array at the leaf key
-                let arr = match parent {
-                    Value::Object(map) => match map.get_mut(leaf) {
-                        Some(Value::Array(arr)) => arr,
-                        _ => continue,
-                    },
+                // Navigate to the leaf-bearing object.
+                let map = match parent {
+                    Value::Object(map) => map,
                     _ => continue,
                 };
 
-                let mut removed_values = Vec::new();
-                let original_len = arr.len();
-                arr.retain(|elem| {
-                    if let Value::String(s) = elem
-                        && remove_matching.is_match(s)
-                    {
-                        removed_values.push(s.clone());
-                        return false;
+                // The XML parser (parser.rs `add_child`) only produces an array when a
+                // child name repeats; a single occurrence stays a scalar string. Handle
+                // both shapes so single-genre/style records aren't silently skipped.
+                match map.get_mut(leaf) {
+                    // Multi-value field: retain only the non-matching elements.
+                    Some(Value::Array(arr)) => {
+                        let mut removed_values = Vec::new();
+                        let original_len = arr.len();
+                        arr.retain(|elem| {
+                            if let Value::String(s) = elem
+                                && remove_matching.is_match(s)
+                            {
+                                removed_values.push(s.clone());
+                                return false;
+                            }
+                            true
+                        });
+                        let removed_count = original_len - arr.len();
+                        if removed_count > 0 {
+                            actions.push(FilterAction { field: field.clone(), removed_count, removed_values, reason: reason.clone() });
+                        }
                     }
-                    true
-                });
-                let removed_count = original_len - arr.len();
-                if removed_count > 0 {
-                    actions.push(FilterAction { field: field.clone(), removed_count, removed_values, reason: reason.clone() });
+                    // Single-value field: a lone occurrence is a scalar string. If it
+                    // matches, drop the key entirely — same net effect as filtering the
+                    // only element out of an array. Without this, records with exactly
+                    // one genre/style keep the bad value while multi-valued records get
+                    // filtered — inconsistent, incomplete cleaning (discogsography-cu2.47).
+                    Some(Value::String(s)) => {
+                        if remove_matching.is_match(s) {
+                            let removed = s.clone();
+                            map.remove(leaf);
+                            actions.push(FilterAction {
+                                field: field.clone(),
+                                removed_count: 1,
+                                removed_values: vec![removed],
+                                reason: reason.clone(),
+                            });
+                        }
+                    }
+                    _ => continue,
                 }
             }
             CompiledFilterCondition::NullifyWhen { field, below, above, reason } => {
