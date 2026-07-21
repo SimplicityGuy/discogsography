@@ -917,6 +917,173 @@ rules:
     assert_eq!(report.total_records["artists"], 1);
 }
 
+// ── failed-check status reset tests (cu2.41) ────────────────────────
+
+/// Regression for cu2.41: after a periodic/triggered extraction returns `Err`, the loop must
+/// reset a stuck `Running` status to `Failed`. Without this the status set up-front in
+/// `process_discogs_data` survives an early-`?` error for the whole multi-day periodic sleep,
+/// wedging `/trigger` recovery and starving the MusicBrainz idle-wait.
+#[tokio::test]
+async fn test_reset_status_after_failed_check_clears_running() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    // Simulate the stuck state: process_discogs_data set Running, then an early `?` propagated.
+    state.write().await.extraction_status = ExtractionStatus::Running;
+
+    reset_status_after_failed_check(&state).await;
+
+    assert_eq!(state.read().await.extraction_status, ExtractionStatus::Failed, "a failed check must not leave the status stuck at Running");
+}
+
+/// The reset lands on `Failed` (not `Running`, not `Completed`) so downstream consumers treat it
+/// as a terminal, recoverable state: health.rs stops returning 409 `already_running`, and
+/// `wait_for_discogs_idle` (which treats only `running` as busy) proceeds.
+#[tokio::test]
+async fn test_reset_status_after_failed_check_is_not_running() {
+    for start in [ExtractionStatus::Running, ExtractionStatus::Completed, ExtractionStatus::Waiting] {
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+        state.write().await.extraction_status = start;
+        reset_status_after_failed_check(&state).await;
+        let got = state.read().await.extraction_status;
+        assert_eq!(got, ExtractionStatus::Failed);
+        assert_ne!(got, ExtractionStatus::Running);
+    }
+}
+
+// ── initial-run outcome tests (cu2.45) ──────────────────────────────
+
+/// Regression for cu2.45: a between-files shutdown makes `process_musicbrainz_data` return
+/// `Ok(false)`, indistinguishable from a real failure. The initial-run path used to promote that
+/// to `Err`, sending main into the 600s failure cooldown + `exit(1)` on a clean operator shutdown.
+/// `initial_run_outcome` must return `Ok(())` whenever a shutdown was requested, regardless of the
+/// success flag — and only return `Err` for a genuine (non-shutdown) failure.
+#[test]
+fn test_initial_run_outcome_shutdown_is_not_failure() {
+    // Genuine failure, no shutdown → Err (main applies cooldown as intended).
+    assert!(initial_run_outcome(false, false, "MusicBrainz").is_err());
+
+    // Shutdown with success == false (the exact cu2.45 scenario) → Ok, NOT a failure.
+    assert!(initial_run_outcome(false, true, "MusicBrainz").is_ok());
+
+    // Shutdown with success == true → Ok.
+    assert!(initial_run_outcome(true, true, "MusicBrainz").is_ok());
+
+    // Clean success → Ok.
+    assert!(initial_run_outcome(true, false, "MusicBrainz").is_ok());
+}
+
+/// The same helper governs the Discogs initial run (fix-one-fix-all with cu2.44): a shutdown there
+/// must likewise short-circuit to Ok so it never trips the failure cooldown.
+#[test]
+fn test_initial_run_outcome_discogs_shutdown_is_ok() {
+    assert!(initial_run_outcome(false, true, "Discogs").is_ok());
+    assert!(initial_run_outcome(false, false, "Discogs").is_err());
+}
+
+// ── shutdown-flag monitor tests (cu2.44) ────────────────────────────
+
+/// Regression for cu2.44: the Discogs path lost SIGTERM/SIGINT delivered mid-run because nothing
+/// converted the one-shot `Notify` into a pollable flag. `spawn_shutdown_flag_monitor` must flip
+/// its `AtomicBool` when the `Notify` fires, so processing code can observe a shutdown between
+/// files without consuming the signal the outer `select!` needs.
+#[tokio::test]
+async fn test_spawn_shutdown_flag_monitor_flips_on_notify() {
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let flag = spawn_shutdown_flag_monitor(shutdown.clone());
+
+    assert!(!flag.load(Ordering::SeqCst), "flag starts clear");
+
+    // notify_waiters() wakes only currently-parked waiters and stores no permit, so retry until
+    // the monitor task has parked and observed the signal (or fail after a bounded wait).
+    let mut fired = false;
+    for _ in 0..200 {
+        shutdown.notify_waiters();
+        tokio::task::yield_now().await;
+        if flag.load(Ordering::SeqCst) {
+            fired = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+
+    assert!(fired, "monitor must set the shutdown flag once the Notify fires");
+}
+
+/// The flag stays clear until the signal actually fires — a spurious early poll must not report a
+/// shutdown, otherwise the first file would be skipped on every run.
+#[tokio::test]
+async fn test_spawn_shutdown_flag_monitor_stays_clear_without_signal() {
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let flag = spawn_shutdown_flag_monitor(shutdown);
+    tokio::task::yield_now().await;
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    assert!(!flag.load(Ordering::SeqCst), "flag must remain clear until shutdown fires");
+}
+
+// ── message_normalizer tests (cu2.43) ───────────────────────────────
+
+/// Regression for cu2.43: normalization + hashing must run unconditionally, not only inside
+/// the optional validator stage. Feeds the normalizer the raw xmltodict shape the parser emits
+/// (container-wrapped `members`, `@`-prefixed keys, empty sha256) and asserts the output carries
+/// the flat consumer-ready shape and a populated content hash — the exact guarantees the no-rules
+/// (else-branch) pipeline previously dropped.
+#[tokio::test]
+async fn test_message_normalizer_normalizes_and_hashes_without_rules() {
+    let (in_sender, in_receiver) = mpsc::channel::<DataMessage>(10);
+    let (out_sender, mut out_receiver) = mpsc::channel::<DataMessage>(10);
+
+    let msg = DataMessage {
+        id: "1".to_string(),
+        sha256: String::new(), // parser emits an empty hash — normalizer must fill it in
+        data: serde_json::json!({
+            "id": "1",
+            "name": "Aphex Twin",
+            "members": {"name": [{"@id": "7", "#text": "Richard D. James"}]}
+        }),
+        raw_xml: None,
+    };
+    in_sender.send(msg).await.unwrap();
+    drop(in_sender);
+
+    message_normalizer(in_receiver, out_sender, DataType::Artists).await.unwrap();
+
+    let got = out_receiver.recv().await.unwrap();
+
+    // Content hash is now populated so downstream change detection works.
+    assert!(!got.sha256.is_empty(), "normalizer must populate sha256");
+
+    // members is unwrapped into a flat array of objects with `@`/`#text` keys stripped —
+    // the shape graphinator's `[m for m in members if m.get('id')]` requires.
+    let members = got.data.get("members").expect("members present").as_array().expect("members is array");
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].get("id").unwrap(), "7");
+    assert_eq!(members[0].get("name").unwrap(), "Richard D. James");
+    assert!(members[0].get("@id").is_none(), "@-prefixed keys must be stripped");
+
+    // No more messages.
+    assert!(out_receiver.recv().await.is_none());
+}
+
+/// The normalizer must produce byte-identical output regardless of which upstream stage feeds it,
+/// so the rules and no-rules pipelines converge on the same published record + hash.
+#[tokio::test]
+async fn test_message_normalizer_hash_is_deterministic() {
+    async fn normalize_one(record: serde_json::Value) -> DataMessage {
+        let (in_sender, in_receiver) = mpsc::channel::<DataMessage>(1);
+        let (out_sender, mut out_receiver) = mpsc::channel::<DataMessage>(1);
+        in_sender.send(DataMessage { id: "1".to_string(), sha256: String::new(), data: record, raw_xml: None }).await.unwrap();
+        drop(in_sender);
+        message_normalizer(in_receiver, out_sender, DataType::Artists).await.unwrap();
+        out_receiver.recv().await.unwrap()
+    }
+
+    let record = serde_json::json!({"id": "1", "name": "Aphex Twin", "members": {"name": [{"@id": "7", "#text": "Richard"}]}});
+    let a = normalize_one(record.clone()).await;
+    let b = normalize_one(record).await;
+    assert_eq!(a.sha256, b.sha256);
+    assert!(!a.sha256.is_empty());
+}
+
 // ── wait_for_trigger tests ──────────────────────────────────────────
 
 #[tokio::test(start_paused = true)]
