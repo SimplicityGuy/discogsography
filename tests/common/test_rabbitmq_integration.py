@@ -59,6 +59,24 @@ async def _connections(client: httpx.AsyncClient) -> list[dict]:
     return list(resp.json())
 
 
+async def _await_connections(client: httpx.AsyncClient, timeout: float = 30.0) -> list[dict]:
+    """Wait for the management stats DB to report at least one connection.
+
+    The stats database is populated asynchronously, so a connection that is
+    already established may not appear immediately. An empty list that never
+    fills usually means management stats are disabled (the RabbitMQ 4.x default)
+    rather than that nothing is connected.
+    """
+    deadline = asyncio.get_running_loop().time() + timeout
+    conns: list[dict] = []
+    while asyncio.get_running_loop().time() < deadline:
+        conns = await _connections(client)
+        if conns:
+            return conns
+        await asyncio.sleep(1.0)
+    raise AssertionError("management API reported no client connections; are management stats enabled? (disable_management_stats false)")
+
+
 async def _await_condition(predicate: Callable[[], bool], timeout: float, interval: float = 0.5) -> bool:
     """Poll until predicate() is truthy or timeout elapses."""
     deadline = asyncio.get_running_loop().time() + timeout
@@ -79,8 +97,7 @@ class TestLiveHeartbeatNegotiation:
         try:
             async with _mgmt() as client:
                 # The broker's own view of the negotiated heartbeat is authoritative.
-                conns = await _connections(client)
-                assert conns, "broker reports no client connections"
+                conns = await _await_connections(client)
                 timeouts = {c.get("timeout") for c in conns}
                 assert TEST_HEARTBEAT in timeouts, (
                     f"broker negotiated {timeouts}, expected {TEST_HEARTBEAT} (60 would mean the URL param was dropped)"
@@ -113,8 +130,7 @@ class TestLiveReconnect:
         await channel.declare_queue("aio-pika-10-reconnect-probe", exclusive=True)
 
         async with _mgmt() as client:
-            before = await _connections(client)
-            assert before, "broker reports no client connections"
+            before = await _await_connections(client)
             # Force the broker to drop every client connection. Connection names
             # contain characters that must be percent-encoded in the path.
             for conn_info in before:
