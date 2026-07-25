@@ -290,13 +290,150 @@ All variables support `_FILE` variants for Docker Compose runtime secrets in pro
 - Token validation code exists in `api/dependencies.py`, `api/api.py`, `api/routers/sync.py`, and `api/routers/snapshot.py` — changes to one must be applied to all
 - Batch processors exist in `graphinator/batch_processor.py` and `tableinator/batch_processor.py` — changes to one should be mirrored in the other
 
-<!-- bh:agf:start (managed by `bh rig init` — edit outside these markers; `-f` refreshes) -->
+<!-- bh:agf:start (managed by `bh hive init` — edit outside these markers; `-f` refreshes) -->
 ## AGF — Agentic Git Flow
 
-This repo is onboarded as a **`bh` rig** and develops via **AGF**: work is tracked in beads
+This repo is onboarded as a **`bh` hive** and develops via **AGF**: work is tracked in beads
 and driven through `bh`, **not** raw `git` / `bd` / `gh`.
 
-- **Is this repo set up for AGF?** → run `bh rig ready` (add `-v` for the line-item breakdown).
-- **Lifecycle, roles, conventions:** see `.beads/PRIME.md` and `docs/AGF.md`.
+- **Is this repo set up for AGF?** → run `bh hive ready` (add `-v` for the line-item breakdown).
+- **Lifecycle, roles, conventions:** see `docs/AGF.md` and the bh plugin's role skills.
 - Drive beads with `bh work`; load the role skill for your seat (coordinator / developer / merger).
+- Batch/collapsed work lives in ONE shared `wt/batch/<group>` worktree and completes as a UNIT:
+  `bh work submit --group` then `bh work merge --group` — per-bead `submit`/`check` don't apply.
 <!-- bh:agf:end -->
+
+<!-- bv-agent-instructions-v3 -->
+
+---
+
+## Bead Triage with bv
+
+> **Toolchain for this hive:** reads and lifecycle both go through **`bh work`**.
+> Triage is **`bv`**. Bead authoring goes through **`bh plan file`** (molecules) or the
+> **bh MCP `bd_create`** tool (standalone beads).
+> **Do not invoke `bd` directly** — it can hit the wrong database, and the `bh bd`
+> passthrough is **disabled** in this hive (`passthrough.bd_enabled`, default off);
+> it exits non-zero rather than running.
+> **`br` (beads_rust) is NOT installed and will not be** — never invoke it.
+
+The bead corpus is **not** stored in git. `.beads/` is gitignored and the corpus lives
+on the dolt remote (`refs/dolt/data`); `.beads/issues.jsonl` is a local export that
+`bv` reads. Never hand-parse it — and never assume a filename, since `bv` auto-discovers it.
+
+### Using bv as an AI sidecar
+
+bv is a graph-aware triage engine over the bead DAG. Instead of parsing the JSONL export
+or hallucinating graph traversal, use robot flags for deterministic, dependency-aware
+output with precomputed metrics (PageRank, betweenness, critical path, cycles, HITS,
+eigenvector, k-core).
+
+**Scope boundary:** bv answers *what to work on* (triage, priority, planning) and is
+strictly read-only. Creating, modifying, and closing beads goes through `bh work` (and
+`bh plan file` / the bh MCP `bd_create` for authoring) — never through bv.
+
+**CRITICAL: Use ONLY --robot-\* flags. Bare bv launches an interactive TUI that blocks your session.**
+
+#### The Workflow: Start With Triage
+
+**`bv --robot-triage` is your single entry point.** It returns everything you need in one call:
+
+- `quick_ref`: at-a-glance counts + top 3 picks
+- `recommendations`: ranked actionable items with scores, reasons, unblock info
+- `quick_wins`: low-effort high-impact items
+- `blockers_to_clear`: items that unblock the most downstream work
+- `project_health`: status/type/priority distributions, graph metrics
+- `commands`: copy-paste shell commands for next steps
+
+```bash
+bv --robot-triage        # THE MEGA-COMMAND: start here
+bv --robot-next          # Minimal: just the single top pick
+
+# Token-optimized output (TOON) for lower LLM context usage:
+bv --robot-triage --format toon
+```
+
+Before acting on a pick, verify current state with `bh work issue <id>` (bead fields) —
+note `bh work show <id>` is different: it renders the bead *branch's* commit history.
+`recommendations` can include graph-important blocked or assigned work; only
+`quick_ref.top_picks` represents claimable work. Ignore any `claim_command` bv emits —
+claiming in this hive is `bh work claim` / `bh work assign`, not a raw tracker mutation.
+
+#### Other bv Commands
+
+| Command | Returns |
+|---------|---------|
+| `--robot-plan` | Parallel execution tracks with unblocks lists |
+| `--robot-priority` | Priority misalignment detection with confidence |
+| `--robot-insights` | Full metrics: PageRank, betweenness, HITS, eigenvector, critical path, cycles, k-core |
+| `--robot-alerts` | Stale issues, blocking cascades, priority mismatches |
+| `--robot-suggest` | Hygiene: duplicates, missing deps, label suggestions, cycle breaks |
+| `--robot-diff --diff-since <ref>` | Changes since ref: new/closed/modified issues |
+| `--robot-graph [--graph-format=json\|dot\|mermaid]` | Dependency graph export |
+
+#### Scoping & Filtering
+
+```bash
+bv --robot-plan --label backend              # Scope to label's subgraph
+bv --robot-insights --as-of HEAD~30          # Historical point-in-time
+bv --recipe actionable --robot-plan          # Pre-filter: ready to work (no blockers)
+bv --recipe high-impact --robot-triage       # Pre-filter: top PageRank scores
+```
+
+If `bv` is not on PATH (`command -v bv`), fall back to `bh work ready` and
+`bh work schedule <epic>`.
+
+### Bead Management Commands
+
+Read-only surfaces:
+
+```bash
+bh work ready --json                  # Beads with no unmet blockers, dependency-ordered
+bh work list --status open --json     # Filter by state
+bh work issue <id> --json             # One bead's fields (labels, model:/harness:)
+bh work brief <id>                    # Requirements/goals + the validation command
+bh work schedule <epic>               # Dispatch plan for a molecule
+```
+
+Lifecycle verbs — the only way to move a bead's state. Some are seat-restricted:
+`assign` is orchestrator-only, `merge`/`finish` are merge-owner-only.
+
+```bash
+bh work claim <id>                    # Worker ack: provision worktree -> in_progress
+bh work assign <id> --to <name>       # Orchestrator: stamp assignee + provision
+bh work check <id>                    # Run the hive's validation command
+bh work submit <id>                   # Handoff: review gate + review:pending
+bh work resume <id>                   # Re-attach after changes-requested
+bh work abandon <id> [--rm]           # Release the claim
+```
+
+**Work happens in the bead worktree, never in the main clone** — `claim` prints its path.
+The durable artifact is the `wt/bead/<type>/<id>` branch, not the directory.
+
+Authoring new beads (there is no `bd create` path here):
+
+```bash
+bh plan file                          # Molecule: epic + children + dep DAG
+# standalone bead: bh MCP tool `bd_create` (batch-creates from structured items)
+```
+
+### Key Concepts
+
+- **Dependencies**: beads can block other beads. `bh work ready --json` shows only unblocked work.
+- **Priority**: P0=critical, P1=high, P2=medium, P3=low, P4=backlog (use numbers 0-4, not words)
+- **Types**: task, bug, feature, epic, chore, docs, question
+- **Molecule**: an epic plus its children and their dependency DAG — the unit a dispatcher delivers
+
+### Git Policy
+
+`bv` never commits or pushes, and `bh work` owns every git operation around the
+lifecycle — raw `git` is for the change *inside* the worktree only. This repo's own git
+rules govern: work happens in bh-managed worktrees, every change gets a bead first, every
+change lands via a PR, and nothing is committed or pushed unless explicitly asked. Those
+rules override any generic workflow advice from tooling output.
+
+One caveat worth knowing: `bh hive init` with `--claude`/`--agents` implies `--furnish`,
+whose final step **commits** the scaffolding to whatever branch you are standing on,
+without prompting. Run it from a branch you intend to commit to.
+
+<!-- end-bv-agent-instructions -->
