@@ -97,9 +97,7 @@ def memory_intensive_operation():
 tracemalloc.start()
 # ... operations ...
 current, peak = tracemalloc.get_traced_memory()
-logger.info(
-    f"📊 Memory usage: current={current/1024/1024:.1f}MB, peak={peak/1024/1024:.1f}MB"
-)
+logger.info(f"📊 Memory usage: current={current / 1024 / 1024:.1f}MB, peak={peak / 1024 / 1024:.1f}MB")
 tracemalloc.stop()
 ```
 
@@ -118,9 +116,7 @@ async def monitor_resources():
         cpu_percent = process.cpu_percent(interval=1)
         memory_info = process.memory_info()
 
-        logger.info(
-            f"📊 Resources: CPU={cpu_percent}%, Memory={memory_info.rss/1024/1024:.1f}MB"
-        )
+        logger.info(f"📊 Resources: CPU={cpu_percent}%, Memory={memory_info.rss / 1024 / 1024:.1f}MB")
 
         await asyncio.sleep(30)  # Log every 30 seconds
 ```
@@ -264,13 +260,13 @@ The extractor publishes to 4 fanout exchanges (one per data type). Each consumer
 ```python
 # Configured via environment variables (enabled by default)
 # Code defaults shown; docker-compose.yml overrides to 500/2.0 for production
-NEO4J_BATCH_MODE=true           # Enable batch processing
-NEO4J_BATCH_SIZE=500            # Records per batch (docker-compose default)
-NEO4J_BATCH_FLUSH_INTERVAL=2.0  # Seconds between flushes (docker-compose default)
+NEO4J_BATCH_MODE = true  # Enable batch processing
+NEO4J_BATCH_SIZE = 500  # Records per batch (docker-compose default)
+NEO4J_BATCH_FLUSH_INTERVAL = 2.0  # Seconds between flushes (docker-compose default)
 
-POSTGRES_BATCH_MODE=true           # Enable batch processing
-POSTGRES_BATCH_SIZE=500            # Records per batch (docker-compose default)
-POSTGRES_BATCH_FLUSH_INTERVAL=2.0  # Seconds between flushes (docker-compose default)
+POSTGRES_BATCH_MODE = true  # Enable batch processing
+POSTGRES_BATCH_SIZE = 500  # Records per batch (docker-compose default)
+POSTGRES_BATCH_FLUSH_INTERVAL = 2.0  # Seconds between flushes (docker-compose default)
 ```
 
 **How it works:**

@@ -358,11 +358,7 @@ def log_profile_result(cypher: str, params: dict[str, Any], summary: Any) -> Non
         text = args.get("string-representation", str(profile))
 
     profiling_log.info(
-        "\n══════════════════════════════════════════════════════════\n"
-        "PROFILE result for Cypher query:\n\n"
-        "%s\n\n"
-        "Parameters: %s\n\n"
-        "%s",
+        "\n══════════════════════════════════════════════════════════\nPROFILE result for Cypher query:\n\n%s\n\nParameters: %s\n\n%s",
         cypher.strip(),
         params,
         text,
@@ -415,11 +411,11 @@ from common.query_debug import (
 Add to `__all__` list:
 
 ```python
-    "execute_sql",
-    "is_cypher_profiling",
-    "is_debug",
-    "log_cypher_query",
-    "log_sql_query",
+("execute_sql",)
+("is_cypher_profiling",)
+("is_debug",)
+("log_cypher_query",)
+("log_sql_query",)
 ```
 
 - [ ] **Step 8: Run tests to verify they pass**
@@ -1051,7 +1047,9 @@ async def query_label_longevity(driver: Any, limit: int = 50) -> list[dict[str, 
 
 ```python
 async def query_monthly_anniversaries(
-    driver: Any, current_year: int, current_month: int,
+    driver: Any,
+    current_year: int,
+    current_month: int,
     milestone_years: list[int] | None = None,
 ) -> list[dict[str, Any]]:
     if milestone_years is None:
@@ -1059,8 +1057,7 @@ async def query_monthly_anniversaries(
     target_years = [current_year - m for m in milestone_years]
     cypher = """..."""  # (same as existing)
     results = await run_query(driver, cypher, database="neo4j", target_years=target_years)
-    logger.info("🔍 Monthly anniversaries query complete", count=len(results),
-                month=current_month, year=current_year)
+    logger.info("🔍 Monthly anniversaries query complete", count=len(results), month=current_month, year=current_year)
     return results
 ```
 
@@ -1169,7 +1166,9 @@ from common.query_debug import log_cypher_query
 Before the `session.run()` at line ~211 (collection sync), add:
 
 ```python
-log_cypher_query(cypher, {"user_id": str(user_uuid), "discogs_username": discogs_username, "releases": f"[{len(neo4j_releases)} items]", "synced_at": "..."})
+log_cypher_query(
+    cypher, {"user_id": str(user_uuid), "discogs_username": discogs_username, "releases": f"[{len(neo4j_releases)} items]", "synced_at": "..."}
+)
 ```
 
 Before the `session.run()` at line ~372 (wantlist sync), add the same pattern with the wantlist params.
@@ -1334,9 +1333,9 @@ The affected imports (inside each test method, not at module level):
 
 ```python
 # DELETE these 6 test methods that use:
-from api.queries.neo4j_queries import _run_query   # lines 135, 144
-from api.queries.neo4j_queries import _run_single   # lines 152, 161
-from api.queries.neo4j_queries import _run_count    # lines 169, 177
+from api.queries.neo4j_queries import _run_query  # lines 135, 144
+from api.queries.neo4j_queries import _run_single  # lines 152, 161
+from api.queries.neo4j_queries import _run_count  # lines 169, 177
 ```
 
 - [ ] **Step 2: Update `tests/api/test_user_queries.py` helper imports**

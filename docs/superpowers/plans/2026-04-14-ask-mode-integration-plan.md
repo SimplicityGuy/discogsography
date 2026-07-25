@@ -822,79 +822,84 @@ Expected: 6 new tests fail; `_handle_explore_entity` etc. still use `api.queries
 Replace handler bodies in `api/nlq/tools.py` (keep signatures identical):
 
 ```python
-    async def _handle_search(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
-        from api.queries import search_queries  # noqa: PLC0415
-        from common import agent_tools  # noqa: PLC0415
+async def _handle_search(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
+    from api.queries import search_queries  # noqa: PLC0415
+    from common import agent_tools  # noqa: PLC0415
 
-        return await agent_tools.search(
-            pool=self._pool,
-            redis=self._redis,
-            q=params.get("q", ""),
-            types=params.get("types", ["artist", "label", "master", "release"]),
-            genres=params.get("genres", []),
-            year_min=params.get("year_min"),
-            year_max=params.get("year_max"),
-            limit=params.get("limit", 10),
-            offset=params.get("offset", 0),
-            search_fn=search_queries.execute_search,
-        )
+    return await agent_tools.search(
+        pool=self._pool,
+        redis=self._redis,
+        q=params.get("q", ""),
+        types=params.get("types", ["artist", "label", "master", "release"]),
+        genres=params.get("genres", []),
+        year_min=params.get("year_min"),
+        year_max=params.get("year_max"),
+        limit=params.get("limit", 10),
+        offset=params.get("offset", 0),
+        search_fn=search_queries.execute_search,
+    )
 
-    async def _handle_explore_entity(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
-        from api.queries import neo4j_queries  # noqa: PLC0415
-        from common import agent_tools  # noqa: PLC0415
 
-        entity_type = params.get("type", "artist")
-        handler = neo4j_queries.EXPLORE_DISPATCH.get(entity_type)
-        if handler is None:
-            return {"error": f"Unknown explore type: {entity_type}"}
+async def _handle_explore_entity(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
+    from api.queries import neo4j_queries  # noqa: PLC0415
+    from common import agent_tools  # noqa: PLC0415
 
-        tool_fn = {
-            "artist": agent_tools.get_artist_details,
-            "label": agent_tools.get_label_details,
-            "genre": agent_tools.get_genre_details,
-            "style": agent_tools.get_style_details,
-            "release": agent_tools.get_release_details,
-        }.get(entity_type)
-        if tool_fn is None:
-            return {"error": f"Unknown explore type: {entity_type}"}
+    entity_type = params.get("type", "artist")
+    handler = neo4j_queries.EXPLORE_DISPATCH.get(entity_type)
+    if handler is None:
+        return {"error": f"Unknown explore type: {entity_type}"}
 
-        return await tool_fn(driver=self._driver, name=params.get("name", ""), handler=handler)
+    tool_fn = {
+        "artist": agent_tools.get_artist_details,
+        "label": agent_tools.get_label_details,
+        "genre": agent_tools.get_genre_details,
+        "style": agent_tools.get_style_details,
+        "release": agent_tools.get_release_details,
+    }.get(entity_type)
+    if tool_fn is None:
+        return {"error": f"Unknown explore type: {entity_type}"}
 
-    async def _handle_get_collaborators(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
-        from api.queries import collaborator_queries  # noqa: PLC0415
-        from common import agent_tools  # noqa: PLC0415
+    return await tool_fn(driver=self._driver, name=params.get("name", ""), handler=handler)
 
-        return await agent_tools.get_collaborators(
-            driver=self._driver,
-            artist_id=params.get("artist_id", ""),
-            limit=params.get("limit", 20),
-            collaborators_fn=collaborator_queries.get_collaborators,
-        )
 
-    async def _handle_get_trends(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
-        from api.queries import neo4j_queries  # noqa: PLC0415
-        from common import agent_tools  # noqa: PLC0415
+async def _handle_get_collaborators(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
+    from api.queries import collaborator_queries  # noqa: PLC0415
+    from common import agent_tools  # noqa: PLC0415
 
-        entity_type = params.get("type", "artist")
-        handler = neo4j_queries.TRENDS_DISPATCH.get(entity_type)
-        return await agent_tools.get_trends(
-            driver=self._driver,
-            entity_type=entity_type,
-            name=params.get("name", ""),
-            handler=handler,
-        )
+    return await agent_tools.get_collaborators(
+        driver=self._driver,
+        artist_id=params.get("artist_id", ""),
+        limit=params.get("limit", 20),
+        collaborators_fn=collaborator_queries.get_collaborators,
+    )
 
-    async def _handle_get_genre_tree(self, _params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
-        from api.queries import genre_tree_queries  # noqa: PLC0415
-        from common import agent_tools  # noqa: PLC0415
 
-        return await agent_tools.get_genre_tree(driver=self._driver, tree_fn=genre_tree_queries.get_genre_tree)
+async def _handle_get_trends(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
+    from api.queries import neo4j_queries  # noqa: PLC0415
+    from common import agent_tools  # noqa: PLC0415
 
-    async def _handle_get_graph_stats(self, _params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
-        from api.queries import neo4j_queries  # noqa: PLC0415
-        from common import agent_tools  # noqa: PLC0415
+    entity_type = params.get("type", "artist")
+    handler = neo4j_queries.TRENDS_DISPATCH.get(entity_type)
+    return await agent_tools.get_trends(
+        driver=self._driver,
+        entity_type=entity_type,
+        name=params.get("name", ""),
+        handler=handler,
+    )
 
-        return await agent_tools.get_graph_stats(driver=self._driver, stats_fn=neo4j_queries.get_graph_stats)
+
+async def _handle_get_genre_tree(self, _params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
+    from api.queries import genre_tree_queries  # noqa: PLC0415
+    from common import agent_tools  # noqa: PLC0415
+
+    return await agent_tools.get_genre_tree(driver=self._driver, tree_fn=genre_tree_queries.get_genre_tree)
+
+
+async def _handle_get_graph_stats(self, _params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
+    from api.queries import neo4j_queries  # noqa: PLC0415
+    from common import agent_tools  # noqa: PLC0415
+
+    return await agent_tools.get_graph_stats(driver=self._driver, stats_fn=neo4j_queries.get_graph_stats)
 ```
 
 Leave `_handle_autocomplete`, `_handle_get_similar_artists`, `_handle_get_label_dna`, and the collection-gated handlers (`_handle_get_collection_gaps`, `_handle_get_taste_fingerprint`, `_handle_get_taste_blindspots`, `_handle_get_collection_stats`) as-is — they stay local to `api/nlq` for now because they pull in query logic we're not extracting in this PR.
@@ -1381,28 +1386,26 @@ Expected: FAIL — router does not emit an `actions` event today.
 Modify `_stream_response` in `api/routers/nlq.py` so that after the engine returns, it emits an `actions` event before the `result` event:
 
 ```python
-        try:
-            result = await engine_task
-        except Exception as exc:
-            logger.error("❌ NLQ engine error", error=str(exc), exc_info=True)
-            yield {"event": "error", "data": json.dumps({"error": "An internal error occurred"})}
-            return
+try:
+    result = await engine_task
+except Exception as exc:
+    logger.error("❌ NLQ engine error", error=str(exc), exc_info=True)
+    yield {"event": "error", "data": json.dumps({"error": "An internal error occurred"})}
+    return
 
-        yield {
-            "event": "actions",
-            "data": json.dumps(
-                {"actions": [action.model_dump(by_alias=True, mode="json") for action in result.actions]}
-            ),
-        }
+yield {
+    "event": "actions",
+    "data": json.dumps({"actions": [action.model_dump(by_alias=True, mode="json") for action in result.actions]}),
+}
 
-        response_data = {
-            "query": query,
-            "summary": result.summary,
-            "entities": result.entities,
-            "tools_used": result.tools_used,
-            "cached": False,
-        }
-        yield {"event": "result", "data": json.dumps(response_data)}
+response_data = {
+    "query": query,
+    "summary": result.summary,
+    "entities": result.entities,
+    "tools_used": result.tools_used,
+    "cached": False,
+}
+yield {"event": "result", "data": json.dumps(response_data)}
 ```
 
 Also update the non-SSE JSON response branch to include `actions`:
@@ -3822,13 +3825,13 @@ def test_ask_pill_collapsed_to_submit_to_graph_mutation(page: Page, explore_url:
     input_el = page.locator('[data-testid="nlq-pill-input"]')
     expect(input_el).to_be_focused()
 
-    input_el.fill('What labels has Kraftwerk released on?')
-    input_el.press('Enter')
+    input_el.fill("What labels has Kraftwerk released on?")
+    input_el.press("Enter")
 
     strip = page.locator('[data-testid="nlq-strip"]')
     expect(strip).to_be_visible(timeout=15_000)
 
-    nodes = page.locator('#graphContainer svg g.node')
+    nodes = page.locator("#graphContainer svg g.node")
     expect(nodes.first).to_be_visible(timeout=5_000)
 ```
 
@@ -3879,8 +3882,8 @@ def test_ask_switch_pane_to_insights(page: Page, explore_url: str) -> None:
     page.goto(explore_url)
     page.locator('[data-testid="nlq-pill-collapsed"]').click()
     input_el = page.locator('[data-testid="nlq-pill-input"]')
-    input_el.fill('Show me the biggest labels of 2024')
-    input_el.press('Enter')
+    input_el.fill("Show me the biggest labels of 2024")
+    input_el.press("Enter")
 
     expect(page.locator('[data-testid="nlq-strip"]')).to_be_visible(timeout=15_000)
 

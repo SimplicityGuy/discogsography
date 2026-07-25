@@ -24,6 +24,7 @@ Extend the dashboard service to monitor MusicBrainz extraction and consumer serv
 ```python
 class PipelineMetrics(BaseModel):
     """Metrics for a single data pipeline (Discogs or MusicBrainz)."""
+
     services: list[ServiceStatus]
     queues: list[QueueInfo]
 ```
@@ -33,8 +34,9 @@ class PipelineMetrics(BaseModel):
 ```python
 class SystemMetrics(BaseModel):
     """Model for system-wide metrics."""
+
     pipelines: dict[str, PipelineMetrics]  # "discogs", "musicbrainz"
-    databases: list[DatabaseInfo]           # shared — not per-pipeline
+    databases: list[DatabaseInfo]  # shared — not per-pipeline
     timestamp: datetime
 ```
 

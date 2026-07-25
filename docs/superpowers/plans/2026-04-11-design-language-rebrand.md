@@ -130,9 +130,7 @@ EDGES = [
 ]
 
 
-def _node_positions(
-    cx: float, cy: float, radius: float
-) -> list[tuple[float, float, tuple[int, int, int], float]]:
+def _node_positions(cx: float, cy: float, radius: float) -> list[tuple[float, float, tuple[int, int, int], float]]:
     """Compute absolute positions for all nodes."""
     positions = []
     all_nodes = OUTER_NODES + INNER_NODES
@@ -450,8 +448,12 @@ def render_design_showcase(width: int = 1600, height: int = 900) -> Image.Image:
     draw.text((60, y), "BACKGROUND SCALE", fill=(*TEXT_DIM, 255), font=font_label)
     y += 30
     bg_colors = [
-        (VOID, "Void"), (DEEP, "Deep"), (CARD, "Card"),
-        (ELEVATED, "Elevated"), (BORDER, "Border"), (HOVER, "Hover"),
+        (VOID, "Void"),
+        (DEEP, "Deep"),
+        (CARD, "Card"),
+        (ELEVATED, "Elevated"),
+        (BORDER, "Border"),
+        (HOVER, "Hover"),
     ]
     for i, (color, name) in enumerate(bg_colors):
         x = 60 + i * 105
@@ -462,8 +464,11 @@ def render_design_showcase(width: int = 1600, height: int = 900) -> Image.Image:
     draw.text((60, y), "CYAN — PRIMARY", fill=(*TEXT_DIM, 255), font=font_label)
     y += 30
     cyan_colors = [
-        ((0, 77, 90), "900"), ((0, 131, 143), "700"), (CYAN_500, "500"),
-        (CYAN_GLOW, "Glow"), ((128, 240, 255), "Bright"),
+        ((0, 77, 90), "900"),
+        ((0, 131, 143), "700"),
+        (CYAN_500, "500"),
+        (CYAN_GLOW, "Glow"),
+        ((128, 240, 255), "Bright"),
     ]
     for i, (color, name) in enumerate(cyan_colors):
         x = 60 + i * 105
@@ -474,8 +479,11 @@ def render_design_showcase(width: int = 1600, height: int = 900) -> Image.Image:
     draw.text((60, y), "PURPLE — SECONDARY", fill=(*TEXT_DIM, 255), font=font_label)
     y += 30
     purple_colors = [
-        ((49, 27, 146), "900"), ((94, 53, 177), "700"), (PURPLE_500, "500"),
-        (PURPLE_300, "300"), ((212, 184, 255), "Bright"),
+        ((49, 27, 146), "900"),
+        ((94, 53, 177), "700"),
+        (PURPLE_500, "500"),
+        (PURPLE_300, "300"),
+        ((212, 184, 255), "Bright"),
     ]
     for i, (color, name) in enumerate(purple_colors):
         x = 60 + i * 105
@@ -487,7 +495,9 @@ def render_design_showcase(width: int = 1600, height: int = 900) -> Image.Image:
     draw.text((60, y), "STATUS", fill=(*TEXT_DIM, 255), font=font_label)
     y += 30
     status_colors = [
-        ((0, 230, 118), "Success"), ((255, 82, 82), "Error"), ((255, 171, 0), "Warning"),
+        ((0, 230, 118), "Success"),
+        ((255, 82, 82), "Error"),
+        ((255, 171, 0), "Warning"),
     ]
     for i, (color, name) in enumerate(status_colors):
         x = 60 + i * 105
@@ -497,8 +507,10 @@ def render_design_showcase(width: int = 1600, height: int = 900) -> Image.Image:
     # Node colors
     draw.text((400, y - 30), "GRAPH NODES", fill=(*TEXT_DIM, 255), font=font_label)
     node_colors = [
-        ((0, 230, 118), "Artist"), ((255, 92, 138), "Release"),
-        ((120, 144, 156), "Label"), ((255, 213, 79), "Genre"),
+        ((0, 230, 118), "Artist"),
+        ((255, 92, 138), "Release"),
+        ((120, 144, 156), "Label"),
+        ((255, 213, 79), "Genre"),
         ((64, 196, 255), "Category"),
     ]
     for i, (color, name) in enumerate(node_colors):
@@ -618,12 +630,8 @@ def generate_all(output_dirs: list[Path]) -> None:
         icon_light.save(output_dir / "icon_light.png", "PNG")
 
         # Banner (dark + light)
-        render_banner(1600, 400, VOID, TEXT_HIGH, TEXT_MUTED).save(
-            output_dir / "banner_dark.png", "PNG"
-        )
-        render_banner(1600, 400, LIGHT_BG, LIGHT_TEXT, LIGHT_TEXT_MUTED).save(
-            output_dir / "banner_light.png", "PNG"
-        )
+        render_banner(1600, 400, VOID, TEXT_HIGH, TEXT_MUTED).save(output_dir / "banner_dark.png", "PNG")
+        render_banner(1600, 400, LIGHT_BG, LIGHT_TEXT, LIGHT_TEXT_MUTED).save(output_dir / "banner_light.png", "PNG")
 
         # Square (dark + light)
         render_square(1024, VOID, TEXT_HIGH).save(output_dir / "square_dark.png", "PNG")

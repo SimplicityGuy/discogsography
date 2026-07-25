@@ -42,20 +42,22 @@ ______________________________________________________________________
 In `schema-init/postgres_schema.py`, update the `users table` entry in `_USER_TABLES` (line 90-101):
 
 ```python
+(
     (
         "users table",
         """
-        CREATE TABLE IF NOT EXISTS users (
-            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            email           VARCHAR(255) UNIQUE NOT NULL,
-            hashed_password VARCHAR(255) NOT NULL,
-            is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-            is_admin        BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-        )
-        """,
+    CREATE TABLE IF NOT EXISTS users (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email           VARCHAR(255) UNIQUE NOT NULL,
+        hashed_password VARCHAR(255) NOT NULL,
+        is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+        is_admin        BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    )
+    """,
     ),
+)
 ```
 
 - [ ] **Step 2: Remove `dashboard_admins` table definition**
@@ -63,15 +65,17 @@ In `schema-init/postgres_schema.py`, update the `users table` entry in `_USER_TA
 Delete the `dashboard_admins` tuple (lines 216-227):
 
 ```python
-    # DELETE THIS ENTIRE TUPLE:
+# DELETE THIS ENTIRE TUPLE:
+(
     (
         "dashboard_admins",
         """
-        CREATE TABLE IF NOT EXISTS dashboard_admins (
-            ...
-        )
-        """,
+    CREATE TABLE IF NOT EXISTS dashboard_admins (
+        ...
+    )
+    """,
     ),
+)
 ```
 
 - [ ] **Step 3: Update `extraction_history` FK to reference `users`**
@@ -79,22 +83,24 @@ Delete the `dashboard_admins` tuple (lines 216-227):
 Change the `extraction_history` tuple (lines 229-243) so `triggered_by` references `users(id)`:
 
 ```python
+(
     (
         "extraction_history",
         """
-        CREATE TABLE IF NOT EXISTS extraction_history (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            triggered_by UUID NOT NULL REFERENCES users(id),
-            status VARCHAR(20) NOT NULL DEFAULT 'pending',
-            started_at TIMESTAMP WITH TIME ZONE,
-            completed_at TIMESTAMP WITH TIME ZONE,
-            record_counts JSONB,
-            error_message TEXT,
-            extractor_version VARCHAR(50),
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        )
-        """,
+    CREATE TABLE IF NOT EXISTS extraction_history (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        triggered_by UUID NOT NULL REFERENCES users(id),
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        started_at TIMESTAMP WITH TIME ZONE,
+        completed_at TIMESTAMP WITH TIME ZONE,
+        record_counts JSONB,
+        error_message TEXT,
+        extractor_version VARCHAR(50),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+    """,
     ),
+)
 ```
 
 - [ ] **Step 4: Add `admin_audit_log` table and indexes**
@@ -102,27 +108,33 @@ Change the `extraction_history` tuple (lines 229-243) so `triggered_by` referenc
 After the `service_health_metrics` index tuple (line 287), add:
 
 ```python
+(
     (
         "admin_audit_log table",
         """
-        CREATE TABLE IF NOT EXISTS admin_audit_log (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            admin_id UUID NOT NULL REFERENCES users(id),
-            action VARCHAR(100) NOT NULL,
-            target VARCHAR(255),
-            details JSONB,
-            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-        )
-        """,
+    CREATE TABLE IF NOT EXISTS admin_audit_log (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        admin_id UUID NOT NULL REFERENCES users(id),
+        action VARCHAR(100) NOT NULL,
+        target VARCHAR(255),
+        details JSONB,
+        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    )
+    """,
     ),
+)
+(
     (
         "idx_audit_log_created_at",
         "CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON admin_audit_log(created_at)",
     ),
+)
+(
     (
         "idx_audit_log_admin_id",
         "CREATE INDEX IF NOT EXISTS idx_audit_log_admin_id ON admin_audit_log(admin_id)",
     ),
+)
 ```
 
 - [ ] **Step 5: Run schema-init tests**
@@ -187,123 +199,129 @@ def _make_admin_token(
 Then add tests to the `TestRequireAdmin` class:
 
 ```python
-    @pytest.mark.asyncio
-    async def test_raises_403_when_type_is_not_admin(self) -> None:
-        configure(TEST_SECRET)
-        from fastapi import HTTPException
+@pytest.mark.asyncio
+async def test_raises_403_when_type_is_not_admin(self) -> None:
+    configure(TEST_SECRET)
+    from fastapi import HTTPException
 
-        token = _make_valid_token()
-        creds = _make_credentials(token)
-        with pytest.raises(HTTPException) as exc_info:
-            await require_admin(creds)
-        assert exc_info.value.status_code == 403
+    token = _make_valid_token()
+    creds = _make_credentials(token)
+    with pytest.raises(HTTPException) as exc_info:
+        await require_admin(creds)
+    assert exc_info.value.status_code == 403
 
-    @pytest.mark.asyncio
-    async def test_raises_401_when_no_credentials(self) -> None:
-        configure(TEST_SECRET)
-        from fastapi import HTTPException
 
-        with pytest.raises(HTTPException) as exc_info:
-            await require_admin(None)
-        assert exc_info.value.status_code == 401
+@pytest.mark.asyncio
+async def test_raises_401_when_no_credentials(self) -> None:
+    configure(TEST_SECRET)
+    from fastapi import HTTPException
 
-    @pytest.mark.asyncio
-    async def test_raises_401_for_invalid_token(self) -> None:
-        configure(TEST_SECRET)
-        from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc_info:
+        await require_admin(None)
+    assert exc_info.value.status_code == 401
 
-        creds = _make_credentials("bad.token.value")
-        with pytest.raises(HTTPException) as exc_info:
-            await require_admin(creds)
-        assert exc_info.value.status_code == 401
 
-    @pytest.mark.asyncio
-    async def test_db_verified_admin_succeeds(self) -> None:
-        """Valid admin token + DB confirms is_admin=True -> returns payload."""
-        mock_pool = MagicMock()
-        mock_cur = AsyncMock()
-        mock_cur.fetchone = AsyncMock(return_value={"is_admin": True})
-        mock_conn = AsyncMock()
-        cur_ctx = AsyncMock()
-        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
-        cur_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_conn.cursor = MagicMock(return_value=cur_ctx)
-        conn_ctx = AsyncMock()
-        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
-        conn_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_pool.connection = MagicMock(return_value=conn_ctx)
+@pytest.mark.asyncio
+async def test_raises_401_for_invalid_token(self) -> None:
+    configure(TEST_SECRET)
+    from fastapi import HTTPException
 
-        configure(TEST_SECRET, pool=mock_pool)
+    creds = _make_credentials("bad.token.value")
+    with pytest.raises(HTTPException) as exc_info:
+        await require_admin(creds)
+    assert exc_info.value.status_code == 401
 
-        token = _make_admin_token()
-        creds = _make_credentials(token)
-        result = await require_admin(creds)
-        assert result["sub"] == "admin-1"
-        assert result["type"] == "admin"
 
-    @pytest.mark.asyncio
-    async def test_db_verified_admin_rejects_non_admin(self) -> None:
-        """Valid admin token but DB says is_admin=False -> 403."""
-        mock_pool = MagicMock()
-        mock_cur = AsyncMock()
-        mock_cur.fetchone = AsyncMock(return_value={"is_admin": False})
-        mock_conn = AsyncMock()
-        cur_ctx = AsyncMock()
-        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
-        cur_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_conn.cursor = MagicMock(return_value=cur_ctx)
-        conn_ctx = AsyncMock()
-        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
-        conn_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_pool.connection = MagicMock(return_value=conn_ctx)
+@pytest.mark.asyncio
+async def test_db_verified_admin_succeeds(self) -> None:
+    """Valid admin token + DB confirms is_admin=True -> returns payload."""
+    mock_pool = MagicMock()
+    mock_cur = AsyncMock()
+    mock_cur.fetchone = AsyncMock(return_value={"is_admin": True})
+    mock_conn = AsyncMock()
+    cur_ctx = AsyncMock()
+    cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+    cur_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_conn.cursor = MagicMock(return_value=cur_ctx)
+    conn_ctx = AsyncMock()
+    conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+    conn_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_pool.connection = MagicMock(return_value=conn_ctx)
 
-        configure(TEST_SECRET, pool=mock_pool)
-        from fastapi import HTTPException
+    configure(TEST_SECRET, pool=mock_pool)
 
-        token = _make_admin_token()
-        creds = _make_credentials(token)
-        with pytest.raises(HTTPException) as exc_info:
-            await require_admin(creds)
-        assert exc_info.value.status_code == 403
+    token = _make_admin_token()
+    creds = _make_credentials(token)
+    result = await require_admin(creds)
+    assert result["sub"] == "admin-1"
+    assert result["type"] == "admin"
 
-    @pytest.mark.asyncio
-    async def test_db_verified_admin_rejects_missing_user(self) -> None:
-        """Valid admin token but user not found in DB -> 403."""
-        mock_pool = MagicMock()
-        mock_cur = AsyncMock()
-        mock_cur.fetchone = AsyncMock(return_value=None)
-        mock_conn = AsyncMock()
-        cur_ctx = AsyncMock()
-        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
-        cur_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_conn.cursor = MagicMock(return_value=cur_ctx)
-        conn_ctx = AsyncMock()
-        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
-        conn_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_pool.connection = MagicMock(return_value=conn_ctx)
 
-        configure(TEST_SECRET, pool=mock_pool)
-        from fastapi import HTTPException
+@pytest.mark.asyncio
+async def test_db_verified_admin_rejects_non_admin(self) -> None:
+    """Valid admin token but DB says is_admin=False -> 403."""
+    mock_pool = MagicMock()
+    mock_cur = AsyncMock()
+    mock_cur.fetchone = AsyncMock(return_value={"is_admin": False})
+    mock_conn = AsyncMock()
+    cur_ctx = AsyncMock()
+    cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+    cur_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_conn.cursor = MagicMock(return_value=cur_ctx)
+    conn_ctx = AsyncMock()
+    conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+    conn_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_pool.connection = MagicMock(return_value=conn_ctx)
 
-        token = _make_admin_token()
-        creds = _make_credentials(token)
-        with pytest.raises(HTTPException) as exc_info:
-            await require_admin(creds)
-        assert exc_info.value.status_code == 403
+    configure(TEST_SECRET, pool=mock_pool)
+    from fastapi import HTTPException
 
-    @pytest.mark.asyncio
-    async def test_revoked_token_rejected(self) -> None:
-        """Valid admin token but revoked in Redis -> 401."""
-        mock_redis = AsyncMock()
-        mock_redis.get = AsyncMock(return_value="1")
-        configure(TEST_SECRET, redis=mock_redis)
-        from fastapi import HTTPException
+    token = _make_admin_token()
+    creds = _make_credentials(token)
+    with pytest.raises(HTTPException) as exc_info:
+        await require_admin(creds)
+    assert exc_info.value.status_code == 403
 
-        token = _make_admin_token()
-        creds = _make_credentials(token)
-        with pytest.raises(HTTPException) as exc_info:
-            await require_admin(creds)
-        assert exc_info.value.status_code == 401
+
+@pytest.mark.asyncio
+async def test_db_verified_admin_rejects_missing_user(self) -> None:
+    """Valid admin token but user not found in DB -> 403."""
+    mock_pool = MagicMock()
+    mock_cur = AsyncMock()
+    mock_cur.fetchone = AsyncMock(return_value=None)
+    mock_conn = AsyncMock()
+    cur_ctx = AsyncMock()
+    cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+    cur_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_conn.cursor = MagicMock(return_value=cur_ctx)
+    conn_ctx = AsyncMock()
+    conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+    conn_ctx.__aexit__ = AsyncMock(return_value=False)
+    mock_pool.connection = MagicMock(return_value=conn_ctx)
+
+    configure(TEST_SECRET, pool=mock_pool)
+    from fastapi import HTTPException
+
+    token = _make_admin_token()
+    creds = _make_credentials(token)
+    with pytest.raises(HTTPException) as exc_info:
+        await require_admin(creds)
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_revoked_token_rejected(self) -> None:
+    """Valid admin token but revoked in Redis -> 401."""
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value="1")
+    configure(TEST_SECRET, redis=mock_redis)
+    from fastapi import HTTPException
+
+    token = _make_admin_token()
+    creds = _make_credentials(token)
+    with pytest.raises(HTTPException) as exc_info:
+        await require_admin(creds)
+    assert exc_info.value.status_code == 401
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -415,8 +433,9 @@ dependencies.configure(config.jwt_secret_key, _redis, pool=_pool)
 In `tests/api/conftest.py`, after the `_admin_router.configure(...)` line (line 198), add:
 
 ```python
-    import api.dependencies as _deps
-    _deps.configure(TEST_JWT_SECRET, mock_redis, pool=mock_pool)
+import api.dependencies as _deps
+
+_deps.configure(TEST_JWT_SECRET, mock_redis, pool=mock_pool)
 ```
 
 - [ ] **Step 5: Run tests to verify they pass**
@@ -935,14 +954,16 @@ from api.queries.admin_queries import (
 Replace lines 91-93 with:
 
 ```python
-    password_ok = verify_admin_password(body.password, admin["hashed_password"])
-    if not admin["is_active"] or not password_ok:
-        await record_audit_entry(pool=_pool, admin_id=str(admin["id"]), action="admin.login", target=body.email, details={"success": False})
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
+password_ok = verify_admin_password(body.password, admin["hashed_password"])
+if not admin["is_active"] or not password_ok:
+    await record_audit_entry(pool=_pool, admin_id=str(admin["id"]), action="admin.login", target=body.email, details={"success": False})
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 
-    if not admin.get("is_admin"):
-        await record_audit_entry(pool=_pool, admin_id=str(admin["id"]), action="admin.login", target=body.email, details={"success": False, "reason": "not_admin"})
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+if not admin.get("is_admin"):
+    await record_audit_entry(
+        pool=_pool, admin_id=str(admin["id"]), action="admin.login", target=body.email, details={"success": False, "reason": "not_admin"}
+    )
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 ```
 
 **d. After the token creation and before the return (after line 96), add success audit entry:**
@@ -1035,8 +1056,9 @@ dependencies.configure(config.jwt_secret_key, _redis, pool=_pool)
 In `tests/api/conftest.py`, after the `_admin_router.configure(...)` line (line 198), add:
 
 ```python
-    import api.dependencies as _deps
-    _deps.configure(TEST_JWT_SECRET, mock_redis, pool=mock_pool)
+import api.dependencies as _deps
+
+_deps.configure(TEST_JWT_SECRET, mock_redis, pool=mock_pool)
 ```
 
 - [ ] **Step 3: Run full test suite**

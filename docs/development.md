@@ -414,9 +414,9 @@ def process_artist(artist_id: str, data: dict) -> bool:
     """Process artist data."""
     ...
 
+
 # ❌ Bad
-def process_artist(artist_id, data):
-    ...
+def process_artist(artist_id, data): ...
 ```
 
 ### Docstrings
@@ -505,10 +505,7 @@ logger.info(f"🔗 Connecting with password: {password}")
 
 ```python
 # ✅ Good
-cursor.execute(
-    "SELECT * FROM artists WHERE name = %s",
-    (artist_name,)
-)
+cursor.execute("SELECT * FROM artists WHERE name = %s", (artist_name,))
 
 # ❌ Bad (SQL injection vulnerability)
 cursor.execute(f"SELECT * FROM artists WHERE name = '{artist_name}'")
@@ -533,7 +530,9 @@ LOG_LEVEL=DEBUG docker-compose up
 
 ```python
 # Add breakpoint
-import pdb; pdb.set_trace()
+import pdb
+
+pdb.set_trace()
 
 # Or Python 3.7+
 breakpoint()
@@ -578,7 +577,7 @@ process_data()
 
 profiler.disable()
 stats = pstats.Stats(profiler)
-stats.sort_stats('cumulative')
+stats.sort_stats("cumulative")
 stats.print_stats(20)  # Top 20 functions
 ```
 

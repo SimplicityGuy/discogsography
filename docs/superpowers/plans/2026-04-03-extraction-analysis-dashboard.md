@@ -112,8 +112,10 @@ class TestListVersions:
         assert resp.status_code == 401
 
     def test_returns_empty_when_no_flagged_dirs(self, test_client: TestClient) -> None:
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=Path("/nonexistent")), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=Path("/nonexistent")),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/versions",
                 headers=_admin_auth_headers(),
@@ -128,8 +130,10 @@ class TestListVersions:
         flagged.mkdir(parents=True)
         (flagged / "violations.jsonl").write_text("")
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/versions",
                 headers=_admin_auth_headers(),
@@ -151,8 +155,10 @@ class TestListVersions:
         (mb_root / "flagged" / "20260301" / "artists").mkdir(parents=True)
         (mb_root / "flagged" / "20260301" / "artists" / "violations.jsonl").write_text("")
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=discogs_root), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=mb_root):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=discogs_root),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=mb_root),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/versions",
                 headers=_admin_auth_headers(),
@@ -238,16 +244,15 @@ def _scan_versions(data_root: Path, source: str) -> list[dict[str, Any]]:
     for version_dir in sorted(flagged_dir.iterdir(), reverse=True):
         if not version_dir.is_dir():
             continue
-        entity_types = [
-            d.name for d in version_dir.iterdir()
-            if d.is_dir() and (d / "violations.jsonl").exists()
-        ]
+        entity_types = [d.name for d in version_dir.iterdir() if d.is_dir() and (d / "violations.jsonl").exists()]
         if entity_types:
-            versions.append({
-                "version": version_dir.name,
-                "source": source,
-                "entity_types": sorted(entity_types),
-            })
+            versions.append(
+                {
+                    "version": version_dir.name,
+                    "source": source,
+                    "entity_types": sorted(entity_types),
+                }
+            )
     return versions
 
 
@@ -329,8 +334,10 @@ class TestVersionSummary:
         assert resp.status_code in (400, 404, 422)
 
     def test_returns_404_for_unknown_version(self, test_client: TestClient, tmp_path: Path) -> None:
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=tmp_path):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=tmp_path),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/99999999/summary",
                 headers=_admin_auth_headers(),
@@ -342,13 +349,33 @@ class TestVersionSummary:
         flagged.mkdir(parents=True)
 
         violations = [
-            {"record_id": "1", "rule": "year-out-of-range", "severity": "warning", "field": "year", "field_value": "1850", "xml_file": "1.xml", "json_file": "1.json", "timestamp": "2026-01-31T12:00:00Z"},
-            {"record_id": "2", "rule": "missing-title", "severity": "error", "field": "title", "field_value": "", "xml_file": "2.xml", "json_file": "2.json", "timestamp": "2026-01-31T12:00:01Z"},
+            {
+                "record_id": "1",
+                "rule": "year-out-of-range",
+                "severity": "warning",
+                "field": "year",
+                "field_value": "1850",
+                "xml_file": "1.xml",
+                "json_file": "1.json",
+                "timestamp": "2026-01-31T12:00:00Z",
+            },
+            {
+                "record_id": "2",
+                "rule": "missing-title",
+                "severity": "error",
+                "field": "title",
+                "field_value": "",
+                "xml_file": "2.xml",
+                "json_file": "2.json",
+                "timestamp": "2026-01-31T12:00:01Z",
+            },
         ]
         (flagged / "violations.jsonl").write_text("\n".join(json.dumps(v) for v in violations) + "\n")
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/summary",
                 headers=_admin_auth_headers(),
@@ -361,9 +388,7 @@ class TestVersionSummary:
         assert data["violation_summary"]["by_severity"]["warning"] == 1
         assert data["violation_summary"]["by_severity"]["error"] == 1
 
-    def test_includes_pipeline_status_when_state_marker_exists(
-        self, test_client: TestClient, tmp_path: Path
-    ) -> None:
+    def test_includes_pipeline_status_when_state_marker_exists(self, test_client: TestClient, tmp_path: Path) -> None:
         flagged = tmp_path / "flagged" / "20260101" / "releases"
         flagged.mkdir(parents=True)
         (flagged / "violations.jsonl").write_text("")
@@ -379,8 +404,10 @@ class TestVersionSummary:
         }
         (tmp_path / ".extraction_status_20260101.json").write_text(json.dumps(state_marker))
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/summary",
                 headers=_admin_auth_headers(),
@@ -390,15 +417,15 @@ class TestVersionSummary:
         assert data["pipeline_status"] is not None
         assert data["pipeline_status"]["download_phase"]["status"] == "completed"
 
-    def test_pipeline_status_null_when_no_state_marker(
-        self, test_client: TestClient, tmp_path: Path
-    ) -> None:
+    def test_pipeline_status_null_when_no_state_marker(self, test_client: TestClient, tmp_path: Path) -> None:
         flagged = tmp_path / "flagged" / "20260101" / "releases"
         flagged.mkdir(parents=True)
         (flagged / "violations.jsonl").write_text("")
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/summary",
                 headers=_admin_auth_headers(),
@@ -491,12 +518,14 @@ def _build_violation_summary(violations: list[dict[str, Any]]) -> dict[str, Any]
         rule_counts[key] = rule_counts.get(key, 0) + 1
 
     for (rule, severity, entity), count in sorted(rule_counts.items(), key=lambda x: -x[1]):
-        by_rule.append({
-            "rule": rule,
-            "severity": severity,
-            "entity_type": entity,
-            "count": count,
-        })
+        by_rule.append(
+            {
+                "rule": rule,
+                "severity": severity,
+                "entity_type": entity,
+                "count": count,
+            }
+        )
 
     return {
         "total_violations": len(violations),
@@ -533,12 +562,14 @@ async def version_summary(
             "summary": state_marker.get("summary"),
         }
 
-    return JSONResponse(content={
-        "version": version,
-        "source": source,
-        "pipeline_status": pipeline_status,
-        "violation_summary": _build_violation_summary(violations),
-    })
+    return JSONResponse(
+        content={
+            "version": version,
+            "source": source,
+            "pipeline_status": pipeline_status,
+            "violation_summary": _build_violation_summary(violations),
+        }
+    )
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -574,9 +605,36 @@ def _make_flagged_version(tmp_path: Path, version: str = "20260101") -> Path:
     flagged.mkdir(parents=True)
 
     violations = [
-        {"record_id": "100", "rule": "year-out-of-range", "severity": "warning", "field": "year", "field_value": "1850", "xml_file": "100.xml", "json_file": "100.json", "timestamp": "2026-01-31T12:00:00Z"},
-        {"record_id": "200", "rule": "missing-title", "severity": "error", "field": "title", "field_value": "", "xml_file": "200.xml", "json_file": "200.json", "timestamp": "2026-01-31T12:00:01Z"},
-        {"record_id": "300", "rule": "year-out-of-range", "severity": "warning", "field": "year", "field_value": "1800", "xml_file": "300.xml", "json_file": "300.json", "timestamp": "2026-01-31T12:00:02Z"},
+        {
+            "record_id": "100",
+            "rule": "year-out-of-range",
+            "severity": "warning",
+            "field": "year",
+            "field_value": "1850",
+            "xml_file": "100.xml",
+            "json_file": "100.json",
+            "timestamp": "2026-01-31T12:00:00Z",
+        },
+        {
+            "record_id": "200",
+            "rule": "missing-title",
+            "severity": "error",
+            "field": "title",
+            "field_value": "",
+            "xml_file": "200.xml",
+            "json_file": "200.json",
+            "timestamp": "2026-01-31T12:00:01Z",
+        },
+        {
+            "record_id": "300",
+            "rule": "year-out-of-range",
+            "severity": "warning",
+            "field": "year",
+            "field_value": "1800",
+            "xml_file": "300.xml",
+            "json_file": "300.json",
+            "timestamp": "2026-01-31T12:00:02Z",
+        },
     ]
     (flagged / "violations.jsonl").write_text("\n".join(json.dumps(v) for v in violations) + "\n")
 
@@ -594,8 +652,10 @@ class TestViolationsList:
     def test_returns_paginated_violations(self, test_client: TestClient, tmp_path: Path) -> None:
         data_root = _make_flagged_version(tmp_path)
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=data_root), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=data_root),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/violations?page=1&page_size=2",
                 headers=_admin_auth_headers(),
@@ -609,8 +669,10 @@ class TestViolationsList:
     def test_filters_by_severity(self, test_client: TestClient, tmp_path: Path) -> None:
         data_root = _make_flagged_version(tmp_path)
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=data_root), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=data_root),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/violations?severity=error",
                 headers=_admin_auth_headers(),
@@ -623,8 +685,10 @@ class TestViolationsList:
     def test_filters_by_rule(self, test_client: TestClient, tmp_path: Path) -> None:
         data_root = _make_flagged_version(tmp_path)
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=data_root), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=data_root),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/violations?rule=year-out-of-range",
                 headers=_admin_auth_headers(),
@@ -640,8 +704,10 @@ class TestViolationDetail:
     def test_returns_record_with_xml_and_json(self, test_client: TestClient, tmp_path: Path) -> None:
         data_root = _make_flagged_version(tmp_path)
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=data_root), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=data_root),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/violations/100",
                 headers=_admin_auth_headers(),
@@ -656,8 +722,10 @@ class TestViolationDetail:
     def test_returns_null_for_missing_xml(self, test_client: TestClient, tmp_path: Path) -> None:
         data_root = _make_flagged_version(tmp_path)
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=data_root), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=data_root),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             # record 300 has violations but no XML/JSON files
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/violations/300",
@@ -672,8 +740,10 @@ class TestViolationDetail:
     def test_returns_404_for_unknown_record(self, test_client: TestClient, tmp_path: Path) -> None:
         data_root = _make_flagged_version(tmp_path)
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=data_root), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=data_root),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/violations/99999",
                 headers=_admin_auth_headers(),
@@ -724,15 +794,17 @@ async def list_violations(
     start = (page - 1) * page_size
     page_violations = violations[start : start + page_size]
 
-    return JSONResponse(content={
-        "violations": page_violations,
-        "pagination": {
-            "page": page,
-            "page_size": page_size,
-            "total_items": total,
-            "total_pages": total_pages,
-        },
-    })
+    return JSONResponse(
+        content={
+            "violations": page_violations,
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_items": total,
+                "total_pages": total_pages,
+            },
+        }
+    )
 
 
 @router.get("/api/admin/extraction-analysis/{version}/violations/{record_id}")
@@ -796,16 +868,15 @@ async def violation_detail(
         except (json.JSONDecodeError, OSError):
             pass
 
-    return JSONResponse(content={
-        "record_id": record_id,
-        "entity_type": entity_type,
-        "violations": [
-            {k: v for k, v in rv.items() if k != "entity_type"}
-            for rv in record_violations
-        ],
-        "raw_xml": raw_xml,
-        "parsed_json": parsed_json,
-    })
+    return JSONResponse(
+        content={
+            "record_id": record_id,
+            "entity_type": entity_type,
+            "violations": [{k: v for k, v in rv.items() if k != "entity_type"} for rv in record_violations],
+            "raw_xml": raw_xml,
+            "parsed_json": parsed_json,
+        }
+    )
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -844,7 +915,16 @@ class TestParsingErrors:
         flagged.mkdir(parents=True)
 
         violations = [
-            {"record_id": "100", "rule": "year-out-of-range", "severity": "warning", "field": "year", "field_value": "", "xml_file": "100.xml", "json_file": "100.json", "timestamp": "2026-01-31T12:00:00Z"},
+            {
+                "record_id": "100",
+                "rule": "year-out-of-range",
+                "severity": "warning",
+                "field": "year",
+                "field_value": "",
+                "xml_file": "100.xml",
+                "json_file": "100.json",
+                "timestamp": "2026-01-31T12:00:00Z",
+            },
         ]
         (flagged / "violations.jsonl").write_text(json.dumps(violations[0]) + "\n")
 
@@ -852,8 +932,10 @@ class TestParsingErrors:
         (flagged / "100.xml").write_text('<release id="100"><year>2024</year><title>Test</title></release>')
         (flagged / "100.json").write_text(json.dumps({"id": "100", "title": "Test"}))
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/parsing-errors",
                 headers=_admin_auth_headers(),
@@ -869,7 +951,16 @@ class TestParsingErrors:
         flagged.mkdir(parents=True)
 
         violations = [
-            {"record_id": "200", "rule": "missing-title", "severity": "error", "field": "title", "field_value": "", "xml_file": "200.xml", "json_file": "200.json", "timestamp": "2026-01-31T12:00:00Z"},
+            {
+                "record_id": "200",
+                "rule": "missing-title",
+                "severity": "error",
+                "field": "title",
+                "field_value": "",
+                "xml_file": "200.xml",
+                "json_file": "200.json",
+                "timestamp": "2026-01-31T12:00:00Z",
+            },
         ]
         (flagged / "violations.jsonl").write_text(json.dumps(violations[0]) + "\n")
 
@@ -877,8 +968,10 @@ class TestParsingErrors:
         (flagged / "200.xml").write_text('<release id="200"><title></title></release>')
         (flagged / "200.json").write_text(json.dumps({"id": "200", "title": ""}))
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/parsing-errors",
                 headers=_admin_auth_headers(),
@@ -893,12 +986,23 @@ class TestParsingErrors:
         flagged.mkdir(parents=True)
 
         violations = [
-            {"record_id": "300", "rule": "year-out-of-range", "severity": "warning", "field": "year", "field_value": "1850", "xml_file": "300.xml", "json_file": "300.json", "timestamp": "2026-01-31T12:00:00Z"},
+            {
+                "record_id": "300",
+                "rule": "year-out-of-range",
+                "severity": "warning",
+                "field": "year",
+                "field_value": "1850",
+                "xml_file": "300.xml",
+                "json_file": "300.json",
+                "timestamp": "2026-01-31T12:00:00Z",
+            },
         ]
         (flagged / "violations.jsonl").write_text(json.dumps(violations[0]) + "\n")
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/parsing-errors",
                 headers=_admin_auth_headers(),
@@ -1116,9 +1220,36 @@ class TestCompareVersions:
         flagged_a = tmp_path / "flagged" / "20260101" / "releases"
         flagged_a.mkdir(parents=True)
         violations_a = [
-            {"record_id": "1", "rule": "year-out-of-range", "severity": "warning", "field": "year", "field_value": "1850", "xml_file": "1.xml", "json_file": "1.json", "timestamp": "2026-01-31T12:00:00Z"},
-            {"record_id": "2", "rule": "year-out-of-range", "severity": "warning", "field": "year", "field_value": "1800", "xml_file": "2.xml", "json_file": "2.json", "timestamp": "2026-01-31T12:00:01Z"},
-            {"record_id": "3", "rule": "missing-title", "severity": "error", "field": "title", "field_value": "", "xml_file": "3.xml", "json_file": "3.json", "timestamp": "2026-01-31T12:00:02Z"},
+            {
+                "record_id": "1",
+                "rule": "year-out-of-range",
+                "severity": "warning",
+                "field": "year",
+                "field_value": "1850",
+                "xml_file": "1.xml",
+                "json_file": "1.json",
+                "timestamp": "2026-01-31T12:00:00Z",
+            },
+            {
+                "record_id": "2",
+                "rule": "year-out-of-range",
+                "severity": "warning",
+                "field": "year",
+                "field_value": "1800",
+                "xml_file": "2.xml",
+                "json_file": "2.json",
+                "timestamp": "2026-01-31T12:00:01Z",
+            },
+            {
+                "record_id": "3",
+                "rule": "missing-title",
+                "severity": "error",
+                "field": "title",
+                "field_value": "",
+                "xml_file": "3.xml",
+                "json_file": "3.json",
+                "timestamp": "2026-01-31T12:00:02Z",
+            },
         ]
         (flagged_a / "violations.jsonl").write_text("\n".join(json.dumps(v) for v in violations_a) + "\n")
 
@@ -1126,13 +1257,33 @@ class TestCompareVersions:
         flagged_b = tmp_path / "flagged" / "20260201" / "releases"
         flagged_b.mkdir(parents=True)
         violations_b = [
-            {"record_id": "1", "rule": "year-out-of-range", "severity": "warning", "field": "year", "field_value": "1850", "xml_file": "1.xml", "json_file": "1.json", "timestamp": "2026-02-28T12:00:00Z"},
-            {"record_id": "3", "rule": "missing-title", "severity": "error", "field": "title", "field_value": "", "xml_file": "3.xml", "json_file": "3.json", "timestamp": "2026-02-28T12:00:01Z"},
+            {
+                "record_id": "1",
+                "rule": "year-out-of-range",
+                "severity": "warning",
+                "field": "year",
+                "field_value": "1850",
+                "xml_file": "1.xml",
+                "json_file": "1.json",
+                "timestamp": "2026-02-28T12:00:00Z",
+            },
+            {
+                "record_id": "3",
+                "rule": "missing-title",
+                "severity": "error",
+                "field": "title",
+                "field_value": "",
+                "xml_file": "3.xml",
+                "json_file": "3.json",
+                "timestamp": "2026-02-28T12:00:01Z",
+            },
         ]
         (flagged_b / "violations.jsonl").write_text("\n".join(json.dumps(v) for v in violations_b) + "\n")
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/compare/20260201",
                 headers=_admin_auth_headers(),
@@ -1153,8 +1304,10 @@ class TestCompareVersions:
         flagged.mkdir(parents=True)
         (flagged / "violations.jsonl").write_text("")
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=tmp_path),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.get(
                 "/api/admin/extraction-analysis/20260101/compare/99999999",
                 headers=_admin_auth_headers(),
@@ -1168,8 +1321,10 @@ class TestPromptContext:
     def test_returns_prompt_context(self, test_client: TestClient, tmp_path: Path) -> None:
         data_root = _make_flagged_version(tmp_path)
 
-        with patch("api.routers.extraction_analysis._discogs_data_root", new=data_root), \
-             patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")):
+        with (
+            patch("api.routers.extraction_analysis._discogs_data_root", new=data_root),
+            patch("api.routers.extraction_analysis._musicbrainz_data_root", new=Path("/nonexistent")),
+        ):
             resp = test_client.post(
                 "/api/admin/extraction-analysis/20260101/prompt-context",
                 headers=_admin_auth_headers(),
@@ -1217,6 +1372,7 @@ def _load_rules_yaml(data_root: Path) -> dict[str, Any]:
         return {}
     try:
         import yaml
+
         return yaml.safe_load(rules_path.read_text()) or {}
     except Exception:
         return {}
@@ -1286,27 +1442,31 @@ async def compare_versions(
             direction = "unchanged"
             unchanged += 1
 
-        details.append({
-            "rule": key[0],
-            "severity": key[1],
-            "entity_type": key[2],
-            "count_a": ca,
-            "count_b": cb,
-            "direction": direction,
-        })
+        details.append(
+            {
+                "rule": key[0],
+                "severity": key[1],
+                "entity_type": key[2],
+                "count_a": ca,
+                "count_b": cb,
+                "direction": direction,
+            }
+        )
 
-    return JSONResponse(content={
-        "version_a": version,
-        "version_b": other_version,
-        "summary": {
-            "improved": improved,
-            "worsened": worsened,
-            "unchanged": unchanged,
-            "new_rules": sum(1 for k in counts_b if k not in counts_a),
-            "removed_rules": sum(1 for k in counts_a if k not in counts_b),
-        },
-        "details": details,
-    })
+    return JSONResponse(
+        content={
+            "version_a": version,
+            "version_b": other_version,
+            "summary": {
+                "improved": improved,
+                "worsened": worsened,
+                "unchanged": unchanged,
+                "new_rules": sum(1 for k in counts_b if k not in counts_a),
+                "removed_rules": sum(1 for k in counts_a if k not in counts_b),
+            },
+            "details": details,
+        }
+    )
 
 
 @router.post("/api/admin/extraction-analysis/{version}/prompt-context")
@@ -1371,26 +1531,30 @@ async def prompt_context(
             except json.JSONDecodeError:
                 pass
 
-        records.append({
-            "record_id": rid,
-            "entity_type": entity_type,
-            "violation": {
-                "field": record_violations[0].get("field", ""),
-                "field_value": record_violations[0].get("field_value", ""),
-            },
-            "raw_xml": raw_xml,
-            "parsed_json": parsed_json,
-        })
+        records.append(
+            {
+                "record_id": rid,
+                "entity_type": entity_type,
+                "violation": {
+                    "field": record_violations[0].get("field", ""),
+                    "field_value": record_violations[0].get("field_value", ""),
+                },
+                "raw_xml": raw_xml,
+                "parsed_json": parsed_json,
+            }
+        )
 
-    return JSONResponse(content={
-        "rule": body.rule,
-        "rule_definition": rule_def,
-        "records": records,
-        "extractor_context": {
-            "parser_file": "extractor/src/xml_parser.rs",
-            "rules_file": "extractor/extraction-rules.yaml",
-        },
-    })
+    return JSONResponse(
+        content={
+            "rule": body.rule,
+            "rule_definition": rule_def,
+            "records": records,
+            "extractor_context": {
+                "parser_file": "extractor/src/xml_parser.rs",
+                "rules_file": "extractor/extraction-rules.yaml",
+            },
+        }
+    )
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -1588,7 +1752,9 @@ async def proxy_extraction_analysis_summary(version: str, request: Request) -> R
 
 @router.get("/admin/api/extraction-analysis/{version}/violations/{record_id}")
 async def proxy_extraction_analysis_violation_detail(
-    version: str, record_id: str, request: Request,
+    version: str,
+    record_id: str,
+    request: Request,
 ) -> Response:
     """Proxy extraction analysis violation detail requests to the API service."""
     if not _validate_path_segment(version) or not _validate_path_segment(record_id):
@@ -1657,7 +1823,9 @@ async def proxy_extraction_analysis_parsing_errors(version: str, request: Reques
 
 @router.get("/admin/api/extraction-analysis/{version}/compare/{other_version}")
 async def proxy_extraction_analysis_compare(
-    version: str, other_version: str, request: Request,
+    version: str,
+    other_version: str,
+    request: Request,
 ) -> Response:
     """Proxy extraction analysis compare requests to the API service."""
     if not _validate_path_segment(version) or not _validate_path_segment(other_version):

@@ -28,8 +28,9 @@ Add two new table entries to the `_USER_TABLES` list, after the existing `sync_h
 
 ```python
 (
-    "dashboard_admins",
-    """
+    (
+        "dashboard_admins",
+        """
     CREATE TABLE IF NOT EXISTS dashboard_admins (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         email VARCHAR(255) UNIQUE NOT NULL,
@@ -39,10 +40,12 @@ Add two new table entries to the `_USER_TABLES` list, after the existing `sync_h
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
     """,
-),
+    ),
+)
 (
-    "extraction_history",
-    """
+    (
+        "extraction_history",
+        """
     CREATE TABLE IF NOT EXISTS extraction_history (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         triggered_by UUID NOT NULL REFERENCES dashboard_admins(id),
@@ -55,20 +58,25 @@ Add two new table entries to the `_USER_TABLES` list, after the existing `sync_h
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
     """,
-),
+    ),
+)
 ```
 
 Also add indexes to the `_USER_TABLES` list (following the `sync_history` index pattern):
 
 ```python
 (
-    "idx_extraction_history_status",
-    "CREATE INDEX IF NOT EXISTS idx_extraction_history_status ON extraction_history(status)",
-),
+    (
+        "idx_extraction_history_status",
+        "CREATE INDEX IF NOT EXISTS idx_extraction_history_status ON extraction_history(status)",
+    ),
+)
 (
-    "idx_extraction_history_created_at",
-    "CREATE INDEX IF NOT EXISTS idx_extraction_history_created_at ON extraction_history(created_at DESC)",
-),
+    (
+        "idx_extraction_history_created_at",
+        "CREATE INDEX IF NOT EXISTS idx_extraction_history_created_at ON extraction_history(created_at DESC)",
+    ),
+)
 ```
 
 - [ ] **Step 3: Commit**
@@ -130,6 +138,7 @@ def _decode_jwt_payload(token: str) -> dict:
 
 # --- create_admin_token ---
 
+
 class TestCreateAdminToken:
     def test_returns_token_and_ttl(self) -> None:
         token, expires_in = create_admin_token(TEST_ADMIN_ID, TEST_ADMIN_EMAIL, TEST_JWT_SECRET)
@@ -152,6 +161,7 @@ class TestCreateAdminToken:
 
 
 # --- verify_admin_password ---
+
 
 class TestVerifyAdminPassword:
     def test_correct_password(self) -> None:
@@ -215,16 +225,10 @@ def create_admin_token(
         "jti": f"admin:{secrets.token_hex(16)}",
     }
 
-    header = b64url_encode(
-        json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode()
-    )
+    header = b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
     body = b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
     signing_input = f"{header}.{body}".encode("ascii")
-    signature = b64url_encode(
-        hmac.new(
-            jwt_secret.encode("utf-8"), signing_input, hashlib.sha256
-        ).digest()
-    )
+    signature = b64url_encode(hmac.new(jwt_secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
     return f"{header}.{body}.{signature}", expire_minutes * 60
 
 
@@ -274,14 +278,23 @@ def _make_admin_jwt(
     token_type: str = "admin",
 ) -> str:
     """Create an admin JWT for testing."""
+
     def b64url(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
     header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
-    body = b64url(json.dumps({
-        "sub": admin_id, "email": email, "exp": exp,
-        "type": token_type, "jti": f"admin:{secrets.token_hex(16)}",
-    }, separators=(",", ":")).encode())
+    body = b64url(
+        json.dumps(
+            {
+                "sub": admin_id,
+                "email": email,
+                "exp": exp,
+                "type": token_type,
+                "jti": f"admin:{secrets.token_hex(16)}",
+            },
+            separators=(",", ":"),
+        ).encode()
+    )
     signing_input = f"{header}.{body}".encode("ascii")
     sig = b64url(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
     return f"{header}.{body}.{sig}"
@@ -291,6 +304,7 @@ class TestRequireAdmin:
     @pytest.mark.asyncio
     async def test_valid_admin_token(self) -> None:
         import api.dependencies as deps
+
         deps.configure(TEST_JWT_SECRET)
 
         token = _make_admin_jwt()
@@ -303,6 +317,7 @@ class TestRequireAdmin:
     async def test_rejects_user_token(self) -> None:
         """User tokens (no type=admin) must be rejected."""
         import api.dependencies as deps
+
         deps.configure(TEST_JWT_SECRET)
 
         # Create a regular user token (no "type" claim)
@@ -310,9 +325,16 @@ class TestRequireAdmin:
             return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
         header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
-        body = b64url(json.dumps({
-            "sub": "user-id", "email": "user@test.com", "exp": 9_999_999_999,
-        }, separators=(",", ":")).encode())
+        body = b64url(
+            json.dumps(
+                {
+                    "sub": "user-id",
+                    "email": "user@test.com",
+                    "exp": 9_999_999_999,
+                },
+                separators=(",", ":"),
+            ).encode()
+        )
         signing_input = f"{header}.{body}".encode("ascii")
         sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
         user_token = f"{header}.{body}.{sig}"
@@ -325,6 +347,7 @@ class TestRequireAdmin:
     @pytest.mark.asyncio
     async def test_rejects_no_credentials(self) -> None:
         import api.dependencies as deps
+
         deps.configure(TEST_JWT_SECRET)
 
         with pytest.raises(HTTPException) as exc_info:
@@ -334,6 +357,7 @@ class TestRequireAdmin:
     @pytest.mark.asyncio
     async def test_rejects_expired_token(self) -> None:
         import api.dependencies as deps
+
         deps.configure(TEST_JWT_SECRET)
 
         token = _make_admin_jwt(exp=1000000000)  # expired
@@ -534,12 +558,12 @@ In `common/config.py`, add to the `ApiConfig` dataclass, in the optional fields 
 In the `from_env()` classmethod, add env var reads for these fields:
 
 ```python
-    extractor_host=getenv("EXTRACTOR_HOST", "extractor"),
-    extractor_health_port=int(getenv("EXTRACTOR_HEALTH_PORT", "8000")),
-    rabbitmq_management_host=getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),
-    rabbitmq_management_port=int(getenv("RABBITMQ_MANAGEMENT_PORT", "15672")),
-    rabbitmq_username=getenv("RABBITMQ_USERNAME", "guest"),
-    rabbitmq_password=get_secret("RABBITMQ_PASSWORD") or "guest",
+extractor_host = (getenv("EXTRACTOR_HOST", "extractor"),)
+extractor_health_port = (int(getenv("EXTRACTOR_HEALTH_PORT", "8000")),)
+rabbitmq_management_host = (getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),)
+rabbitmq_management_port = (int(getenv("RABBITMQ_MANAGEMENT_PORT", "15672")),)
+rabbitmq_username = (getenv("RABBITMQ_USERNAME", "guest"),)
+rabbitmq_password = (get_secret("RABBITMQ_PASSWORD") or "guest",)
 ```
 
 - [ ] **Step 2: Run type check**
@@ -599,14 +623,23 @@ def _make_admin_jwt(
     secret: str = TEST_JWT_SECRET,
 ) -> str:
     """Create an admin JWT for testing."""
+
     def b64url(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
     header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
-    body = b64url(json.dumps({
-        "sub": admin_id, "email": email, "exp": exp,
-        "type": "admin", "jti": f"admin:{secrets.token_hex(16)}",
-    }, separators=(",", ":")).encode())
+    body = b64url(
+        json.dumps(
+            {
+                "sub": admin_id,
+                "email": email,
+                "exp": exp,
+                "type": "admin",
+                "jti": f"admin:{secrets.token_hex(16)}",
+            },
+            separators=(",", ":"),
+        ).encode()
+    )
     signing_input = f"{header}.{body}".encode("ascii")
     sig = b64url(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
     return f"{header}.{body}.{sig}"
@@ -759,6 +792,7 @@ def configure(pool: Any, redis: Any, config: ApiConfig) -> None:
 
 # --- Valid DLQ names ---
 
+
 def _valid_dlq_names() -> set[str]:
     """Build set of known DLQ queue names."""
     names: set[str] = set()
@@ -795,16 +829,10 @@ async def admin_login(request: Request, body: AdminLoginRequest) -> JSONResponse
     if not admin["is_active"] or not password_ok:
         raise HTTPException(status_code=401, detail="Incorrect email or password")
 
-    token, expires_in = create_admin_token(
-        str(admin["id"]), admin["email"], _config.jwt_secret_key, _config.jwt_expire_minutes
-    )
+    token, expires_in = create_admin_token(str(admin["id"]), admin["email"], _config.jwt_secret_key, _config.jwt_expire_minutes)
     logger.info("✅ Admin logged in", email=body.email)
 
-    return JSONResponse(
-        content=AdminLoginResponse(
-            access_token=token, expires_in=expires_in
-        ).model_dump()
-    )
+    return JSONResponse(content=AdminLoginResponse(access_token=token, expires_in=expires_in).model_dump())
 
 
 @router.post("/api/admin/auth/logout")
@@ -871,11 +899,7 @@ async def list_extractions(
             )
         )
 
-    return JSONResponse(
-        content=ExtractionListResponse(
-            extractions=extractions, total=total, offset=offset, limit=limit
-        ).model_dump(mode="json")
-    )
+    return JSONResponse(content=ExtractionListResponse(extractions=extractions, total=total, offset=offset, limit=limit).model_dump(mode="json"))
 
 
 @router.get("/api/admin/extractions/{extraction_id}")
@@ -988,9 +1012,7 @@ async def trigger_extraction(
     logger.info("🚀 Extraction triggered", extraction_id=extraction_id, admin=current_admin.get("email"))
 
     return JSONResponse(
-        content=ExtractionTriggerResponse(
-            id=extraction_id, status="running"
-        ).model_dump(mode="json"),
+        content=ExtractionTriggerResponse(id=extraction_id, status="running").model_dump(mode="json"),
         status_code=202,
     )
 
@@ -1117,9 +1139,7 @@ async def purge_dlq(
         admin=current_admin.get("email"),
     )
 
-    return JSONResponse(
-        content=DlqPurgeResponse(queue=queue, messages_purged=message_count).model_dump()
-    )
+    return JSONResponse(content=DlqPurgeResponse(queue=queue, messages_purged=message_count).model_dump())
 ```
 
 - [ ] **Step 4: Register admin router in api.py**
@@ -1147,8 +1167,9 @@ app.include_router(_admin_router.router)
 In `tests/api/conftest.py`, inside the `test_client` fixture where other routers are configured, add:
 
 ```python
-    from api.routers import admin as _admin_router
-    _admin_router.configure(mock_pool, mock_redis, test_api_config)
+from api.routers import admin as _admin_router
+
+_admin_router.configure(mock_pool, mock_redis, test_api_config)
 ```
 
 - [ ] **Step 6: Run tests**
@@ -1183,9 +1204,7 @@ Add to `tests/api/test_admin_endpoints.py`:
 ```python
 class TestExtractionTrigger:
     @patch("api.routers.admin.httpx.AsyncClient")
-    def test_trigger_success(
-        self, mock_httpx_cls: MagicMock, test_client: TestClient, mock_cur: AsyncMock
-    ) -> None:
+    def test_trigger_success(self, mock_httpx_cls: MagicMock, test_client: TestClient, mock_cur: AsyncMock) -> None:
         mock_cur.fetchone.return_value = {"id": str(uuid4())}
         mock_resp = MagicMock()
         mock_resp.status_code = 202
@@ -1205,9 +1224,7 @@ class TestExtractionTrigger:
         assert response.json()["status"] == "running"
 
     @patch("api.routers.admin.httpx.AsyncClient")
-    def test_trigger_already_running(
-        self, mock_httpx_cls: MagicMock, test_client: TestClient, mock_cur: AsyncMock
-    ) -> None:
+    def test_trigger_already_running(self, mock_httpx_cls: MagicMock, test_client: TestClient, mock_cur: AsyncMock) -> None:
         mock_cur.fetchone.return_value = {"id": str(uuid4())}
         mock_resp = MagicMock()
         mock_resp.status_code = 409
@@ -1252,9 +1269,7 @@ class TestExtractionList:
 
 class TestDlqPurge:
     @patch("api.routers.admin.httpx.AsyncClient")
-    def test_purge_valid_queue(
-        self, mock_httpx_cls: MagicMock, test_client: TestClient
-    ) -> None:
+    def test_purge_valid_queue(self, mock_httpx_cls: MagicMock, test_client: TestClient) -> None:
         mock_get_resp = MagicMock()
         mock_get_resp.status_code = 200
         mock_get_resp.json.return_value = {"messages": 5}
@@ -1369,9 +1384,7 @@ def list_admins(conninfo: str) -> None:
     """List all admin accounts (email + active status)."""
     with psycopg.connect(conninfo) as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT email, is_active, created_at FROM dashboard_admins ORDER BY created_at"
-            )
+            cur.execute("SELECT email, is_active, created_at FROM dashboard_admins ORDER BY created_at")
             rows = cur.fetchall()
 
     if not rows:

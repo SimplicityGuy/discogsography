@@ -109,8 +109,7 @@ async def find_path(
     to_name: str,
     to_type: str,
     max_depth: int = 6,
-) -> PathResult:
-    ...
+) -> PathResult: ...
 ```
 
 Schemas declared as Pydantic models → both consumers auto-derive JSON schema for the LLM tool-calling contract.

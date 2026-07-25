@@ -441,6 +441,7 @@ async def get_services() -> dict[str, Any]:
         return {name: p["services"] for name, p in pipelines.items()}
     return {}
 
+
 @app.get("/api/queues")
 async def get_queues() -> dict[str, Any]:
     """Get queue information grouped by pipeline."""
@@ -491,6 +492,7 @@ def test_metrics_endpoint(self, client: TestClient) -> None:
     assert "services" in discogs
     assert "queues" in discogs
 
+
 def test_services_endpoint(self, client: TestClient) -> None:
     """Test services endpoint returns grouped service list."""
     response = client.get("/api/services")
@@ -501,6 +503,7 @@ def test_services_endpoint(self, client: TestClient) -> None:
     assert len(data["discogs"]) == 3
     service_names = {s["name"] for s in data["discogs"]}
     assert service_names == {"extractor-discogs", "graphinator", "tableinator"}
+
 
 def test_queues_endpoint(self, client: TestClient) -> None:
     """Test queues endpoint returns grouped queue list."""

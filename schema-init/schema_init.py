@@ -66,25 +66,23 @@ def _ensure_postgres_database(params: dict[str, Any]) -> None:
     """Create the target database if it does not already exist (synchronous)."""
     admin_params = {**params, "dbname": "postgres"}
     logger.info("🔧 Ensuring PostgreSQL database exists...", database=POSTGRES_DATABASE)
-    with psycopg.connect(**admin_params, autocommit=True) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                "SELECT 1 FROM pg_database WHERE datname = %s",
-                (POSTGRES_DATABASE,),
+    with (
+        psycopg.connect(**admin_params, autocommit=True) as conn,
+        conn.cursor() as cursor,
+    ):
+        cursor.execute(
+            "SELECT 1 FROM pg_database WHERE datname = %s",
+            (POSTGRES_DATABASE,),
+        )
+        if cursor.fetchone():
+            logger.info(
+                "✅ PostgreSQL database already exists", database=POSTGRES_DATABASE
             )
-            if cursor.fetchone():
-                logger.info(
-                    "✅ PostgreSQL database already exists", database=POSTGRES_DATABASE
-                )
-            else:
-                cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
-                    sql.SQL("CREATE DATABASE {}").format(
-                        sql.Identifier(POSTGRES_DATABASE)
-                    )
-                )
-                logger.info(
-                    "✅ PostgreSQL database created", database=POSTGRES_DATABASE
-                )
+        else:
+            cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
+                sql.SQL("CREATE DATABASE {}").format(sql.Identifier(POSTGRES_DATABASE))
+            )
+            logger.info("✅ PostgreSQL database created", database=POSTGRES_DATABASE)
 
 
 async def _init_postgres(params: dict[str, str | int]) -> bool:
@@ -106,7 +104,7 @@ async def _init_postgres(params: dict[str, str | int]) -> bool:
             )
             return False
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - init failure is reported to the caller as False
         logger.error("❌ PostgreSQL schema init failed", error=str(e))
         return False
     finally:
@@ -138,7 +136,7 @@ async def _init_neo4j() -> bool:
             logger.error("❌ Neo4j schema had partial failures", failure_count=failures)
             return False
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - init failure is reported to the caller as False
         logger.error("❌ Neo4j schema init failed", error=str(e))
         return False
     finally:
@@ -174,7 +172,7 @@ async def main() -> int:
     # Step 1 – ensure database exists (sync, must happen before pool creation)
     try:
         _ensure_postgres_database(params)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level guard: log and exit cleanly instead of a traceback
         logger.error("❌ Failed to ensure PostgreSQL database exists", error=str(e))
         return 1
 

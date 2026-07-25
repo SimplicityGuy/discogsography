@@ -21,21 +21,25 @@
 In `schema-init/postgres_schema.py`, after the `idx_release_rarity_gem` entry (line ~443) and before the `insights.computation_log table` entry (line ~445), insert:
 
 ```python
+(
     (
         "insights.community_counts table",
         """
-        CREATE TABLE IF NOT EXISTS insights.community_counts (
-            release_id      BIGINT PRIMARY KEY,
-            have_count      INTEGER NOT NULL DEFAULT 0,
-            want_count      INTEGER NOT NULL DEFAULT 0,
-            fetched_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-        """,
+    CREATE TABLE IF NOT EXISTS insights.community_counts (
+        release_id      BIGINT PRIMARY KEY,
+        have_count      INTEGER NOT NULL DEFAULT 0,
+        want_count      INTEGER NOT NULL DEFAULT 0,
+        fetched_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
     ),
+)
+(
     (
         "idx_community_counts_fetched",
         "CREATE INDEX IF NOT EXISTS idx_community_counts_fetched ON insights.community_counts (fetched_at)",
     ),
+)
 ```
 
 - [ ] **Step 2: Add `collection_prevalence` column to `insights.release_rarity` table definition**
@@ -66,10 +70,12 @@ In the `insights.release_rarity table` CREATE TABLE statement (line ~415-429), a
 Since the schema uses `CREATE TABLE IF NOT EXISTS` and existing databases already have the `release_rarity` table without the new column, add an `ALTER TABLE` entry at the end of the insights section (after `idx_genre_trends_genre`, before `_MUSICBRAINZ_TABLES`):
 
 ```python
+(
     (
         "insights.release_rarity add collection_prevalence",
         "ALTER TABLE insights.release_rarity ADD COLUMN IF NOT EXISTS collection_prevalence REAL",
     ),
+)
 ```
 
 - [ ] **Step 4: Run schema-init tests**
@@ -267,9 +273,11 @@ class TestFetchAllRaritySignals:
 
         # Mock PostgreSQL pool for community counts
         mock_cur = AsyncMock()
-        mock_cur.fetchall = AsyncMock(return_value=[
-            {"release_id": 1, "have_count": 50, "want_count": 10},
-        ])
+        mock_cur.fetchall = AsyncMock(
+            return_value=[
+                {"release_id": 1, "have_count": 50, "want_count": 10},
+            ]
+        )
         mock_conn = AsyncMock()
         mock_conn.cursor = MagicMock(return_value=mock_cur)
         mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
@@ -362,8 +370,14 @@ class TestFetchAllRaritySignals:
 
         with patch("api.queries.rarity_queries.run_query") as mock_run:
             mock_run.side_effect = [
-                pressing_data, label_data, format_data, temporal_data,
-                degree_data, artist_degree_data, label_size_data, genre_count_data,
+                pressing_data,
+                label_data,
+                format_data,
+                temporal_data,
+                degree_data,
+                artist_degree_data,
+                label_size_data,
+                genre_count_data,
             ]
             results = await fetch_all_rarity_signals(mock_driver, None)
 
@@ -395,22 +409,17 @@ async def fetch_all_rarity_signals(driver: Any, pool: Any = None) -> list[dict[s
 After the 8 Neo4j queries and their `asyncio.gather` (line ~243), add the PostgreSQL community counts fetch:
 
 ```python
-    # 9. Community counts from PostgreSQL (if pool available)
-    community_map: dict[str, tuple[int, int]] = {}
-    if pool is not None:
-        try:
-            async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-                await cur.execute(
-                    "SELECT release_id, have_count, want_count FROM insights.community_counts"
-                )
-                community_rows = await cur.fetchall()
-            community_map = {
-                str(r["release_id"]): (r["have_count"], r["want_count"])
-                for r in community_rows
-            }
-            logger.info("📊 Community counts loaded", count=len(community_map))
-        except Exception:
-            logger.warning("⚠️ Failed to load community counts, using neutral fallback")
+# 9. Community counts from PostgreSQL (if pool available)
+community_map: dict[str, tuple[int, int]] = {}
+if pool is not None:
+    try:
+        async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute("SELECT release_id, have_count, want_count FROM insights.community_counts")
+            community_rows = await cur.fetchall()
+        community_map = {str(r["release_id"]): (r["have_count"], r["want_count"]) for r in community_rows}
+        logger.info("📊 Community counts loaded", count=len(community_map))
+    except Exception:
+        logger.warning("⚠️ Failed to load community counts, using neutral fallback")
 ```
 
 In the scoring loop, after `isolation_score` (line ~288), add:
@@ -617,11 +626,15 @@ And update the item dict (lines ~319-333) to include `collection_prevalence`:
 In `insights/insights.py`, update the `insight_types` list in `computation_status` (line ~429):
 
 ```python
-    insight_types = [
-        "artist_centrality", "genre_trends", "label_longevity",
-        "anniversaries", "data_completeness", "community_enrichment",
-        "release_rarity",
-    ]
+insight_types = [
+    "artist_centrality",
+    "genre_trends",
+    "label_longevity",
+    "anniversaries",
+    "data_completeness",
+    "community_enrichment",
+    "release_rarity",
+]
 ```
 
 - [ ] **Step 5: Run insights tests**
@@ -660,8 +673,7 @@ import pytest
 from api.routers import insights_compute
 
 
-def _make_mock_pool(community_rows=None, oauth_row=None, app_config_rows=None,
-                     collection_release_ids=None):
+def _make_mock_pool(community_rows=None, oauth_row=None, app_config_rows=None, collection_release_ids=None):
     """Create mock pool with configurable query responses."""
     mock_cur = AsyncMock()
 
@@ -686,6 +698,7 @@ def _make_mock_pool(community_rows=None, oauth_row=None, app_config_rows=None,
         responses.append(app_config_rows)
 
     fetchall_idx = 0
+
     async def mock_fetchall():
         nonlocal fetchall_idx
         if fetchall_idx < len(responses):
@@ -695,6 +708,7 @@ def _make_mock_pool(community_rows=None, oauth_row=None, app_config_rows=None,
         return []
 
     fetchone_idx = 0
+
     async def mock_fetchone():
         nonlocal fetchone_idx
         if oauth_row and fetchone_idx == 0:
@@ -747,6 +761,7 @@ class TestEnrichReleasesFromDiscogs:
         # First call: releases needing enrichment
         # Second call: no OAuth token
         call_count = 0
+
         async def mock_fetchall():
             nonlocal call_count
             call_count += 1
@@ -777,6 +792,7 @@ class TestEnrichReleasesFromDiscogs:
         mock_cur = AsyncMock()
 
         call_count = 0
+
         async def mock_fetchall():
             nonlocal call_count
             call_count += 1
@@ -790,10 +806,13 @@ class TestEnrichReleasesFromDiscogs:
             return []
 
         mock_cur.fetchall = mock_fetchall
-        mock_cur.fetchone = AsyncMock(return_value={
-            "access_token": "at", "access_secret": "as",
-            "provider_username": "testuser",
-        })
+        mock_cur.fetchone = AsyncMock(
+            return_value={
+                "access_token": "at",
+                "access_secret": "as",
+                "provider_username": "testuser",
+            }
+        )
         mock_cur.execute = AsyncMock()
         mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
         mock_cur.__aexit__ = AsyncMock(return_value=False)
@@ -832,7 +851,9 @@ class TestEnrichReleasesFromDiscogs:
             mock_client_cls.return_value = mock_client
 
             result = await _enrich_community_counts(
-                mock_pool, mock_neo4j, None,
+                mock_pool,
+                mock_neo4j,
+                None,
             )
 
         assert result["enriched"] == 1
@@ -921,9 +942,7 @@ async def _enrich_community_counts(
         access_token = decrypt_oauth_token(token["access_token"], encryption_key)
         access_secret = decrypt_oauth_token(token["access_secret"], encryption_key)
 
-        await cur.execute(
-            "SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')"
-        )
+        await cur.execute("SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')")
         config_rows = await cur.fetchall()
         app_config = {r["key"]: r["value"] for r in config_rows}
         if "discogs_consumer_key" not in app_config or "discogs_consumer_secret" not in app_config:
@@ -942,8 +961,12 @@ async def _enrich_community_counts(
         for release_id in release_ids:
             url = f"{DISCOGS_API_BASE}/releases/{release_id}"
             auth = _auth_header(
-                "GET", url, consumer_key, consumer_secret,
-                access_token, access_secret,
+                "GET",
+                url,
+                consumer_key,
+                consumer_secret,
+                access_token,
+                access_secret,
             )
             headers = {
                 "Authorization": auth,

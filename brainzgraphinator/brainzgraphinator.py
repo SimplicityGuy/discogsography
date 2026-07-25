@@ -201,7 +201,7 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
                 if await check_all_consumers_idle():
                     logger.info("🔧 All consumers idle, closing RabbitMQ connection")
                     await close_rabbitmq_connection()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - consumer cancellation is best-effort
             logger.error(
                 "❌ Failed to cancel consumer",
                 data_type=data_type,
@@ -226,7 +226,7 @@ async def close_rabbitmq_connection() -> None:
             try:
                 await active_channel.close()
                 logger.info("🔧 Closed RabbitMQ channel - all consumers idle")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - best-effort teardown; the connection is being discarded regardless
                 logger.warning("⚠️ Error closing channel", error=str(e))
             active_channel = None
 
@@ -234,14 +234,14 @@ async def close_rabbitmq_connection() -> None:
             try:
                 await active_connection.close()
                 logger.info("🔧 Closed RabbitMQ connection - all consumers idle")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - best-effort teardown; the connection is being discarded regardless
                 logger.warning("⚠️ Error closing connection", error=str(e))
             active_connection = None
 
         logger.info(
             "✅ RabbitMQ connection closed", check_interval=f"{QUEUE_CHECK_INTERVAL}s"
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - best-effort teardown; the connection is being discarded regardless
         logger.error("❌ Error closing RabbitMQ connection", error=str(e))
 
 
@@ -613,8 +613,8 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
                 _stats_lock = asyncio.Lock()
             async with _stats_lock:
                 with _stats_thread_lock:
-                    for key in local_stats:
-                        enrichment_stats[key] += local_stats[key]
+                    for key, value in local_stats.items():
+                        enrichment_stats[key] += value
 
             await message.ack()
 
@@ -633,16 +633,16 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
             )
             try:
                 await message.nack(requeue=True)
-            except Exception as nack_error:
+            except Exception as nack_error:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
                 logger.warning("⚠️ Failed to nack message", error=str(nack_error))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - per-message fault must nack rather than kill the consumer
             logger.error(
                 f"❌ Failed to process {data_type} MusicBrainz message",
                 error=str(e),
             )
             try:
                 await message.nack(requeue=True)
-            except Exception as nack_error:
+            except Exception as nack_error:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
                 logger.warning("⚠️ Failed to nack message", error=str(nack_error))
 
     return handler
@@ -720,7 +720,6 @@ async def progress_reporter() -> None:
 
 async def periodic_queue_checker() -> None:
     """Periodically check queue health and recover from stuck states."""
-    global active_connection, active_channel, queues, consumer_tags, idle_mode
 
     last_full_check = 0.0
 
@@ -761,26 +760,28 @@ async def periodic_queue_checker() -> None:
         except asyncio.CancelledError:
             logger.info("🛑 Queue checker task cancelled")
             break
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - long-running loop must survive per-iteration faults
             logger.error("❌ Error in periodic queue checker", error=str(e))
 
 
 async def _recover_consumers() -> None:
     """Recover consumers by reconnecting to RabbitMQ and restarting consumption."""
-    global active_connection, active_channel, queues, consumer_tags, idle_mode
+    global active_connection, active_channel, queues, idle_mode
 
     if active_connection:
         try:
             await active_connection.close()
-        except Exception:  # nosec: B110
-            pass
+        except Exception as e:  # noqa: BLE001 - the connection is already broken; recovery must proceed regardless
+            logger.warning(
+                "⚠️ Error closing broken connection during recovery", error=str(e)
+            )
         active_connection = None
         active_channel = None
 
     try:
         temp_connection = await rabbitmq_manager.connect()
         temp_channel = await temp_connection.channel()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - recovery must not raise into its caller
         logger.error("❌ Failed to connect to RabbitMQ for recovery", error=str(e))
         return
 
@@ -887,13 +888,16 @@ async def _recover_consumers() -> None:
             await temp_channel.close()
             await temp_connection.close()
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - recovery must not raise into its caller
         logger.error("❌ Error during consumer recovery", error=str(e))
         try:
             await temp_channel.close()
             await temp_connection.close()
-        except Exception:  # nosec: B110
-            pass
+        except Exception as close_error:  # noqa: BLE001 - best-effort cleanup inside an error path
+            logger.warning(
+                "⚠️ Error closing temporary connection after recovery failure",
+                error=str(close_error),
+            )
         active_connection = None
         active_channel = None
         queues = {}
@@ -955,7 +959,7 @@ async def main() -> None:
             result = await session.run("RETURN 1 as test")
             await result.single()
             logger.info("✅ Neo4j connectivity verified (async)")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level guard: log and exit cleanly instead of a traceback
         logger.error("❌ Failed to connect to Neo4j", error=str(e))
         return
 
@@ -998,7 +1002,7 @@ async def main() -> None:
             amqp_connection = await rabbitmq_manager.connect()
             active_connection = amqp_connection
             break
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - top-level guard: log and exit cleanly instead of a traceback
             startup_retry += 1
             if startup_retry < max_startup_retries:
                 wait_time = min(30, 5 * startup_retry)

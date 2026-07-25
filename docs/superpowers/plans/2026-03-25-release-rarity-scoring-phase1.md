@@ -103,38 +103,46 @@ Expected: FAIL — `insights.release_rarity table` not found in `_INSIGHTS_TABLE
 In `schema-init/postgres_schema.py`, add the following entries to `_INSIGHTS_TABLES` list, **before** the `insights.computation_log table` entry (keep computation_log and indexes last):
 
 ```python
+(
     (
         "insights.release_rarity table",
         """
-        CREATE TABLE IF NOT EXISTS insights.release_rarity (
-            release_id      BIGINT PRIMARY KEY,
-            title           TEXT,
-            artist_name     TEXT,
-            year            INTEGER,
-            rarity_score    REAL NOT NULL,
-            tier            TEXT NOT NULL,
-            hidden_gem_score REAL,
-            pressing_scarcity REAL,
-            label_catalog   REAL,
-            format_rarity   REAL,
-            temporal_scarcity REAL,
-            graph_isolation REAL,
-            computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-        """,
+    CREATE TABLE IF NOT EXISTS insights.release_rarity (
+        release_id      BIGINT PRIMARY KEY,
+        title           TEXT,
+        artist_name     TEXT,
+        year            INTEGER,
+        rarity_score    REAL NOT NULL,
+        tier            TEXT NOT NULL,
+        hidden_gem_score REAL,
+        pressing_scarcity REAL,
+        label_catalog   REAL,
+        format_rarity   REAL,
+        temporal_scarcity REAL,
+        graph_isolation REAL,
+        computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
     ),
+)
+(
     (
         "idx_release_rarity_score",
         "CREATE INDEX IF NOT EXISTS idx_release_rarity_score ON insights.release_rarity (rarity_score DESC)",
     ),
+)
+(
     (
         "idx_release_rarity_tier",
         "CREATE INDEX IF NOT EXISTS idx_release_rarity_tier ON insights.release_rarity (tier)",
     ),
+)
+(
     (
         "idx_release_rarity_gem",
         "CREATE INDEX IF NOT EXISTS idx_release_rarity_gem ON insights.release_rarity (hidden_gem_score DESC NULLS LAST)",
     ),
+)
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -536,7 +544,15 @@ class TestGetRarityLeaderboard:
         mock_cur = AsyncMock()
         mock_cur.fetchall = AsyncMock(
             return_value=[
-                {"release_id": 1, "title": "R1", "artist_name": "A1", "year": 1970, "rarity_score": 95.0, "tier": "ultra-rare", "hidden_gem_score": 80.0}
+                {
+                    "release_id": 1,
+                    "title": "R1",
+                    "artist_name": "A1",
+                    "year": 1970,
+                    "rarity_score": 95.0,
+                    "tier": "ultra-rare",
+                    "hidden_gem_score": 80.0,
+                }
             ]
         )
         mock_cur.fetchone = AsyncMock(return_value={"total": 100})
@@ -732,11 +748,7 @@ def compute_format_rarity_score(formats: list[Any]) -> float:
     """Score based on rarest format. Takes max across all formats."""
     if not formats:
         return _DEFAULT_FORMAT_SCORE
-    scores = [
-        FORMAT_RARITY_SCORES.get(str(f), _DEFAULT_FORMAT_SCORE)
-        for f in formats
-        if f is not None
-    ]
+    scores = [FORMAT_RARITY_SCORES.get(str(f), _DEFAULT_FORMAT_SCORE) for f in formats if f is not None]
     return max(scores) if scores else _DEFAULT_FORMAT_SCORE
 
 
@@ -1400,10 +1412,7 @@ def configure(neo4j: Any, pg_pool: Any, redis: Any = None) -> None:
 
 def _format_breakdown(row: dict[str, Any]) -> dict[str, dict[str, float]]:
     """Build the breakdown dict from a flat database row."""
-    return {
-        signal: {"score": row.get(signal, 0.0) or 0.0, "weight": weight}
-        for signal, weight in SIGNAL_WEIGHTS.items()
-    }
+    return {signal: {"score": row.get(signal, 0.0) or 0.0, "weight": weight} for signal, weight in SIGNAL_WEIGHTS.items()}
 
 
 def _format_list_item(row: dict[str, Any]) -> dict[str, Any]:
