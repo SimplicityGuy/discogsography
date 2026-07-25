@@ -1,25 +1,26 @@
 """Integration tests for AsyncResilientRabbitMQ against a LIVE RabbitMQ broker.
 
-These cover the two things unit tests fundamentally cannot: that the heartbeat we
-put in the AMQP URL is actually *negotiated* with the broker, and that a dropped
-connection is recovered by aio-pika's RobustConnection with our reconnect
-callbacks firing.
-
-Both matter specifically because of the aio-pika 10 migration: 10.x removed
-``**kwargs`` from ``connect_robust()``, so tuning parameters moved into the URL
-query string. A parameter that silently fails to parse looks identical to success
-from the client side — the heartbeat would quietly fall back to aiormq's default
-of 60s instead of the configured value.
+These cover the one thing unit tests fundamentally cannot: that the heartbeat we
+put in the AMQP URL is actually *negotiated* with the broker, rather than
+silently falling back to aiormq's default of 60s. That matters specifically
+because of the aio-pika 10 migration — 10.x removed ``**kwargs`` from
+``connect_robust()``, so tuning parameters moved into the URL query string, and a
+parameter that fails to parse looks identical to success from the client side.
 
 Requires a broker; skipped unless RABBITMQ_HOST is set (CI supplies it via a
 service container). Marked `integration` so `just test` does not pick them up.
+
+Every await is bounded by an explicit timeout: a broker-side hang must fail with
+a message naming the step, not stall until the CI job's ceiling kills it and
+discards the output.
 """
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 import os
 from urllib.parse import quote
 
+from aio_pika.abc import AbstractRobustConnection
 import httpx
 import pytest
 
@@ -38,6 +39,13 @@ MGMT_PORT = int(os.environ.get("RABBITMQ_MGMT_PORT", "15672"))
 # nor the production default (600), so a fallback cannot masquerade as success.
 TEST_HEARTBEAT = 37
 
+# Bounds for individual operations. Deliberately short — the whole point is to
+# surface where a hang happens rather than to wait one out.
+CONNECT_TIMEOUT = 20.0
+OP_TIMEOUT = 15.0
+STATS_TIMEOUT = 30.0
+RECONNECT_TIMEOUT = 30.0
+
 pytestmark.append(pytest.mark.skipif(not RABBITMQ_HOST, reason="RABBITMQ_HOST not set; no live broker available"))
 
 
@@ -53,38 +61,58 @@ def _mgmt() -> httpx.AsyncClient:
     )
 
 
+async def _step[T](label: str, coro: Awaitable[T], timeout: float) -> T:
+    """Await `coro` with a bound, reporting the step name on timeout."""
+    print(f"  -> {label}", flush=True)
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except TimeoutError:
+        pytest.fail(f"timed out after {timeout}s during: {label}")
+
+
 async def _connections(client: httpx.AsyncClient) -> list[dict]:
     resp = await client.get("/api/connections")
     resp.raise_for_status()
     return list(resp.json())
 
 
-async def _await_connections(client: httpx.AsyncClient, timeout: float = 30.0) -> list[dict]:
+async def _await_connections(client: httpx.AsyncClient, timeout: float = STATS_TIMEOUT) -> list[dict]:
     """Wait for the management stats DB to report at least one connection.
 
-    The stats database is populated asynchronously, so a connection that is
-    already established may not appear immediately. An empty list that never
-    fills usually means management stats are disabled (the RabbitMQ 4.x default)
-    rather than that nothing is connected.
+    The stats database is populated asynchronously, so an established connection
+    may not appear immediately. An empty list that never fills usually means
+    management stats are disabled (the RabbitMQ 4.x default) rather than that
+    nothing is connected.
     """
     deadline = asyncio.get_running_loop().time() + timeout
-    conns: list[dict] = []
     while asyncio.get_running_loop().time() < deadline:
         conns = await _connections(client)
         if conns:
             return conns
         await asyncio.sleep(1.0)
-    raise AssertionError("management API reported no client connections; are management stats enabled? (disable_management_stats false)")
+    pytest.fail("management API reported no client connections; are management stats enabled? (disable_management_stats false)")
 
 
-async def _await_condition(predicate: Callable[[], bool], timeout: float, interval: float = 0.5) -> bool:
-    """Poll until predicate() is truthy or timeout elapses."""
+async def _await_flag(label: str, predicate: Callable[[], bool], timeout: float) -> None:
+    """Poll until predicate() is truthy, failing with `label` on timeout."""
     deadline = asyncio.get_running_loop().time() + timeout
     while asyncio.get_running_loop().time() < deadline:
         if predicate():
-            return True
-        await asyncio.sleep(interval)
-    return False
+            return
+        await asyncio.sleep(0.5)
+    pytest.fail(f"timed out after {timeout}s waiting for: {label}")
+
+
+async def _close_quietly(connection: AbstractRobustConnection) -> None:
+    """Close a connection without letting a stuck close fail an otherwise-good test.
+
+    A RobustConnection whose transport was force-closed can block in close(), so
+    this is bounded too — teardown must never decide the test's outcome.
+    """
+    try:
+        await asyncio.wait_for(connection.close(), timeout=OP_TIMEOUT)
+    except Exception as exc:  # teardown must never mask the test result
+        print(f"  !! ignoring error/timeout while closing connection: {type(exc).__name__}", flush=True)
 
 
 class TestLiveHeartbeatNegotiation:
@@ -92,18 +120,18 @@ class TestLiveHeartbeatNegotiation:
 
     async def test_broker_reports_negotiated_heartbeat(self) -> None:
         manager = AsyncResilientRabbitMQ(connection_url=_amqp_url(), heartbeat=TEST_HEARTBEAT)
-        connection = await manager.connect()
+        connection = await _step("connect", manager.connect(), CONNECT_TIMEOUT)
 
         try:
             async with _mgmt() as client:
                 # The broker's own view of the negotiated heartbeat is authoritative.
-                conns = await _await_connections(client)
+                conns = await _step("read /api/connections", _await_connections(client), STATS_TIMEOUT + 5)
                 timeouts = {c.get("timeout") for c in conns}
                 assert TEST_HEARTBEAT in timeouts, (
                     f"broker negotiated {timeouts}, expected {TEST_HEARTBEAT} (60 would mean the URL param was dropped)"
                 )
         finally:
-            await connection.close()
+            await _close_quietly(connection)
 
 
 class TestLiveReconnect:
@@ -118,35 +146,35 @@ class TestLiveReconnect:
         reconnected = asyncio.Event()
         manager.add_reconnect_callback(lambda: reconnected.set())
 
-        connection = await manager.connect()
+        connection = await _step("connect", manager.connect(), CONNECT_TIMEOUT)
 
-        # Prove the connection works before we break it. The queue must be
-        # exclusive: RabbitMQ 4 refuses transient non-exclusive queues
-        # (`transient_nonexcl_queues` is deprecated and not permitted by default),
-        # so a plain auto_delete queue kills the whole connection with
-        # internal_error. Exclusive queues are still allowed and vanish with the
-        # connection, so they need no cleanup.
-        channel = await connection.channel()
-        await channel.declare_queue("aio-pika-10-reconnect-probe", exclusive=True)
+        try:
+            # Prove the connection works before we break it. The queue must be
+            # exclusive: RabbitMQ 4 refuses transient non-exclusive queues
+            # (`transient_nonexcl_queues` is deprecated and not permitted by
+            # default), which kills the whole connection with internal_error.
+            channel = await _step("open channel", connection.channel(), OP_TIMEOUT)
+            await _step("declare exclusive probe queue", channel.declare_queue("aio-pika-10-probe", exclusive=True), OP_TIMEOUT)
 
-        async with _mgmt() as client:
-            before = await _await_connections(client)
-            # Force the broker to drop every client connection. Connection names
-            # contain characters that must be percent-encoded in the path.
-            for conn_info in before:
-                resp = await client.delete(f"/api/connections/{quote(conn_info['name'], safe='')}")
-                if resp.status_code not in (204, 404):
-                    resp.raise_for_status()
+            async with _mgmt() as client:
+                before = await _step("read /api/connections", _await_connections(client), STATS_TIMEOUT + 5)
+                # Force the broker to drop every client connection. Connection
+                # names contain characters that must be percent-encoded.
+                for conn_info in before:
+                    resp = await _step(
+                        f"force-close {conn_info['name']}",
+                        client.delete(f"/api/connections/{quote(conn_info['name'], safe='')}"),
+                        OP_TIMEOUT,
+                    )
+                    if resp.status_code not in (204, 404):
+                        resp.raise_for_status()
 
-        # RobustConnection should re-establish on its own within reconnect_interval.
-        assert await _await_condition(lambda: reconnected.is_set(), timeout=60.0), (
-            "reconnect callback never fired after the broker closed the connection"
-        )
+            # RobustConnection should re-establish on its own within reconnect_interval.
+            await _await_flag("reconnect callback to fire", reconnected.is_set, RECONNECT_TIMEOUT)
+            await _await_flag("connection to report open", lambda: not connection.is_closed, OP_TIMEOUT)
 
-        # And the recovered connection must be usable again.
-        assert await _await_condition(lambda: not connection.is_closed, timeout=30.0), "connection still closed after reconnect"
-
-        channel = await connection.channel()
-        await channel.declare_queue("aio-pika-10-reconnect-probe-after", exclusive=True)
-
-        await connection.close()
+            # And the recovered connection must be usable again.
+            channel = await _step("open channel after reconnect", connection.channel(), OP_TIMEOUT)
+            await _step("declare probe queue after reconnect", channel.declare_queue("aio-pika-10-probe-after", exclusive=True), OP_TIMEOUT)
+        finally:
+            await _close_quietly(connection)

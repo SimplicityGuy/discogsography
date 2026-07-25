@@ -601,7 +601,9 @@ jobs:
   # ============================================================================
   test-rabbitmq-integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Deliberately tight: the tests bound every await, so anything approaching
+    # this ceiling is a hang worth failing fast on rather than waiting out.
+    timeout-minutes: 6
 
     services:
       rabbitmq:
