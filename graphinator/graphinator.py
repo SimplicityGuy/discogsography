@@ -11,20 +11,19 @@ from typing import Any
 import structlog
 from aio_pika.abc import AbstractIncomingMessage
 from common import (
-    DISCOGS_EXCHANGE_PREFIX,
     AMQP_EXCHANGE_TYPE,
     AMQP_QUEUE_PREFIX_GRAPHINATOR,
     DATA_TYPES,
+    DISCOGS_EXCHANGE_PREFIX,
     AsyncResilientNeo4jDriver,
     AsyncResilientRabbitMQ,
     GraphinatorConfig,
     HealthServer,
     neo4j_security_kwargs,
+    normalize_record,
     setup_logging,
 )
-from common import normalize_record
 from common.credit_roles import categorize_role
-
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from orjson import loads
 
@@ -198,8 +197,7 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
             )
         finally:
             # Clean up the task reference
-            if data_type in consumer_cancel_tasks:
-                del consumer_cancel_tasks[data_type]
+            consumer_cancel_tasks.pop(data_type, None)
 
     # Cancel any existing scheduled cancellation
     if data_type in consumer_cancel_tasks:
@@ -463,9 +461,9 @@ async def _recover_consumers() -> None:
             await temp_connection.close()
         except Exception:  # nosec: B110
             pass
-        active_connection = None  # noqa: F841
-        active_channel = None  # noqa: F841
-        queues = {}  # noqa: F841
+        active_connection = None
+        active_channel = None
+        queues = {}
         # Clear stale consumer tags: any consumers registered before the error
         # died with the now-closed connection. Leaving them behind would keep
         # len(consumer_tags) > 0 forever, permanently gating off both recovery

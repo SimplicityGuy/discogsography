@@ -13,7 +13,6 @@ of conflicts between constraint-backed indexes and explicit range indexes.
 import logging
 from typing import Any
 
-
 logger = logging.getLogger(__name__)
 
 

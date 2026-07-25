@@ -26,7 +26,6 @@ from orjson import loads
 from psycopg.errors import InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
 
-
 logger = structlog.get_logger(__name__)
 
 # Config will be initialized in main
@@ -211,8 +210,7 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
             )
         finally:
             # Clean up the task reference
-            if data_type in consumer_cancel_tasks:
-                del consumer_cancel_tasks[data_type]
+            consumer_cancel_tasks.pop(data_type, None)
 
     # Cancel any existing scheduled cancellation
     if data_type in consumer_cancel_tasks:

@@ -18,7 +18,7 @@ classifiers = [
 license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
     "httpx>=0.28.1",
-    "mcp[cli]>=1.28.0",
+    "mcp[cli]>=1.28.1",
     "structlog>=26.1.0",
 ]
 
