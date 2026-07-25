@@ -6,6 +6,7 @@ import contextlib
 import logging
 import re
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import aio_pika
 from aio_pika import connect_robust
@@ -112,6 +113,25 @@ class ResilientRabbitMQConnection(ResilientConnection[BlockingConnection]):
                     self._connection = None
 
 
+def _with_amqp_params(url: str, **params: str) -> str:
+    """Merge tuning parameters into an AMQP URL's query string.
+
+    aio-pika 10 removed ``**kwargs`` from ``connect_robust()``: its signature now
+    accepts only url/host/port/login/password/virtualhost/ssl/loop/ssl_options/
+    ssl_context/timeout/client_properties/connection_class. Everything else --
+    including ``heartbeat`` and the RobustConnection-specific
+    ``reconnect_interval`` -- is supplied as AMQP URL query parameters.
+
+    Parameters already present in the URL win, so an operator can override any of
+    these per-deployment via RABBITMQ_* connection settings.
+    """
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    for key, value in params.items():
+        query.setdefault(key, value)
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
 class AsyncResilientRabbitMQ:
     """Async resilient RabbitMQ connection using aio_pika's robust connection."""
 
@@ -121,6 +141,21 @@ class AsyncResilientRabbitMQ:
         self.heartbeat = heartbeat
         self.connection_attempts = connection_attempts
         self.retry_delay = retry_delay
+
+        # aio-pika 10 takes these as URL query parameters rather than kwargs.
+        # `retry_delay` maps to RobustConnection's `reconnect_interval` -- the delay
+        # between its own reconnect attempts after an established connection drops.
+        #
+        # `connection_attempts` has NO aio-pika equivalent: RobustConnection retries
+        # indefinitely (bounded only by `fail_fast` on the very first attempt). Initial
+        # connection attempts are bounded by the `max_retries` loop in connect() below,
+        # which is the authoritative retry policy here. The parameter is retained for
+        # call-site compatibility.
+        self._connect_url = _with_amqp_params(
+            connection_url,
+            heartbeat=str(heartbeat),
+            reconnect_interval=str(retry_delay),
+        )
 
         self._connection: aio_pika.abc.AbstractRobustConnection | None = None
         self._channel: aio_pika.abc.AbstractChannel | None = None
@@ -167,12 +202,8 @@ class AsyncResilientRabbitMQ:
                 logger.info(f"🐰 Creating robust RabbitMQ connection (attempt {retry_count + 1}/{self.max_retries})")
 
                 async def create_connection() -> Any:
-                    connection = await connect_robust(
-                        self.connection_url,
-                        heartbeat=self.heartbeat,
-                        connection_attempts=self.connection_attempts,
-                        retry_delay=self.retry_delay,
-                    )
+                    # Tuning params ride in the URL query string — see _with_amqp_params.
+                    connection = await connect_robust(self._connect_url)
 
                     # Add reconnect callback
                     connection.reconnect_callbacks.add(self._on_reconnect)
