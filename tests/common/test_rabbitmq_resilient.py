@@ -1,6 +1,7 @@
 """Tests for RabbitMQ resilient connection module."""
 
 from unittest.mock import AsyncMock, Mock, patch
+from urllib.parse import parse_qs, urlsplit
 
 from aio_pika.exceptions import AMQPConnectionError
 from pika.exceptions import AMQPConnectionError as PikaConnectionError
@@ -207,6 +208,51 @@ class TestAsyncResilientRabbitMQ:
         assert conn._channel is None
         assert conn.circuit_breaker is not None
 
+    def test_tuning_params_encoded_into_url(self, connection_url: str) -> None:
+        """aio-pika 10 takes heartbeat/reconnect_interval as URL query params, not kwargs."""
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url, heartbeat=600, retry_delay=5.0)
+
+        query = parse_qs(urlsplit(conn._connect_url).query)
+        assert query["heartbeat"] == ["600"]
+        # retry_delay maps to RobustConnection's reconnect_interval
+        assert query["reconnect_interval"] == ["5.0"]
+        # the original URL is preserved unmodified for reference
+        assert conn.connection_url == connection_url
+
+    def test_url_params_preserve_encoded_vhost(self) -> None:
+        """A percent-encoded vhost must survive the query-string rewrite."""
+        conn = AsyncResilientRabbitMQ(connection_url="amqp://guest:guest@localhost:5672/%2Fstaging", heartbeat=30)
+
+        parts = urlsplit(conn._connect_url)
+        assert parts.path == "/%2Fstaging"
+        assert parse_qs(parts.query)["heartbeat"] == ["30"]
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_reaches_the_protocol_layer(self, connection_url: str) -> None:
+        """The heartbeat must actually be honored, not merely present in the URL string.
+
+        aiormq is the layer that negotiates heartbeat with the broker; it reads the
+        value from the URL query with a DEFAULT OF 60. Asserting 600 therefore proves
+        our parameter is applied rather than silently dropped -- the exact failure mode
+        that made aio-pika 10's kwargs removal dangerous.
+        """
+        from aio_pika.robust_connection import RobustConnection
+        import aiormq
+
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url, heartbeat=600, retry_delay=5.0)
+
+        robust = RobustConnection(conn._connect_url)
+        assert robust.reconnect_interval == 5.0
+
+        protocol_conn = aiormq.Connection(robust.url)
+        assert protocol_conn.heartbeat_timeout == 600, "heartbeat fell back to aiormq's default of 60"
+
+    def test_url_params_do_not_override_explicit_url_values(self) -> None:
+        """An operator-supplied value in the URL wins over the constructor default."""
+        conn = AsyncResilientRabbitMQ(connection_url="amqp://guest:guest@localhost:5672/?heartbeat=17", heartbeat=600)
+
+        assert parse_qs(urlsplit(conn._connect_url).query)["heartbeat"] == ["17"]
+
     @pytest.mark.asyncio
     @patch("common.rabbitmq_resilient.connect_robust")
     async def test_connect_success(self, mock_connect_robust: Mock, connection_url: str, mock_async_connection: AsyncMock) -> None:
@@ -218,6 +264,26 @@ class TestAsyncResilientRabbitMQ:
 
         assert connection == mock_async_connection
         mock_connect_robust.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("common.rabbitmq_resilient.connect_robust")
+    async def test_connect_passes_only_url_to_connect_robust(
+        self, mock_connect_robust: Mock, connection_url: str, mock_async_connection: AsyncMock
+    ) -> None:
+        """Regression guard for the aio-pika 10 migration.
+
+        connect_robust() no longer accepts **kwargs, so passing heartbeat/
+        connection_attempts/retry_delay as keywords raises TypeError at runtime.
+        """
+        mock_connect_robust.return_value = mock_async_connection
+
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url, heartbeat=600, connection_attempts=10, retry_delay=5.0)
+        await conn.connect()
+
+        args, kwargs = mock_connect_robust.call_args
+        assert kwargs == {}
+        assert args == (conn._connect_url,)
+        assert "heartbeat=600" in args[0]
 
     @pytest.mark.asyncio
     @patch("common.rabbitmq_resilient.connect_robust")

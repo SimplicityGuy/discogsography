@@ -591,3 +591,77 @@ jobs:
           CODECOV_GCOV_DISABLE: 1
           CODECOV_XCODE_DISABLE: 1
           CODECOV_PYTHON_DISABLE: 1
+
+  # ============================================================================
+  # RABBITMQ INTEGRATION TESTS - Runs against a LIVE broker service container.
+  # Covers what unit tests cannot: that the heartbeat we encode in the AMQP URL
+  # is actually negotiated with the broker, and that a dropped connection is
+  # recovered with our reconnect callbacks firing. Both are the risk surface of
+  # the aio-pika 10 migration, which moved tuning params from kwargs into the URL.
+  # ============================================================================
+  test-rabbitmq-integration:
+    runs-on: ubuntu-latest
+    # Deliberately tight: the tests bound every await, so anything approaching
+    # this ceiling is a hang worth failing fast on rather than waiting out.
+    timeout-minutes: 6
+
+    services:
+      rabbitmq:
+        # -management provides the HTTP API the tests use to read the negotiated
+        # heartbeat and to force-close connections.
+        image: rabbitmq:4-management
+        env:
+          # `guest` may only connect from localhost, which the runner is not from
+          # the container's perspective — a dedicated user is required.
+          RABBITMQ_DEFAULT_USER: discogsography
+          RABBITMQ_DEFAULT_PASS: discogsography
+          RABBITMQ_DEFAULT_VHOST: /
+          # Management stats are DISABLED by default in RabbitMQ 4.x, which makes
+          # /api/connections return [] even while clients are connected. Same
+          # workaround docker-compose.yml already applies for the dashboard.
+          RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbitmq_management disable_management_stats false"
+        ports:
+          - 5672:5672
+          - 15672:15672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 12
+          --health-start-period 60s
+
+    steps:
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: 🔧 Setup Python and UV
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 🔧 Setup Just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📦 Install dependencies
+        run: just install
+
+      - name: ⏳ Wait for RabbitMQ management API
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS -u discogsography:discogsography http://localhost:15672/api/overview >/dev/null 2>&1; then
+              echo "✅ RabbitMQ management API is up"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "❌ RabbitMQ management API never became available"
+          exit 1
+
+      - name: 🧪 Run RabbitMQ integration tests
+        run: just test-rabbitmq-integration
+        env:
+          RABBITMQ_HOST: localhost
+          RABBITMQ_USERNAME: discogsography
+          RABBITMQ_PASSWORD: discogsography

@@ -189,10 +189,18 @@ pip-audit:
 # Testing
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Run unit and integration tests (excluding E2E)
+# Run unit tests (excluding E2E and live-service integration tests)
 [group('test')]
 test:
-    uv run pytest -m 'not e2e'
+    uv run pytest -m 'not e2e and not integration'
+
+# Run integration tests that need a live RabbitMQ (CI supplies one; set RABBITMQ_HOST)
+[group('testing')]
+test-rabbitmq-integration:
+    # -n0 (no xdist) + -s so output streams live instead of being buffered and lost
+    # if the run is killed; an explicit per-test timeout bounds any broker hang.
+    uv run pytest tests/common/test_rabbitmq_integration.py -m integration \
+        -p no:randomly -n0 -s -v --timeout=45 --timeout-method=thread
 
 # Run JavaScript unit tests for Explore frontend
 [group('test')]
