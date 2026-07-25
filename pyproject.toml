@@ -244,6 +244,7 @@ timeout_method = "thread"
 markers = [
     "e2e: End-to-end tests requiring external services (deselect with '-m \"not e2e\"')",
     "benchmark: Performance regression benchmarks (informational; run separately)",
+    "integration: Tests requiring a live backing service (deselect with '-m \"not integration\"')",
 ]
 
 # Package discovery for multi-service setup
