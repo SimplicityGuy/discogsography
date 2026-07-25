@@ -181,7 +181,7 @@ async def create_neo4j_schema(driver: Any) -> int:
                 await result.consume()
                 logger.info(f"✅ Schema: {name}")
                 success_count += 1
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - one failed schema object is counted and reported, not fatal
                 logger.error(f"❌ Failed to create schema object '{name}': {e}")
                 failure_count += 1
 

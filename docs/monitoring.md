@@ -581,14 +581,11 @@ Extend the dashboard for custom alerts:
 ```python
 # dashboard/dashboard.py
 
+
 async def check_custom_condition():
     """Custom alert condition"""
     if some_metric > threshold:
-        await broadcast_alert({
-            "type": "custom_alert",
-            "severity": "warning",
-            "message": "Custom condition triggered"
-        })
+        await broadcast_alert({"type": "custom_alert", "severity": "warning", "message": "Custom condition triggered"})
 ```
 
 ## 🐛 Debugging Guide

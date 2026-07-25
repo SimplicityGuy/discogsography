@@ -1252,17 +1252,13 @@ from common.data_normalizer import extract_format_names
 Replace the `extract_format_names` call at lines 833-835:
 
 ```python
-                    release_data["format_names"] = extract_format_names(
-                        msg.data.get("formats")
-                    )
+release_data["format_names"] = extract_format_names(msg.data.get("formats"))
 ```
 
 With:
 
 ```python
-                    release_data["format_names"] = [
-                        f["name"] for f in msg.data.get("formats", []) if isinstance(f, dict) and "name" in f
-                    ]
+release_data["format_names"] = [f["name"] for f in msg.data.get("formats", []) if isinstance(f, dict) and "name" in f]
 ```
 
 - [ ] **Step 3: Run linting**

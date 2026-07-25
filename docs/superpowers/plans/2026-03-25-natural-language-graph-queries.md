@@ -551,9 +551,10 @@ In `api/api.py`:
 In `tests/api/conftest.py` `test_client` fixture, add NLQ router configuration with disabled config:
 
 ```python
-    import api.routers.nlq as _nlq_router
-    from api.nlq.config import NLQConfig
-    _nlq_router.configure(NLQConfig(), None, mock_redis)
+import api.routers.nlq as _nlq_router
+from api.nlq.config import NLQConfig
+
+_nlq_router.configure(NLQConfig(), None, mock_redis)
 ```
 
 - [ ] **Step 6: Run tests to verify they pass**

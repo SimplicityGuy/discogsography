@@ -86,12 +86,12 @@ Score is inversely proportional to how many people have the release, using log-s
 
 ```python
 SIGNAL_WEIGHTS = {
-    "pressing_scarcity": 0.25,       # was 0.30
-    "label_catalog": 0.10,           # was 0.15
-    "format_rarity": 0.10,           # was 0.15
-    "temporal_scarcity": 0.20,       # unchanged
-    "graph_isolation": 0.15,         # was 0.20
-    "collection_prevalence": 0.20,   # NEW
+    "pressing_scarcity": 0.25,  # was 0.30
+    "label_catalog": 0.10,  # was 0.15
+    "format_rarity": 0.10,  # was 0.15
+    "temporal_scarcity": 0.20,  # unchanged
+    "graph_isolation": 0.15,  # was 0.20
+    "collection_prevalence": 0.20,  # NEW
 }
 ```
 

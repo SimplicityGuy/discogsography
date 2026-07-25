@@ -88,7 +88,7 @@ concurrent demand during a MusicBrainz import — `brainztableinator` saturated 
 async with connection_pool.connection() as conn:
     await conn.set_autocommit(False)
     async with conn.transaction():
-        await processor(conn, data)   # entity upsert + N relationships + M external links
+        await processor(conn, data)  # entity upsert + N relationships + M external links
 ```
 
 The transaction window itself is correctly scoped to a single message (`BEGIN → work →

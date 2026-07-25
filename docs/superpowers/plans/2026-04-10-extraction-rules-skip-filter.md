@@ -1197,9 +1197,7 @@ class TestSkippedEndpoint:
         _make_skipped_file(tmp_path, "20260401", "artists")
         _make_skipped_file(tmp_path, "20260401", "labels", [{"record_id": "212", "reason": "Junk", "field": "profile", "field_value": "DO NOT USE"}])
         with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
-            resp = test_client.get(
-                "/api/admin/extraction-analysis/20260401/skipped?entity_type=labels", headers=_admin_auth_headers()
-            )
+            resp = test_client.get("/api/admin/extraction-analysis/20260401/skipped?entity_type=labels", headers=_admin_auth_headers())
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
@@ -1401,9 +1399,7 @@ class TestEaSkippedProxy:
         _, mock_instance = _mock_httpx("get", 200, b'{"skipped":[],"total":0,"page":1,"page_size":50}')
         mock_cls_patch.return_value = mock_instance
 
-        resp = proxy_client.get(
-            "/admin/api/extraction-analysis/20260401/skipped", headers={"Authorization": "Bearer tok"}
-        )
+        resp = proxy_client.get("/admin/api/extraction-analysis/20260401/skipped", headers={"Authorization": "Bearer tok"})
         assert resp.status_code == 200
         assert "skipped" in resp.json()
         mock_instance.get.assert_called_once()
@@ -1637,18 +1633,20 @@ git commit -m "feat(dashboard): add skipped records section to extraction analys
 In `api/routers/extraction_analysis.py`, in the `compare_versions` function (line 546-629), add skipped counting after the violation counting:
 
 ```python
-    skipped_a = _read_skipped(loc_a[0] / "flagged" / version)
-    skipped_b = _read_skipped(loc_b[0] / "flagged" / other_version)
+skipped_a = _read_skipped(loc_a[0] / "flagged" / version)
+skipped_b = _read_skipped(loc_b[0] / "flagged" / other_version)
 
-    def _count_by_entity(skipped: list[dict[str, Any]]) -> dict[str, int]:
-        counts: dict[str, int] = {}
-        for s in skipped:
-            et = s.get("entity_type", "unknown")
-            counts[et] = counts.get(et, 0) + 1
-        return counts
 
-    skipped_counts_a = _count_by_entity(skipped_a)
-    skipped_counts_b = _count_by_entity(skipped_b)
+def _count_by_entity(skipped: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for s in skipped:
+        et = s.get("entity_type", "unknown")
+        counts[et] = counts.get(et, 0) + 1
+    return counts
+
+
+skipped_counts_a = _count_by_entity(skipped_a)
+skipped_counts_b = _count_by_entity(skipped_b)
 ```
 
 Add skipped comparison data to the response content dict, after `"details": details`:

@@ -59,29 +59,34 @@ class TestAdminUserStatsModels:
 
     def test_daily_registration(self):
         from api.models import DailyRegistration
+
         obj = DailyRegistration(date="2026-03-18", count=5)
         assert obj.date == "2026-03-18"
         assert obj.count == 5
 
     def test_weekly_registration(self):
         from api.models import WeeklyRegistration
+
         obj = WeeklyRegistration(week_start="2026-03-17", count=12)
         assert obj.week_start == "2026-03-17"
         assert obj.count == 12
 
     def test_monthly_registration(self):
         from api.models import MonthlyRegistration
+
         obj = MonthlyRegistration(month="2026-03", count=34)
         assert obj.month == "2026-03"
         assert obj.count == 34
 
     def test_registration_time_series(self):
         from api.models import RegistrationTimeSeries
+
         obj = RegistrationTimeSeries(daily=[], weekly=[], monthly=[])
         assert obj.daily == []
 
     def test_user_stats_response(self):
         from api.models import UserStatsResponse
+
         obj = UserStatsResponse(
             total_users=150,
             active_7d=42,
@@ -98,6 +103,7 @@ class TestSyncActivityModels:
 
     def test_sync_period_stats(self):
         from api.models import SyncPeriodStats
+
         obj = SyncPeriodStats(
             total_syncs=28,
             syncs_per_day=4.0,
@@ -109,9 +115,13 @@ class TestSyncActivityModels:
 
     def test_sync_activity_response(self):
         from api.models import SyncActivityResponse, SyncPeriodStats
+
         period = SyncPeriodStats(
-            total_syncs=0, syncs_per_day=0.0,
-            avg_items_synced=0.0, failure_rate=0.0, total_failures=0,
+            total_syncs=0,
+            syncs_per_day=0.0,
+            avg_items_synced=0.0,
+            failure_rate=0.0,
+            total_failures=0,
         )
         obj = SyncActivityResponse(period_7d=period, period_30d=period)
         assert obj.period_7d.total_syncs == 0
@@ -122,16 +132,19 @@ class TestStorageModels:
 
     def test_storage_source_ok(self):
         from api.models import Neo4jStorage
+
         obj = Neo4jStorage(status="ok", nodes=[], relationships=[], store_sizes=None)
         assert obj.status == "ok"
 
     def test_storage_source_error(self):
         from api.models import StorageSourceError
+
         obj = StorageSourceError(status="error", error="connection failed")
         assert obj.status == "error"
 
     def test_storage_response(self):
         from api.models import StorageResponse, StorageSourceError
+
         err = StorageSourceError(status="error", error="down")
         obj = StorageResponse(neo4j=err.model_dump(), postgresql=err.model_dump(), redis=err.model_dump())
         assert obj.neo4j["status"] == "error"
@@ -658,10 +671,12 @@ class TestGetNeo4jStorage:
 
         # Mock driver session().run() returning apoc.meta.stats() result
         mock_result = AsyncMock()
-        mock_result.single = AsyncMock(return_value={
-            "labels": {"Artist": 245000, "Label": 5000},
-            "relTypesCount": {"RELEASED_ON": 890000, "BY": 600000},
-        })
+        mock_result.single = AsyncMock(
+            return_value={
+                "labels": {"Artist": 245000, "Label": 5000},
+                "relTypesCount": {"RELEASED_ON": 890000, "BY": 600000},
+            }
+        )
 
         mock_session = AsyncMock()
         mock_session.run = AsyncMock(return_value=mock_result)
@@ -697,8 +712,7 @@ class TestGetPostgresStorage:
         pool = _mock_pool_with_rows(
             # table sizes
             [
-                {"table_name": "users", "row_estimate": 150,
-                 "total_size": "48 kB", "index_size": "32 kB"},
+                {"table_name": "users", "row_estimate": 150, "total_size": "48 kB", "index_size": "32 kB"},
             ],
             # total DB size
             [{"total_size": "156 MB"}],
@@ -719,10 +733,12 @@ class TestGetRedisStorage:
         from api.queries.admin_queries import get_redis_storage
 
         mock_redis = AsyncMock()
-        mock_redis.info = AsyncMock(side_effect=lambda section: {
-            "memory": {"used_memory_human": "12.5M", "used_memory_peak_human": "15.2M"},
-            "keyspace": {"db0": {"keys": 342}},
-        }.get(section, {}))
+        mock_redis.info = AsyncMock(
+            side_effect=lambda section: {
+                "memory": {"used_memory_human": "12.5M", "used_memory_peak_human": "15.2M"},
+                "keyspace": {"db0": {"keys": 342}},
+            }.get(section, {})
+        )
         mock_redis.scan = AsyncMock(return_value=(0, [b"cache:foo", b"cache:bar", b"revoked:jti:abc"]))
 
         result = await get_redis_storage(mock_redis)
@@ -764,23 +780,14 @@ async def get_neo4j_storage(driver: Any) -> dict[str, Any]:
         result = await session.run("CALL apoc.meta.stats() YIELD labels, relTypesCount")
         record = await result.single()
 
-        nodes = [
-            {"label": label, "count": count}
-            for label, count in sorted(record["labels"].items())
-        ]
-        relationships = [
-            {"type": rel_type, "count": count}
-            for rel_type, count in sorted(record["relTypesCount"].items())
-        ]
+        nodes = [{"label": label, "count": count} for label, count in sorted(record["labels"].items())]
+        relationships = [{"type": rel_type, "count": count} for rel_type, count in sorted(record["relTypesCount"].items())]
 
     # Store sizes via JMX — best effort
     store_sizes = None
     try:
         async with driver.session() as session:
-            result = await session.run(
-                "CALL dbms.queryJmx('org.neo4j:instance=kernel#0,name=Store sizes') "
-                "YIELD attributes RETURN attributes"
-            )
+            result = await session.run("CALL dbms.queryJmx('org.neo4j:instance=kernel#0,name=Store sizes') YIELD attributes RETURN attributes")
             record = await result.single()
             if record and record.get("attributes"):
                 attrs = record["attributes"]
@@ -876,10 +883,7 @@ async def get_redis_storage(redis: Any) -> dict[str, Any]:
         if cursor == 0:
             break
 
-    keys_by_prefix = [
-        {"prefix": prefix, "count": count}
-        for prefix, count in sorted(prefix_counts.items(), key=lambda x: -x[1])
-    ]
+    keys_by_prefix = [{"prefix": prefix, "count": count} for prefix, count in sorted(prefix_counts.items(), key=lambda x: -x[1])]
 
     return {
         "status": "ok",
@@ -935,7 +939,9 @@ class TestUserStatsEndpoint:
     def test_returns_200_with_admin_token(self, test_client: TestClient):
         with patch("api.routers.admin.get_user_stats", new_callable=AsyncMock) as mock_fn:
             mock_fn.return_value = {
-                "total_users": 10, "active_7d": 5, "active_30d": 8,
+                "total_users": 10,
+                "active_7d": 5,
+                "active_30d": 8,
                 "oauth_connection_rate": 0.5,
                 "registrations": {"daily": [], "weekly": [], "monthly": []},
             }
@@ -962,8 +968,11 @@ class TestSyncActivityEndpoint:
     def test_returns_200_with_admin_token(self, test_client: TestClient):
         with patch("api.routers.admin.get_sync_activity", new_callable=AsyncMock) as mock_fn:
             period = {
-                "total_syncs": 10, "syncs_per_day": 1.4,
-                "avg_items_synced": 50.0, "failure_rate": 0.1, "total_failures": 1,
+                "total_syncs": 10,
+                "syncs_per_day": 1.4,
+                "avg_items_synced": 50.0,
+                "failure_rate": 0.1,
+                "total_failures": 1,
             }
             mock_fn.return_value = {"period_7d": period, "period_30d": period}
             resp = test_client.get("/api/admin/users/sync-activity", headers=_admin_auth_headers())
@@ -1103,11 +1112,13 @@ async def admin_storage(
             return {"status": "error", "error": str(result)}
         return result
 
-    return JSONResponse(content={
-        "neo4j": _wrap(results[0], "neo4j"),
-        "postgresql": _wrap(results[1], "postgresql"),
-        "redis": _wrap(results[2], "redis"),
-    })
+    return JSONResponse(
+        content={
+            "neo4j": _wrap(results[0], "neo4j"),
+            "postgresql": _wrap(results[1], "postgresql"),
+            "redis": _wrap(results[2], "redis"),
+        }
+    )
 ```
 
 - [ ] **Step 4: Update conftest to pass neo4j_driver to admin configure**

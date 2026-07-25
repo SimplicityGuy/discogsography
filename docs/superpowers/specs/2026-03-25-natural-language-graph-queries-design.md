@@ -222,9 +222,7 @@ async def run_query(query: str, context: NLQContext) -> NLQResult:
                 result = await execute_tool(block.name, block.input, context)
                 tools_used.append(block.name)
                 entities_seen.extend(extract_entities(result))
-                tool_results.append(
-                    {"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(result)}
-                )
+                tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(result)})
 
         messages.append({"role": "assistant", "content": response.content})
         messages.append({"role": "user", "content": tool_results})

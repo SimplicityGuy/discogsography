@@ -141,15 +141,15 @@ def neo4j_security_kwargs() -> dict[str, Any]:
 In the `from common.config import (...)` block, add `neo4j_security_kwargs,` between `get_config,` and `setup_logging,` (keeping the lowercase-function ordering):
 
 ```python
-    get_config,
-    neo4j_security_kwargs,
-    setup_logging,
+(get_config,)
+(neo4j_security_kwargs,)
+(setup_logging,)
 ```
 
 In the `__all__` list, add `"neo4j_security_kwargs",` among the lowercase entries (e.g., directly after `"get_config",` if present, otherwise alongside the other function names):
 
 ```python
-    "neo4j_security_kwargs",
+("neo4j_security_kwargs",)
 ```
 
 - [ ] **Step 5: Run tests to verify they pass**
@@ -266,7 +266,7 @@ In the `from common import (...)` block (~13-23), add `neo4j_security_kwargs,` (
 At the driver construction (~1342-1346), replace the line:
 
 ```python
-        encrypted=False,
+encrypted = (False,)
 ```
 
 with:
@@ -293,7 +293,7 @@ In the `from common import (...)` block (~14-24), add `neo4j_security_kwargs,` (
 At the driver construction (~901-905), replace the line:
 
 ```python
-        encrypted=False,
+encrypted = (False,)
 ```
 
 with:

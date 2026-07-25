@@ -114,6 +114,7 @@ if user_id and _redis:
 class NotificationChannel(Protocol):
     async def send_password_reset(self, email: str, reset_url: str) -> None: ...
 
+
 class LogNotificationChannel:
     async def send_password_reset(self, email: str, reset_url: str) -> None:
         logger.info("🔑 Password reset link", email=email, url=reset_url)

@@ -90,42 +90,50 @@ Expected: FAIL — table names not found in `_USER_TABLES`
 In `schema-init/postgres_schema.py`, add after the `idx_extraction_history_created_at` entry (line 251) in the `_USER_TABLES` list:
 
 ```python
+(
     (
         "queue_metrics table",
         """
-        CREATE TABLE IF NOT EXISTS queue_metrics (
-            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-            recorded_at TIMESTAMPTZ NOT NULL,
-            queue_name VARCHAR(100) NOT NULL,
-            messages_ready INTEGER,
-            messages_unacknowledged INTEGER,
-            consumers INTEGER,
-            publish_rate REAL,
-            ack_rate REAL
-        )
-        """,
+    CREATE TABLE IF NOT EXISTS queue_metrics (
+        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        recorded_at TIMESTAMPTZ NOT NULL,
+        queue_name VARCHAR(100) NOT NULL,
+        messages_ready INTEGER,
+        messages_unacknowledged INTEGER,
+        consumers INTEGER,
+        publish_rate REAL,
+        ack_rate REAL
+    )
+    """,
     ),
+)
+(
     (
         "idx_queue_metrics_recorded_queue",
         "CREATE INDEX IF NOT EXISTS idx_queue_metrics_recorded_queue ON queue_metrics (recorded_at, queue_name)",
     ),
+)
+(
     (
         "service_health_metrics table",
         """
-        CREATE TABLE IF NOT EXISTS service_health_metrics (
-            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-            recorded_at TIMESTAMPTZ NOT NULL,
-            service_name VARCHAR(50) NOT NULL,
-            status VARCHAR(20),
-            response_time_ms REAL,
-            endpoint_stats JSONB
-        )
-        """,
+    CREATE TABLE IF NOT EXISTS service_health_metrics (
+        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        recorded_at TIMESTAMPTZ NOT NULL,
+        service_name VARCHAR(50) NOT NULL,
+        status VARCHAR(20),
+        response_time_ms REAL,
+        endpoint_stats JSONB
+    )
+    """,
     ),
+)
+(
     (
         "idx_service_health_recorded_service",
         "CREATE INDEX IF NOT EXISTS idx_service_health_recorded_service ON service_health_metrics (recorded_at, service_name)",
     ),
+)
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -257,8 +265,8 @@ In `ApiConfig.from_env()`, add parsing before the `return cls(...)` call (after 
 And add the two fields to the `return cls(...)` call:
 
 ```python
-            metrics_retention_days=metrics_retention_days,
-            metrics_collection_interval=metrics_collection_interval,
+metrics_retention_days = (metrics_retention_days,)
+metrics_collection_interval = (metrics_collection_interval,)
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -653,14 +661,16 @@ async def collect_queue_metrics(
         if "discogsography" not in name:
             continue
         msg_stats = q.get("message_stats", {})
-        rows.append({
-            "queue_name": name,
-            "messages_ready": q.get("messages_ready", 0),
-            "messages_unacknowledged": q.get("messages_unacknowledged", 0),
-            "consumers": q.get("consumers", 0),
-            "publish_rate": msg_stats.get("publish_details", {}).get("rate", 0.0),
-            "ack_rate": msg_stats.get("ack_details", {}).get("rate", 0.0),
-        })
+        rows.append(
+            {
+                "queue_name": name,
+                "messages_ready": q.get("messages_ready", 0),
+                "messages_unacknowledged": q.get("messages_unacknowledged", 0),
+                "consumers": q.get("consumers", 0),
+                "publish_rate": msg_stats.get("publish_details", {}).get("rate", 0.0),
+                "ack_rate": msg_stats.get("ack_details", {}).get("rate", 0.0),
+            }
+        )
     return rows
 
 
@@ -692,11 +702,13 @@ async def collect_service_health(
             elapsed_ms = 0.0
             health_status = "unknown"
 
-        rows.append({
-            "service_name": service_name,
-            "status": health_status,
-            "response_time_ms": round(elapsed_ms, 2),
-        })
+        rows.append(
+            {
+                "service_name": service_name,
+                "status": health_status,
+                "response_time_ms": round(elapsed_ms, 2),
+            }
+        )
     return rows
 ```
 
@@ -751,11 +763,17 @@ class TestPersistMetrics:
         mock_pool = MagicMock()
         mock_pool.connection = MagicMock(return_value=conn_ctx)
 
-        queue_rows = [{"queue_name": "graphinator-artists", "messages_ready": 10,
-                        "messages_unacknowledged": 2, "consumers": 1,
-                        "publish_rate": 5.0, "ack_rate": 4.5}]
-        health_rows = [{"service_name": "extractor", "status": "healthy",
-                        "response_time_ms": 12.0, "endpoint_stats": None}]
+        queue_rows = [
+            {
+                "queue_name": "graphinator-artists",
+                "messages_ready": 10,
+                "messages_unacknowledged": 2,
+                "consumers": 1,
+                "publish_rate": 5.0,
+                "ack_rate": 4.5,
+            }
+        ]
+        health_rows = [{"service_name": "extractor", "status": "healthy", "response_time_ms": 12.0, "endpoint_stats": None}]
 
         await persist_metrics(mock_pool, queue_rows, health_rows)
 
@@ -877,12 +895,14 @@ async def run_collector(
             # API doesn't poll itself — create a synthetic row
             if endpoint_stats:
                 if not api_row_found:
-                    health_rows.append({
-                        "service_name": "api",
-                        "status": "healthy",
-                        "response_time_ms": 0.0,
-                        "endpoint_stats": _json.dumps(endpoint_stats),
-                    })
+                    health_rows.append(
+                        {
+                            "service_name": "api",
+                            "status": "healthy",
+                            "response_time_ms": 0.0,
+                            "endpoint_stats": _json.dumps(endpoint_stats),
+                        }
+                    )
                 else:
                     for row in health_rows:
                         if row["service_name"] == "api":
@@ -962,8 +982,13 @@ class TestQueueHistoryResponse:
                 "graphinator-artists": {
                     "current": {"messages_ready": 42, "consumers": 1, "publish_rate": 12.3, "ack_rate": 11.8},
                     "history": [
-                        {"timestamp": "2026-03-25T10:00:00Z", "messages_ready": 38,
-                         "messages_unacknowledged": 2, "publish_rate": 11.5, "ack_rate": 10.9},
+                        {
+                            "timestamp": "2026-03-25T10:00:00Z",
+                            "messages_ready": 38,
+                            "messages_unacknowledged": 2,
+                            "publish_rate": 11.5,
+                            "ack_rate": 10.9,
+                        },
                     ],
                 },
             },
@@ -974,7 +999,10 @@ class TestQueueHistoryResponse:
 
     def test_empty_response(self) -> None:
         resp = QueueHistoryResponse(
-            range="1h", granularity="5min", queues={}, dlq_summary={},
+            range="1h",
+            granularity="5min",
+            queues={},
+            dlq_summary={},
         )
         assert resp.queues == {}
 
@@ -997,7 +1025,10 @@ class TestHealthHistoryResponse:
 
     def test_empty_response(self) -> None:
         resp = HealthHistoryResponse(
-            range="1h", granularity="5min", services={}, api_endpoints={},
+            range="1h",
+            granularity="5min",
+            services={},
+            api_endpoints={},
         )
         assert resp.services == {}
 ```
@@ -1012,8 +1043,6 @@ Expected: FAIL — `QueueHistoryResponse` not defined
 Append to `api/models.py` after line 513:
 
 ```python
-
-
 # --- Metrics History models (Phase 3) ---
 
 
@@ -1132,12 +1161,24 @@ class TestGetQueueHistory:
     @pytest.mark.asyncio
     async def test_separates_dlq_queues(self) -> None:
         rows = [
-            {"queue_name": "graphinator-artists", "bucket": "2026-03-25T10:00:00",
-             "messages_ready": 42.0, "messages_unacknowledged": 3.0,
-             "publish_rate": 12.0, "ack_rate": 11.0, "consumers": 1.0},
-            {"queue_name": "graphinator-artists-dlq", "bucket": "2026-03-25T10:00:00",
-             "messages_ready": 5.0, "messages_unacknowledged": 0.0,
-             "publish_rate": 0.0, "ack_rate": 0.0, "consumers": 0.0},
+            {
+                "queue_name": "graphinator-artists",
+                "bucket": "2026-03-25T10:00:00",
+                "messages_ready": 42.0,
+                "messages_unacknowledged": 3.0,
+                "publish_rate": 12.0,
+                "ack_rate": 11.0,
+                "consumers": 1.0,
+            },
+            {
+                "queue_name": "graphinator-artists-dlq",
+                "bucket": "2026-03-25T10:00:00",
+                "messages_ready": 5.0,
+                "messages_unacknowledged": 0.0,
+                "publish_rate": 0.0,
+                "ack_rate": 0.0,
+                "consumers": 0.0,
+            },
         ]
         pool = _mock_pool_with_rows(rows)
         result = await get_queue_history(pool, "1h")
@@ -1163,12 +1204,9 @@ class TestGetHealthHistory:
     @pytest.mark.asyncio
     async def test_computes_uptime_pct(self) -> None:
         health_rows = [
-            {"service_name": "extractor", "bucket": "2026-03-25T10:00:00",
-             "status": "healthy", "response_time_ms": 12.0},
-            {"service_name": "extractor", "bucket": "2026-03-25T10:15:00",
-             "status": "healthy", "response_time_ms": 15.0},
-            {"service_name": "extractor", "bucket": "2026-03-25T10:30:00",
-             "status": "unhealthy", "response_time_ms": 500.0},
+            {"service_name": "extractor", "bucket": "2026-03-25T10:00:00", "status": "healthy", "response_time_ms": 12.0},
+            {"service_name": "extractor", "bucket": "2026-03-25T10:15:00", "status": "healthy", "response_time_ms": 15.0},
+            {"service_name": "extractor", "bucket": "2026-03-25T10:30:00", "status": "unhealthy", "response_time_ms": 500.0},
         ]
         endpoint_rows = []
         pool = _mock_pool_with_rows(health_rows, endpoint_rows)
@@ -1214,13 +1252,13 @@ logger = logging.getLogger(__name__)
 
 # Range → (SQL interval, date_trunc bucket, use_raw, granularity label)
 GRANULARITY_MAP: dict[str, dict[str, Any]] = {
-    "1h":   {"interval": "1 hour",   "bucket": "5 minutes",  "raw": True,  "granularity": "5min"},
-    "6h":   {"interval": "6 hours",  "bucket": "5 minutes",  "raw": True,  "granularity": "5min"},
-    "24h":  {"interval": "24 hours", "bucket": "15 minutes", "raw": False, "granularity": "15min"},
-    "7d":   {"interval": "7 days",   "bucket": "1 hour",     "raw": False, "granularity": "1hour"},
-    "30d":  {"interval": "30 days",  "bucket": "6 hours",    "raw": False, "granularity": "6hour"},
-    "90d":  {"interval": "90 days",  "bucket": "1 day",      "raw": False, "granularity": "1day"},
-    "365d": {"interval": "365 days", "bucket": "1 day",      "raw": False, "granularity": "1day"},
+    "1h": {"interval": "1 hour", "bucket": "5 minutes", "raw": True, "granularity": "5min"},
+    "6h": {"interval": "6 hours", "bucket": "5 minutes", "raw": True, "granularity": "5min"},
+    "24h": {"interval": "24 hours", "bucket": "15 minutes", "raw": False, "granularity": "15min"},
+    "7d": {"interval": "7 days", "bucket": "1 hour", "raw": False, "granularity": "1hour"},
+    "30d": {"interval": "30 days", "bucket": "6 hours", "raw": False, "granularity": "6hour"},
+    "90d": {"interval": "90 days", "bucket": "1 day", "raw": False, "granularity": "1day"},
+    "365d": {"interval": "365 days", "bucket": "1 day", "raw": False, "granularity": "1day"},
 }
 
 
@@ -1358,11 +1396,13 @@ async def get_health_history(pool: Any, range_value: str) -> dict[str, Any]:
         name = row["service_name"]
         if name not in services:
             services[name] = {"current_status": "unknown", "uptime_pct": 0.0, "history": []}
-        services[name]["history"].append({
-            "timestamp": row["bucket"],
-            "status": row["status"],
-            "response_time_ms": round(float(row["response_time_ms"]), 2) if row["response_time_ms"] is not None else 0.0,
-        })
+        services[name]["history"].append(
+            {
+                "timestamp": row["bucket"],
+                "status": row["status"],
+                "response_time_ms": round(float(row["response_time_ms"]), 2) if row["response_time_ms"] is not None else 0.0,
+            }
+        )
 
     # Compute uptime_pct and current_status
     for name, data in services.items():
@@ -1384,10 +1424,12 @@ async def get_health_history(pool: Any, range_value: str) -> dict[str, Any]:
         for endpoint, metrics in stats.items():
             if endpoint not in api_endpoints:
                 api_endpoints[endpoint] = {"latest": {}, "history": []}
-            api_endpoints[endpoint]["history"].append({
-                "timestamp": bucket_ts,
-                **metrics,
-            })
+            api_endpoints[endpoint]["history"].append(
+                {
+                    "timestamp": bucket_ts,
+                    **metrics,
+                }
+            )
 
     # Set "latest" to last history point
     for endpoint, data in api_endpoints.items():
@@ -1488,7 +1530,10 @@ class TestQueueHistory:
     @patch("api.routers.admin.get_queue_history")
     def test_default_range_is_24h(self, mock_query: Any, test_client: TestClient) -> None:
         mock_query.return_value = {
-            "range": "24h", "granularity": "15min", "queues": {}, "dlq_summary": {},
+            "range": "24h",
+            "granularity": "15min",
+            "queues": {},
+            "dlq_summary": {},
         }
         resp = test_client.get(
             "/api/admin/queues/history",
@@ -1547,8 +1592,6 @@ from api.queries.metrics_queries import get_health_history, get_queue_history
 Then add endpoints after the Phase 2 storage endpoint (after line 263):
 
 ```python
-
-
 # ---------------------------------------------------------------------------
 # Phase 3 — Queue Health Trends & System Health
 # ---------------------------------------------------------------------------
@@ -1638,8 +1681,6 @@ In the shutdown section (before `if _neo4j:`), add:
 Then add the metrics middleware. After the `security_headers` middleware (after line 302), add:
 
 ```python
-
-
 @app.middleware("http")
 async def metrics_middleware(request: Request, call_next: Any) -> Any:
     """Record per-request timing for endpoint performance metrics."""
@@ -1745,8 +1786,6 @@ Expected: FAIL — 404 (route not found)
 In `dashboard/admin_proxy.py`, add after the Phase 2 storage proxy (after line 215):
 
 ```python
-
-
 # ---------------------------------------------------------------------------
 # Phase 3 — Queue Health Trends & System Health proxy routes
 # ---------------------------------------------------------------------------

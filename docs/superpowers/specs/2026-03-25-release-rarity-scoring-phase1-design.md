@@ -74,7 +74,7 @@ FORMAT_RARITY_SCORES = {
     "Shellac": 90,
     "Blu-spec CD": 80,
     "Box Set": 70,
-    "10\"": 65,
+    '10"': 65,
     "8-Track Cartridge": 60,
     "CDr": 50,
     "Vinyl": 40,

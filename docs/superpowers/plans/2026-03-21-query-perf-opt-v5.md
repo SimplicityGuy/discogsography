@@ -44,17 +44,19 @@ class TestGetCandidateLabelsGenreVectors:
     async def test_returns_candidates_with_genre_vectors(self) -> None:
         """Phase 1 returns candidates, Phase 2 fills genre profiles."""
         # Phase 1: candidate query returns 2 labels
-        candidate_result = _MockResult(records=[
-            {"label_id": "10", "label_name": "Label X", "total_shared": 50},
-            {"label_id": "20", "label_name": "Label Y", "total_shared": 30},
-        ])
+        candidate_result = _MockResult(
+            records=[
+                {"label_id": "10", "label_name": "Label X", "total_shared": 50},
+                {"label_id": "20", "label_name": "Label Y", "total_shared": 30},
+            ]
+        )
         # Phase 2: batch profile returns genre vectors
-        profile_result = _MockResult(records=[
-            {"label_id": "10", "label_name": "Label X", "release_count": 100,
-             "genres": [{"name": "Rock", "count": 80}]},
-            {"label_id": "20", "label_name": "Label Y", "release_count": 50,
-             "genres": [{"name": "Jazz", "count": 40}]},
-        ])
+        profile_result = _MockResult(
+            records=[
+                {"label_id": "10", "label_name": "Label X", "release_count": 100, "genres": [{"name": "Rock", "count": 80}]},
+                {"label_id": "20", "label_name": "Label Y", "release_count": 50, "genres": [{"name": "Jazz", "count": 40}]},
+            ]
+        )
         driver = _make_driver_with_side_effects([candidate_result, profile_result])
         results = await get_candidate_labels_genre_vectors(driver, "157")
         assert len(results) == 2

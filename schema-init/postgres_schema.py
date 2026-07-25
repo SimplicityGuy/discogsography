@@ -759,7 +759,7 @@ async def create_postgres_schema(pool: Any) -> int:
                         await cursor.execute(stmt)
                         logger.info(f"✅ Schema: {name}")
                         success_count += 1
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 - one failed schema object is counted and reported, not fatal
                         logger.error(f"❌ Failed to create schema object '{name}': {e}")
                         failure_count += 1
 
@@ -769,7 +769,7 @@ async def create_postgres_schema(pool: Any) -> int:
                     await cursor.execute(stmt)
                     logger.info(f"✅ Schema: {name}")
                     success_count += 1
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - one failed schema object is counted and reported, not fatal
                     logger.error(f"❌ Failed to create schema object '{name}': {e}")
                     failure_count += 1
 
@@ -779,7 +779,7 @@ async def create_postgres_schema(pool: Any) -> int:
                     await cursor.execute(stmt)
                     logger.info(f"✅ Schema: {name}")
                     success_count += 1
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - one failed schema object is counted and reported, not fatal
                     logger.error(f"❌ Failed to create schema object '{name}': {e}")
                     failure_count += 1
 
@@ -789,7 +789,7 @@ async def create_postgres_schema(pool: Any) -> int:
                     await cursor.execute(stmt)
                     logger.info(f"✅ Schema: {name}")
                     success_count += 1
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - one failed schema object is counted and reported, not fatal
                     logger.error(f"❌ Failed to create schema object '{name}': {e}")
                     failure_count += 1
 
@@ -799,7 +799,7 @@ async def create_postgres_schema(pool: Any) -> int:
                     await cursor.execute(stmt)
                     logger.info(f"✅ Schema: {name}")
                     success_count += 1
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - one failed schema object is counted and reported, not fatal
                     logger.error(f"❌ Failed to create schema object '{name}': {e}")
                     failure_count += 1
 

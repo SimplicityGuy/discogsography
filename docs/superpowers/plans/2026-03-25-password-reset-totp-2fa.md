@@ -202,13 +202,13 @@ with:
 In the `return cls(...)` call, replace:
 
 ```python
-            oauth_encryption_key=oauth_encryption_key,
+oauth_encryption_key = (oauth_encryption_key,)
 ```
 
 with:
 
 ```python
-            encryption_master_key=encryption_master_key,
+encryption_master_key = (encryption_master_key,)
 ```
 
 Add a `@property` for the derived keys. Since `ApiConfig` is a frozen dataclass, add these as regular methods instead — or use `__post_init__` won't work frozen. Instead, add module-level helper functions in `api/auth.py` and call them from the API service.
@@ -289,43 +289,47 @@ ______________________________________________________________________
 In `schema-init/postgres_schema.py`, update the users table definition in `_USER_TABLES`. Replace:
 
 ```python
+(
     (
         "users table",
         """
-        CREATE TABLE IF NOT EXISTS users (
-            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            email           VARCHAR(255) UNIQUE NOT NULL,
-            hashed_password VARCHAR(255) NOT NULL,
-            is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-            created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-        )
-        """,
+    CREATE TABLE IF NOT EXISTS users (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email           VARCHAR(255) UNIQUE NOT NULL,
+        hashed_password VARCHAR(255) NOT NULL,
+        is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    )
+    """,
     ),
+)
 ```
 
 with:
 
 ```python
+(
     (
         "users table",
         """
-        CREATE TABLE IF NOT EXISTS users (
-            id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            email                VARCHAR(255) UNIQUE NOT NULL,
-            hashed_password      VARCHAR(255) NOT NULL,
-            is_active            BOOLEAN NOT NULL DEFAULT TRUE,
-            password_changed_at  TIMESTAMP WITH TIME ZONE,
-            totp_secret          VARCHAR,
-            totp_enabled         BOOLEAN NOT NULL DEFAULT FALSE,
-            totp_recovery_codes  JSONB,
-            totp_failed_attempts INTEGER NOT NULL DEFAULT 0,
-            totp_locked_until    TIMESTAMP WITH TIME ZONE,
-            created_at           TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            updated_at           TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-        )
-        """,
+    CREATE TABLE IF NOT EXISTS users (
+        id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email                VARCHAR(255) UNIQUE NOT NULL,
+        hashed_password      VARCHAR(255) NOT NULL,
+        is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+        password_changed_at  TIMESTAMP WITH TIME ZONE,
+        totp_secret          VARCHAR,
+        totp_enabled         BOOLEAN NOT NULL DEFAULT FALSE,
+        totp_recovery_codes  JSONB,
+        totp_failed_attempts INTEGER NOT NULL DEFAULT 0,
+        totp_locked_until    TIMESTAMP WITH TIME ZONE,
+        created_at           TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+        updated_at           TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    )
+    """,
     ),
+)
 ```
 
 - [ ] **Step 2: Add ALTER TABLE statements for existing deployments**
@@ -333,60 +337,72 @@ with:
 Since `CREATE TABLE IF NOT EXISTS` won't add new columns to an existing table, add ALTER TABLE statements after the users table in `_USER_TABLES`:
 
 ```python
+(
     (
         "users.password_changed_at column",
         """
-        DO $$ BEGIN
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP WITH TIME ZONE;
-        EXCEPTION WHEN duplicate_column THEN NULL;
-        END $$
-        """,
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP WITH TIME ZONE;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$
+    """,
     ),
+)
+(
     (
         "users.totp_secret column",
         """
-        DO $$ BEGIN
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR;
-        EXCEPTION WHEN duplicate_column THEN NULL;
-        END $$
-        """,
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$
+    """,
     ),
+)
+(
     (
         "users.totp_enabled column",
         """
-        DO $$ BEGIN
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE;
-        EXCEPTION WHEN duplicate_column THEN NULL;
-        END $$
-        """,
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$
+    """,
     ),
+)
+(
     (
         "users.totp_recovery_codes column",
         """
-        DO $$ BEGIN
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_recovery_codes JSONB;
-        EXCEPTION WHEN duplicate_column THEN NULL;
-        END $$
-        """,
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_recovery_codes JSONB;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$
+    """,
     ),
+)
+(
     (
         "users.totp_failed_attempts column",
         """
-        DO $$ BEGIN
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_failed_attempts INTEGER NOT NULL DEFAULT 0;
-        EXCEPTION WHEN duplicate_column THEN NULL;
-        END $$
-        """,
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_failed_attempts INTEGER NOT NULL DEFAULT 0;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$
+    """,
     ),
+)
+(
     (
         "users.totp_locked_until column",
         """
-        DO $$ BEGIN
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_locked_until TIMESTAMP WITH TIME ZONE;
-        EXCEPTION WHEN duplicate_column THEN NULL;
-        END $$
-        """,
+    DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_locked_until TIMESTAMP WITH TIME ZONE;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$
+    """,
     ),
+)
 ```
 
 - [ ] **Step 3: Run schema-init tests**
@@ -603,6 +619,7 @@ class TestTotpUtilities:
         assert len(secret) >= 16
         # Valid base32 characters
         import re
+
         assert re.match(r"^[A-Z2-7]+=*$", secret)
 
     def test_encrypt_decrypt_totp_secret_roundtrip(self) -> None:
@@ -1051,11 +1068,16 @@ In `api/api.py`:
 1. In the `lifespan` function, after the existing router `configure()` calls (around line 237), add:
 
 ```python
-    from api.notifications import LogNotificationChannel
-    _auth_router.configure(
-        _pool, _redis, _config, _get_current_user, _create_access_token,
-        notification_channel=LogNotificationChannel(),
-    )
+from api.notifications import LogNotificationChannel
+
+_auth_router.configure(
+    _pool,
+    _redis,
+    _config,
+    _get_current_user,
+    _create_access_token,
+    notification_channel=LogNotificationChannel(),
+)
 ```
 
 3. After `app = FastAPI(...)`, add: `app.include_router(_auth_router.router)`
@@ -1098,12 +1120,16 @@ In the `test_client` fixture, add the auth router configuration. After the exist
 After the existing `configure()` calls (around line 198), add:
 
 ```python
-    from api.notifications import LogNotificationChannel
-    _auth_router.configure(
-        mock_pool, mock_redis, test_api_config,
-        api_module._get_current_user, api_module._create_access_token,
-        notification_channel=LogNotificationChannel(),
-    )
+from api.notifications import LogNotificationChannel
+
+_auth_router.configure(
+    mock_pool,
+    mock_redis,
+    test_api_config,
+    api_module._get_current_user,
+    api_module._create_access_token,
+    notification_channel=LogNotificationChannel(),
+)
 ```
 
 - [ ] **Step 5: Run all API tests**
@@ -1156,7 +1182,10 @@ class TestResetRequest:
     """Tests for POST /api/auth/reset-request."""
 
     def test_reset_request_known_email(
-        self, test_client: TestClient, mock_cur: AsyncMock, mock_redis: AsyncMock,
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
     ) -> None:
         mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
         response = test_client.post("/api/auth/reset-request", json={"email": TEST_USER_EMAIL})
@@ -1166,7 +1195,9 @@ class TestResetRequest:
         mock_redis.setex.assert_called()
 
     def test_reset_request_unknown_email_same_response(
-        self, test_client: TestClient, mock_cur: AsyncMock,
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
     ) -> None:
         mock_cur.fetchone = AsyncMock(return_value=None)
         response = test_client.post("/api/auth/reset-request", json={"email": "unknown@example.com"})
@@ -1175,7 +1206,9 @@ class TestResetRequest:
         assert "message" in response.json()
 
     def test_reset_request_normalizes_email(
-        self, test_client: TestClient, mock_cur: AsyncMock,
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
     ) -> None:
         mock_cur.fetchone = AsyncMock(return_value=None)
         response = test_client.post("/api/auth/reset-request", json={"email": " Test@Example.COM "})
@@ -1186,41 +1219,61 @@ class TestResetConfirm:
     """Tests for POST /api/auth/reset-confirm."""
 
     def test_reset_confirm_valid_token(
-        self, test_client: TestClient, mock_cur: AsyncMock, mock_redis: AsyncMock,
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
     ) -> None:
         import json
 
-        mock_redis.get = AsyncMock(return_value=json.dumps({
-            "user_id": TEST_USER_ID, "email": TEST_USER_EMAIL,
-        }))
+        mock_redis.get = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "user_id": TEST_USER_ID,
+                    "email": TEST_USER_EMAIL,
+                }
+            )
+        )
         mock_cur.fetchone = AsyncMock(return_value=None)  # UPDATE doesn't need RETURNING
 
-        response = test_client.post("/api/auth/reset-confirm", json={
-            "token": "valid-token",
-            "new_password": "newpassword123",
-        })
+        response = test_client.post(
+            "/api/auth/reset-confirm",
+            json={
+                "token": "valid-token",
+                "new_password": "newpassword123",
+            },
+        )
         assert response.status_code == 200
         assert "reset" in response.json()["message"].lower()
         # Token should be deleted from Redis
         mock_redis.delete.assert_called()
 
     def test_reset_confirm_invalid_token(
-        self, test_client: TestClient, mock_redis: AsyncMock,
+        self,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
     ) -> None:
         mock_redis.get = AsyncMock(return_value=None)
-        response = test_client.post("/api/auth/reset-confirm", json={
-            "token": "invalid-token",
-            "new_password": "newpassword123",
-        })
+        response = test_client.post(
+            "/api/auth/reset-confirm",
+            json={
+                "token": "invalid-token",
+                "new_password": "newpassword123",
+            },
+        )
         assert response.status_code == 400
 
     def test_reset_confirm_short_password(
-        self, test_client: TestClient,
+        self,
+        test_client: TestClient,
     ) -> None:
-        response = test_client.post("/api/auth/reset-confirm", json={
-            "token": "some-token",
-            "new_password": "short",
-        })
+        response = test_client.post(
+            "/api/auth/reset-confirm",
+            json={
+                "token": "some-token",
+                "new_password": "short",
+            },
+        )
         assert response.status_code == 422  # Pydantic validation
 ```
 
@@ -1346,8 +1399,11 @@ class TestTwoFactorSetup:
     """Tests for POST /api/auth/2fa/setup."""
 
     def test_setup_returns_secret_and_qr_uri(
-        self, test_client: TestClient, auth_headers: dict[str, str],
-        mock_cur: AsyncMock, mock_redis: AsyncMock,
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
     ) -> None:
         mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
         mock_redis.get = AsyncMock(return_value=None)  # no revoked token
@@ -1365,8 +1421,11 @@ class TestTwoFactorConfirm:
     """Tests for POST /api/auth/2fa/confirm."""
 
     def test_confirm_with_valid_code(
-        self, test_client: TestClient, auth_headers: dict[str, str],
-        mock_cur: AsyncMock, mock_redis: AsyncMock,
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
     ) -> None:
         import pyotp
 
@@ -1391,12 +1450,17 @@ class TestTwoFactorVerify:
     """Tests for POST /api/auth/2fa/verify."""
 
     def test_verify_invalid_challenge_token(
-        self, test_client: TestClient, mock_redis: AsyncMock,
+        self,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
     ) -> None:
-        response = test_client.post("/api/auth/2fa/verify", json={
-            "challenge_token": "invalid.token.here",
-            "code": "123456",
-        })
+        response = test_client.post(
+            "/api/auth/2fa/verify",
+            json={
+                "challenge_token": "invalid.token.here",
+                "code": "123456",
+            },
+        )
         assert response.status_code == 401
 
 
@@ -1404,10 +1468,13 @@ class TestTwoFactorDisable:
     """Tests for POST /api/auth/2fa/disable."""
 
     def test_disable_requires_auth(self, test_client: TestClient) -> None:
-        response = test_client.post("/api/auth/2fa/disable", json={
-            "code": "123456",
-            "password": "testpassword",
-        })
+        response = test_client.post(
+            "/api/auth/2fa/disable",
+            json={
+                "code": "123456",
+                "password": "testpassword",
+            },
+        )
         assert response.status_code in (401, 403)
 
 
@@ -1415,12 +1482,17 @@ class TestTwoFactorRecovery:
     """Tests for POST /api/auth/2fa/recovery."""
 
     def test_recovery_invalid_challenge(
-        self, test_client: TestClient, mock_redis: AsyncMock,
+        self,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
     ) -> None:
-        response = test_client.post("/api/auth/2fa/recovery", json={
-            "challenge_token": "bad.token.here",
-            "code": "some-recovery-code",
-        })
+        response = test_client.post(
+            "/api/auth/2fa/recovery",
+            json={
+                "challenge_token": "bad.token.here",
+                "code": "some-recovery-code",
+            },
+        )
         assert response.status_code == 401
 ```
 
@@ -1487,7 +1559,9 @@ async def two_factor_setup(
     logger.info("🔐 2FA setup initiated", user_id=user_id)
     return JSONResponse(
         content=TwoFactorSetupResponse(
-            secret=secret, otpauth_uri=otpauth_uri, recovery_codes=plaintext_codes,
+            secret=secret,
+            otpauth_uri=otpauth_uri,
+            recovery_codes=plaintext_codes,
         ).model_dump(),
     )
 
@@ -1580,6 +1654,7 @@ async def two_factor_verify(request: Request, body: TwoFactorVerifyModel) -> JSO
         locked_until = user["totp_locked_until"]
         if isinstance(locked_until, str):
             from datetime import datetime as _dt
+
             locked_until = _dt.fromisoformat(locked_until)
         if locked_until > datetime.now(UTC):
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Account temporarily locked")

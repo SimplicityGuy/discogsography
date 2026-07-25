@@ -287,21 +287,23 @@ ______________________________________________________________________
 In `schema-init/postgres_schema.py`, add a new entry before the `musicbrainz.relationships table` entry (before line 537):
 
 ```python
+(
     (
         "musicbrainz.release_groups table",
         """CREATE TABLE IF NOT EXISTS musicbrainz.release_groups (
-            mbid UUID PRIMARY KEY,
-            name TEXT NOT NULL,
-            type TEXT,
-            secondary_types JSONB,
-            first_release_date TEXT,
-            disambiguation TEXT,
-            discogs_master_id INTEGER,
-            data JSONB,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        )""",
+        mbid UUID PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT,
+        secondary_types JSONB,
+        first_release_date TEXT,
+        disambiguation TEXT,
+        discogs_master_id INTEGER,
+        data JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    )""",
     ),
+)
 ```
 
 - [ ] **Step 2: Run lint to verify syntax**
@@ -330,10 +332,12 @@ ______________________________________________________________________
 In `schema-init/neo4j_schema.py`, add after the `release_mbid` index entry (after line 153):
 
 ```python
+(
     (
         "master_mbid",
         "CREATE INDEX master_mbid IF NOT EXISTS FOR (m:Master) ON (m.mbid)",
     ),
+)
 ```
 
 - [ ] **Step 2: Run lint**
@@ -411,36 +415,38 @@ def sample_release_group_record():
 Add tests to `tests/brainzgraphinator/test_brainzgraphinator.py` in the enrichment test class (after `test_enrich_release_no_discogs_id_skips`):
 
 ```python
-    def test_enrich_release_group_with_match(self, mock_tx: MagicMock, sample_release_group_record: dict[str, Any]) -> None:
-        """Release-group with discogs_master_id gets enriched on Master node."""
-        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_release_group(mock_tx, sample_release_group_record)
-            assert result is True
+def test_enrich_release_group_with_match(self, mock_tx: MagicMock, sample_release_group_record: dict[str, Any]) -> None:
+    """Release-group with discogs_master_id gets enriched on Master node."""
+    with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+        result = enrich_release_group(mock_tx, sample_release_group_record)
+        assert result is True
 
-        call_args = mock_tx.run.call_args_list[0]
-        cypher = call_args[0][0]
-        assert "MATCH (m:Master" in cypher
-        assert "SET m.mbid" in cypher
-        assert "m.mb_type" in cypher
-        assert "m.mb_secondary_types" in cypher
-        assert "m.mb_first_release_date" in cypher
-        assert "m.mb_updated_at" in cypher
+    call_args = mock_tx.run.call_args_list[0]
+    cypher = call_args[0][0]
+    assert "MATCH (m:Master" in cypher
+    assert "SET m.mbid" in cypher
+    assert "m.mb_type" in cypher
+    assert "m.mb_secondary_types" in cypher
+    assert "m.mb_first_release_date" in cypher
+    assert "m.mb_updated_at" in cypher
 
-    def test_enrich_release_group_no_discogs_id_skips(self, mock_tx: MagicMock) -> None:
-        """Release-group with no discogs_master_id is deliberately skipped."""
-        record = {"mbid": "abc", "discogs_master_id": None}
-        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_release_group(mock_tx, record)
-            assert result is True
-        mock_tx.run.assert_not_called()
 
-    def test_enrich_release_group_no_neo4j_match(self, mock_tx: MagicMock) -> None:
-        """Release-group with discogs_master_id but no Neo4j Master node is skipped."""
-        mock_tx.run.return_value.single.return_value = None
-        record = {"mbid": "abc", "discogs_master_id": 99999}
-        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_release_group(mock_tx, record)
-            assert result is True
+def test_enrich_release_group_no_discogs_id_skips(self, mock_tx: MagicMock) -> None:
+    """Release-group with no discogs_master_id is deliberately skipped."""
+    record = {"mbid": "abc", "discogs_master_id": None}
+    with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+        result = enrich_release_group(mock_tx, record)
+        assert result is True
+    mock_tx.run.assert_not_called()
+
+
+def test_enrich_release_group_no_neo4j_match(self, mock_tx: MagicMock) -> None:
+    """Release-group with discogs_master_id but no Neo4j Master node is skipped."""
+    mock_tx.run.return_value.single.return_value = None
+    record = {"mbid": "abc", "discogs_master_id": 99999}
+    with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+        result = enrich_release_group(mock_tx, record)
+        assert result is True
 ```
 
 Also update the import at top of test file to include `enrich_release_group`:
@@ -608,12 +614,8 @@ class TestProcessReleaseGroup:
             "first_release_date": None,
             "disambiguation": "",
             "discogs_master_id": None,
-            "relations": [
-                {"type": "tribute", "target_type": "artist", "target_mbid": "artist-mbid"}
-            ],
-            "external_links": [
-                {"service": "wikipedia", "url": "https://en.wikipedia.org/wiki/Test"}
-            ],
+            "relations": [{"type": "tribute", "target_type": "artist", "target_mbid": "artist-mbid"}],
+            "external_links": [{"service": "wikipedia", "url": "https://en.wikipedia.org/wiki/Test"}],
         }
 
         await process_release_group(mock_conn, record)

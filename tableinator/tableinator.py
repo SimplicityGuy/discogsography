@@ -209,7 +209,7 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
                 if await check_all_consumers_idle():
                     logger.info("🔧 All consumers idle, closing RabbitMQ connection")
                     await close_rabbitmq_connection()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - consumer cancellation is best-effort
             logger.error(
                 "❌ Failed to cancel consumer", data_type=data_type, error=str(e)
             )
@@ -234,7 +234,7 @@ async def close_rabbitmq_connection() -> None:
             try:
                 await active_channel.close()
                 logger.info("🔧 Closed RabbitMQ channel - all consumers idle")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - best-effort teardown; the connection is being discarded regardless
                 logger.warning("⚠️ Error closing channel", error=str(e))
             active_channel = None
 
@@ -242,7 +242,7 @@ async def close_rabbitmq_connection() -> None:
             try:
                 await active_connection.close()
                 logger.info("🔧 Closed RabbitMQ connection - all consumers idle")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - best-effort teardown; the connection is being discarded regardless
                 logger.warning("⚠️ Error closing connection", error=str(e))
             active_connection = None
 
@@ -250,7 +250,7 @@ async def close_rabbitmq_connection() -> None:
             f"✅ RabbitMQ connection closed. Will check for new messages every {QUEUE_CHECK_INTERVAL}s",
             QUEUE_CHECK_INTERVAL=QUEUE_CHECK_INTERVAL,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - best-effort teardown; the connection is being discarded regardless
         logger.error("❌ Error closing RabbitMQ connection", error=str(e))
 
 
@@ -287,7 +287,6 @@ async def periodic_queue_checker() -> None:
     The stuck state check runs frequently (every STUCK_CHECK_INTERVAL seconds) to
     detect and recover quickly. The normal idle check runs at QUEUE_CHECK_INTERVAL.
     """
-    global active_connection, active_channel, queues, consumer_tags
 
     last_full_check = 0.0  # Track when we last did a full queue check
 
@@ -325,7 +324,7 @@ async def periodic_queue_checker() -> None:
         except asyncio.CancelledError:
             logger.info("🛑 Queue checker task cancelled")
             break
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - long-running loop must survive per-iteration faults
             logger.error("❌ Error in periodic queue checker", error=str(e))
             # Continue running despite errors
 
@@ -337,14 +336,16 @@ async def _recover_consumers() -> None:
     - Normal recovery after idle period
     - Emergency recovery after unexpected consumer death
     """
-    global active_connection, active_channel, queues, consumer_tags, idle_mode
+    global active_connection, active_channel, queues, idle_mode
 
     # Close any existing broken connection first
     if active_connection:
         try:
             await active_connection.close()
-        except Exception:  # nosec: B110
-            pass
+        except Exception as e:  # noqa: BLE001 - the connection is already broken; recovery must proceed regardless
+            logger.warning(
+                "⚠️ Error closing broken connection during recovery", error=str(e)
+            )
         active_connection = None
         active_channel = None
 
@@ -352,7 +353,7 @@ async def _recover_consumers() -> None:
     try:
         temp_connection = await rabbitmq_manager.connect()
         temp_channel = await temp_connection.channel()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - recovery must not raise into its caller
         logger.error("❌ Failed to connect to RabbitMQ for recovery", error=str(e))
         return
 
@@ -472,14 +473,17 @@ async def _recover_consumers() -> None:
             await temp_channel.close()
             await temp_connection.close()
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - recovery must not raise into its caller
         logger.error("❌ Error during consumer recovery", error=str(e))
         # Make sure to close temporary connection on error
         try:
             await temp_channel.close()
             await temp_connection.close()
-        except Exception:  # nosec: B110
-            pass
+        except Exception as close_error:  # noqa: BLE001 - best-effort cleanup inside an error path
+            logger.warning(
+                "⚠️ Error closing temporary connection after recovery failure",
+                error=str(close_error),
+            )
         active_connection = None
         active_channel = None
         queues = {}
@@ -540,70 +544,69 @@ async def purge_stale_rows(
     try:
         async with connection_pool.connection() as conn:
             await conn.set_autocommit(False)
-            async with conn.transaction():
-                async with conn.cursor() as cursor:
-                    # Count the table and the would-be-deleted rows BEFORE deleting so a
-                    # near-total wipe can be vetoed inside the same transaction.
-                    await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
-                        sql.SQL("SELECT count(*) FROM {table}").format(
-                            table=sql.Identifier(data_type)
-                        )
+            async with conn.transaction(), conn.cursor() as cursor:
+                # Count the table and the would-be-deleted rows BEFORE deleting so a
+                # near-total wipe can be vetoed inside the same transaction.
+                await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
+                    sql.SQL("SELECT count(*) FROM {table}").format(
+                        table=sql.Identifier(data_type)
                     )
-                    total_row = await cursor.fetchone()
-                    total_count = total_row[0] if total_row else 0
+                )
+                total_row = await cursor.fetchone()
+                total_count = total_row[0] if total_row else 0
 
-                    if total_count == 0:
-                        logger.info(
-                            f"✅ No {data_type} rows to purge (table empty)",
-                            data_type=data_type,
-                        )
-                        return
-
-                    await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
-                        sql.SQL(
-                            "SELECT count(*) FROM {table} WHERE updated_at < %s"
-                        ).format(table=sql.Identifier(data_type)),
-                        (started_at_dt,),
-                    )
-                    stale_row = await cursor.fetchone()
-                    stale_count = stale_row[0] if stale_row else 0
-
-                    if stale_count == 0:
-                        logger.info(
-                            f"✅ No stale {data_type} rows to purge",
-                            data_type=data_type,
-                        )
-                        return
-
-                    # Guard 2: veto near-total wipes — the resumed-extraction signature.
-                    delete_fraction = stale_count / total_count
-                    if delete_fraction >= PURGE_MAX_DELETE_FRACTION:
-                        logger.error(
-                            f"🛡️ Refusing to purge {stale_count}/{total_count} "
-                            f"{data_type} rows ({delete_fraction:.1%} of table) — exceeds "
-                            f"safety cap, likely a resumed extraction not a dump shrink",
-                            data_type=data_type,
-                            stale=stale_count,
-                            total=total_count,
-                            fraction=round(delete_fraction, 4),
-                        )
-                        return
-
-                    await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
-                        sql.SQL(
-                            "DELETE FROM {table} WHERE updated_at < %s RETURNING data_id"
-                        ).format(table=sql.Identifier(data_type)),
-                        (started_at_dt,),
-                    )
-                    deleted_rows = await cursor.fetchall()
-                    deleted_count = len(deleted_rows)
-
+                if total_count == 0:
                     logger.info(
-                        f"🧹 Purged {deleted_count} stale {data_type} rows "
-                        f"(not updated since extraction started)",
+                        f"✅ No {data_type} rows to purge (table empty)",
                         data_type=data_type,
-                        deleted=deleted_count,
                     )
+                    return
+
+                await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
+                    sql.SQL(
+                        "SELECT count(*) FROM {table} WHERE updated_at < %s"
+                    ).format(table=sql.Identifier(data_type)),
+                    (started_at_dt,),
+                )
+                stale_row = await cursor.fetchone()
+                stale_count = stale_row[0] if stale_row else 0
+
+                if stale_count == 0:
+                    logger.info(
+                        f"✅ No stale {data_type} rows to purge",
+                        data_type=data_type,
+                    )
+                    return
+
+                # Guard 2: veto near-total wipes — the resumed-extraction signature.
+                delete_fraction = stale_count / total_count
+                if delete_fraction >= PURGE_MAX_DELETE_FRACTION:
+                    logger.error(
+                        f"🛡️ Refusing to purge {stale_count}/{total_count} "
+                        f"{data_type} rows ({delete_fraction:.1%} of table) — exceeds "
+                        f"safety cap, likely a resumed extraction not a dump shrink",
+                        data_type=data_type,
+                        stale=stale_count,
+                        total=total_count,
+                        fraction=round(delete_fraction, 4),
+                    )
+                    return
+
+                await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
+                    sql.SQL(
+                        "DELETE FROM {table} WHERE updated_at < %s RETURNING data_id"
+                    ).format(table=sql.Identifier(data_type)),
+                    (started_at_dt,),
+                )
+                deleted_rows = await cursor.fetchall()
+                deleted_count = len(deleted_rows)
+
+                logger.info(
+                    f"🧹 Purged {deleted_count} stale {data_type} rows "
+                    f"(not updated since extraction started)",
+                    data_type=data_type,
+                    deleted=deleted_count,
+                )
     except Exception as e:
         logger.error(
             f"❌ Failed to purge stale {data_type} rows",
@@ -677,7 +680,7 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                         data.get("started_at", ""),
                         record_counts.get(data_type),
                     )
-                except Exception as purge_exc:
+                except Exception as purge_exc:  # noqa: BLE001 - per-message fault must nack rather than kill the consumer
                     logger.error(
                         "❌ Purge failed, nacking extraction_complete for retry",
                         data_type=data_type,
@@ -748,7 +751,7 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                 "🔄 Processing record", data_type=data_type[:-1], data_id=data_id
             )
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - per-message fault must nack rather than kill the consumer
         logger.error("❌ Failed to parse message", error=str(e))
         await message.nack(requeue=False)
         return
@@ -758,35 +761,34 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
         if connection_pool is None:
             raise RuntimeError("Connection pool not initialized")
 
-        async with connection_pool.connection() as conn:
-            async with conn.cursor() as cursor:
-                # Conditional upsert: only rewrites hash and data when hash differs,
-                # but always refreshes updated_at so post-extraction stale row
-                # purge does not delete unchanged-but-still-present records.
-                await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
-                    sql.SQL(
-                        "INSERT INTO {table} (hash, data_id, data, updated_at) "
-                        "VALUES (%s, %s, %s, NOW()) "
-                        "ON CONFLICT (data_id) DO UPDATE "
-                        "SET hash = CASE WHEN {table}.hash != EXCLUDED.hash "
-                        "THEN EXCLUDED.hash ELSE {table}.hash END, "
-                        "data = CASE WHEN {table}.hash != EXCLUDED.hash "
-                        "THEN EXCLUDED.data ELSE {table}.data END, "
-                        "updated_at = NOW();"
-                    ).format(table=sql.Identifier(data_type)),
-                    (
-                        data.get("sha256", ""),
-                        data_id,
-                        Jsonb(data),
-                    ),
-                )
+        async with connection_pool.connection() as conn, conn.cursor() as cursor:
+            # Conditional upsert: only rewrites hash and data when hash differs,
+            # but always refreshes updated_at so post-extraction stale row
+            # purge does not delete unchanged-but-still-present records.
+            await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
+                sql.SQL(
+                    "INSERT INTO {table} (hash, data_id, data, updated_at) "
+                    "VALUES (%s, %s, %s, NOW()) "
+                    "ON CONFLICT (data_id) DO UPDATE "
+                    "SET hash = CASE WHEN {table}.hash != EXCLUDED.hash "
+                    "THEN EXCLUDED.hash ELSE {table}.hash END, "
+                    "data = CASE WHEN {table}.hash != EXCLUDED.hash "
+                    "THEN EXCLUDED.data ELSE {table}.data END, "
+                    "updated_at = NOW();"
+                ).format(table=sql.Identifier(data_type)),
+                (
+                    data.get("sha256", ""),
+                    data_id,
+                    Jsonb(data),
+                ),
+            )
 
-                # Commit is automatic when exiting the connection context
-                logger.debug(
-                    "🐘 Updated record in PostgreSQL",
-                    data_type=data_type[:-1],
-                    data_id=data_id,
-                )
+            # Commit is automatic when exiting the connection context
+            logger.debug(
+                "🐘 Updated record in PostgreSQL",
+                data_type=data_type[:-1],
+                data_id=data_id,
+            )
 
         await message.ack()
 
@@ -804,11 +806,11 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
     except (InterfaceError, OperationalError) as e:
         logger.warning("⚠️ Database connection issue, will retry", error=str(e))
         await message.nack(requeue=True)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - per-message fault must nack rather than kill the consumer
         logger.error("❌ Failed to process message", data_type=data_type, error=str(e))
         try:
             await message.nack(requeue=True)
-        except Exception as nack_error:
+        except Exception as nack_error:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
             logger.warning("⚠️ Failed to nack message", error=str(nack_error))
 
 
@@ -1005,7 +1007,7 @@ async def main() -> None:
             config.postgres_pool_min_size,
             config.postgres_pool_max_size,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level guard: log and exit cleanly instead of a traceback
         logger.error("❌ Failed to initialize connection pool", error=str(e))
         return
 
@@ -1064,7 +1066,7 @@ async def main() -> None:
             amqp_connection = await rabbitmq_manager.connect()
             active_connection = amqp_connection
             break
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - top-level guard: log and exit cleanly instead of a traceback
             startup_retry += 1
             if startup_retry < max_startup_retries:
                 wait_time = min(30, 5 * startup_retry)  # Exponential backoff up to 30s
@@ -1198,7 +1200,7 @@ async def main() -> None:
                 try:
                     await batch_processor.flush_all()
                     logger.info("✅ Batch processor flushed and stopped")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - top-level guard: log and exit cleanly instead of a traceback
                     logger.warning("⚠️ Error flushing batch processor", error=str(e))
 
             # Cancel any pending consumer cancellation tasks
@@ -1213,7 +1215,7 @@ async def main() -> None:
                 if connection_pool:
                     await connection_pool.close()
                     logger.info("✅ Async connection pool closed")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - top-level guard: log and exit cleanly instead of a traceback
                 logger.warning("⚠️ Error closing connection pool", error=str(e))
 
         # Stop health server
@@ -1225,7 +1227,7 @@ if __name__ == "__main__":
         run(main())
     except KeyboardInterrupt:
         logger.warning("⚠️ Application interrupted")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - top-level guard: log and exit cleanly instead of a traceback
         logger.error("❌ Application error", error=str(e))
     finally:
         logger.info("✅ Tableinator service shutdown complete")

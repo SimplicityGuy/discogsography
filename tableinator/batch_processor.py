@@ -184,7 +184,7 @@ class PostgreSQLBatchProcessor:
         # Normalize the data
         try:
             normalized_data = normalize_record(data_type, data)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - a malformed record must not abort the whole batch
             logger.error(
                 "❌ Failed to normalize data",
                 data_type=data_type,
@@ -313,7 +313,7 @@ class PostgreSQLBatchProcessor:
                 # Messages are back on deque for retry — do NOT nack them
                 return
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - per-batch fault must nack rather than kill the consumer
                 # A generic (non-transient) error is deterministic — a poison
                 # record fails every retry. Count consecutive failures so the
                 # local retry loop is BOUNDED; otherwise the identical batch is
@@ -342,7 +342,7 @@ class PostgreSQLBatchProcessor:
                     for msg in messages:
                         try:
                             await msg.nack_callback()
-                        except Exception as nack_err:
+                        except Exception as nack_err:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
                             logger.warning(
                                 "⚠️ Failed to nack message", error=str(nack_err)
                             )
@@ -390,7 +390,7 @@ class PostgreSQLBatchProcessor:
             for msg in messages:
                 try:
                     await msg.ack_callback()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
                     logger.warning("⚠️ Failed to ack message", error=str(e))
 
             self.processed_counts[data_type] += len(messages)
@@ -439,69 +439,64 @@ class PostgreSQLBatchProcessor:
         # Get async connection from pool — wrap in explicit transaction for atomicity
         async with self.connection_pool.connection() as conn:
             await conn.set_autocommit(False)
-            async with conn.transaction():
-                async with conn.cursor() as cursor:
-                    # Step 1: Fetch all existing hashes in one query
-                    data_ids = [msg.data_id for msg in messages]
-                    await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
-                        sql.SQL(
-                            "SELECT data_id, hash FROM {table} WHERE data_id = ANY(%s)"
-                        ).format(table=sql.Identifier(data_type)),
-                        (data_ids,),
-                    )
-                    existing_hashes = {
-                        row[0]: row[1] for row in await cursor.fetchall()
-                    }
+            async with conn.transaction(), conn.cursor() as cursor:
+                # Step 1: Fetch all existing hashes in one query
+                data_ids = [msg.data_id for msg in messages]
+                await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
+                    sql.SQL(
+                        "SELECT data_id, hash FROM {table} WHERE data_id = ANY(%s)"
+                    ).format(table=sql.Identifier(data_type)),
+                    (data_ids,),
+                )
+                existing_hashes = {row[0]: row[1] for row in await cursor.fetchall()}
 
-                    # Step 2: Filter to only records that need updating
-                    records_to_upsert = []
-                    unchanged_ids = []
-                    for msg in messages:
-                        existing_hash = existing_hashes.get(msg.data_id)
-                        if existing_hash == msg.sha256:
-                            # Hash unchanged — skip data write but track for updated_at refresh
-                            unchanged_ids.append(msg.data_id)
-                            continue
-                        records_to_upsert.append(
-                            (msg.sha256, msg.data_id, Jsonb(msg.data))
-                        )
+                # Step 2: Filter to only records that need updating
+                records_to_upsert = []
+                unchanged_ids = []
+                for msg in messages:
+                    existing_hash = existing_hashes.get(msg.data_id)
+                    if existing_hash == msg.sha256:
+                        # Hash unchanged — skip data write but track for updated_at refresh
+                        unchanged_ids.append(msg.data_id)
+                        continue
+                    records_to_upsert.append((msg.sha256, msg.data_id, Jsonb(msg.data)))
 
-                    if unchanged_ids:
-                        logger.debug(
-                            "🔄 Skipped unchanged records",
-                            data_type=data_type,
-                            skipped=len(unchanged_ids),
-                        )
-                        # Refresh updated_at so post-extraction stale row purge
-                        # does not delete unchanged-but-still-present records
-                        await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
-                            sql.SQL(
-                                "UPDATE {table} SET updated_at = NOW() "
-                                "WHERE data_id = ANY(%s)"
-                            ).format(table=sql.Identifier(data_type)),
-                            (unchanged_ids,),
-                        )
-
-                    if not records_to_upsert:
-                        return
-
-                    # Step 3: Bulk upsert using executemany
-                    await cursor.executemany(
-                        sql.SQL(
-                            "INSERT INTO {table} (hash, data_id, data, updated_at) "
-                            "VALUES (%s, %s, %s, NOW()) "
-                            "ON CONFLICT (data_id) DO UPDATE "
-                            "SET hash = EXCLUDED.hash, data = EXCLUDED.data, updated_at = NOW()"
-                        ).format(table=sql.Identifier(data_type)),
-                        records_to_upsert,
-                    )
-
+                if unchanged_ids:
                     logger.debug(
-                        "🐘 Batch upserted records",
+                        "🔄 Skipped unchanged records",
                         data_type=data_type,
-                        upserted=len(records_to_upsert),
                         skipped=len(unchanged_ids),
                     )
+                    # Refresh updated_at so post-extraction stale row purge
+                    # does not delete unchanged-but-still-present records
+                    await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
+                        sql.SQL(
+                            "UPDATE {table} SET updated_at = NOW() "
+                            "WHERE data_id = ANY(%s)"
+                        ).format(table=sql.Identifier(data_type)),
+                        (unchanged_ids,),
+                    )
+
+                if not records_to_upsert:
+                    return
+
+                # Step 3: Bulk upsert using executemany
+                await cursor.executemany(
+                    sql.SQL(
+                        "INSERT INTO {table} (hash, data_id, data, updated_at) "
+                        "VALUES (%s, %s, %s, NOW()) "
+                        "ON CONFLICT (data_id) DO UPDATE "
+                        "SET hash = EXCLUDED.hash, data = EXCLUDED.data, updated_at = NOW()"
+                    ).format(table=sql.Identifier(data_type)),
+                    records_to_upsert,
+                )
+
+                logger.debug(
+                    "🐘 Batch upserted records",
+                    data_type=data_type,
+                    upserted=len(records_to_upsert),
+                    skipped=len(unchanged_ids),
+                )
 
     async def flush_all(self) -> None:
         """Flush all pending queues, draining each completely."""
@@ -543,7 +538,7 @@ class PostgreSQLBatchProcessor:
                             msg = queue.popleft()
                             try:
                                 await msg.nack_callback()
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
                                 logger.warning("⚠️ Failed to nack message", error=str(e))
                         break
                 continue
@@ -564,7 +559,7 @@ class PostgreSQLBatchProcessor:
                         msg = queue.popleft()
                         try:
                             await msg.nack_callback()
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
                             logger.warning("⚠️ Failed to nack message", error=str(e))
                     break
             else:

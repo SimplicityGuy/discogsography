@@ -376,9 +376,7 @@ logger.critical("🚨 System out of memory")
 logger.info(f"💾 Saved artist: id={artist_id}, name={artist_name}")
 
 # Use structured logging where appropriate
-logger.info(
-    "📊 Processing stats", extra={"processed": 1000, "failed": 5, "duration": 45.2}
-)
+logger.info("📊 Processing stats", extra={"processed": 1000, "failed": 5, "duration": 45.2})
 ```
 
 ### 3. Consistent Formatting

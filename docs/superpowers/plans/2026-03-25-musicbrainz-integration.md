@@ -1166,9 +1166,18 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
 ]
 
 _MUSICBRAINZ_INDEXES: list[tuple[str, str]] = [
-    ("idx_mb_artists_discogs_id", "CREATE INDEX IF NOT EXISTS idx_mb_artists_discogs_id ON musicbrainz.artists (discogs_artist_id) WHERE discogs_artist_id IS NOT NULL"),
-    ("idx_mb_labels_discogs_id", "CREATE INDEX IF NOT EXISTS idx_mb_labels_discogs_id ON musicbrainz.labels (discogs_label_id) WHERE discogs_label_id IS NOT NULL"),
-    ("idx_mb_releases_discogs_id", "CREATE INDEX IF NOT EXISTS idx_mb_releases_discogs_id ON musicbrainz.releases (discogs_release_id) WHERE discogs_release_id IS NOT NULL"),
+    (
+        "idx_mb_artists_discogs_id",
+        "CREATE INDEX IF NOT EXISTS idx_mb_artists_discogs_id ON musicbrainz.artists (discogs_artist_id) WHERE discogs_artist_id IS NOT NULL",
+    ),
+    (
+        "idx_mb_labels_discogs_id",
+        "CREATE INDEX IF NOT EXISTS idx_mb_labels_discogs_id ON musicbrainz.labels (discogs_label_id) WHERE discogs_label_id IS NOT NULL",
+    ),
+    (
+        "idx_mb_releases_discogs_id",
+        "CREATE INDEX IF NOT EXISTS idx_mb_releases_discogs_id ON musicbrainz.releases (discogs_release_id) WHERE discogs_release_id IS NOT NULL",
+    ),
     ("idx_mb_artists_name", "CREATE INDEX IF NOT EXISTS idx_mb_artists_name ON musicbrainz.artists (name)"),
     ("idx_mb_labels_name", "CREATE INDEX IF NOT EXISTS idx_mb_labels_name ON musicbrainz.labels (name)"),
     ("idx_mb_rels_source", "CREATE INDEX IF NOT EXISTS idx_mb_rels_source ON musicbrainz.relationships (source_mbid)"),
@@ -1182,14 +1191,7 @@ _MUSICBRAINZ_INDEXES: list[tuple[str, str]] = [
 Include these in the `create_postgres_schema()` function by appending to the statement list:
 
 ```python
-all_statements = (
-    _ENTITY_TABLES_STATEMENTS
-    + _SPECIFIC_INDEXES
-    + _USER_TABLES
-    + _INSIGHTS_TABLES
-    + _MUSICBRAINZ_TABLES
-    + _MUSICBRAINZ_INDEXES
-)
+all_statements = _ENTITY_TABLES_STATEMENTS + _SPECIFIC_INDEXES + _USER_TABLES + _INSIGHTS_TABLES + _MUSICBRAINZ_TABLES + _MUSICBRAINZ_INDEXES
 ```
 
 - [ ] **Step 4: Run tests**
@@ -1663,7 +1665,9 @@ async def main() -> None:
 
     # RabbitMQ connection
     rabbitmq_manager = AsyncResilientRabbitMQ(
-        url=config.amqp_connection, max_retries=10, heartbeat=600,
+        url=config.amqp_connection,
+        max_retries=10,
+        heartbeat=600,
     )
 
     max_connect_attempts = 5
@@ -1695,7 +1699,8 @@ async def main() -> None:
             await dlq.bind(dlx)
 
             queue = await channel.declare_queue(
-                queue_name, durable=True,
+                queue_name,
+                durable=True,
                 arguments={"x-queue-type": "quorum", "x-dead-letter-exchange": f"{queue_name}.dlx", "x-delivery-limit": 20},
             )
             await queue.bind(exchange)
@@ -2145,6 +2150,7 @@ ______________________________________________________________________
 def test_mbid_indexes_defined():
     """MBID indexes exist for Artist, Label, Release."""
     from schema_init.neo4j_schema import SCHEMA_STATEMENTS
+
     names = [name for name, _ in SCHEMA_STATEMENTS]
     assert "artist_mbid" in names
     assert "label_mbid" in names
@@ -2156,9 +2162,9 @@ def test_mbid_indexes_defined():
 Append to `SCHEMA_STATEMENTS`:
 
 ```python
-    ("artist_mbid", "CREATE INDEX artist_mbid IF NOT EXISTS FOR (a:Artist) ON (a.mbid)"),
-    ("label_mbid", "CREATE INDEX label_mbid IF NOT EXISTS FOR (l:Label) ON (l.mbid)"),
-    ("release_mbid", "CREATE INDEX release_mbid IF NOT EXISTS FOR (r:Release) ON (r.mbid)"),
+(("artist_mbid", "CREATE INDEX artist_mbid IF NOT EXISTS FOR (a:Artist) ON (a.mbid)"),)
+(("label_mbid", "CREATE INDEX label_mbid IF NOT EXISTS FOR (l:Label) ON (l.mbid)"),)
+(("release_mbid", "CREATE INDEX release_mbid IF NOT EXISTS FOR (r:Release) ON (r.mbid)"),)
 ```
 
 - [ ] **Step 3: Run tests**
@@ -2798,16 +2804,20 @@ def mock_neo4j(mock_neo4j_session):
 class TestMusicBrainzMetadata:
     def test_get_artist_musicbrainz_found(self, test_client, mock_neo4j, mock_neo4j_session):
         mock_result = AsyncMock()
-        mock_result.data = AsyncMock(return_value=[{
-            "mbid": "b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d",
-            "mb_type": "Group",
-            "mb_gender": None,
-            "mb_begin_date": "1960",
-            "mb_end_date": "1970",
-            "mb_area": "London",
-            "mb_begin_area": "Liverpool",
-            "mb_disambiguation": "the Beatles",
-        }])
+        mock_result.data = AsyncMock(
+            return_value=[
+                {
+                    "mbid": "b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d",
+                    "mb_type": "Group",
+                    "mb_gender": None,
+                    "mb_begin_date": "1960",
+                    "mb_end_date": "1970",
+                    "mb_area": "London",
+                    "mb_begin_area": "Liverpool",
+                    "mb_disambiguation": "the Beatles",
+                }
+            ]
+        )
         mock_neo4j_session.run = AsyncMock(return_value=mock_result)
 
         with patch("api.routers.musicbrainz._neo4j_driver", mock_neo4j):
@@ -2832,17 +2842,19 @@ class TestMusicBrainzMetadata:
 class TestArtistRelationships:
     def test_get_artist_relationships(self, test_client, mock_neo4j, mock_neo4j_session):
         mock_result = AsyncMock()
-        mock_result.data = AsyncMock(return_value=[
-            {
-                "type": "COLLABORATED_WITH",
-                "target_id": 200,
-                "target_name": "Artist B",
-                "direction": "outgoing",
-                "begin_date": "2020",
-                "end_date": None,
-                "attributes": [],
-            },
-        ])
+        mock_result.data = AsyncMock(
+            return_value=[
+                {
+                    "type": "COLLABORATED_WITH",
+                    "target_id": 200,
+                    "target_name": "Artist B",
+                    "direction": "outgoing",
+                    "begin_date": "2020",
+                    "end_date": None,
+                    "attributes": [],
+                },
+            ]
+        )
         mock_neo4j_session.run = AsyncMock(return_value=mock_result)
 
         with patch("api.routers.musicbrainz._neo4j_driver", mock_neo4j):
@@ -2865,8 +2877,7 @@ class TestExternalLinks:
 
 class TestEnrichmentStatus:
     def test_get_enrichment_status(self, test_client, mock_pool, mock_neo4j, mock_neo4j_session):
-        with patch("api.routers.musicbrainz._pool", mock_pool), \
-             patch("api.routers.musicbrainz._neo4j_driver", mock_neo4j):
+        with patch("api.routers.musicbrainz._pool", mock_pool), patch("api.routers.musicbrainz._neo4j_driver", mock_neo4j):
             response = test_client.get("/api/enrichment/status")
 
         assert response.status_code == 200
@@ -2973,9 +2984,7 @@ async def get_enrichment_status(pool: Any, neo4j_driver: Any) -> dict[str, Any]:
             records = await result.data()
             stats["musicbrainz"][entity]["enriched_in_neo4j"] = records[0]["count"] if records else 0
 
-        result = await session.run(
-            "MATCH ()-[r]->() WHERE r.source = 'musicbrainz' RETURN COUNT(r) AS count"
-        )
+        result = await session.run("MATCH ()-[r]->() WHERE r.source = 'musicbrainz' RETURN COUNT(r) AS count")
         records = await result.data()
         stats["musicbrainz"]["relationships"]["created_in_neo4j"] = records[0]["count"] if records else 0
 

@@ -178,7 +178,7 @@ class Neo4jBatchProcessor:
         # Normalize the data
         try:
             normalized_data = normalize_record(data_type, data)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - a malformed record must not abort the whole batch
             logger.error(
                 "❌ Failed to normalize data",
                 data_type=data_type,
@@ -318,7 +318,7 @@ class Neo4jBatchProcessor:
                 # Messages are back on deque for retry — do NOT nack them
                 return
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - per-batch fault must nack rather than kill the consumer
                 # A generic (non-transient) error is deterministic — a poison
                 # record (e.g. a data-induced Neo4j ClientError) fails every
                 # retry. Count consecutive failures so the local retry loop is
@@ -348,7 +348,7 @@ class Neo4jBatchProcessor:
                     for msg in messages:
                         try:
                             await msg.nack_callback()
-                        except Exception as nack_err:
+                        except Exception as nack_err:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
                             logger.warning(
                                 "⚠️ Failed to nack message", error=str(nack_err)
                             )
@@ -399,7 +399,7 @@ class Neo4jBatchProcessor:
                         await msg.nack_callback()
                     else:
                         await msg.ack_callback()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
                     logger.warning("⚠️ Failed to ack/nack message", error=str(e))
 
             self.processed_counts[data_type] += len(messages) - len(nack_indices)
@@ -1156,7 +1156,7 @@ class Neo4jBatchProcessor:
                             msg = queue.popleft()
                             try:
                                 await msg.nack_callback()
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
                                 logger.warning("⚠️ Failed to nack message", error=str(e))
                         break
                 continue
@@ -1177,7 +1177,7 @@ class Neo4jBatchProcessor:
                         msg = queue.popleft()
                         try:
                             await msg.nack_callback()
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
                             logger.warning("⚠️ Failed to nack message", error=str(e))
                     break
             else:
