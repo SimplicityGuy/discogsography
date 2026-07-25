@@ -21,11 +21,21 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
+.tox/
+.nox/
 htmlcov/
 .coverage
 .coverage.*
 coverage.xml
+coverage.json
 *.cover
+test-results/
+
+# Rust — the extractor's build dir can reach multiple GB and every service
+# builds with `context: .`, so it must never enter the build context
+target/
+.bin/
 
 # IDEs
 .vscode/
@@ -33,15 +43,20 @@ coverage.xml
 *.swp
 *.swo
 *~
+\#*#
+.#*
 .DS_Store
 
 # Project specific
 *.log
 /discogs-data/
 /logs/
+data/
+backups/
 tests/
 docs/
 utilities/
+design/
 
 # Environment files
 .env
@@ -60,6 +75,7 @@ utilities/
 *.key
 *.crt
 *.cer
+secrets/
 
 # Build artifacts
 build/
@@ -71,27 +87,39 @@ docker-compose*.yml
 Dockerfile*
 .dockerignore
 
+# Agent tooling and local indexes — large, machine-local, never needed at build time
+.beads/
+.dolt/
+.beads-credential-key
+.bv/
+.repowise/
+.claude/
+.mcp.json
+.worktrees/
+.playwright-mcp/
+
 # Development files
 .pre-commit-config.yaml
 pyrightconfig.json
 CLAUDE.md
-# Note: README.md is needed by Dockerfiles for uv sync
-# Exclude all markdown files except README.md
+AGENTS.md
+# Exclude all markdown files except README.md, which Dockerfiles need for uv sync.
+# The `**/` prefix on the negation matters: a bare `!README.md` would re-include
+# only the root README, and seven service pyproject.toml files declare
+# `readme = "README.md"` relative to their own package directory.
 **/*.md
-!README.md
+!**/README.md
 
 # Temporary files
 *.tmp
 *.temp
+temp/
 .cache/
 
-# Additional IDEs
-*.swp
-*.swo
-*~
-\#*#
-.#*
-
-# Frontend (if applicable)
+# Frontend
 node_modules/
 static/build/
+explore/coverage/
+explore/coverage-e2e/
+.nyc_output/
+perftest-results/
