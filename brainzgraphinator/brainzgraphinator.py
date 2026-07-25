@@ -26,7 +26,6 @@ from common import (
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from orjson import loads
 
-
 logger = structlog.get_logger(__name__)
 
 # Config will be initialized in main
@@ -209,8 +208,7 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
                 error=str(e),
             )
         finally:
-            if data_type in consumer_cancel_tasks:
-                del consumer_cancel_tasks[data_type]
+            consumer_cancel_tasks.pop(data_type, None)
 
     # Cancel any existing scheduled cancellation
     if data_type in consumer_cancel_tasks:
@@ -481,7 +479,7 @@ async def create_relationship_edges(
 
         # Safe: edge_type comes from MB_RELATIONSHIP_MAP, not user input
         result = await tx.run(
-            f"MATCH (a:Artist {{id: $source_id}}) "  # noqa: S608
+            f"MATCH (a:Artist {{id: $source_id}}) "
             f"MATCH (b:Artist {{id: $target_id}}) "
             f"MERGE (a)-[r:{edge_type}]->(b) "
             f"SET r.source = 'musicbrainz'",

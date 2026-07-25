@@ -8,13 +8,13 @@ import asyncio
 import os
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 import structlog
 from common import normalize_record
 from common.credit_roles import categorize_role
-
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 
 logger = structlog.get_logger(__name__)
@@ -198,9 +198,10 @@ class Neo4jBatchProcessor:
         )
 
         # Check if we should flush (use adaptive batch size)
-        if len(queue) >= self._effective_batch_size[data_type]:
-            await self._flush_queue(data_type)
-        elif time.time() - self.last_flush[data_type] >= self.config.flush_interval:
+        if (
+            len(queue) >= self._effective_batch_size[data_type]
+            or time.time() - self.last_flush[data_type] >= self.config.flush_interval
+        ):
             await self._flush_queue(data_type)
 
         return True

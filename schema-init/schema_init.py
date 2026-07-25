@@ -18,8 +18,6 @@ from typing import Any
 
 import psycopg
 import structlog
-from psycopg import sql
-
 from common import (
     AsyncPostgreSQLPool,
     AsyncResilientNeo4jDriver,
@@ -28,9 +26,10 @@ from common import (
     setup_logging,
 )
 from common.config import get_secret
+from psycopg import sql
+
 from neo4j_schema import create_neo4j_schema
 from postgres_schema import create_postgres_schema
-
 
 logger = structlog.get_logger(__name__)
 
