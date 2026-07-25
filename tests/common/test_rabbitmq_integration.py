@@ -103,10 +103,14 @@ class TestLiveReconnect:
 
         connection = await manager.connect()
 
-        # Prove the connection works before we break it.
+        # Prove the connection works before we break it. The queue must be
+        # exclusive: RabbitMQ 4 refuses transient non-exclusive queues
+        # (`transient_nonexcl_queues` is deprecated and not permitted by default),
+        # so a plain auto_delete queue kills the whole connection with
+        # internal_error. Exclusive queues are still allowed and vanish with the
+        # connection, so they need no cleanup.
         channel = await connection.channel()
-        queue = await channel.declare_queue("aio-pika-10-reconnect-probe", auto_delete=True)
-        await queue.delete()
+        await channel.declare_queue("aio-pika-10-reconnect-probe", exclusive=True)
 
         async with _mgmt() as client:
             before = await _connections(client)
@@ -127,7 +131,6 @@ class TestLiveReconnect:
         assert await _await_condition(lambda: not connection.is_closed, timeout=30.0), "connection still closed after reconnect"
 
         channel = await connection.channel()
-        queue = await channel.declare_queue("aio-pika-10-reconnect-probe-after", auto_delete=True)
-        await queue.delete()
+        await channel.declare_queue("aio-pika-10-reconnect-probe-after", exclusive=True)
 
         await connection.close()
