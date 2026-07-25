@@ -78,8 +78,10 @@ test-results/
 *.mo
 *.pot
 
-# Django stuff:
+# Service logs (services log to /logs/{service_name}.log)
 *.log
+
+# Django stuff:
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -96,7 +98,7 @@ docs/_build/
 
 # PyBuilder
 .pybuilder/
-target/
+# Note: target/ is covered by the Rust section below
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -196,7 +198,7 @@ secrets/
 # Dashboard/Frontend (if applicable)
 node_modules/
 static/build/
-explore/coverage/
+# Note: explore/coverage/ is covered by the JavaScript coverage section below
 # Generated at Docker build time by the Tailwind CLI; not committed
 dashboard/static/tailwind.css
 explore/static/tailwind.css
@@ -289,9 +291,8 @@ temp/
 .AppleDouble
 .LSOverride
 
-# Icon must end with two \r
-Icon
-
+# Custom folder icon (the real filename ends in a carriage return)
+Icon?
 
 # Thumbnails
 ._*
@@ -322,12 +323,17 @@ Temporary Items
 
 # Built Visual Studio Code Extensions
 *.vsix
+
+###
+# Superpowers
+###
 .superpowers/
 
 ###
-# Istanbul / nyc coverage
+# JavaScript coverage (Vitest / Istanbul / nyc)
 ###
 .nyc_output/
+explore/coverage/
 explore/coverage-e2e/
 
 ###
@@ -335,16 +341,18 @@ explore/coverage-e2e/
 ###
 perftest-results/
 
-# Beads / Dolt files (added by bd init)
-.dolt/
-*.db
-.beads-credential-key
-.beads/proxieddb/
-
 ###
-# beads (bead corpus lives on the dolt remote: refs/dolt/data)
+# Beadhive / beads / bv
+# The bead corpus lives on the dolt remote (refs/dolt/data), so the whole
+# .beads/ tree is machine-local — that also covers proxieddb/ and the
+# issues.jsonl export that bv reads.
 ###
 .beads/
+.dolt/
+.beads-credential-key
+*.db
+# bv (beads viewer) local config and caches
+.bv/
 
 ###
 # Repowise codebase index
