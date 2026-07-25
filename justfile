@@ -154,6 +154,11 @@ lint-python:
     uv run ruff check .
     uv run mypy .
 
+# Type-check Python with mypy (AGF validation gate; `just lint` also runs mypy via pre-commit)
+[group('quality')]
+typecheck:
+    uv run mypy .
+
 # Format all Python code with ruff
 [group('quality')]
 format:
