@@ -640,15 +640,23 @@ async def run_full_sync(
             neo4j_driver=neo4j_driver,
         )
 
-        # Invalidate user-scoped recommendation cache
+    except Exception as exc:
+        error_message = str(exc)
+        logger.error("❌ Sync failed", user_id=str(user_uuid), error=error_message)
+    finally:
+        # Invalidate the user-scoped recommendation cache whenever a sync was
+        # attempted — not only on full success. sync_collection/sync_wantlist
+        # commit each page durably (autocommit executemany + immediate Neo4j
+        # writes) as they go, so a failure partway through (e.g. Neo4j hiccups
+        # on a later page) can leave the collection/wantlist durably changed
+        # even though run_full_sync takes the exception path above. Without
+        # this, stale personalized recommendations would keep serving for up
+        # to the cache's TTL. invalidate_user() already swallows Redis errors
+        # internally, so running it unconditionally here is safe.
         if redis_client is not None:
             rec_cache = RecommendCache(redis=redis_client)
             await rec_cache.invalidate_user(str(user_uuid))
             logger.info("🔄 Recommendation cache invalidated", user_id=str(user_uuid))
-
-    except Exception as exc:
-        error_message = str(exc)
-        logger.error("❌ Sync failed", user_id=str(user_uuid), error=error_message)
 
     # Update sync_history record
     final_status = "failed" if error_message else "completed"
