@@ -4,6 +4,17 @@ import json
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
+from neo4j.exceptions import Neo4jError
+
+
+def _neo4j_error(code: str, message: str = "boom") -> Neo4jError:
+    """Build a real Neo4jError with a server code.
+
+    ``Neo4jError.code`` is a read-only property, so the driver's own hydration
+    factory is the only way to construct one faithfully — and it dispatches to
+    the right subclass (ClientError / TransientError) from the code itself.
+    """
+    return Neo4jError._hydrate_neo4j(code=code, message=message)
 
 
 class TestArtistCentralityEndpoint:
@@ -257,6 +268,48 @@ class TestRarityScoresEndpoint:
             response = test_client.get("/api/internal/insights/rarity-scores")
         assert response.status_code == 503
         assert "error" in response.json()
+
+    def test_503_on_transaction_timeout_client_error(self, test_client: TestClient) -> None:
+        """discogsography-lx1n: the 600s transaction timeout is a ClientError.
+
+        The previous handler only caught TransientError, so this escaped as an
+        unhandled 500 on every production run.
+        """
+        err = _neo4j_error("Neo.ClientError.Transaction.TransactionTimedOutClientConfiguration", "transaction timed out")
+        with patch(
+            "api.routers.insights_compute.fetch_all_rarity_signals",
+            new=AsyncMock(side_effect=err),
+        ):
+            response = test_client.get("/api/internal/insights/rarity-scores")
+        assert response.status_code == 503
+        body = response.json()
+        assert body["code"] == "Neo.ClientError.Transaction.TransactionTimedOutClientConfiguration"
+
+    def test_503_when_the_timeout_arrives_inside_an_exception_group(self, test_client: TestClient) -> None:
+        """The driver can surface the failure wrapped in an ExceptionGroup."""
+        err = _neo4j_error("Neo.ClientError.Transaction.TransactionTimedOut", "transaction timed out")
+        group = ExceptionGroup("unhandled errors in a TaskGroup", [err])
+        with patch(
+            "api.routers.insights_compute.fetch_all_rarity_signals",
+            new=AsyncMock(side_effect=group),
+        ):
+            response = test_client.get("/api/internal/insights/rarity-scores")
+        assert response.status_code == 503
+
+    def test_non_retryable_client_error_is_not_masked_as_503(self, test_client: TestClient) -> None:
+        """A genuine query bug must still surface as a server error, not a 503."""
+        from neo4j.exceptions import ClientError
+
+        err = _neo4j_error("Neo.ClientError.Statement.SyntaxError", "invalid syntax")
+        assert isinstance(err, ClientError)  # same class, non-retryable code
+        with patch(
+            "api.routers.insights_compute.fetch_all_rarity_signals",
+            new=AsyncMock(side_effect=err),
+        ):
+            # The fixture's TestClient uses raise_server_exceptions=False, so an
+            # unhandled exception surfaces as a 500 rather than propagating.
+            response = test_client.get("/api/internal/insights/rarity-scores")
+        assert response.status_code == 500
 
 
 class TestAnniversariesValidation:

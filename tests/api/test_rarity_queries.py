@@ -615,6 +615,59 @@ class TestGetRarityByLabel:
 # ── Neo4j batch query tests ──────────────────────────────────────────
 
 
+def _fake_run_query(
+    *,
+    pressing: list | None = None,
+    label: list | None = None,
+    formats: list | None = None,
+    temporal: list | None = None,
+    degree: list | None = None,
+    artist_degree: list | None = None,
+    label_size: list | None = None,
+    genre_count: list | None = None,
+    page_size: int = 20_000,
+):
+    """Build a run_query stub that dispatches on the cypher, not on call order.
+
+    fetch_all_rarity_signals is paginated, so the call sequence is
+    (page query, 8 signal queries)* + a final empty page + a count query.
+    Dispatching on the query text keeps these tests independent of that
+    interleaving.
+    """
+    pressing = pressing or []
+    signal_rows = {
+        "label_catalog_size": label or [],
+        "r.formats AS formats": formats or [],
+        "latest_sibling_year": temporal or [],
+        "AS degree": degree or [],
+        "artist_max_degree": artist_degree or [],
+        "label_max_catalog": label_size or [],
+        "genre_max_release_count": genre_count or [],
+    }
+    # Every release the pressing query knows about, paged out by the keyset walk.
+    all_ids = [row["release_id"] for row in pressing]
+    served: list[str] = []
+
+    async def _run(_driver, cypher, **kwargs):
+        if "ORDER BY r.id" in cypher:  # keyset page query
+            cursor = kwargs["cursor"]
+            remaining = [i for i in all_ids if i > cursor]
+            page = remaining[:page_size]
+            served.extend(page)
+            return [{"release_id": i} for i in page]
+        if "count(r) AS total" in cypher:  # coverage check
+            return [{"total": len(all_ids)}]
+        ids = set(kwargs["ids"])
+        if "pressing_count," in cypher:
+            return [r for r in pressing if r["release_id"] in ids]
+        for marker, rows in signal_rows.items():
+            if marker in cypher:
+                return [r for r in rows if r["release_id"] in ids]
+        raise AssertionError(f"unrecognised cypher:\n{cypher}")
+
+    return _run
+
+
 class TestFetchAllRaritySignals:
     @pytest.mark.asyncio
     async def test_computes_scores_for_releases(self) -> None:
@@ -646,17 +699,17 @@ class TestFetchAllRaritySignals:
         mock_pool = MagicMock()
         mock_pool.connection = MagicMock(return_value=mock_conn)
 
-        with patch("api.queries.rarity_queries.run_query") as mock_run:
-            mock_run.side_effect = [
-                pressing_data,
-                label_data,
-                format_data,
-                temporal_data,
-                degree_data,
-                artist_degree_data,
-                label_size_data,
-                genre_count_data,
-            ]
+        run_query = _fake_run_query(
+            pressing=pressing_data,
+            label=label_data,
+            formats=format_data,
+            temporal=temporal_data,
+            degree=degree_data,
+            artist_degree=artist_degree_data,
+            label_size=label_size_data,
+            genre_count=genre_count_data,
+        )
+        with patch("api.queries.rarity_queries.run_query", side_effect=run_query):
             results = await fetch_all_rarity_signals(mock_driver, mock_pool)
 
         assert len(results) == 1
@@ -695,17 +748,17 @@ class TestFetchAllRaritySignals:
         mock_pool = MagicMock()
         mock_pool.connection = MagicMock(return_value=mock_conn)
 
-        with patch("api.queries.rarity_queries.run_query") as mock_run:
-            mock_run.side_effect = [
-                pressing_data,
-                label_data,
-                format_data,
-                temporal_data,
-                degree_data,
-                artist_degree_data,
-                label_size_data,
-                genre_count_data,
-            ]
+        run_query = _fake_run_query(
+            pressing=pressing_data,
+            label=label_data,
+            formats=format_data,
+            temporal=temporal_data,
+            degree=degree_data,
+            artist_degree=artist_degree_data,
+            label_size=label_size_data,
+            genre_count=genre_count_data,
+        )
+        with patch("api.queries.rarity_queries.run_query", side_effect=run_query):
             results = await fetch_all_rarity_signals(mock_driver, mock_pool)
 
         assert len(results) == 1
@@ -730,17 +783,17 @@ class TestFetchAllRaritySignals:
         mock_pool = MagicMock()
         mock_pool.connection = MagicMock(side_effect=RuntimeError("db connection failed"))
 
-        with patch("api.queries.rarity_queries.run_query") as mock_run:
-            mock_run.side_effect = [
-                pressing_data,
-                label_data,
-                format_data,
-                temporal_data,
-                degree_data,
-                artist_degree_data,
-                label_size_data,
-                genre_count_data,
-            ]
+        run_query = _fake_run_query(
+            pressing=pressing_data,
+            label=label_data,
+            formats=format_data,
+            temporal=temporal_data,
+            degree=degree_data,
+            artist_degree=artist_degree_data,
+            label_size=label_size_data,
+            genre_count=genre_count_data,
+        )
+        with patch("api.queries.rarity_queries.run_query", side_effect=run_query):
             results = await fetch_all_rarity_signals(mock_driver, mock_pool)
 
         assert len(results) == 1
@@ -760,17 +813,17 @@ class TestFetchAllRaritySignals:
         label_size_data = [{"release_id": "1", "label_max_catalog": 2000}]
         genre_count_data = [{"release_id": "1", "genre_max_release_count": 50000}]
 
-        with patch("api.queries.rarity_queries.run_query") as mock_run:
-            mock_run.side_effect = [
-                pressing_data,
-                label_data,
-                format_data,
-                temporal_data,
-                degree_data,
-                artist_degree_data,
-                label_size_data,
-                genre_count_data,
-            ]
+        run_query = _fake_run_query(
+            pressing=pressing_data,
+            label=label_data,
+            formats=format_data,
+            temporal=temporal_data,
+            degree=degree_data,
+            artist_degree=artist_degree_data,
+            label_size=label_size_data,
+            genre_count=genre_count_data,
+        )
+        with patch("api.queries.rarity_queries.run_query", side_effect=run_query):
             results = await fetch_all_rarity_signals(mock_driver, None)
 
         assert len(results) == 1
@@ -782,19 +835,40 @@ class TestFetchAllRaritySignals:
         separate OPTIONAL MATCHes. A single combined pattern makes `m` (and therefore
         pressing_count) null whenever the release is its master's ONLY pressing —
         misclassifying the rarest pressing case as "no master link".
+
+        Asserted against the query actually handed to the driver, so the property
+        survives the chunked (page-scoped) rewrite of fetch_all_rarity_signals.
         """
         mock_driver = MagicMock()
+        pressing_data = [{"release_id": "1", "pressing_count": 1, "title": "R1", "artist_name": "A1", "year": 1970}]
+        run_query = _fake_run_query(pressing=pressing_data)
+        sent: list[str] = []
 
-        with patch("api.queries.rarity_queries.run_query") as mock_run:
-            mock_run.side_effect = [[], [], [], [], [], [], [], []]
+        async def _recording(driver, cypher, **kwargs):
+            sent.append(cypher)
+            return await run_query(driver, cypher, **kwargs)
+
+        with patch("api.queries.rarity_queries.run_query", side_effect=_recording):
             await fetch_all_rarity_signals(mock_driver, None)
 
-        pressing_cypher = mock_run.call_args_list[0].args[1]
+        pressing_cypher = next(c for c in sent if "pressing_count," in c)
         # Two independent OPTIONAL MATCH clauses, not one combined pattern that
         # conditions `m` on a sibling existing.
         assert "OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)\n" in pressing_cypher
         assert "OPTIONAL MATCH (m)<-[:DERIVED_FROM]-(sibling:Release)" in pressing_cypher
         assert "OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)<-[:DERIVED_FROM]-(sibling:Release)" not in pressing_cypher
+        # The +1 must live inside the non-null branch, not in the aggregate —
+        # otherwise the combined-pattern bug returns by another route.
+        assert "count(DISTINCT sibling) AS sibling_count" in pressing_cypher
+        assert "CASE WHEN m IS NULL THEN 0 ELSE sibling_count + 1 END" in pressing_cypher
+
+    def test_pressing_query_constant_keeps_the_split_lookup(self) -> None:
+        """The chunked constant is the single source of truth — pin it directly."""
+        from api.queries.rarity_queries import _PRESSING_QUERY
+
+        assert "OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)\n" in _PRESSING_QUERY
+        assert "OPTIONAL MATCH (m)<-[:DERIVED_FROM]-(sibling:Release)" in _PRESSING_QUERY
+        assert "OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)<-[:DERIVED_FROM]-(sibling:Release)" not in _PRESSING_QUERY
 
     @pytest.mark.asyncio
     async def test_sole_pressing_of_master_scores_as_unique_not_standalone(self) -> None:
@@ -814,17 +888,17 @@ class TestFetchAllRaritySignals:
         label_size_data = [{"release_id": "1", "label_max_catalog": 2000}]
         genre_count_data = [{"release_id": "1", "genre_max_release_count": 50000}]
 
-        with patch("api.queries.rarity_queries.run_query") as mock_run:
-            mock_run.side_effect = [
-                pressing_data,
-                label_data,
-                format_data,
-                temporal_data,
-                degree_data,
-                artist_degree_data,
-                label_size_data,
-                genre_count_data,
-            ]
+        run_query = _fake_run_query(
+            pressing=pressing_data,
+            label=label_data,
+            formats=format_data,
+            temporal=temporal_data,
+            degree=degree_data,
+            artist_degree=artist_degree_data,
+            label_size=label_size_data,
+            genre_count=genre_count_data,
+        )
+        with patch("api.queries.rarity_queries.run_query", side_effect=run_query):
             results = await fetch_all_rarity_signals(mock_driver, None)
 
         assert results[0]["pressing_scarcity"] == 100.0
@@ -894,3 +968,177 @@ class TestRarityPaginationTiebreaker:
         ):
             await get_rarity_by_label(MagicMock(), mock_pool, "456")
         assert "ORDER BY rarity_score DESC, release_id" in self._first_order_by_sql(mock_cur)
+
+
+class TestRarityChunking:
+    """discogsography-lx1n: the rarity signal scans must never run unbounded.
+
+    Eight full-graph `MATCH (r:Release)` scans blew Neo4j's 600s
+    db.transaction.timeout on every production run, failing release_rarity 33
+    cycles in a row.
+    """
+
+    def test_no_signal_query_scans_the_whole_release_set(self) -> None:
+        """Every signal query must be scoped to an explicit $ids page."""
+        from api.queries import rarity_queries
+
+        signal_queries = {
+            name: value
+            for name, value in vars(rarity_queries).items()
+            if name.endswith("_QUERY") and name not in {"_RELEASE_ID_PAGE_QUERY", "_RELEASE_COUNT_QUERY"}
+        }
+        assert signal_queries, "no signal queries discovered — did they get renamed?"
+
+        for name, cypher in signal_queries.items():
+            assert "UNWIND $ids AS rid" in cypher, f"{name} is not page-scoped"
+            assert "MATCH (r:Release {id: rid})" in cypher, f"{name} does not seek by indexed id"
+            # The unbounded scan that caused the outage.
+            assert "MATCH (r:Release)\n" not in cypher, f"{name} reintroduced a full-graph scan"
+
+    def test_query_timeout_stays_under_the_server_transaction_timeout(self) -> None:
+        """Must fail fast rather than burn the full 600s db.transaction.timeout."""
+        from api.queries.rarity_queries import RARITY_QUERY_TIMEOUT_SECONDS
+
+        assert RARITY_QUERY_TIMEOUT_SECONDS < 600.0
+
+    @pytest.mark.asyncio
+    async def test_every_neo4j_query_carries_an_explicit_timeout(self) -> None:
+        mock_driver = MagicMock()
+        pressing_data = [{"release_id": "1", "pressing_count": 1, "title": "R1", "artist_name": "A1", "year": 1970}]
+        run_query = _fake_run_query(pressing=pressing_data)
+        seen: list[float | None] = []
+
+        async def _recording(driver, cypher, **kwargs):
+            seen.append(kwargs.get("timeout"))
+            return await run_query(driver, cypher, **kwargs)
+
+        with patch("api.queries.rarity_queries.run_query", side_effect=_recording):
+            await fetch_all_rarity_signals(mock_driver, None)
+
+        from api.queries.rarity_queries import RARITY_QUERY_TIMEOUT_SECONDS
+
+        assert seen, "no queries were run"
+        assert all(t == RARITY_QUERY_TIMEOUT_SECONDS for t in seen), seen
+
+    @pytest.mark.asyncio
+    async def test_pages_the_release_set_and_scores_every_release(self) -> None:
+        """A release set larger than one page is fully covered across pages."""
+        mock_driver = MagicMock()
+        # Ids are strings and the walk is a lexicographic keyset scan, so use
+        # zero-padded ids to keep string order == numeric order.
+        ids = [f"{i:04d}" for i in range(25)]
+        pressing_data = [{"release_id": rid, "pressing_count": 1, "title": f"R{rid}", "artist_name": "A", "year": 1970} for rid in ids]
+        degree_data = [{"release_id": rid, "degree": 3} for rid in ids]
+
+        page_size = 10
+        run_query = _fake_run_query(pressing=pressing_data, degree=degree_data, page_size=page_size)
+        pages: list[int] = []
+
+        async def _recording(driver, cypher, **kwargs):
+            rows = await run_query(driver, cypher, **kwargs)
+            if "ORDER BY r.id" in cypher and rows:
+                pages.append(len(rows))
+            return rows
+
+        with patch("api.queries.rarity_queries.run_query", side_effect=_recording):
+            results = await fetch_all_rarity_signals(mock_driver, None, page_size=page_size)
+
+        # 25 releases at 10/page -> 10, 10, 5
+        assert pages == [10, 10, 5]
+        assert [r["release_id"] for r in results] == ids
+
+    @pytest.mark.asyncio
+    async def test_no_page_query_requests_more_than_page_size(self) -> None:
+        mock_driver = MagicMock()
+        ids = [f"{i:04d}" for i in range(12)]
+        pressing_data = [{"release_id": rid, "pressing_count": 1, "title": "R", "artist_name": "A", "year": 1970} for rid in ids]
+        run_query = _fake_run_query(pressing=pressing_data, page_size=5)
+        limits: list[int] = []
+
+        async def _recording(driver, cypher, **kwargs):
+            if "ORDER BY r.id" in cypher:
+                limits.append(kwargs["limit"])
+            return await run_query(driver, cypher, **kwargs)
+
+        with patch("api.queries.rarity_queries.run_query", side_effect=_recording):
+            await fetch_all_rarity_signals(mock_driver, None, page_size=5)
+
+        assert limits and all(limit == 5 for limit in limits)
+
+    @pytest.mark.asyncio
+    async def test_signal_queries_only_receive_ids_from_the_current_page(self) -> None:
+        mock_driver = MagicMock()
+        ids = [f"{i:04d}" for i in range(6)]
+        pressing_data = [{"release_id": rid, "pressing_count": 1, "title": "R", "artist_name": "A", "year": 1970} for rid in ids]
+        run_query = _fake_run_query(pressing=pressing_data, page_size=2)
+        id_batches: list[list[str]] = []
+
+        async def _recording(driver, cypher, **kwargs):
+            if "UNWIND $ids AS rid" in cypher:
+                id_batches.append(list(kwargs["ids"]))
+            return await run_query(driver, cypher, **kwargs)
+
+        with patch("api.queries.rarity_queries.run_query", side_effect=_recording):
+            await fetch_all_rarity_signals(mock_driver, None, page_size=2)
+
+        assert id_batches
+        assert all(len(batch) <= 2 for batch in id_batches)
+        # 3 pages x 8 signal queries
+        assert len(id_batches) == 24
+
+    @pytest.mark.asyncio
+    async def test_hidden_gem_percentiles_span_pages(self) -> None:
+        """Percentile ranks are global, not per-page — a paged walk must not change them."""
+        mock_driver = MagicMock()
+        ids = [f"{i:04d}" for i in range(6)]
+        pressing_data = [{"release_id": rid, "pressing_count": 1, "title": "R", "artist_name": "A", "year": 1970} for rid in ids]
+        artist_degree_data = [{"release_id": rid, "artist_max_degree": (i + 1) * 10} for i, rid in enumerate(ids)]
+
+        def _score(page_size: int) -> list[float]:
+            return [r["hidden_gem_score"] for r in scored[page_size]]
+
+        scored = {}
+        for page_size in (6, 2, 1):
+            run_query = _fake_run_query(
+                pressing=pressing_data,
+                artist_degree=artist_degree_data,
+                page_size=page_size,
+            )
+            with patch("api.queries.rarity_queries.run_query", side_effect=run_query):
+                scored[page_size] = await fetch_all_rarity_signals(mock_driver, None, page_size=page_size)
+
+        # Identical results regardless of how the walk was chunked.
+        assert _score(6) == _score(2) == _score(1)
+        # And the percentiles are actually doing something.
+        assert len(set(_score(6))) > 1
+
+    @pytest.mark.asyncio
+    async def test_warns_when_pagination_covers_fewer_releases_than_the_graph(self) -> None:
+        """A truncated keyset walk must be loud, not silent."""
+        mock_driver = MagicMock()
+        pressing_data = [{"release_id": "1", "pressing_count": 1, "title": "R", "artist_name": "A", "year": 1970}]
+        run_query = _fake_run_query(pressing=pressing_data)
+
+        async def _undercounting(driver, cypher, **kwargs):
+            if "count(r) AS total" in cypher:
+                return [{"total": 999}]
+            return await run_query(driver, cypher, **kwargs)
+
+        with (
+            patch("api.queries.rarity_queries.run_query", side_effect=_undercounting),
+            patch("api.queries.rarity_queries.logger.warning") as mock_warning,
+        ):
+            await fetch_all_rarity_signals(mock_driver, None)
+
+        assert mock_warning.called
+        assert mock_warning.call_args.kwargs["missing"] == 998
+
+    @pytest.mark.asyncio
+    async def test_empty_graph_returns_no_results(self) -> None:
+        mock_driver = MagicMock()
+        run_query = _fake_run_query()
+
+        with patch("api.queries.rarity_queries.run_query", side_effect=run_query):
+            results = await fetch_all_rarity_signals(mock_driver, None)
+
+        assert results == []

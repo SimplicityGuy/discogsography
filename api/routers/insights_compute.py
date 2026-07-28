@@ -12,7 +12,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 import httpx
-from neo4j.exceptions import TransientError
+from neo4j.exceptions import ClientError, Neo4jError, TransientError
 from psycopg.rows import dict_row
 import structlog
 
@@ -181,6 +181,44 @@ async def data_completeness(request: Request) -> JSONResponse:  # noqa: ARG001
     return JSONResponse(content=response)
 
 
+# Neo4j error codes that mean "the database gave up on this transaction", not
+# "the server has a bug". Both are retryable and must surface as 503, never 500.
+#
+# TransactionTimedOutClientConfiguration is a *ClientError*, not a TransientError,
+# which is exactly why the previous handler missed it: rarity-scores blew
+# db.transaction.timeout (600s) on every production run and the ClientError
+# escaped as an unhandled 500.
+TRANSACTION_TIMEOUT_CODES = frozenset(
+    {
+        "Neo.ClientError.Transaction.TransactionTimedOut",
+        "Neo.ClientError.Transaction.TransactionTimedOutClientConfiguration",
+    }
+)
+
+
+def _find_retryable_neo4j_error(exc: BaseException) -> Neo4jError | None:
+    """Return the first retryable Neo4j error in ``exc``, or ``None``.
+
+    Unwraps ``BaseExceptionGroup`` (the driver's internals can surface a
+    transaction failure wrapped in one) and ``__cause__`` chains, so a retryable
+    error is recognised no matter how it was re-raised.
+    """
+    if isinstance(exc, BaseExceptionGroup):
+        for inner in exc.exceptions:
+            found = _find_retryable_neo4j_error(inner)
+            if found is not None:
+                return found
+        return None
+    if isinstance(exc, TransientError):
+        return exc
+    if isinstance(exc, ClientError) and exc.code in TRANSACTION_TIMEOUT_CODES:
+        return exc
+    cause = exc.__cause__
+    if cause is not None and cause is not exc:
+        return _find_retryable_neo4j_error(cause)
+    return None
+
+
 @router.get("/rarity-scores")
 @limiter.limit("5/minute")
 async def rarity_scores(request: Request) -> JSONResponse:  # noqa: ARG001
@@ -189,13 +227,21 @@ async def rarity_scores(request: Request) -> JSONResponse:  # noqa: ARG001
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     try:
         results = await fetch_all_rarity_signals(_neo4j, _pool)
-    except TransientError:
-        # e.g. MemoryPoolOutOfMemoryError under DB pressure — transient, not a
-        # server bug. Return 503 so the caller logs a meaningful, retryable
-        # failure instead of a bare 500.
-        logger.warning("⚠️ Rarity computation hit a transient Neo4j error", exc_info=True)
+    except (TransientError, ClientError, BaseExceptionGroup) as exc:
+        # TransientError: e.g. MemoryPoolOutOfMemoryError under DB pressure.
+        # ClientError: a transaction timeout (see TRANSACTION_TIMEOUT_CODES).
+        # Neither is a server bug — return 503 so the caller logs a meaningful,
+        # retryable failure instead of a bare 500.
+        retryable = _find_retryable_neo4j_error(exc)
+        if retryable is None:
+            raise
+        logger.warning(
+            "⚠️ Rarity computation hit a retryable Neo4j error",
+            code=retryable.code,
+            exc_info=True,
+        )
         return JSONResponse(
-            content={"error": "Neo4j temporarily unavailable (transient error)"},
+            content={"error": "Neo4j temporarily unavailable (retryable error)", "code": retryable.code},
             status_code=503,
         )
     return JSONResponse(content={"items": results})
