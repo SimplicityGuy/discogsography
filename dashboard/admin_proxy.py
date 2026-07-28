@@ -16,6 +16,8 @@ import httpx
 from starlette.responses import JSONResponse
 import structlog
 
+from common import describe_exception
+
 
 logger = structlog.get_logger(__name__)
 
@@ -105,7 +107,7 @@ async def proxy_login(request: Request) -> Response:
             else:
                 resp = await client.post(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -119,7 +121,7 @@ async def proxy_logout(request: Request) -> Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -133,7 +135,7 @@ async def proxy_list_extractions(request: Request) -> Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -149,7 +151,7 @@ async def proxy_get_extraction(extraction_id: str, request: Request) -> Response
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -171,7 +173,7 @@ async def proxy_trigger(request: Request) -> Response:
             else:
                 resp = await client.post(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -199,7 +201,7 @@ async def proxy_trigger_musicbrainz(request: Request) -> Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(url, headers=headers, content=payload)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -218,7 +220,7 @@ async def proxy_user_stats(request: Request) -> Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -232,7 +234,7 @@ async def proxy_sync_activity(request: Request) -> Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -246,7 +248,7 @@ async def proxy_storage(request: Request) -> Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -262,7 +264,7 @@ async def proxy_dlq_purge(queue: str, request: Request) -> Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -290,7 +292,7 @@ async def proxy_queue_history(
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers, params=params)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -313,7 +315,7 @@ async def proxy_health_history(
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers, params=params)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -347,7 +349,7 @@ async def proxy_audit_log(
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers, params=params)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -366,7 +368,7 @@ async def proxy_ea_versions(request: Request) -> Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -382,7 +384,7 @@ async def proxy_ea_summary(version: str, request: Request) -> Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -400,7 +402,7 @@ async def proxy_ea_violation_detail(version: str, record_id: str, request: Reque
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -429,7 +431,7 @@ async def proxy_ea_skipped(
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers, params=params)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -464,7 +466,7 @@ async def proxy_ea_violations(
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers, params=params)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -480,7 +482,7 @@ async def proxy_ea_parsing_errors(version: str, request: Request) -> Response:
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.get(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -498,7 +500,7 @@ async def proxy_ea_compare(version: str, other_version: str, request: Request) -
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -522,7 +524,7 @@ async def proxy_ea_prompt_context(version: str, request: Request) -> Response:
             else:
                 resp = await client.post(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)
 
@@ -546,6 +548,6 @@ async def proxy_ea_generate_ai_prompt(version: str, request: Request) -> Respons
             else:
                 resp = await client.post(url, headers=headers)
     except (httpx.ConnectError, httpx.RequestError) as exc:
-        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        logger.error("❌ API service unreachable", url=url, error=describe_exception(exc))
         return _unavailable_response()
     return _ok_response(resp)

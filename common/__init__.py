@@ -39,6 +39,7 @@ from common.db_resilience import (
     async_resilient_connection,
     resilient_connection,
 )
+from common.errors import describe_exception
 from common.health_server import HealthServer
 from common.neo4j_resilient import (
     AsyncResilientNeo4jDriver,
@@ -121,6 +122,7 @@ __all__ = [
     "_hmac_sha1_signature",
     "_oauth_escape",
     "async_resilient_connection",
+    "describe_exception",
     "execute_sql",
     "get_config",
     "is_db_profiling",

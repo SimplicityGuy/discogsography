@@ -27,6 +27,7 @@ from api.queries.insights_neo4j_queries import (
 from api.queries.insights_pg_queries import query_data_completeness
 from api.queries.rarity_queries import fetch_all_rarity_signals
 from api.syncer import DISCOGS_API_BASE, MAX_RATE_LIMIT_RETRIES, _auth_header
+from common import describe_exception
 
 
 logger = structlog.get_logger(__name__)
@@ -281,7 +282,7 @@ async def _enrich_community_counts(
                 try:
                     response = await client.get(url, headers=headers)
                 except httpx.HTTPError as exc:
-                    logger.warning("⚠️ Discogs API request failed for release", release_id=release_id, error=str(exc))
+                    logger.warning("⚠️ Discogs API request failed for release", release_id=release_id, error=describe_exception(exc))
                     fetch_failed = True
                     break
 

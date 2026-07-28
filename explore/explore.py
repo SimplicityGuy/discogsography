@@ -18,6 +18,7 @@ import uvicorn
 
 from common import (
     HealthServer,
+    describe_exception,
     setup_logging,
 )
 
@@ -146,7 +147,7 @@ async def proxy_api(path: str, request: Request) -> Response:
         logger.warning("⚠️ Proxy request timed out", path=path)
         return JSONResponse(content={"error": "Request timed out"}, status_code=504)
     except httpx.HTTPError as exc:
-        logger.error("❌ Proxy request failed", path=path, error=str(exc))
+        logger.error("❌ Proxy request failed", path=path, error=describe_exception(exc))
         return JSONResponse(content={"error": "Upstream service error"}, status_code=502)
 
     skip_response_headers = {"content-encoding", "transfer-encoding", "content-length"}
@@ -160,7 +161,7 @@ async def proxy_api(path: str, request: Request) -> Response:
                 async for chunk in proxied.aiter_raw():
                     yield chunk
             except httpx.HTTPError as exc:
-                logger.warning("⚠️ Proxy stream interrupted", path=path, error=str(exc))
+                logger.warning("⚠️ Proxy stream interrupted", path=path, error=describe_exception(exc))
             finally:
                 await proxied.aclose()
 
@@ -174,7 +175,7 @@ async def proxy_api(path: str, request: Request) -> Response:
         return JSONResponse(content={"error": "Request timed out"}, status_code=504)
     except httpx.HTTPError as exc:
         await proxied.aclose()
-        logger.error("❌ Proxy request failed", path=path, error=str(exc))
+        logger.error("❌ Proxy request failed", path=path, error=describe_exception(exc))
         return JSONResponse(content={"error": "Upstream service error"}, status_code=502)
     await proxied.aclose()
 
