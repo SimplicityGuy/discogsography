@@ -114,7 +114,7 @@ def compute_temporal_scarcity_score(
     if release_year is None:
         return 50.0
     age = current_year - release_year
-    base = min(100.0, age * 1.5)
+    base = max(0.0, min(100.0, age * 1.5))
     if latest_sibling_year is not None and latest_sibling_year >= current_year - 10:
         base = max(0.0, base - 40.0)
     return base

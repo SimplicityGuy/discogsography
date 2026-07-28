@@ -113,6 +113,23 @@ class TestTemporalScarcityScore:
         score = compute_temporal_scarcity_score(None, None, current_year)
         assert score == 50.0
 
+    def test_future_dated_release_floors_at_zero(self) -> None:
+        """discogsography-cu2.94: a typo'd/erroneous future year (e.g. 2050) must not
+        drive the score negative — the age-based base is floored at 0.0, matching the
+        existing upper-bound cap at 100.0.
+        """
+        current_year = datetime.now(UTC).year
+        score = compute_temporal_scarcity_score(current_year + 24, None, current_year)
+        assert score == 0.0
+        assert score >= 0.0
+
+    def test_next_year_release_floors_at_zero(self) -> None:
+        """A legitimate upcoming/pre-order release dated next year also must not
+        yield a negative signal, even though the magnitude is small (age=-1)."""
+        current_year = datetime.now(UTC).year
+        score = compute_temporal_scarcity_score(current_year + 1, None, current_year)
+        assert score == 0.0
+
 
 class TestGraphIsolationScore:
     def test_very_isolated(self) -> None:
