@@ -462,6 +462,17 @@ def setup_logging(
     if level is None:
         level = getenv("LOG_LEVEL", "INFO").upper()
 
+    # Normalize and validate the level name (strip stray whitespace, e.g. from a
+    # compose file) and fall back to INFO instead of crashing on an unrecognized
+    # value ('TRACE', a typo, trailing punctuation, ...). getattr() is called
+    # with an explicit default so an invalid name can never raise AttributeError.
+    normalized_level = level.strip().upper()
+    resolved_level = getattr(logging, normalized_level, None)
+    invalid_level_value: str | None = None
+    if not isinstance(resolved_level, int):
+        invalid_level_value = level
+        resolved_level = logging.INFO
+
     # Configure structlog processors
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
 
@@ -532,10 +543,16 @@ def setup_logging(
 
     # Configure root logger
     logging.basicConfig(
-        level=getattr(logging, level.upper()),
+        level=resolved_level,
         handlers=handlers,
         force=True,
     )
+
+    if invalid_level_value is not None:
+        logging.getLogger(__name__).warning(
+            "⚠️ Unrecognized LOG_LEVEL %r; falling back to INFO",
+            invalid_level_value,
+        )
 
     # Suppress verbose pika logs
     logging.getLogger("pika").setLevel(logging.WARNING)
