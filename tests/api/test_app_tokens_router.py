@@ -251,6 +251,21 @@ class TestRevokeAppToken:
         )
         assert resp.status_code == 404
 
+    def test_returns_404_not_500_for_malformed_token_id(self, test_client: TestClient, mock_pool: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Regression for discogsography-cu2.70: a non-UUID path segment must not reach
+        the `::uuid` SQL cast (which raises an unhandled psycopg DataError -> 500).
+        It must be rejected up front and surfaced as the same 404 as an unknown id."""
+        _patch_module_pool(mock_pool)
+
+        async def _revoke(token_id: str, user_id: str) -> bool:  # noqa: ARG001
+            raise AssertionError("revoke_token must not be called with a malformed token_id")
+
+        monkeypatch.setattr("api.routers.app_tokens._revoke_token", _revoke)
+
+        resp = test_client.delete("/api/user/app-tokens/abc", headers=_AUTH_HEADER)
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Token not found"
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Defensive 401 — JWT with empty sub claim slips past require_user
