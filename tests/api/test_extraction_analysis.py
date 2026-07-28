@@ -6,6 +6,8 @@ import json
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -971,6 +973,71 @@ class TestValidateRecordId:
             raised = True
             assert exc.status_code == 400
         assert raised, "Expected HTTPException to be raised"
+
+
+class TestDotSegmentTraversalRejected:
+    """Regression for discogsography-cu2.97: a bare '..' (or '.') segment matches
+    the alphanumeric-plus-dot allowlist regex (dots are kept to support version
+    strings like "20240101.0"), but resolves to the parent/same directory when
+    joined onto a Path — defeating the allowlist's stated traversal protection."""
+
+    def test_validate_version_rejects_pure_dotdot(self) -> None:
+        from fastapi import HTTPException
+
+        import api.routers.extraction_analysis as ea
+
+        with pytest.raises(HTTPException) as exc_info:
+            ea._validate_version("..")
+        assert exc_info.value.status_code == 400
+
+    def test_validate_version_rejects_pure_dot(self) -> None:
+        from fastapi import HTTPException
+
+        import api.routers.extraction_analysis as ea
+
+        with pytest.raises(HTTPException) as exc_info:
+            ea._validate_version(".")
+        assert exc_info.value.status_code == 400
+
+    def test_validate_record_id_rejects_pure_dotdot(self) -> None:
+        from fastapi import HTTPException
+
+        import api.routers.extraction_analysis as ea
+
+        with pytest.raises(HTTPException) as exc_info:
+            ea._validate_record_id("..")
+        assert exc_info.value.status_code == 400
+
+    def test_validate_record_id_rejects_pure_dot(self) -> None:
+        from fastapi import HTTPException
+
+        import api.routers.extraction_analysis as ea
+
+        with pytest.raises(HTTPException) as exc_info:
+            ea._validate_record_id(".")
+        assert exc_info.value.status_code == 400
+
+    def test_validate_version_still_allows_dotted_version_strings(self) -> None:
+        """The fix must not regress the documented use case dots exist for."""
+        import api.routers.extraction_analysis as ea
+
+        assert ea._validate_version("20240101.0") == "20240101.0"
+
+    def test_summary_endpoint_rejects_dotdot_version(self, test_client: TestClient, tmp_path: Path) -> None:
+        """End-to-end: GET .../%2e%2e/summary must 400, not silently scan data_root
+        itself (percent-encoding is used so the test client doesn't normalize the
+        dot-segment away before the request is sent, the same technique an
+        adversary would use against the deployed server)."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/%2e%2e/summary",
+                headers=_admin_auth_headers(),
+            )
+        assert resp.status_code == 400
 
 
 class TestScanVersionsNonDir:

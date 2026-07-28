@@ -74,16 +74,25 @@ def configure(
 # ---------------------------------------------------------------------------
 
 
+# Reserved dot-segments. Both _SAFE_VERSION and _SAFE_RECORD_ID allow dots
+# (to support version strings like "20240101.0"), but a segment consisting
+# solely of dots is a reserved path-traversal token: "." is a no-op segment
+# and ".." climbs to the parent directory when joined onto a Path. Neither
+# regex excludes them on its own, so reject them explicitly after the
+# character-class match — the allowlist alone doesn't stop traversal.
+_RESERVED_DOT_SEGMENTS = frozenset({".", ".."})
+
+
 def _validate_version(version: str) -> str:
     """Validate that *version* contains only safe characters. Raises HTTP 400 on failure."""
-    if not _SAFE_VERSION.match(version):
+    if not _SAFE_VERSION.match(version) or version in _RESERVED_DOT_SEGMENTS:
         raise HTTPException(status_code=400, detail=f"Invalid version identifier: {version!r}")
     return version
 
 
 def _validate_record_id(record_id: str) -> str:
     """Validate that *record_id* contains only safe characters. Raises HTTP 400 on failure."""
-    if not _SAFE_RECORD_ID.match(record_id):
+    if not _SAFE_RECORD_ID.match(record_id) or record_id in _RESERVED_DOT_SEGMENTS:
         raise HTTPException(status_code=400, detail=f"Invalid record_id: {record_id!r}")
     return record_id
 
