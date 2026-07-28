@@ -102,13 +102,22 @@ ROLE_CATEGORIES: dict[str, set[str]] = {
     },
 }
 
-# Build reverse lookup: lowercase role fragment → category
-# Use ROLE_CATEGORIES (ordered dict) as iteration source to ensure deterministic
-# ordering — longer fragments first within each category for specificity.
+# Build reverse lookup: lowercase role fragment → category, for the O(1) direct
+# (exact-key) match. Iteration order doesn't matter for a dict lookup.
 _ROLE_TO_CATEGORY: dict[str, str] = {}
 for _cat, _roles in ROLE_CATEGORIES.items():
-    for _role in sorted(_roles, key=len, reverse=True):
+    for _role in _roles:
         _ROLE_TO_CATEGORY[_role] = _cat
+
+# Substring-scan order: every (fragment, category) pair, sorted by fragment length
+# descending GLOBALLY across all categories (not just within one). categorize_role's
+# fallback substring scan returns the first match, so specificity must be
+# global — a short generic fragment declared in an earlier category (e.g.
+# engineering's "engineer") must never pre-empt a longer, more specific fragment
+# in a later-declared category (e.g. mastering's "mastering engineer"). A
+# per-category-only length sort (the previous approach) let category declaration
+# order silently defeat specificity for compound cross-category credits.
+_ROLE_FRAGMENTS_BY_SPECIFICITY: list[tuple[str, str]] = sorted(_ROLE_TO_CATEGORY.items(), key=lambda pair: (-len(pair[0]), pair[0]))
 
 
 def categorize_role(raw_role: str) -> str:
@@ -116,7 +125,7 @@ def categorize_role(raw_role: str) -> str:
 
     The raw role may contain multiple comma-separated roles
     (e.g. "Recorded By, Mixed By").  We check each fragment against
-    the taxonomy and return the first match.
+    the taxonomy and return the first (most specific) match.
 
     Returns:
         One of: "production", "engineering", "mastering", "session",
@@ -128,8 +137,9 @@ def categorize_role(raw_role: str) -> str:
     if lower in _ROLE_TO_CATEGORY:
         return _ROLE_TO_CATEGORY[lower]
 
-    # Check if any known role fragment is contained in the raw string
-    for role_fragment, category in _ROLE_TO_CATEGORY.items():
+    # Check if any known role fragment is contained in the raw string, longest
+    # (most specific) fragment first, regardless of which category declared it.
+    for role_fragment, category in _ROLE_FRAGMENTS_BY_SPECIFICITY:
         if role_fragment in lower:
             return category
 

@@ -64,6 +64,28 @@ class TestCategorizeRole:
     def test_remix(self) -> None:
         assert categorize_role("Remix") == "engineering"
 
+    # ── discogsography-cu2.80: cross-category specificity ──────────────────
+    # Compound comma-joined credits that contain the generic "engineer"
+    # fragment (declared in the "engineering" category) but are actually a
+    # more specific mastering credit must resolve to "mastering", not
+    # "engineering". The substring scan must be globally length-ordered
+    # across every category, not just within a category.
+
+    def test_compound_lacquer_cut_mastering_engineer(self) -> None:
+        assert categorize_role("Lacquer Cut By, Mastering Engineer") == "mastering"
+
+    def test_compound_remastered_mastering_engineer(self) -> None:
+        assert categorize_role("Remastered By, Mastering Engineer") == "mastering"
+
+    def test_compound_mastered_by_mastering_engineer(self) -> None:
+        assert categorize_role("Mastered By, Mastering Engineer") == "mastering"
+
+    def test_plain_engineer_still_engineering(self) -> None:
+        """A bare, non-compound 'engineer' fragment must still resolve to
+        engineering — only the longer, more specific fragments should win."""
+        assert categorize_role("Assistant Engineer") == "engineering"
+        assert categorize_role("Recording Engineer") == "engineering"
+
 
 class TestAllCategories:
     """Test the ALL_CATEGORIES constant."""
