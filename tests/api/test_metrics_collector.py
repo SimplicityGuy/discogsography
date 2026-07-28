@@ -71,14 +71,40 @@ class TestMetricsBuffer:
         assert stats["count"] == 2
         assert stats["error_count"] == 0
 
-    def test_flush_clears_buffer(self) -> None:
+    def test_flush_is_non_destructive(self) -> None:
+        """flush() must NOT clear the buffer — only clear() does, and only after a successful persist."""
+        from api.metrics_collector import MetricsBuffer
+
+        buf = MetricsBuffer(max_size=100)
+        buf.record("/api/search", 200, 10.0)
+        first = buf.flush()
+        second = buf.flush()
+        assert first == second
+        assert second["/api/search"]["count"] == 1
+
+    def test_clear_empties_buffer(self) -> None:
         from api.metrics_collector import MetricsBuffer
 
         buf = MetricsBuffer(max_size=100)
         buf.record("/api/search", 200, 10.0)
         buf.flush()
+        buf.clear()
         result = buf.flush()
         assert result == {}
+
+    def test_flush_after_failed_persist_accumulates(self) -> None:
+        """Entries recorded between a failed flush and the retry are included next cycle."""
+        from api.metrics_collector import MetricsBuffer
+
+        buf = MetricsBuffer(max_size=100)
+        buf.record("/api/search", 200, 10.0)
+        first = buf.flush()
+        assert first["/api/search"]["count"] == 1
+
+        # Simulate more requests arriving before the buffer is ever cleared
+        buf.record("/api/search", 200, 20.0)
+        second = buf.flush()
+        assert second["/api/search"]["count"] == 2
 
     def test_max_size_drops_oldest(self) -> None:
         from api.metrics_collector import MetricsBuffer
@@ -626,6 +652,69 @@ class TestRunCollector:
             pytest.raises(asyncio.CancelledError),
         ):
             await run_collector(mock_pool, config, buf)
+
+    @pytest.mark.anyio
+    async def test_collector_persist_failure_does_not_drop_endpoint_stats(self) -> None:
+        """A failed persist must NOT discard buffered endpoint stats — they survive for the next cycle."""
+        from api.metrics_collector import MetricsBuffer, run_collector
+
+        mock_pool = MagicMock()
+        config = MagicMock()
+        config.rabbitmq_management_host = "localhost"
+        config.rabbitmq_management_port = 15672
+        config.rabbitmq_username = "guest"
+        config.rabbitmq_password = "guest"
+        config.metrics_retention_days = 30
+        config.metrics_collection_interval = 1
+
+        buf = MetricsBuffer(max_size=100)
+        buf.record("/api/search", 200, 10.0)
+
+        with (
+            patch("api.metrics_collector.collect_queue_metrics", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.collect_service_health", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.persist_metrics", new_callable=AsyncMock, side_effect=RuntimeError("db error")),
+            patch("api.metrics_collector.prune_old_metrics", new_callable=AsyncMock),
+            patch("asyncio.sleep", side_effect=asyncio.CancelledError),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_collector(mock_pool, config, buf)
+
+        # The sample recorded before the failed cycle must still be in the buffer.
+        result = buf.flush()
+        assert result["/api/search"]["count"] == 1
+
+    @pytest.mark.anyio
+    async def test_collector_persist_success_clears_endpoint_stats(self) -> None:
+        """A successful persist clears the buffer so the same samples aren't reported twice."""
+        from api.metrics_collector import MetricsBuffer, run_collector
+
+        mock_pool = MagicMock()
+        config = MagicMock()
+        config.rabbitmq_management_host = "localhost"
+        config.rabbitmq_management_port = 15672
+        config.rabbitmq_username = "guest"
+        config.rabbitmq_password = "guest"
+        config.metrics_retention_days = 30
+        config.metrics_collection_interval = 1
+
+        buf = MetricsBuffer(max_size=100)
+        buf.record("/api/search", 200, 10.0)
+
+        async def succeed_then_cancel(_pool: Any, _q: Any, _h: list[dict[str, Any]]) -> None:
+            return None
+
+        with (
+            patch("api.metrics_collector.collect_queue_metrics", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.collect_service_health", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.persist_metrics", side_effect=succeed_then_cancel),
+            patch("api.metrics_collector.prune_old_metrics", new_callable=AsyncMock),
+            patch("asyncio.sleep", side_effect=asyncio.CancelledError),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_collector(mock_pool, config, buf)
+
+        assert buf.flush() == {}
 
     @pytest.mark.anyio
     async def test_collector_handles_prune_error(self) -> None:
