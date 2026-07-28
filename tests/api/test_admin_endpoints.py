@@ -326,6 +326,39 @@ class TestDlqPurge:
         )
         assert resp.status_code == 502
 
+    @patch("api.routers.admin.httpx.AsyncClient")
+    def test_purge_read_timeout_returns_502(self, mock_client_cls: Any, test_client: TestClient) -> None:
+        """discogsography-cu2.77: a slow/flapping RabbitMQ management API raises
+        ReadTimeout (a TimeoutException/RequestError subclass), not ConnectError.
+        Must surface as 502, not an unhandled 500.
+        """
+        mock_client_instance = AsyncMock()
+        mock_client_instance.delete = AsyncMock(side_effect=httpx.ReadTimeout("Read timed out"))
+        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+        mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client_instance
+
+        resp = test_client.post(
+            "/api/admin/dlq/purge/discogsography-discogs-graphinator-artists.dlq",
+            headers=_admin_auth_headers(),
+        )
+        assert resp.status_code == 502
+
+    @patch("api.routers.admin.httpx.AsyncClient")
+    def test_purge_remote_protocol_error_returns_502(self, mock_client_cls: Any, test_client: TestClient) -> None:
+        """A flapping connection raising RemoteProtocolError must also surface as 502."""
+        mock_client_instance = AsyncMock()
+        mock_client_instance.delete = AsyncMock(side_effect=httpx.RemoteProtocolError("Server disconnected"))
+        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+        mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client_instance
+
+        resp = test_client.post(
+            "/api/admin/dlq/purge/discogsography-discogs-graphinator-artists.dlq",
+            headers=_admin_auth_headers(),
+        )
+        assert resp.status_code == 502
+
 
 class TestGetExtraction:
     def test_success(self, test_client: TestClient, mock_cur: AsyncMock) -> None:
