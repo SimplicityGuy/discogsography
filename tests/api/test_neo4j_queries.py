@@ -1237,3 +1237,71 @@ class TestGraphStatsQuery:
         driver = _make_driver(records=[])
         result = await get_graph_stats(driver)
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# discogsography-cu2.74: unknown-year (null) releases must sort last, not first,
+# under the default newest-first ORDER BY year DESC.
+# ---------------------------------------------------------------------------
+
+
+class TestExpandReleasesNullYearOrdering:
+    """CASE WHEN r.year > 0 THEN r.year ELSE null END maps year-0/absent to null.
+
+    In Cypher, ORDER BY ... DESC puts null FIRST unless a nulls-last tiebreaker is
+    added. Every caller of _expand_releases must carry that tiebreaker.
+    """
+
+    def _capture_driver(self) -> tuple[MagicMock, list[tuple[str, Any]]]:
+        calls: list[tuple[str, Any]] = []
+        mock_result = _MockResult(records=[])
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        async def _run_side_effect(cypher: str, params: Any, **_kwargs: Any) -> _MockResult:
+            calls.append((cypher, params))
+            return mock_result
+
+        mock_session.run = AsyncMock(side_effect=_run_side_effect)
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=mock_session)
+        return driver, calls
+
+    @pytest.mark.asyncio
+    async def test_expand_artist_releases_orders_nulls_last(self) -> None:
+        from api.queries.neo4j_queries import expand_artist_releases
+
+        driver, calls = self._capture_driver()
+        await expand_artist_releases(driver, "Radiohead", limit=50, offset=0)
+        cypher, _params = calls[0]
+        assert "ORDER BY year IS NULL ASC, year DESC" in cypher
+        # Guard against regressing to the bare (null-first) form.
+        assert "ORDER BY year DESC" not in cypher.replace("ORDER BY year IS NULL ASC, year DESC", "")
+
+    @pytest.mark.asyncio
+    async def test_expand_genre_releases_orders_nulls_last(self) -> None:
+        from api.queries.neo4j_queries import expand_genre_releases
+
+        driver, calls = self._capture_driver()
+        await expand_genre_releases(driver, "Rock", limit=50, offset=0)
+        cypher, _params = calls[0]
+        assert "ORDER BY year IS NULL ASC, year DESC" in cypher
+
+    @pytest.mark.asyncio
+    async def test_expand_label_releases_orders_nulls_last(self) -> None:
+        from api.queries.neo4j_queries import expand_label_releases
+
+        driver, calls = self._capture_driver()
+        await expand_label_releases(driver, "Warp Records", limit=50, offset=0)
+        cypher, _params = calls[0]
+        assert "ORDER BY year IS NULL ASC, year DESC" in cypher
+
+    @pytest.mark.asyncio
+    async def test_expand_style_releases_orders_nulls_last(self) -> None:
+        from api.queries.neo4j_queries import expand_style_releases
+
+        driver, calls = self._capture_driver()
+        await expand_style_releases(driver, "Art Rock", limit=50, offset=0)
+        cypher, _params = calls[0]
+        assert "ORDER BY year IS NULL ASC, year DESC" in cypher
