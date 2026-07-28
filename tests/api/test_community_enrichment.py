@@ -431,3 +431,96 @@ class TestCommunityEnrichmentEndpoint:
             assert "error" in body
         finally:
             insights_compute_module._pool = original_pool
+
+
+class TestEnrichmentBatchCap:
+    """Regression for the unbounded enrichment loop (discogsography-1cxi).
+
+    The loop is rate-limited to one Discogs request per second, so an unbounded
+    backlog makes the endpoint's wall-clock cost unbounded too — which is how
+    community_enrichment collected four ReadTimeout failures in production.
+    """
+
+    @pytest.mark.asyncio
+    async def test_backlog_is_capped_and_remaining_is_reported(self) -> None:
+        from api.routers.insights_compute import MAX_ENRICHMENT_RELEASES, _enrich_community_counts
+
+        backlog = MAX_ENRICHMENT_RELEASES + 250
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        call_count = 0
+
+        async def mock_fetchall():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [{"release_id": i} for i in range(backlog)]
+            return []
+
+        mock_cur.fetchall = mock_fetchall
+        # No OAuth token -> returns immediately, before the rate-limited loop,
+        # so the assertion isolates the batching decision.
+        mock_cur.fetchone = AsyncMock(return_value=None)
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        result = await _enrich_community_counts(mock_pool, None, None)
+
+        # Only MAX_ENRICHMENT_RELEASES were taken into this cycle...
+        assert result["skipped"] == MAX_ENRICHMENT_RELEASES
+        # ...and the leftover backlog is reported for the next cycle.
+        assert result["remaining"] == 250
+
+    @pytest.mark.asyncio
+    async def test_backlog_under_the_cap_leaves_nothing_remaining(self) -> None:
+        from api.routers.insights_compute import _enrich_community_counts
+
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        call_count = 0
+
+        async def mock_fetchall():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [{"release_id": 1}, {"release_id": 2}]
+            return []
+
+        mock_cur.fetchall = mock_fetchall
+        mock_cur.fetchone = AsyncMock(return_value=None)
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        result = await _enrich_community_counts(mock_pool, None, None)
+
+        assert result["remaining"] == 0
+        assert result["skipped"] == 2
+
+    @pytest.mark.asyncio
+    async def test_empty_backlog_reports_zero_remaining(self) -> None:
+        from api.routers.insights_compute import _enrich_community_counts
+
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        mock_cur.fetchall = AsyncMock(return_value=[])
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        result = await _enrich_community_counts(mock_pool, None, None)
+
+        assert result["remaining"] == 0

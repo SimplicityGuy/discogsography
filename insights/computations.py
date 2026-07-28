@@ -23,6 +23,59 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
+# ── Per-endpoint HTTP timeouts ──────────────────────────────────────────────
+#
+# Every /api/internal/insights/* endpoint runs an uncached full-scan computation
+# on a cold cache, so a single scalar timeout for the whole client is wrong in
+# both directions: passing ``timeout=300.0`` also gives *connect* 300 seconds
+# (a dead API should fail in seconds), while 300s of *read* is far under the
+# documented worst-case latency of the heavy endpoints. Production saw
+# data_completeness fail once with ReadTimeout and community_enrichment fail
+# four times for the same reason.
+#
+# Split the budget: a short connect/write/pool timeout, and a per-endpoint read
+# timeout with generous headroom over the worst observed cold-cache latency.
+#
+#   endpoint              worst observed cold-cache cost          read budget
+#   --------------------  --------------------------------------  -----------
+#   data-completeness     ~400s releases seq scan (>600s on bad         1800s
+#                         days); API caches the result for 6h
+#   rarity-scores         chunked full-graph Neo4j scans                1800s
+#   community-enrichment  1 Discogs request/second, capped at           3600s
+#                         MAX_ENRICHMENT_RELEASES per invocation
+#   everything else       full-graph Neo4j aggregations                  900s
+_CONNECT_TIMEOUT_SECONDS = 10.0
+_WRITE_TIMEOUT_SECONDS = 30.0
+_POOL_TIMEOUT_SECONDS = 60.0
+DEFAULT_READ_TIMEOUT_SECONDS = 900.0
+
+ENDPOINT_READ_TIMEOUTS: dict[str, float] = {
+    "/api/internal/insights/data-completeness": 1800.0,
+    "/api/internal/insights/rarity-scores": 1800.0,
+    "/api/internal/insights/community-enrichment": 3600.0,
+}
+
+
+def endpoint_timeout(path: str | None = None) -> httpx.Timeout:
+    """Return the ``httpx.Timeout`` to use for an internal computation endpoint.
+
+    Args:
+        path: The API path being requested. ``None`` yields the default budget,
+            which is what the shared client is constructed with.
+
+    Returns:
+        A timeout with a short connect/write/pool budget and a read budget sized
+        for that endpoint's worst-case cold-cache latency.
+    """
+    read = ENDPOINT_READ_TIMEOUTS.get(path or "", DEFAULT_READ_TIMEOUT_SECONDS)
+    return httpx.Timeout(
+        connect=_CONNECT_TIMEOUT_SECONDS,
+        read=read,
+        write=_WRITE_TIMEOUT_SECONDS,
+        pool=_POOL_TIMEOUT_SECONDS,
+    )
+
+
 async def _log_computation(
     pool: Any,
     insight_type: str,
@@ -50,14 +103,17 @@ async def _fetch_from_api(
     client: httpx.AsyncClient,
     path: str,
     params: dict[str, Any] | None = None,
-    timeout: float | None = None,
+    timeout: httpx.Timeout | float | None = None,
 ) -> list[dict[str, Any]]:
-    """Fetch computation data from the API service."""
+    """Fetch computation data from the API service.
+
+    Unless ``timeout`` is given explicitly, the per-endpoint budget from
+    :func:`endpoint_timeout` is applied — never the client's scalar default.
+    """
     kwargs: dict[str, Any] = {}
     if params:
         kwargs["params"] = params
-    if timeout is not None:
-        kwargs["timeout"] = timeout
+    kwargs["timeout"] = endpoint_timeout(path) if timeout is None else timeout
     response = await client.get(path, **kwargs)
     response.raise_for_status()
     data: dict[str, Any] = response.json()
@@ -262,11 +318,10 @@ async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: A
     """Compute data completeness and store results."""
     started_at = datetime.now(UTC)
     try:
-        # Data completeness does full sequential scans whose duration varies widely
-        # (observed ~230s on a warm day, but exceeding 600s on others). The endpoint
-        # caches results in Redis for 6h, so only the cold path is slow; give the
-        # cold path generous headroom to avoid spurious ReadTimeouts.
-        results = await _fetch_from_api(client, "/api/internal/insights/data-completeness", timeout=1200.0)
+        # Full sequential scans whose duration varies widely (~230s warm, over
+        # 600s on bad days). The endpoint caches in Redis for 6h, so only the
+        # cold path is slow — see ENDPOINT_READ_TIMEOUTS for the budget.
+        results = await _fetch_from_api(client, "/api/internal/insights/data-completeness")
         if not results:
             await _log_computation(pool, "data_completeness", "completed", started_at, 0)
             return 0
@@ -310,7 +365,8 @@ async def compute_and_store_community_enrichment(client: httpx.AsyncClient, pool
     """Trigger community enrichment via the API internal endpoint."""
     started_at = datetime.now(UTC)
     try:
-        response = await client.get("/api/internal/insights/community-enrichment", timeout=3600.0)
+        path = "/api/internal/insights/community-enrichment"
+        response = await client.get(path, timeout=endpoint_timeout(path))
         response.raise_for_status()
         data: dict[str, Any] = response.json()
         enriched = int(data.get("enriched", 0))
@@ -330,9 +386,9 @@ async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
     """Compute release rarity scores and store results."""
     started_at = datetime.now(UTC)
     try:
-        # The API runs eight full-graph Neo4j scans sequentially (to cap transaction
-        # memory), so allow generous headroom over the client default.
-        results = await _fetch_from_api(client, "/api/internal/insights/rarity-scores", timeout=1200.0)
+        # The API runs the rarity signal scans chunked and sequentially (to cap
+        # transaction memory) — see ENDPOINT_READ_TIMEOUTS for the budget.
+        results = await _fetch_from_api(client, "/api/internal/insights/rarity-scores")
         if not results:
             logger.info("📊 No rarity score results to store")
             await _log_computation(pool, "release_rarity", "completed", started_at, 0)

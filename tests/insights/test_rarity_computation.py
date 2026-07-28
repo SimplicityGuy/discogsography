@@ -58,11 +58,9 @@ class TestComputeAndStoreRarity:
             rows = await compute_and_store_rarity(mock_client, mock_pool)
 
         assert rows == 1
-        mock_fetch.assert_called_once_with(
-            mock_client,
-            "/api/internal/insights/rarity-scores",
-            timeout=1200.0,
-        )
+        # The per-endpoint budget is applied inside _fetch_from_api, so the
+        # call site no longer passes a magic scalar.
+        mock_fetch.assert_called_once_with(mock_client, "/api/internal/insights/rarity-scores")
 
     @pytest.mark.asyncio
     async def test_empty_results(self) -> None:
@@ -124,7 +122,10 @@ class TestComputeAndStoreCommunityEnrichment:
             result = await compute_and_store_community_enrichment(mock_client, mock_pool)
 
         assert result == 5
-        mock_client.get.assert_called_once_with("/api/internal/insights/community-enrichment", timeout=3600.0)
+        from insights.computations import endpoint_timeout
+
+        path = "/api/internal/insights/community-enrichment"
+        mock_client.get.assert_called_once_with(path, timeout=endpoint_timeout(path))
         mock_log.assert_called_once()
         args = mock_log.call_args
         assert args[0][1] == "community_enrichment"

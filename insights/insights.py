@@ -25,7 +25,7 @@ import uvicorn
 from common import AsyncPostgreSQLPool, HealthServer, parse_postgres_host_port, setup_logging
 from common.config import InsightsConfig
 from insights.cache import InsightsCache
-from insights.computations import run_all_computations
+from insights.computations import endpoint_timeout, run_all_computations
 from insights.models import (
     AnniversaryItem,
     ArtistCentralityItem,
@@ -134,7 +134,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         _client_headers["X-Internal-Secret"] = _config.internal_secret
     else:
         logger.warning("⚠️ INSIGHTS_INTERNAL_SECRET is not set — internal API calls will be rejected by the API")
-    _http_client = httpx.AsyncClient(base_url=_config.api_base_url, timeout=300.0, headers=_client_headers)
+    # A scalar timeout would also apply to *connect* (a dead API must fail in
+    # seconds, not minutes) and is far too tight for the heavy computation
+    # endpoints. Every request overrides this with its per-endpoint budget from
+    # computations.endpoint_timeout(); this is only the fallback for anything
+    # that does not.
+    _http_client = httpx.AsyncClient(base_url=_config.api_base_url, timeout=endpoint_timeout(), headers=_client_headers)
     logger.info("🔧 API HTTP client initialized", base_url=_config.api_base_url)
 
     # Initialize Redis cache

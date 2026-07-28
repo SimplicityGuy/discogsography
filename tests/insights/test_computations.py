@@ -48,7 +48,7 @@ def _make_mock_pool() -> AsyncMock:
 class TestFetchFromApi:
     @pytest.mark.asyncio
     async def test_basic_call_without_params_or_timeout(self) -> None:
-        from insights.computations import _fetch_from_api
+        from insights.computations import _fetch_from_api, endpoint_timeout
 
         mock_response = MagicMock()
         mock_response.json.return_value = {"items": [{"id": 1}]}
@@ -58,12 +58,13 @@ class TestFetchFromApi:
 
         result = await _fetch_from_api(mock_client, "/api/test")
 
-        mock_client.get.assert_called_once_with("/api/test")
+        # An unmapped path still gets the split default budget, never a scalar.
+        mock_client.get.assert_called_once_with("/api/test", timeout=endpoint_timeout("/api/test"))
         assert result == [{"id": 1}]
 
     @pytest.mark.asyncio
     async def test_passes_params_when_provided(self) -> None:
-        from insights.computations import _fetch_from_api
+        from insights.computations import _fetch_from_api, endpoint_timeout
 
         mock_response = MagicMock()
         mock_response.json.return_value = {"items": []}
@@ -73,7 +74,7 @@ class TestFetchFromApi:
 
         await _fetch_from_api(mock_client, "/api/test", params={"limit": 10})
 
-        mock_client.get.assert_called_once_with("/api/test", params={"limit": 10})
+        mock_client.get.assert_called_once_with("/api/test", params={"limit": 10}, timeout=endpoint_timeout("/api/test"))
 
     @pytest.mark.asyncio
     async def test_passes_timeout_when_provided(self) -> None:
@@ -719,3 +720,52 @@ class TestRunAllComputations:
             await run_all_computations(mock_client, mock_pool, milestone_years=custom_milestones)
 
         mock_anniv.assert_called_once_with(mock_client, mock_pool, milestone_years=custom_milestones)
+
+
+class TestEndpointTimeouts:
+    """Regression for ReadTimeout failures on the heavy endpoints (discogsography-1cxi)."""
+
+    def test_connect_budget_is_short_so_a_dead_api_fails_fast(self) -> None:
+        from insights.computations import endpoint_timeout
+
+        timeout = endpoint_timeout("/api/internal/insights/data-completeness")
+        assert timeout.connect is not None
+        assert timeout.connect <= 30.0
+
+    def test_default_read_budget_applies_to_unmapped_paths(self) -> None:
+        from insights.computations import DEFAULT_READ_TIMEOUT_SECONDS, endpoint_timeout
+
+        assert endpoint_timeout("/api/internal/insights/genre-trends").read == DEFAULT_READ_TIMEOUT_SECONDS
+        assert endpoint_timeout().read == DEFAULT_READ_TIMEOUT_SECONDS
+
+    def test_data_completeness_read_budget_clears_the_documented_worst_case(self) -> None:
+        """The API documents a ~400s releases seq scan, exceeding 600s on bad days."""
+        from insights.computations import endpoint_timeout
+
+        read = endpoint_timeout("/api/internal/insights/data-completeness").read
+        assert read is not None
+        assert read >= 1200.0
+
+    def test_community_enrichment_budget_covers_the_capped_batch(self) -> None:
+        """1 Discogs req/s * MAX_ENRICHMENT_RELEASES must fit inside the read budget."""
+        from api.routers.insights_compute import _ENRICHMENT_DELAY_SECONDS, MAX_ENRICHMENT_RELEASES
+        from insights.computations import endpoint_timeout
+
+        read = endpoint_timeout("/api/internal/insights/community-enrichment").read
+        assert read is not None
+        worst_case = MAX_ENRICHMENT_RELEASES * _ENRICHMENT_DELAY_SECONDS
+        assert read > worst_case, f"read budget {read}s does not cover worst case {worst_case}s"
+
+    def test_rarity_read_budget_clears_the_neo4j_transaction_timeout(self) -> None:
+        """Must outlast the server-side db.transaction.timeout (600s) plus overhead."""
+        from insights.computations import endpoint_timeout
+
+        read = endpoint_timeout("/api/internal/insights/rarity-scores").read
+        assert read is not None
+        assert read >= 1200.0
+
+    def test_every_mapped_endpoint_exceeds_the_default(self) -> None:
+        from insights.computations import DEFAULT_READ_TIMEOUT_SECONDS, ENDPOINT_READ_TIMEOUTS
+
+        for path, read in ENDPOINT_READ_TIMEOUTS.items():
+            assert read > DEFAULT_READ_TIMEOUT_SECONDS, path

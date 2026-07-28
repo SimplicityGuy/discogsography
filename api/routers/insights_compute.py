@@ -73,6 +73,20 @@ router = APIRouter(
 _ENRICHMENT_DELAY_SECONDS = 1.0  # 1 req/sec to stay under 60 req/min
 _STALENESS_DAYS = 7
 
+# Hard cap on releases enriched per invocation.
+#
+# The enrichment loop is rate-limited to one Discogs request per second, so its
+# wall-clock cost is unbounded in the number of stale releases — a backlog of
+# 10k releases would take ~3 hours and blow ANY client read timeout. That is why
+# community_enrichment failed four times in production with an (empty-stringing)
+# ReadTimeout: the endpoint simply never returned.
+#
+# Bounding the batch makes the endpoint's worst case predictable
+# (~1500 * 1.5s ≈ 2250s, comfortably inside the insights client's 3600s read
+# budget) and costs nothing in completeness: the daily scheduler drains the
+# remaining backlog on subsequent cycles.
+MAX_ENRICHMENT_RELEASES = 1500
+
 # Cache TTL for data-completeness (6 hours — full table scans are very expensive)
 _COMPLETENESS_CACHE_TTL = 21600
 
@@ -210,11 +224,23 @@ async def _enrich_community_counts(
             (_STALENESS_DAYS,),
         )
         rows = await cur.fetchall()
-        release_ids = [r["release_id"] for r in rows]
+        all_release_ids = [r["release_id"] for r in rows]
 
-    if not release_ids:
+    if not all_release_ids:
         logger.info("📊 No releases need community enrichment")
-        return {"enriched": 0, "skipped": 0, "errors": 0}
+        return {"enriched": 0, "skipped": 0, "errors": 0, "remaining": 0}
+
+    # Bound the batch so this endpoint always returns inside the caller's read
+    # timeout — the leftover backlog is picked up by the next scheduled cycle.
+    release_ids = all_release_ids[:MAX_ENRICHMENT_RELEASES]
+    remaining = len(all_release_ids) - len(release_ids)
+    if remaining:
+        logger.info(
+            "📊 Community enrichment backlog capped for this cycle",
+            batch_size=len(release_ids),
+            backlog=len(all_release_ids),
+            remaining=remaining,
+        )
 
     logger.info("📊 Releases needing community enrichment", count=len(release_ids))
 
@@ -232,7 +258,7 @@ async def _enrich_community_counts(
 
         if not token:
             logger.warning("⚠️ No Discogs OAuth credentials for community enrichment")
-            return {"enriched": 0, "skipped": len(release_ids), "errors": 0, "error": "no_credentials"}
+            return {"enriched": 0, "skipped": len(release_ids), "errors": 0, "remaining": remaining, "error": "no_credentials"}
 
         access_token = decrypt_oauth_token(token["access_token"], encryption_key)
         access_secret = decrypt_oauth_token(token["access_secret"], encryption_key)
@@ -242,7 +268,7 @@ async def _enrich_community_counts(
         app_config = {r["key"]: r["value"] for r in config_rows}
         if "discogs_consumer_key" not in app_config or "discogs_consumer_secret" not in app_config:
             logger.warning("⚠️ Discogs app credentials not configured")
-            return {"enriched": 0, "skipped": len(release_ids), "errors": 0, "error": "no_credentials"}
+            return {"enriched": 0, "skipped": len(release_ids), "errors": 0, "remaining": remaining, "error": "no_credentials"}
         consumer_key = decrypt_oauth_token(app_config["discogs_consumer_key"], encryption_key)
         consumer_secret = decrypt_oauth_token(app_config["discogs_consumer_secret"], encryption_key)
 
@@ -358,8 +384,13 @@ async def _enrich_community_counts(
         except Exception as e:
             logger.error("❌ Failed to update Neo4j community counts", error=str(e))
 
-    logger.info("✅ Community enrichment complete", enriched=enriched, errors=errors)
-    return {"enriched": enriched, "skipped": len(release_ids) - enriched - errors, "errors": errors}
+    logger.info("✅ Community enrichment complete", enriched=enriched, errors=errors, remaining=remaining)
+    return {
+        "enriched": enriched,
+        "skipped": len(release_ids) - enriched - errors,
+        "errors": errors,
+        "remaining": remaining,
+    }
 
 
 @router.get("/community-enrichment")
