@@ -594,6 +594,19 @@ class TestChallengeTokenRejection:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_get_optional_user_rejects_admin_token(self) -> None:
+        """Regression for discogsography-cu2.71: an admin JWT presented to an
+        optional-auth endpoint must resolve to None (anonymous), not to a user
+        session keyed by the admin's own sub — matching the admin/user token
+        isolation require_user, _get_current_user, and the sync/snapshot
+        routers all enforce."""
+        configure(TEST_SECRET)
+        token = _make_token_with_claims({"type": "admin", "jti": "admin-1"})
+        creds = _make_credentials(token)
+        result = await get_optional_user(creds)
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_require_user_rejects_unknown_token_type(self) -> None:
         """Allowlist: any typed token (present but not an access token) is rejected."""
         configure(TEST_SECRET)
