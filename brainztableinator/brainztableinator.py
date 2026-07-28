@@ -3,6 +3,7 @@ import contextlib
 import os
 import signal
 import time
+import uuid
 from asyncio import run
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,7 +24,7 @@ from common import (
     setup_logging,
 )
 from orjson import loads
-from psycopg.errors import InterfaceError, OperationalError
+from psycopg.errors import DataError, InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
 
 logger = structlog.get_logger(__name__)
@@ -787,6 +788,21 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
             await message.nack(requeue=False)
             return
 
+        # Guard against a non-UUID mbid/id — e.g. the extractor's "unknown" sentinel
+        # for a JSONL line missing its id. This would otherwise pass the emptiness
+        # check above, fail the PostgreSQL UUID cast deterministically, and churn
+        # through the quorum queue's redelivery limit before dead-lettering.
+        try:
+            uuid.UUID(data_id)
+        except (ValueError, AttributeError, TypeError):
+            logger.warning(
+                "⚠️ Nacking record with non-UUID mbid/id",
+                data_type=data_type,
+                data_id=data_id,
+            )
+            await message.nack(requeue=False)
+            return
+
         # Extract record details for logging
         record_name = data.get("name", "Unknown")
         logger.debug(
@@ -839,6 +855,20 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
     except (InterfaceError, OperationalError) as e:
         logger.warning("⚠️ Database connection issue, will retry", error=str(e))
         await message.nack(requeue=True)
+    except DataError as e:
+        # Malformed data that deterministically fails a column cast (e.g. a
+        # non-UUID mbid that slipped past validation above). Retrying would
+        # fail identically every time, so nack without requeue instead of
+        # churning through the quorum queue's redelivery limit.
+        logger.error(
+            "❌ Non-retryable data error, nacking without requeue",
+            data_type=data_type,
+            error=str(e),
+        )
+        try:
+            await message.nack(requeue=False)
+        except Exception as nack_error:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
+            logger.warning("⚠️ Failed to nack message", error=str(nack_error))
     except Exception as e:  # noqa: BLE001 - per-message fault must nack rather than kill the consumer
         logger.error("❌ Failed to process message", data_type=data_type, error=str(e))
         try:
