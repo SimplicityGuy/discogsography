@@ -1125,6 +1125,52 @@ class TestFindShortestPath:
         cypher = sent_query.text if hasattr(sent_query, "text") else sent_query
         assert "coalesce(node.id, node.name)" in cypher
 
+    @staticmethod
+    def _sent_cypher(mock_session: AsyncMock) -> str:
+        sent_query = mock_session.run.call_args[0][0]
+        return str(sent_query.text if hasattr(sent_query, "text") else sent_query)
+
+    @pytest.mark.asyncio
+    async def test_max_depth_clamped_to_upper_bound(self) -> None:
+        """Regression for discogsography-cu2.93: max_depth is interpolated as a
+        Cypher integer literal with no query-parameter escaping, so an
+        unbounded caller-supplied value (e.g. from a model-steered NLQ tool
+        call bypassing the HTTP route's Query(ge=1, le=10) validation) must be
+        clamped here as a backstop rather than reaching shortestPath as-is."""
+        from api.queries.neo4j_queries import MAX_PATH_DEPTH, find_shortest_path
+
+        mock_driver = AsyncMock()
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_driver.session = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+
+        await find_shortest_path(mock_driver, "1", "2", max_depth=1000)
+
+        cypher = self._sent_cypher(mock_session)
+        assert f"*..{MAX_PATH_DEPTH}]" in cypher
+        assert "*..1000]" not in cypher
+
+    @pytest.mark.asyncio
+    async def test_max_depth_clamped_to_lower_bound(self) -> None:
+        """A non-positive max_depth is clamped up to MIN_PATH_DEPTH, not
+        forwarded as-is (which would produce a malformed/empty-range Cypher
+        traversal)."""
+        from api.queries.neo4j_queries import MIN_PATH_DEPTH, find_shortest_path
+
+        mock_driver = AsyncMock()
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_driver.session = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+
+        await find_shortest_path(mock_driver, "1", "2", max_depth=-5)
+
+        cypher = self._sent_cypher(mock_session)
+        assert f"*..{MIN_PATH_DEPTH}]" in cypher
+
 
 # ---------------------------------------------------------------------------
 # get_year_range

@@ -52,12 +52,23 @@ _LABEL_MAP: dict[str, str] = {
 # prevents traversal of internal Neo4j edges (fulltext indexes, etc.).
 _PATH_REL_TYPES = "BY|ON|IS|ALIAS_OF|MEMBER_OF|DERIVED_FROM"
 
+# shortestPath depth bounds. ``max_depth`` is interpolated as a Cypher integer
+# literal (see below) so it must be clamped server-side, not merely
+# int()-coerced — an unbounded value (e.g. from a model-steered NLQ tool
+# call) produces an exhaustive bidirectional BFS over the whole edge set that
+# runs up to the query timeout. Single source of truth for every caller
+# (HTTP /api/path route, NLQ find_path tool); the HTTP route additionally
+# enforces the same bound at the FastAPI layer for a clean 422.
+MIN_PATH_DEPTH = 1
+MAX_PATH_DEPTH = 10
+DEFAULT_PATH_DEPTH = 6
+
 
 async def find_shortest_path(
     driver: AsyncResilientNeo4jDriver,
     from_id: str,
     to_id: str,
-    max_depth: int = 6,
+    max_depth: int = DEFAULT_PATH_DEPTH,
     from_type: str = "",
     to_type: str = "",
 ) -> dict[str, Any] | None:
@@ -68,14 +79,18 @@ async def find_shortest_path(
     Each node dict has: id, name, labels.
 
     ``max_depth`` is interpolated as an integer literal in Cypher (it cannot
-    be a query parameter). The caller is responsible for validating the range.
+    be a query parameter), so it is clamped here to
+    ``[MIN_PATH_DEPTH, MAX_PATH_DEPTH]`` as a backstop regardless of what
+    the caller passes — callers should still validate/clamp their own input
+    (e.g. for a clean 422 at an HTTP boundary) rather than relying solely on
+    this internal clamp.
 
     ``from_type`` and ``to_type`` (e.g. "artist", "label") allow the query
     to use label-specific indexes instead of AllNodesScan.  When a type uses
     ``name`` as its identifier (Genre, Style), ``$from_id`` / ``$to_id`` are
     matched against the ``name`` property instead of ``id``.
     """
-    depth = int(max_depth)
+    depth = max(MIN_PATH_DEPTH, min(int(max_depth), MAX_PATH_DEPTH))
     from_label = _LABEL_MAP.get(from_type, "")
     to_label = _LABEL_MAP.get(to_type, "")
 
