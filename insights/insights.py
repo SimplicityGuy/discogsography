@@ -209,8 +209,13 @@ async def top_artists(
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
     cache_key = f"insights:top-artists:{limit}"
+    # Capture the cache generation BEFORE reading Postgres. A request that
+    # straddles a recompute then writes back into the generation it actually
+    # read from, which the scheduler has already retired — so it can never
+    # re-cache pre-update data over fresh results.
+    generation = await _cache.generation() if _cache else 0
     if _cache:
-        cached = await _cache.get(cache_key)
+        cached = await _cache.get(cache_key, generation)
         if cached is not None:
             return JSONResponse(content=cached)
 
@@ -225,7 +230,7 @@ async def top_artists(
     items = [ArtistCentralityItem(rank=r[0], artist_id=r[1], artist_name=r[2], edge_count=r[3]).model_dump() for r in rows]
     result = {"metric": "centrality", "items": items, "count": len(items)}
     if _cache:
-        await _cache.set(cache_key, result)
+        await _cache.set(cache_key, result, generation)
     return JSONResponse(content=result)
 
 
@@ -236,8 +241,10 @@ async def genre_trends(genre: str = Query(...)) -> JSONResponse:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
     cache_key = f"insights:genre-trends:{genre.replace(':', '_')}"
+    # Read the generation BEFORE the DB read — see insights/cache.py.
+    generation = await _cache.generation() if _cache else 0
     if _cache:
-        cached = await _cache.get(cache_key)
+        cached = await _cache.get(cache_key, generation)
         if cached is not None:
             return JSONResponse(content=cached)
 
@@ -254,7 +261,7 @@ async def genre_trends(genre: str = Query(...)) -> JSONResponse:
     resp = GenreTrendsResponse(genre=genre, trends=[GenreTrendItem(**t) for t in trends], peak_decade=peak)
     result = resp.model_dump()
     if _cache:
-        await _cache.set(cache_key, result)
+        await _cache.set(cache_key, result, generation)
     return JSONResponse(content=result)
 
 
@@ -265,8 +272,10 @@ async def label_longevity(limit: int = Query(50, ge=1, le=200)) -> JSONResponse:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
     cache_key = f"insights:label-longevity:{limit}"
+    # Read the generation BEFORE the DB read — see insights/cache.py.
+    generation = await _cache.generation() if _cache else 0
     if _cache:
-        cached = await _cache.get(cache_key)
+        cached = await _cache.get(cache_key, generation)
         if cached is not None:
             return JSONResponse(content=cached)
 
@@ -296,7 +305,7 @@ async def label_longevity(limit: int = Query(50, ge=1, le=200)) -> JSONResponse:
     ]
     result = {"items": items, "count": len(items)}
     if _cache:
-        await _cache.set(cache_key, result)
+        await _cache.set(cache_key, result, generation)
     return JSONResponse(content=result)
 
 
@@ -307,8 +316,10 @@ async def release_rarity(limit: int = Query(50, ge=1, le=500)) -> JSONResponse:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
     cache_key = f"insights:release-rarity:{limit}"
+    # Read the generation BEFORE the DB read — see insights/cache.py.
+    generation = await _cache.generation() if _cache else 0
     if _cache:
-        cached = await _cache.get(cache_key)
+        cached = await _cache.get(cache_key, generation)
         if cached is not None:
             return JSONResponse(content=cached)
 
@@ -344,7 +355,7 @@ async def release_rarity(limit: int = Query(50, ge=1, le=500)) -> JSONResponse:
     ]
     result = {"items": items, "count": len(items)}
     if _cache:
-        await _cache.set(cache_key, result)
+        await _cache.set(cache_key, result, generation)
     return JSONResponse(content=result)
 
 
@@ -356,8 +367,10 @@ async def this_month() -> JSONResponse:
 
     now = datetime.now(UTC)
     cache_key = f"insights:this-month:{now.year}-{now.month}"
+    # Read the generation BEFORE the DB read — see insights/cache.py.
+    generation = await _cache.generation() if _cache else 0
     if _cache:
-        cached = await _cache.get(cache_key)
+        cached = await _cache.get(cache_key, generation)
         if cached is not None:
             return JSONResponse(content=cached)
 
@@ -386,7 +399,7 @@ async def this_month() -> JSONResponse:
     if _cache and items:
         # Only cache non-empty results to avoid caching stale empty data
         # on the 1st of a new month before the scheduler has run
-        await _cache.set(cache_key, result)
+        await _cache.set(cache_key, result, generation)
     return JSONResponse(content=result)
 
 
@@ -397,8 +410,10 @@ async def data_completeness() -> JSONResponse:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
     cache_key = "insights:data-completeness"
+    # Read the generation BEFORE the DB read — see insights/cache.py.
+    generation = await _cache.generation() if _cache else 0
     if _cache:
-        cached = await _cache.get(cache_key)
+        cached = await _cache.get(cache_key, generation)
         if cached is not None:
             return JSONResponse(content=cached)
 
@@ -425,7 +440,7 @@ async def data_completeness() -> JSONResponse:
     ]
     result = {"items": items, "count": len(items)}
     if _cache:
-        await _cache.set(cache_key, result)
+        await _cache.set(cache_key, result, generation)
     return JSONResponse(content=result)
 
 

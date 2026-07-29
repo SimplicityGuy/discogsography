@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 import pytest
 
+from tests.insights.conftest import TEST_CACHE_GENERATION
+
 
 class TestHealthEndpoint:
     def test_health_returns_200(self, test_client: TestClient) -> None:
@@ -111,7 +113,7 @@ class TestTopArtistsCacheIntegration:
         mock_cache.get.return_value = None
         response = test_client_with_cache.get("/api/insights/top-artists?limit=10")
         assert response.status_code == 200
-        mock_cache.get.assert_called_once_with("insights:top-artists:10")
+        mock_cache.get.assert_called_once_with("insights:top-artists:10", TEST_CACHE_GENERATION)
         mock_cache.set.assert_called_once()
         key = mock_cache.set.call_args[0][0]
         assert key == "insights:top-artists:10"
@@ -138,7 +140,7 @@ class TestGenreTrendsCacheIntegration:
         mock_cache.get.return_value = None
         response = test_client_with_cache.get("/api/insights/genre-trends?genre=Rock")
         assert response.status_code == 200
-        mock_cache.get.assert_called_once_with("insights:genre-trends:Rock")
+        mock_cache.get.assert_called_once_with("insights:genre-trends:Rock", TEST_CACHE_GENERATION)
         mock_cache.set.assert_called_once()
 
     def test_cache_hit_returns_cached_data(
@@ -163,7 +165,7 @@ class TestLabelLongevityCacheIntegration:
         mock_cache.get.return_value = None
         response = test_client_with_cache.get("/api/insights/label-longevity?limit=10")
         assert response.status_code == 200
-        mock_cache.get.assert_called_once_with("insights:label-longevity:10")
+        mock_cache.get.assert_called_once_with("insights:label-longevity:10", TEST_CACHE_GENERATION)
         mock_cache.set.assert_called_once()
 
     def test_cache_hit_returns_cached_data(
@@ -216,7 +218,7 @@ class TestDataCompletenessCacheIntegration:
         mock_cache.get.return_value = None
         response = test_client_with_cache.get("/api/insights/data-completeness")
         assert response.status_code == 200
-        mock_cache.get.assert_called_once_with("insights:data-completeness")
+        mock_cache.get.assert_called_once_with("insights:data-completeness", TEST_CACHE_GENERATION)
         mock_cache.set.assert_called_once()
 
     def test_cache_hit_returns_cached_data(
@@ -300,7 +302,7 @@ class TestReleaseRarityCacheIntegration:
         data = response.json()
         assert data["count"] == 1
         assert data["items"][0]["release_id"] == 1
-        mock_cache.get.assert_called_once_with("insights:release-rarity:10")
+        mock_cache.get.assert_called_once_with("insights:release-rarity:10", TEST_CACHE_GENERATION)
         mock_cache.set.assert_called_once()
 
     def test_cache_hit_returns_cached_data(
@@ -620,3 +622,55 @@ class TestServiceNotReadyResponses:
         response = test_client_no_pool.get("/api/insights/status")
         assert response.status_code == 503
         assert "error" in response.json()
+
+
+# Every read endpoint that caches, with the cache key it uses.
+_CACHED_ENDPOINTS = [
+    ("/api/insights/top-artists?limit=10", "insights:top-artists:10"),
+    ("/api/insights/genre-trends?genre=Rock", "insights:genre-trends:Rock"),
+    ("/api/insights/label-longevity?limit=10", "insights:label-longevity:10"),
+    ("/api/insights/release-rarity?limit=10", "insights:release-rarity:10"),
+    ("/api/insights/data-completeness", "insights:data-completeness"),
+]
+
+
+class TestCacheGenerationThreading:
+    """discogsography-cu2.109: every read endpoint must write back to the
+    generation it read from, so a request straddling a recompute cannot
+    re-cache pre-update data over freshly computed results.
+    """
+
+    @pytest.mark.parametrize(("url", "cache_key"), _CACHED_ENDPOINTS)
+    def test_get_and_set_use_the_same_generation(
+        self,
+        test_client_with_cache: TestClient,
+        mock_cache: AsyncMock,
+        url: str,
+        cache_key: str,
+    ) -> None:
+        mock_cache.get.return_value = None
+
+        response = test_client_with_cache.get(url)
+
+        assert response.status_code == 200
+        assert mock_cache.get.call_args[0] == (cache_key, TEST_CACHE_GENERATION)
+        assert mock_cache.set.call_args[0][0] == cache_key
+        assert mock_cache.set.call_args[0][2] == TEST_CACHE_GENERATION, "set() must use the generation captured before the DB read, not a re-read one"
+
+    @pytest.mark.parametrize("url", [url for url, _ in _CACHED_ENDPOINTS])
+    def test_generation_is_read_before_the_cache_lookup(
+        self,
+        test_client_with_cache: TestClient,
+        mock_cache: AsyncMock,
+        url: str,
+    ) -> None:
+        """Ordering guard: generation() must precede get() (and therefore the DB read)."""
+        calls: list[str] = []
+        mock_cache.generation = AsyncMock(side_effect=lambda: calls.append("generation") or TEST_CACHE_GENERATION)
+        mock_cache.get = AsyncMock(side_effect=lambda *_a, **_k: calls.append("get"))
+        mock_cache.set = AsyncMock(side_effect=lambda *_a, **_k: calls.append("set"))
+
+        response = test_client_with_cache.get(url)
+
+        assert response.status_code == 200
+        assert calls == ["generation", "get", "set"]

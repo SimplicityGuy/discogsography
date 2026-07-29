@@ -7,6 +7,10 @@ import httpx
 import pytest
 
 
+# Arbitrary non-zero generation — proves endpoints use the value they read.
+TEST_CACHE_GENERATION = 4
+
+
 @pytest.fixture
 def mock_http_client() -> AsyncMock:
     """Mock httpx.AsyncClient for API calls."""
@@ -56,6 +60,9 @@ def test_client(mock_http_client: AsyncMock, mock_pg_pool: AsyncMock) -> TestCli
 def mock_cache() -> AsyncMock:
     """Mock InsightsCache."""
     cache = AsyncMock()
+    # A real int, not an AsyncMock sentinel: endpoints must thread this exact
+    # value from generation() through get() and set() (discogsography-cu2.109).
+    cache.generation = AsyncMock(return_value=TEST_CACHE_GENERATION)
     cache.get = AsyncMock(return_value=None)
     cache.set = AsyncMock()
     cache.invalidate_all = AsyncMock()
