@@ -14,7 +14,13 @@ from common import (
     neo4j_security_kwargs,
     setup_logging,
 )
-from common.config import _build_postgres_connstr, get_secret, parse_postgres_host_port, resolve_postgres_pool_sizes
+from common.config import (
+    _build_neo4j_uri,
+    _build_postgres_connstr,
+    get_secret,
+    parse_postgres_host_port,
+    resolve_postgres_pool_sizes,
+)
 
 
 class TestExtractorConfig:
@@ -1257,6 +1263,40 @@ class TestInsightsConfig:
 
         config = InsightsConfig.from_env()
         assert config.schedule_hours == 24
+
+
+class TestBuildNeo4jUri:
+    """Tests for _build_neo4j_uri() — bare-hostname vs full-URI NEO4J_HOST handling."""
+
+    def test_bare_hostname_defaults_to_bolt_7687(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
+        monkeypatch.delenv("NEO4J_PORT", raising=False)
+        assert _build_neo4j_uri() == "bolt://neo4j:7687"
+
+    def test_missing_host_defaults_to_localhost(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("NEO4J_HOST", raising=False)
+        monkeypatch.delenv("NEO4J_PORT", raising=False)
+        assert _build_neo4j_uri() == "bolt://localhost:7687"
+
+    def test_bare_hostname_honors_neo4j_port_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
+        monkeypatch.setenv("NEO4J_PORT", "17687")
+        assert _build_neo4j_uri() == "bolt://neo4j:17687"
+
+    def test_full_aura_uri_passed_through_unchanged(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Documented Aura deployment: a full neo4j+s:// URI must not be re-wrapped in bolt://."""
+        monkeypatch.setenv("NEO4J_HOST", "neo4j+s://xxxxx.databases.neo4j.io")
+        assert _build_neo4j_uri() == "neo4j+s://xxxxx.databases.neo4j.io"
+
+    def test_full_neo4j_uri_with_custom_port_passed_through(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEO4J_HOST", "neo4j://neo4j.example.com:8687")
+        assert _build_neo4j_uri() == "neo4j://neo4j.example.com:8687"
+
+    def test_full_uri_ignores_neo4j_port_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A full URI already carries its own port; NEO4J_PORT must not be applied to it."""
+        monkeypatch.setenv("NEO4J_HOST", "neo4j+s://xxxxx.databases.neo4j.io")
+        monkeypatch.setenv("NEO4J_PORT", "17687")
+        assert _build_neo4j_uri() == "neo4j+s://xxxxx.databases.neo4j.io"
 
 
 class TestNeo4jSecurityKwargs:

@@ -61,9 +61,22 @@ def _build_amqp_url() -> str:
 
 
 def _build_neo4j_uri() -> str:
-    """Build Neo4j bolt URI from plain hostname environment variable."""
+    """Build a Neo4j connection URI from environment variables.
+
+    NEO4J_HOST accepts two forms:
+
+    - a bare hostname (e.g. ``"localhost"`` or ``"neo4j"``) — wrapped as
+      ``bolt://<host>:<NEO4J_PORT or 7687>``, the historical default.
+    - a full connection URI (e.g. ``"neo4j+s://xxxxx.databases.neo4j.io"`` for
+      Neo4j Aura) — detected by the presence of a ``scheme://`` prefix and
+      passed through unchanged, so routing schemes (``neo4j://``,
+      ``neo4j+s://``) and non-default ports are honored as documented.
+    """
     host = getenv("NEO4J_HOST", "localhost")
-    return f"bolt://{host}:7687"
+    if "://" in host:
+        return host
+    port = getenv("NEO4J_PORT", "7687")
+    return f"bolt://{host}:{port}"
 
 
 def _coerce_port(value: str | None, default_port: int) -> int:

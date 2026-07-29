@@ -181,8 +181,10 @@ NEO4J_HOST="neo4j"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
 
-# Neo4j Aura (cloud) — full URI supported
-NEO4J_HOST="xxxxx.databases.neo4j.io"
+# Neo4j Aura (cloud) — NEO4J_HOST accepts a full "scheme://host" URI, passed
+# through unchanged (Aura requires the neo4j+s:// routing+TLS scheme; do not
+# set NEO4J_TLS_ENABLED here — the scheme already encrypts the connection)
+NEO4J_HOST="neo4j+s://xxxxx.databases.neo4j.io"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="your-secure-password"
 
@@ -1039,8 +1041,10 @@ For production deployments, use `docker-compose.prod.yml` with `scripts/create-s
 Enable encryption for production:
 
 ```bash
-# Neo4j with TLS (bolt+s:// scheme constructed in code from hostname)
+# Neo4j with TLS (encrypted Bolt via NEO4J_TLS_ENABLED — see "Enabling TLS
+# for Neo4j" above; for Aura, pass a full "neo4j+s://host" URI instead)
 NEO4J_HOST=neo4j.example.com
+NEO4J_TLS_ENABLED=true
 
 # PostgreSQL hostname
 POSTGRES_HOST=postgres.example.com
