@@ -246,6 +246,45 @@ describe('search pane', () => {
         });
     });
 
+    describe('request sequencing', () => {
+        it('should discard a stale response that resolves after a newer request', async () => {
+            let resolveFirst, resolveSecond;
+            window.apiClient.search
+                .mockReturnValueOnce(new Promise(r => { resolveFirst = r; }))
+                .mockReturnValueOnce(new Promise(r => { resolveSecond = r; }));
+
+            const input = document.getElementById('searchPaneInput');
+            input.value = 'radiohead';
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+            // A second, unrelated query is submitted before the first resolves.
+            input.value = 'herbie hancock';
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+            // Newer request resolves first — should render normally.
+            resolveSecond({
+                results: [{ name: 'Herbie Hancock', type: 'artist', relevance: 1 }],
+                total: 1,
+                facets: {},
+                pagination: { has_more: false },
+            });
+            await new Promise(r => setTimeout(r, 10));
+
+            // Stale (earlier) request resolves after — must not overwrite the render.
+            resolveFirst({
+                results: [{ name: 'Radiohead', type: 'artist', relevance: 1 }],
+                total: 1,
+                facets: {},
+                pagination: { has_more: false },
+            });
+            await new Promise(r => setTimeout(r, 10));
+
+            const resultsEl = document.getElementById('searchResults');
+            expect(resultsEl.textContent).toContain('Herbie Hancock');
+            expect(resultsEl.textContent).not.toContain('Radiohead');
+        });
+    });
+
     describe('highlight rendering', () => {
         it('should render highlighted text with bold elements', async () => {
             window.apiClient.search.mockResolvedValue({

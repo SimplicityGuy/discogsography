@@ -24,6 +24,11 @@
     let lastQuery = '';
     let lastResult = null;
     let selectedGenres = [];
+    // Monotonic request id — discards a response from an earlier request that
+    // resolves after a newer one was issued (type-chip toggle, year debounce,
+    // genre chip, pagination, or a fresh Enter/search-button submit can all
+    // fire while a prior search is still in flight).
+    let searchRequestId = 0;
 
     // ------------------------------------------------------------------
     // Parse ts_headline highlight into DOM nodes (no innerHTML)
@@ -114,6 +119,8 @@
             return;
         }
 
+        const requestId = ++searchRequestId;
+
         lastQuery = q;
         setVisible(placeholder, false);
         setVisible(loadingEl, true);
@@ -126,6 +133,10 @@
         const yearMax = yearMaxEl.value ? parseInt(yearMaxEl.value, 10) : null;
 
         const data = await window.apiClient.search(q, types, selectedGenres, yearMin, yearMax, PAGE_SIZE, currentOffset);
+
+        // A newer search has since been issued — discard this stale response
+        // rather than let it overwrite results/pagination for the current one.
+        if (requestId !== searchRequestId) return;
 
         setVisible(loadingEl, false);
 
