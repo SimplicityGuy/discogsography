@@ -183,7 +183,24 @@ class UserPanes {
         if (!container) return;
         container.replaceChildren();
 
-        if (!data || !data.recommendations || data.recommendations.length === 0) {
+        // apiClient returns null on a non-ok HTTP response (server/network error),
+        // which is distinct from a genuinely empty recommendations array — conflating
+        // the two misdirects the user into "sync your collection" when the real
+        // problem is a backend error.
+        if (!data) {
+            const errored = document.createElement('div');
+            errored.className = 'user-pane-empty';
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-outlined icon-3x mb-3';
+            icon.textContent = 'error_outline';
+            const msg = document.createElement('p');
+            msg.textContent = 'Failed to load recommendations. Please try again.';
+            errored.append(icon, msg);
+            container.appendChild(errored);
+            return;
+        }
+
+        if (!data.recommendations || data.recommendations.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'user-pane-empty';
             const icon = document.createElement('span');

@@ -294,6 +294,18 @@ describe('UserPanes', () => {
             expect(body.querySelector('.user-pane-empty')).not.toBeNull();
         });
 
+        it('should render a distinct error state (not the empty-collection prompt) when the API returns null', async () => {
+            // apiClient returns null for a non-ok HTTP response — a server/network
+            // error, not a genuinely empty recommendations list.
+            window.apiClient.getUserRecommendations.mockResolvedValue(null);
+
+            await userPanes.loadRecommendations();
+
+            const body = document.getElementById('recommendationsBody');
+            expect(body.textContent).toContain('Failed to load recommendations');
+            expect(body.textContent).not.toContain('No recommendations yet');
+        });
+
         it('should render recommendation items', async () => {
             window.apiClient.getUserRecommendations.mockResolvedValue({
                 recommendations: [
@@ -570,11 +582,21 @@ describe('UserPanes', () => {
     });
 
     describe('_renderRecommendations', () => {
-        it('should render empty state for null data', () => {
+        it('should render an error state (not the empty-collection prompt) for null data', () => {
             const container = document.createElement('div');
             userPanes._renderRecommendations(container, null);
 
             expect(container.querySelector('.user-pane-empty')).not.toBeNull();
+            expect(container.textContent).toContain('Failed to load recommendations');
+            expect(container.textContent).not.toContain('No recommendations yet');
+        });
+
+        it('should render the empty-collection prompt for a genuinely empty recommendations array', () => {
+            const container = document.createElement('div');
+            userPanes._renderRecommendations(container, { recommendations: [] });
+
+            expect(container.querySelector('.user-pane-empty')).not.toBeNull();
+            expect(container.textContent).toContain('No recommendations yet');
         });
 
         it('should render recommendation with score', () => {
