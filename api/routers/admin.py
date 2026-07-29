@@ -586,7 +586,7 @@ async def purge_dlq(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"RabbitMQ returned {resp.status_code}",
             )
-    except httpx.ConnectError as exc:
+    except (httpx.ConnectError, httpx.RequestError) as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="RabbitMQ management API unreachable",

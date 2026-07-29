@@ -283,7 +283,7 @@ async def _expand_releases(
     MATCH {match_clause}{year_filter}
     RETURN r.id AS id, r.title AS name, 'release' AS type,
            CASE WHEN r.year > 0 THEN r.year ELSE null END AS year
-    ORDER BY year DESC
+    ORDER BY year IS NULL ASC, year DESC
     SKIP $offset
     LIMIT $limit
     """

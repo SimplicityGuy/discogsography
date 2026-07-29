@@ -58,9 +58,10 @@ async def get_obscurity_score(
     """
     cypher = """
     MATCH (u:User {id: $user_id})-[:COLLECTED]->(r:Release)
+    WITH DISTINCT u, r
     OPTIONAL MATCH (other:User)-[:COLLECTED]->(r)
     WHERE other <> u
-    WITH r, count(other) AS collectors
+    WITH r, count(DISTINCT other) AS collectors
     RETURN collectors
     ORDER BY collectors
     """

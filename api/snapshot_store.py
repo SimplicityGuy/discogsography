@@ -34,7 +34,16 @@ class SnapshotStore:
         return self._max_nodes
 
     async def save(self, nodes: list[dict[str, Any]], center: dict[str, Any]) -> tuple[str, datetime]:
-        """Save a snapshot and return (token, expires_at)."""
+        """Save a snapshot and return (token, expires_at).
+
+        Raises:
+            ValueError: if ``nodes`` exceeds ``max_nodes``. The API router also
+                pre-checks this (for a friendlier error message), but this guard
+                protects any direct caller of SnapshotStore that bypasses the
+                router — e.g. scripts or future reuse.
+        """
+        if len(nodes) > self._max_nodes:
+            raise ValueError(f"Too many nodes: {len(nodes)} exceeds maximum of {self._max_nodes}")
         token = secrets.token_urlsafe(12)
         now = datetime.now(UTC)
         expires_at = now + timedelta(seconds=self._ttl_seconds)

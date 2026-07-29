@@ -338,7 +338,7 @@ async def get_collector_counts(driver: AsyncResilientNeo4jDriver, release_ids: l
     UNWIND $release_ids AS rid
     MATCH (r:Release {id: rid})
     OPTIONAL MATCH (u:User)-[:COLLECTED]->(r)
-    RETURN r.id AS id, count(u) AS collectors
+    RETURN r.id AS id, count(DISTINCT u) AS collectors
     """
     rows = await run_query(driver, cypher, release_ids=release_ids)
     return {row["id"]: row["collectors"] for row in rows}

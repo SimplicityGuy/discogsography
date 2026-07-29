@@ -613,6 +613,34 @@ class TestGetCollectorCounts:
         result = await get_collector_counts(driver, [])
         assert result == {}
 
+    @pytest.mark.asyncio
+    async def test_counts_distinct_users_not_relationships(self) -> None:
+        """discogsography-cu2.76: a collector who owns multiple copies of a release
+        (one COLLECTED relationship per instance_id) must be counted once, not once
+        per copy — count(DISTINCT u), not count(u).
+        """
+        from api.queries.recommend_queries import get_collector_counts
+
+        calls: list[tuple[Any, ...]] = []
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        async def _run_side(*args: Any, **_kwargs: Any) -> _MockResult:
+            calls.append(args)
+            return _MockResult(records=[])
+
+        mock_session.run = AsyncMock(side_effect=_run_side)
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=mock_session)
+
+        await get_collector_counts(driver, ["r1"])
+
+        cypher = calls[0][0]
+        assert "count(DISTINCT u)" in cypher
+        assert "count(u)" not in cypher.replace("count(DISTINCT u)", "")
+
 
 # ---------------------------------------------------------------------------
 # get_label_affinity_candidates

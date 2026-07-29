@@ -215,6 +215,42 @@ class TestGetObscurityScore:
         assert result["score"] == 0.7
         assert result["median_collectors"] == 3.0
 
+    @pytest.mark.asyncio
+    async def test_counts_distinct_collectors_not_relationships(self) -> None:
+        """discogsography-cu2.76: the syncer creates one COLLECTED relationship per
+        instance_id, so a user owning multiple copies of a release must not multiply
+        the collector count. The query must count(DISTINCT other) over a
+        DISTINCT (u, r) base, not count(other).
+        """
+        from api.queries.taste_queries import get_obscurity_score
+
+        calls: list[Any] = []
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        async def _run_side(query: Any, *_a: Any, **_kw: Any) -> _MockResult:
+            text = getattr(query, "text", query)
+            calls.append(text)
+            if "collectors" in text:
+                return _MockResult(records=[])
+            return _MockResult(single={"total": 0})
+
+        mock_session.run = AsyncMock(side_effect=_run_side)
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=mock_session)
+
+        await get_obscurity_score(driver, "user-1")
+
+        collectors_cypher = next(c for c in calls if "collectors" in c)
+        assert "count(DISTINCT other)" in collectors_cypher
+        assert "count(other)" not in collectors_cypher
+        # The user's own duplicate-copy rows must be neutralised before the
+        # OPTIONAL MATCH cross-join, or `other` is still counted once per copy
+        # the user owns of the same release.
+        assert "WITH DISTINCT u, r" in collectors_cypher
+
 
 # ---------------------------------------------------------------------------
 # get_taste_drift

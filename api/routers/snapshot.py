@@ -91,7 +91,10 @@ async def save_snapshot(
         return JSONResponse(content={"error": f"Too many nodes: maximum is {_snapshot_store.max_nodes}"}, status_code=422)
     nodes = [n.model_dump() for n in body.nodes]
     center = body.center.model_dump()
-    token, expires_at = await _snapshot_store.save(nodes, center)
+    try:
+        token, expires_at = await _snapshot_store.save(nodes, center)
+    except ValueError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=422)
     response = SnapshotResponse(token=token, url=f"/snapshot/{token}", expires_at=expires_at.isoformat())
     return JSONResponse(content=response.model_dump(), status_code=201)
 

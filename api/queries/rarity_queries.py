@@ -114,7 +114,7 @@ def compute_temporal_scarcity_score(
     if release_year is None:
         return 50.0
     age = current_year - release_year
-    base = min(100.0, age * 1.5)
+    base = max(0.0, min(100.0, age * 1.5))
     if latest_sibling_year is not None and latest_sibling_year >= current_year - 10:
         base = max(0.0, base - 40.0)
     return base
@@ -181,12 +181,19 @@ async def fetch_all_rarity_signals(driver: Any, pool: Any = None) -> list[dict[s
     current_year = datetime.now(UTC).year
 
     # 1. Pressing scarcity: count siblings per master
+    # NOTE: the master lookup and the sibling lookup are deliberately two separate
+    # OPTIONAL MATCHes. Combining them into one pattern (as previously written) makes
+    # `m` contingent on a sibling existing: for a release that IS linked to a master
+    # but is that master's ONLY pressing, the combined pattern (including its inline
+    # WHERE sibling <> r) fails entirely and `m` comes back null too — misclassifying
+    # the rarest pressing case (a unique pressing of a master) as "no master link".
     pressing_query = """
     MATCH (r:Release)
-    OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)<-[:DERIVED_FROM]-(sibling:Release)
+    OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)
+    OPTIONAL MATCH (m)<-[:DERIVED_FROM]-(sibling:Release)
     WHERE sibling <> r
-    WITH r, m, count(DISTINCT sibling) + 1 AS pressing_count_with_master
-    WITH r, CASE WHEN m IS NULL THEN 0 ELSE pressing_count_with_master END AS pressing_count
+    WITH r, m, count(DISTINCT sibling) AS sibling_count
+    WITH r, CASE WHEN m IS NULL THEN 0 ELSE sibling_count + 1 END AS pressing_count
     OPTIONAL MATCH (r)-[:BY]->(a:Artist)
     WITH r, pressing_count, collect(DISTINCT a.name)[0] AS artist_name
     RETURN r.id AS release_id, pressing_count,

@@ -113,6 +113,23 @@ class TestTemporalScarcityScore:
         score = compute_temporal_scarcity_score(None, None, current_year)
         assert score == 50.0
 
+    def test_future_dated_release_floors_at_zero(self) -> None:
+        """discogsography-cu2.94: a typo'd/erroneous future year (e.g. 2050) must not
+        drive the score negative — the age-based base is floored at 0.0, matching the
+        existing upper-bound cap at 100.0.
+        """
+        current_year = datetime.now(UTC).year
+        score = compute_temporal_scarcity_score(current_year + 24, None, current_year)
+        assert score == 0.0
+        assert score >= 0.0
+
+    def test_next_year_release_floors_at_zero(self) -> None:
+        """A legitimate upcoming/pre-order release dated next year also must not
+        yield a negative signal, even though the magnitude is small (age=-1)."""
+        current_year = datetime.now(UTC).year
+        score = compute_temporal_scarcity_score(current_year + 1, None, current_year)
+        assert score == 0.0
+
 
 class TestGraphIsolationScore:
     def test_very_isolated(self) -> None:
@@ -758,6 +775,59 @@ class TestFetchAllRaritySignals:
 
         assert len(results) == 1
         assert results[0]["collection_prevalence"] == 50.0
+
+    @pytest.mark.asyncio
+    async def test_pressing_query_uses_two_optional_matches(self) -> None:
+        """discogsography-cu2.75: the master lookup and sibling lookup must be two
+        separate OPTIONAL MATCHes. A single combined pattern makes `m` (and therefore
+        pressing_count) null whenever the release is its master's ONLY pressing —
+        misclassifying the rarest pressing case as "no master link".
+        """
+        mock_driver = MagicMock()
+
+        with patch("api.queries.rarity_queries.run_query") as mock_run:
+            mock_run.side_effect = [[], [], [], [], [], [], [], []]
+            await fetch_all_rarity_signals(mock_driver, None)
+
+        pressing_cypher = mock_run.call_args_list[0].args[1]
+        # Two independent OPTIONAL MATCH clauses, not one combined pattern that
+        # conditions `m` on a sibling existing.
+        assert "OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)\n" in pressing_cypher
+        assert "OPTIONAL MATCH (m)<-[:DERIVED_FROM]-(sibling:Release)" in pressing_cypher
+        assert "OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)<-[:DERIVED_FROM]-(sibling:Release)" not in pressing_cypher
+
+    @pytest.mark.asyncio
+    async def test_sole_pressing_of_master_scores_as_unique_not_standalone(self) -> None:
+        """discogsography-cu2.75: a release that IS linked to a master but has no
+        sibling pressings must score pressing_count=1 (-> 100.0, unique pressing),
+        not pressing_count=0 (-> 90.0, standalone/no-master-link).
+        """
+        mock_driver = MagicMock()
+
+        # Post-fix pressing_query semantics for a sole-pressing-with-master release.
+        pressing_data = [{"release_id": "1", "pressing_count": 1, "title": "R1", "artist_name": "A1", "year": 1970}]
+        label_data = [{"release_id": "1", "label_catalog_size": 20}]
+        format_data = [{"release_id": "1", "formats": ["LP"]}]
+        temporal_data = [{"release_id": "1", "year": 1970, "latest_sibling_year": None}]
+        degree_data = [{"release_id": "1", "degree": 3}]
+        artist_degree_data = [{"release_id": "1", "artist_max_degree": 500}]
+        label_size_data = [{"release_id": "1", "label_max_catalog": 2000}]
+        genre_count_data = [{"release_id": "1", "genre_max_release_count": 50000}]
+
+        with patch("api.queries.rarity_queries.run_query") as mock_run:
+            mock_run.side_effect = [
+                pressing_data,
+                label_data,
+                format_data,
+                temporal_data,
+                degree_data,
+                artist_degree_data,
+                label_size_data,
+                genre_count_data,
+            ]
+            results = await fetch_all_rarity_signals(mock_driver, None)
+
+        assert results[0]["pressing_scarcity"] == 100.0
 
 
 class TestRarityPaginationTiebreaker:
