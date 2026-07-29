@@ -174,6 +174,29 @@ describe('UserPanes', () => {
             expect(body.querySelectorAll('.user-pane-empty')).toHaveLength(1);
             expect(body.textContent).toContain('Failed to load collection.');
         });
+
+        it('should discard a stale response that resolves after a newer request', async () => {
+            let resolveFirst, resolveSecond;
+            window.apiClient.getUserCollection
+                .mockReturnValueOnce(new Promise(r => { resolveFirst = r; }))
+                .mockReturnValueOnce(new Promise(r => { resolveSecond = r; }));
+
+            const first = userPanes.loadCollection(); // offset 0
+            userPanes._collectionOffset = 50;
+            const second = userPanes.loadCollection(); // offset 50 — supersedes the first
+
+            // Newer request resolves first — should render normally.
+            resolveSecond({ releases: [{ title: 'Second Page', artist: 'B', year: 2000 }], total: 100, has_more: true });
+            await second;
+
+            // Stale request resolves after — must be discarded, not overwrite the render.
+            resolveFirst({ releases: [{ title: 'First Page', artist: 'A', year: 1990 }], total: 100, has_more: true });
+            await first;
+
+            const body = document.getElementById('collectionBody');
+            expect(body.textContent).toContain('Second Page');
+            expect(body.textContent).not.toContain('First Page');
+        });
     });
 
     describe('loadWantlist', () => {
@@ -229,6 +252,27 @@ describe('UserPanes', () => {
             expect(body.querySelector('table')).toBeNull();
             expect(body.querySelectorAll('.user-pane-empty')).toHaveLength(1);
             expect(body.textContent).toContain('Failed to load wantlist.');
+        });
+
+        it('should discard a stale response that resolves after a newer request', async () => {
+            let resolveFirst, resolveSecond;
+            window.apiClient.getUserWantlist
+                .mockReturnValueOnce(new Promise(r => { resolveFirst = r; }))
+                .mockReturnValueOnce(new Promise(r => { resolveSecond = r; }));
+
+            const first = userPanes.loadWantlist(); // offset 0
+            userPanes._wantlistOffset = 50;
+            const second = userPanes.loadWantlist(); // offset 50 — supersedes the first
+
+            resolveSecond({ releases: [{ title: 'Second Page', artist: 'B', year: 2000 }], total: 100, has_more: true });
+            await second;
+
+            resolveFirst({ releases: [{ title: 'First Page', artist: 'A', year: 1990 }], total: 100, has_more: true });
+            await first;
+
+            const body = document.getElementById('wantlistBody');
+            expect(body.textContent).toContain('Second Page');
+            expect(body.textContent).not.toContain('First Page');
         });
     });
 
@@ -1294,6 +1338,37 @@ describe('UserPanes', () => {
             expect(body.querySelector('.gap-summary')).toBeNull();
             expect(body.querySelectorAll('.user-pane-empty')).toHaveLength(1);
             expect(body.textContent).toContain('Failed to load gap analysis.');
+        });
+
+        it('should discard a stale response that resolves after a newer request', async () => {
+            let resolveFirst, resolveSecond;
+            window.apiClient.getCollectionGaps
+                .mockReturnValueOnce(new Promise(r => { resolveFirst = r; }))
+                .mockReturnValueOnce(new Promise(r => { resolveSecond = r; }));
+
+            const first = userPanes.loadGapAnalysis('artist', '123'); // offset 0
+            userPanes._gapOffset = 50;
+            const second = userPanes.loadGapAnalysis('artist', '123'); // offset 50 — supersedes the first
+
+            resolveSecond({
+                entity: { name: 'Test', type: 'artist' },
+                summary: { total: 1, owned: 0, missing: 1 },
+                results: [{ title: 'Second Page Release', artist: 'B' }],
+                pagination: { total: 100, offset: 50, limit: 50, has_more: true },
+            });
+            await second;
+
+            resolveFirst({
+                entity: { name: 'Test', type: 'artist' },
+                summary: { total: 1, owned: 0, missing: 1 },
+                results: [{ title: 'First Page Release', artist: 'A' }],
+                pagination: { total: 100, offset: 0, limit: 50, has_more: true },
+            });
+            await first;
+
+            const body = document.getElementById('gapsBody');
+            expect(body.textContent).toContain('Second Page Release');
+            expect(body.textContent).not.toContain('First Page Release');
         });
     });
 
