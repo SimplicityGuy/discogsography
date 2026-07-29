@@ -293,11 +293,14 @@ POSTGRES_DATABASE="discogsography_prod"
 **Performance Tuning**:
 
 ```bash
-# For services using asyncpg
-POSTGRES_POOL_MIN=10
-POSTGRES_POOL_MAX=20
-POSTGRES_COMMAND_TIMEOUT=30
+# Clamp the connection-pool min/max across the whole fleet (see the
+# "Connection-pool sizing" note above — per-service defaults otherwise apply)
+POSTGRES_POOL_MIN_SIZE=10
+POSTGRES_POOL_MAX_SIZE=20
 ```
+
+> Query timeout (30 seconds, see **Connection Details** above) is a fixed value in
+> code, not a configurable env var.
 
 ### Redis Configuration
 
