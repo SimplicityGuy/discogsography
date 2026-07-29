@@ -100,7 +100,7 @@ async def _api_get(app: AppContext, path: str, params: dict[str, Any] | None = N
         logger.error("API HTTP error", url=url, status=exc.response.status_code)
         return {"error": f"API returned HTTP {exc.response.status_code}", "url": url}
     except Exception as exc:
-        logger.error("API request failed", url=url, error=str(exc))
+        logger.error("API request failed", url=url, error=repr(exc))
         return {"error": f"API request failed: {exc}", "url": url}
 
 
@@ -115,7 +115,7 @@ async def _api_post(app: AppContext, path: str, json_data: dict[str, Any] | None
         logger.error("API HTTP error", url=url, status=exc.response.status_code)
         return {"error": f"API returned HTTP {exc.response.status_code}", "url": url}
     except Exception as exc:
-        logger.error("API request failed", url=url, error=str(exc))
+        logger.error("API request failed", url=url, error=repr(exc))
         return {"error": f"API request failed: {exc}", "url": url}
 
 

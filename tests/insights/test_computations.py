@@ -48,7 +48,7 @@ def _make_mock_pool() -> AsyncMock:
 class TestFetchFromApi:
     @pytest.mark.asyncio
     async def test_basic_call_without_params_or_timeout(self) -> None:
-        from insights.computations import _fetch_from_api
+        from insights.computations import _fetch_from_api, endpoint_timeout
 
         mock_response = MagicMock()
         mock_response.json.return_value = {"items": [{"id": 1}]}
@@ -58,12 +58,13 @@ class TestFetchFromApi:
 
         result = await _fetch_from_api(mock_client, "/api/test")
 
-        mock_client.get.assert_called_once_with("/api/test")
+        # An unmapped path still gets the split default budget, never a scalar.
+        mock_client.get.assert_called_once_with("/api/test", timeout=endpoint_timeout("/api/test"))
         assert result == [{"id": 1}]
 
     @pytest.mark.asyncio
     async def test_passes_params_when_provided(self) -> None:
-        from insights.computations import _fetch_from_api
+        from insights.computations import _fetch_from_api, endpoint_timeout
 
         mock_response = MagicMock()
         mock_response.json.return_value = {"items": []}
@@ -73,7 +74,7 @@ class TestFetchFromApi:
 
         await _fetch_from_api(mock_client, "/api/test", params={"limit": 10})
 
-        mock_client.get.assert_called_once_with("/api/test", params={"limit": 10})
+        mock_client.get.assert_called_once_with("/api/test", params={"limit": 10}, timeout=endpoint_timeout("/api/test"))
 
     @pytest.mark.asyncio
     async def test_passes_timeout_when_provided(self) -> None:
@@ -120,21 +121,93 @@ class TestFetchFromApi:
 
 
 class TestDescribeError:
-    """Tests for _describe_error — guards against blank error log lines."""
+    """Guards against blank error log lines from message-less exceptions."""
 
     def test_includes_type_when_message_empty(self) -> None:
         """An exception with an empty str() (e.g. httpx.ReadTimeout) still names its type."""
         import httpx
 
-        from insights.computations import _describe_error
+        from insights.computations import describe_exception
 
         # httpx.ReadTimeout("") has an empty str(), which previously logged as error="".
-        assert _describe_error(httpx.ReadTimeout("")) == "ReadTimeout"
+        assert describe_exception(httpx.ReadTimeout("")) == "ReadTimeout"
 
     def test_includes_type_and_message_when_present(self) -> None:
-        from insights.computations import _describe_error
+        from insights.computations import describe_exception
 
-        assert _describe_error(ValueError("boom")) == "ValueError: boom"
+        assert describe_exception(ValueError("boom")) == "ValueError: boom"
+
+
+# Every compute_and_store_* entry point, with the API path it fetches. A
+# ReadTimeout on that fetch must produce a log line + computation_log row that
+# names "ReadTimeout" rather than the historical blank error="".
+_COMPUTATION_ENTRY_POINTS = [
+    ("compute_and_store_artist_centrality", "artist_centrality"),
+    ("compute_and_store_genre_trends", "genre_trends"),
+    ("compute_and_store_label_longevity", "label_longevity"),
+    ("compute_and_store_anniversaries", "anniversaries"),
+    ("compute_and_store_data_completeness", "data_completeness"),
+    ("compute_and_store_community_enrichment", "community_enrichment"),
+    ("compute_and_store_rarity", "release_rarity"),
+]
+
+
+class TestReadTimeoutIsDiagnosable:
+    """Regression for the blank error="" production logs (discogsography-ggz6)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("func_name", "insight_type"), _COMPUTATION_ENTRY_POINTS)
+    async def test_read_timeout_names_the_exception_type(self, func_name: str, insight_type: str) -> None:
+        import httpx
+
+        import insights.computations as computations
+
+        func = getattr(computations, func_name)
+        mock_client = AsyncMock()
+        # httpx.ReadTimeout("") stringifies to "" — the exact production case.
+        mock_client.get = AsyncMock(side_effect=httpx.ReadTimeout(""))
+        mock_pool = _make_mock_pool()
+
+        with (
+            patch.object(computations.logger, "error") as mock_log_error,
+            patch.object(computations, "_log_computation", new=AsyncMock()) as mock_log_computation,
+            pytest.raises(httpx.ReadTimeout),
+        ):
+            await func(mock_client, mock_pool)
+
+        # The structlog error call must carry a diagnosable error value.
+        assert mock_log_error.call_count == 1
+        logged_error = mock_log_error.call_args.kwargs["error"]
+        assert logged_error == "ReadTimeout", f"{func_name} logged error={logged_error!r}"
+
+        # ...and so must the persisted computation_log row.
+        failure_calls = [c for c in mock_log_computation.await_args_list if c.args[2] == "failed"]
+        assert len(failure_calls) == 1
+        assert failure_calls[0].args[1] == insight_type
+        assert failure_calls[0].kwargs["error_message"] == "ReadTimeout"
+
+    @pytest.mark.asyncio
+    async def test_run_all_computations_names_the_type_for_a_failed_member(self) -> None:
+        import httpx
+
+        import insights.computations as computations
+
+        mock_client = AsyncMock()
+        mock_pool = _make_mock_pool()
+
+        with (
+            patch.object(computations, "compute_and_store_artist_centrality", side_effect=httpx.ReadTimeout("")),
+            patch.object(computations, "compute_and_store_genre_trends", return_value=0),
+            patch.object(computations, "compute_and_store_label_longevity", return_value=0),
+            patch.object(computations, "compute_and_store_anniversaries", return_value=0),
+            patch.object(computations, "compute_and_store_data_completeness", return_value=0),
+            patch.object(computations, "compute_and_store_community_enrichment", return_value=0),
+            patch.object(computations, "compute_and_store_rarity", return_value=0),
+            patch.object(computations.logger, "error") as mock_log_error,
+        ):
+            await computations.run_all_computations(mock_client, mock_pool)
+
+        assert mock_log_error.call_args.kwargs["error"] == "ReadTimeout"
 
 
 class TestComputeAndStoreArtistCentrality:
@@ -647,3 +720,52 @@ class TestRunAllComputations:
             await run_all_computations(mock_client, mock_pool, milestone_years=custom_milestones)
 
         mock_anniv.assert_called_once_with(mock_client, mock_pool, milestone_years=custom_milestones)
+
+
+class TestEndpointTimeouts:
+    """Regression for ReadTimeout failures on the heavy endpoints (discogsography-1cxi)."""
+
+    def test_connect_budget_is_short_so_a_dead_api_fails_fast(self) -> None:
+        from insights.computations import endpoint_timeout
+
+        timeout = endpoint_timeout("/api/internal/insights/data-completeness")
+        assert timeout.connect is not None
+        assert timeout.connect <= 30.0
+
+    def test_default_read_budget_applies_to_unmapped_paths(self) -> None:
+        from insights.computations import DEFAULT_READ_TIMEOUT_SECONDS, endpoint_timeout
+
+        assert endpoint_timeout("/api/internal/insights/genre-trends").read == DEFAULT_READ_TIMEOUT_SECONDS
+        assert endpoint_timeout().read == DEFAULT_READ_TIMEOUT_SECONDS
+
+    def test_data_completeness_read_budget_clears_the_documented_worst_case(self) -> None:
+        """The API documents a ~400s releases seq scan, exceeding 600s on bad days."""
+        from insights.computations import endpoint_timeout
+
+        read = endpoint_timeout("/api/internal/insights/data-completeness").read
+        assert read is not None
+        assert read >= 1200.0
+
+    def test_community_enrichment_budget_covers_the_capped_batch(self) -> None:
+        """1 Discogs req/s * MAX_ENRICHMENT_RELEASES must fit inside the read budget."""
+        from api.routers.insights_compute import _ENRICHMENT_DELAY_SECONDS, MAX_ENRICHMENT_RELEASES
+        from insights.computations import endpoint_timeout
+
+        read = endpoint_timeout("/api/internal/insights/community-enrichment").read
+        assert read is not None
+        worst_case = MAX_ENRICHMENT_RELEASES * _ENRICHMENT_DELAY_SECONDS
+        assert read > worst_case, f"read budget {read}s does not cover worst case {worst_case}s"
+
+    def test_rarity_read_budget_clears_the_neo4j_transaction_timeout(self) -> None:
+        """Must outlast the server-side db.transaction.timeout (600s) plus overhead."""
+        from insights.computations import endpoint_timeout
+
+        read = endpoint_timeout("/api/internal/insights/rarity-scores").read
+        assert read is not None
+        assert read >= 1200.0
+
+    def test_every_mapped_endpoint_exceeds_the_default(self) -> None:
+        from insights.computations import DEFAULT_READ_TIMEOUT_SECONDS, ENDPOINT_READ_TIMEOUTS
+
+        for path, read in ENDPOINT_READ_TIMEOUTS.items():
+            assert read > DEFAULT_READ_TIMEOUT_SECONDS, path

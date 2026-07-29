@@ -36,6 +36,7 @@ from api.queries.admin_queries import (
     get_user_stats,
 )
 from api.queries.metrics_queries import get_health_history, get_queue_history
+from common import describe_exception
 from common.config import (
     AMQP_QUEUE_PREFIX_BRAINZGRAPHINATOR,
     AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR,
@@ -416,7 +417,7 @@ async def _track_extraction(extraction_id: str) -> None:
                         "⚠️ Extraction tracking iteration failed",
                         extraction_id=extraction_id,
                         attempt=consecutive_failures,
-                        error=str(exc),
+                        error=describe_exception(exc),
                     )
 
                 if consecutive_failures >= max_failures:

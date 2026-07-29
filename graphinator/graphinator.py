@@ -24,7 +24,7 @@ from common import (
     setup_logging,
 )
 from common.credit_roles import categorize_role
-from neo4j.exceptions import ServiceUnavailable, SessionExpired
+from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
 from orjson import loads
 
 from graphinator.batch_processor import BatchConfig, Neo4jBatchProcessor
@@ -700,31 +700,31 @@ async def compute_genre_style_stats() -> bool:
     } IN TRANSACTIONS OF 100 ROWS
     """
 
+    # These share the transaction-memory pool with stub cleanup and the insights
+    # background scans, so they get the same retry-under-pressure treatment and
+    # are staggered rather than run back to back.
+    stats_queries = [
+        ("Genre", genre_cypher),
+        ("Style", style_cypher),
+        ("Label", label_cypher),
+    ]
+
     try:
-        logger.info("📊 Computing aggregate stats on Genre nodes...")
-        async with graph.session(database="neo4j") as session:
-            result = await session.run(genre_cypher)
-            summary = await result.consume()
-            logger.info(
-                "✅ Genre stats computed",
-                counters=str(summary.counters),
+        for index, (node_label, cypher) in enumerate(stats_queries):
+            if index:
+                await asyncio.sleep(MAINTENANCE_SETTLE_SECONDS)
+            logger.info(f"📊 Computing aggregate stats on {node_label} nodes...")
+            summary = await _run_maintenance_query(
+                lambda _batch_size, _cypher=cypher: _cypher,
+                f"{node_label} stats computation",
+                node_label=node_label,
             )
-
-        logger.info("📊 Computing aggregate stats on Style nodes...")
-        async with graph.session(database="neo4j") as session:
-            result = await session.run(style_cypher)
-            summary = await result.consume()
+            if summary is None:
+                # Retries exhausted — already logged. Fail so the caller nacks
+                # and the whole maintenance step is retried on the next cycle.
+                return False
             logger.info(
-                "✅ Style stats computed",
-                counters=str(summary.counters),
-            )
-
-        logger.info("📊 Computing aggregate stats on Label nodes...")
-        async with graph.session(database="neo4j") as session:
-            result = await session.run(label_cypher)
-            summary = await result.consume()
-            logger.info(
-                "✅ Label stats computed",
+                f"✅ {node_label} stats computed",
                 counters=str(summary.counters),
             )
     except Exception as e:  # noqa: BLE001 - aggregate stats are advisory; failure must not stop ingestion
@@ -735,6 +735,96 @@ async def compute_genre_style_stats() -> bool:
         return False
 
     return True
+
+
+# ── Post-import maintenance under transaction-memory pressure ──────────────
+#
+# Post-import maintenance shares Neo4j's single transaction-memory pool
+# (dbms.memory.transaction.total.max, 16 GiB in production) with ingestion and
+# the insights background scans. Jul 5-9 that pool was exhausted repeatedly
+# (Neo.TransientError.General.MemoryPoolOutOfMemoryError), which killed
+# stub-Master cleanup twice — silently skipping the maintenance — and broke
+# seven dashboard health checks.
+#
+# Two defences, applied to EVERY batched maintenance query in this module:
+#
+#  1. Bound the working set. Smaller `IN TRANSACTIONS OF n ROWS` chunks keep a
+#     single inner transaction cheap even when the chunk contains high-degree
+#     nodes whose DETACH DELETE touches many relationships.
+#  2. Retry with backoff AND a halved chunk size. Pool exhaustion is transient
+#     and contention-driven, so waiting and then asking for less is the correct
+#     response. Every query here is idempotent and `IN TRANSACTIONS` commits per
+#     chunk, so a retry resumes from where the failed attempt stopped instead of
+#     redoing its work.
+#
+# Reduced from 10000: a chunk of 10000 DETACH DELETEs over high-degree stubs was
+# still large enough to contend for the shared pool.
+STUB_CLEANUP_BATCH_SIZE = 1000
+
+# Floor for the halving backoff — below this the round-trip overhead dominates.
+MAINTENANCE_MIN_BATCH_SIZE = 50
+
+MAINTENANCE_MAX_ATTEMPTS = 4
+MAINTENANCE_RETRY_BASE_DELAY_SECONDS = 30.0
+
+# Pause between consecutive heavy maintenance queries so the transaction pool
+# can drain before the next one claims it, rather than running them back to back.
+MAINTENANCE_SETTLE_SECONDS = 5.0
+
+
+async def _run_maintenance_query(
+    build_cypher: Any,
+    description: str,
+    batch_size: int | None = None,
+    **log_fields: Any,
+) -> Any | None:
+    """Run a batched maintenance query, retrying on transaction-memory exhaustion.
+
+    Args:
+        build_cypher: Callable taking the current batch size and returning the
+            Cypher to run. Called again with a smaller size on each retry.
+        description: Human-readable name used in log messages.
+        batch_size: Starting `IN TRANSACTIONS OF n ROWS` size, or ``None`` for
+            queries that are not batch-size parameterised.
+        **log_fields: Extra structured log fields.
+
+    Returns:
+        The query summary on success, or ``None`` if every attempt failed.
+    """
+    if graph is None:
+        return None
+
+    current_batch = batch_size
+    for attempt in range(1, MAINTENANCE_MAX_ATTEMPTS + 1):
+        try:
+            async with graph.session(database="neo4j") as session:
+                result = await session.run(build_cypher(current_batch))
+                return await result.consume()
+        except TransientError as e:
+            # Pool exhaustion / contention — retryable. Anything else is a real
+            # error and propagates to the caller's handler.
+            if attempt == MAINTENANCE_MAX_ATTEMPTS:
+                logger.error(
+                    f"❌ {description} exhausted retries under transaction-memory pressure",
+                    attempts=attempt,
+                    batch_size=current_batch,
+                    error=str(e),
+                    **log_fields,
+                )
+                return None
+            delay = MAINTENANCE_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1))
+            if current_batch is not None:
+                current_batch = max(MAINTENANCE_MIN_BATCH_SIZE, current_batch // 2)
+            logger.warning(
+                f"⚠️ {description} hit transaction-memory pressure — retrying with a smaller batch",
+                attempt=attempt,
+                next_batch_size=current_batch,
+                retry_in_seconds=delay,
+                error=str(e),
+                **log_fields,
+            )
+            await asyncio.sleep(delay)
+    return None
 
 
 async def cleanup_all_stub_nodes() -> bool:
@@ -750,7 +840,11 @@ async def cleanup_all_stub_nodes() -> bool:
         caller can nack and retry (each cleanup is idempotent).
     """
     ok = True
-    for data_type in DATA_TYPES:
+    for index, data_type in enumerate(DATA_TYPES):
+        if index:
+            # Stagger: let the shared transaction pool drain between labels
+            # instead of firing four DETACH DELETE sweeps back to back.
+            await asyncio.sleep(MAINTENANCE_SETTLE_SECONDS)
         if not await cleanup_stub_nodes(data_type):
             ok = False
     return ok
@@ -792,32 +886,46 @@ async def cleanup_stub_nodes(data_type: str) -> bool:
     # forever. Mirrors the compute_genre_style_stats batching in this file: the
     # driving MATCH sits OUTSIDE the transactional subquery and the node is
     # re-imported via WITH, so each inner transaction deletes at most one chunk.
-    cleanup_cypher = f"""
+    #
+    # The chunk size is a parameter of the retry loop, not a constant in the
+    # query: under transaction-memory pressure _run_maintenance_query re-runs
+    # this with progressively smaller chunks. IN TRANSACTIONS commits per chunk,
+    # so a retry only has to delete what the failed attempt did not.
+    def _build_cleanup_cypher(batch_size: int | None) -> str:
+        return f"""
     MATCH (n:{label})
     WHERE n.sha256 IS NULL
     CALL {{
         WITH n
         DETACH DELETE n
-    }} IN TRANSACTIONS OF 10000 ROWS
+    }} IN TRANSACTIONS OF {batch_size} ROWS
     """
 
     try:
-        async with graph.session(database="neo4j") as session:
-            result = await session.run(cleanup_cypher)
-            summary = await result.consume()
-            deleted = summary.counters.nodes_deleted
+        summary = await _run_maintenance_query(
+            _build_cleanup_cypher,
+            f"Stub {label} cleanup",
+            batch_size=STUB_CLEANUP_BATCH_SIZE,
+            data_type=data_type,
+        )
+        if summary is None:
+            # Retries exhausted — already logged. Report failure so the caller
+            # nacks and the cleanup is retried on the next cycle rather than
+            # being silently skipped.
+            return False
 
-            if deleted > 0:
-                logger.info(
-                    f"🧹 Cleaned up {deleted} stub {label} nodes (no sha256 property)",
-                    data_type=data_type,
-                    deleted=deleted,
-                )
-            else:
-                logger.info(
-                    f"✅ No stub {label} nodes to clean up",
-                    data_type=data_type,
-                )
+        deleted = summary.counters.nodes_deleted
+        if deleted > 0:
+            logger.info(
+                f"🧹 Cleaned up {deleted} stub {label} nodes (no sha256 property)",
+                data_type=data_type,
+                deleted=deleted,
+            )
+        else:
+            logger.info(
+                f"✅ No stub {label} nodes to clean up",
+                data_type=data_type,
+            )
     except Exception as e:  # noqa: BLE001 - stub cleanup is advisory; failure must not stop ingestion
         logger.error(
             f"❌ Failed to clean up stub {label} nodes",

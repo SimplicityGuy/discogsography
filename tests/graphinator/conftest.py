@@ -31,3 +31,19 @@ def reset_extraction_complete_signals():
     g.extraction_complete_signals = set()
     yield
     g.extraction_complete_signals = saved
+
+
+@pytest.fixture(autouse=True)
+def instant_maintenance_delays():
+    """Collapse post-import maintenance wall-clock delays to zero.
+
+    Maintenance staggers heavy queries (MAINTENANCE_SETTLE_SECONDS) and backs
+    off on Neo4j transaction-memory pressure (MAINTENANCE_RETRY_BASE_DELAY_SECONDS).
+    Those are production pacing values; tests assert the control flow, not the
+    clock, so waiting on them would only make the suite slow.
+    """
+    with (
+        patch("graphinator.graphinator.MAINTENANCE_SETTLE_SECONDS", 0.0),
+        patch("graphinator.graphinator.MAINTENANCE_RETRY_BASE_DELAY_SECONDS", 0.0),
+    ):
+        yield

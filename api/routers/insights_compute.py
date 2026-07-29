@@ -12,7 +12,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 import httpx
-from neo4j.exceptions import TransientError
+from neo4j.exceptions import ClientError, Neo4jError, TransientError
 from psycopg.rows import dict_row
 import structlog
 
@@ -27,6 +27,7 @@ from api.queries.insights_neo4j_queries import (
 from api.queries.insights_pg_queries import query_data_completeness
 from api.queries.rarity_queries import fetch_all_rarity_signals
 from api.syncer import DISCOGS_API_BASE, MAX_RATE_LIMIT_RETRIES, _auth_header
+from common import describe_exception
 
 
 logger = structlog.get_logger(__name__)
@@ -71,6 +72,20 @@ router = APIRouter(
 
 _ENRICHMENT_DELAY_SECONDS = 1.0  # 1 req/sec to stay under 60 req/min
 _STALENESS_DAYS = 7
+
+# Hard cap on releases enriched per invocation.
+#
+# The enrichment loop is rate-limited to one Discogs request per second, so its
+# wall-clock cost is unbounded in the number of stale releases — a backlog of
+# 10k releases would take ~3 hours and blow ANY client read timeout. That is why
+# community_enrichment failed four times in production with an (empty-stringing)
+# ReadTimeout: the endpoint simply never returned.
+#
+# Bounding the batch makes the endpoint's worst case predictable
+# (~1500 * 1.5s ≈ 2250s, comfortably inside the insights client's 3600s read
+# budget) and costs nothing in completeness: the daily scheduler drains the
+# remaining backlog on subsequent cycles.
+MAX_ENRICHMENT_RELEASES = 1500
 
 # Cache TTL for data-completeness (6 hours — full table scans are very expensive)
 _COMPLETENESS_CACHE_TTL = 21600
@@ -166,6 +181,44 @@ async def data_completeness(request: Request) -> JSONResponse:  # noqa: ARG001
     return JSONResponse(content=response)
 
 
+# Neo4j error codes that mean "the database gave up on this transaction", not
+# "the server has a bug". Both are retryable and must surface as 503, never 500.
+#
+# TransactionTimedOutClientConfiguration is a *ClientError*, not a TransientError,
+# which is exactly why the previous handler missed it: rarity-scores blew
+# db.transaction.timeout (600s) on every production run and the ClientError
+# escaped as an unhandled 500.
+TRANSACTION_TIMEOUT_CODES = frozenset(
+    {
+        "Neo.ClientError.Transaction.TransactionTimedOut",
+        "Neo.ClientError.Transaction.TransactionTimedOutClientConfiguration",
+    }
+)
+
+
+def _find_retryable_neo4j_error(exc: BaseException) -> Neo4jError | None:
+    """Return the first retryable Neo4j error in ``exc``, or ``None``.
+
+    Unwraps ``BaseExceptionGroup`` (the driver's internals can surface a
+    transaction failure wrapped in one) and ``__cause__`` chains, so a retryable
+    error is recognised no matter how it was re-raised.
+    """
+    if isinstance(exc, BaseExceptionGroup):
+        for inner in exc.exceptions:
+            found = _find_retryable_neo4j_error(inner)
+            if found is not None:
+                return found
+        return None
+    if isinstance(exc, TransientError):
+        return exc
+    if isinstance(exc, ClientError) and exc.code in TRANSACTION_TIMEOUT_CODES:
+        return exc
+    cause = exc.__cause__
+    if cause is not None and cause is not exc:
+        return _find_retryable_neo4j_error(cause)
+    return None
+
+
 @router.get("/rarity-scores")
 @limiter.limit("5/minute")
 async def rarity_scores(request: Request) -> JSONResponse:  # noqa: ARG001
@@ -174,13 +227,21 @@ async def rarity_scores(request: Request) -> JSONResponse:  # noqa: ARG001
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     try:
         results = await fetch_all_rarity_signals(_neo4j, _pool)
-    except TransientError:
-        # e.g. MemoryPoolOutOfMemoryError under DB pressure — transient, not a
-        # server bug. Return 503 so the caller logs a meaningful, retryable
-        # failure instead of a bare 500.
-        logger.warning("⚠️ Rarity computation hit a transient Neo4j error", exc_info=True)
+    except (TransientError, ClientError, BaseExceptionGroup) as exc:
+        # TransientError: e.g. MemoryPoolOutOfMemoryError under DB pressure.
+        # ClientError: a transaction timeout (see TRANSACTION_TIMEOUT_CODES).
+        # Neither is a server bug — return 503 so the caller logs a meaningful,
+        # retryable failure instead of a bare 500.
+        retryable = _find_retryable_neo4j_error(exc)
+        if retryable is None:
+            raise
+        logger.warning(
+            "⚠️ Rarity computation hit a retryable Neo4j error",
+            code=retryable.code,
+            exc_info=True,
+        )
         return JSONResponse(
-            content={"error": "Neo4j temporarily unavailable (transient error)"},
+            content={"error": "Neo4j temporarily unavailable (retryable error)", "code": retryable.code},
             status_code=503,
         )
     return JSONResponse(content={"items": results})
@@ -209,11 +270,23 @@ async def _enrich_community_counts(
             (_STALENESS_DAYS,),
         )
         rows = await cur.fetchall()
-        release_ids = [r["release_id"] for r in rows]
+        all_release_ids = [r["release_id"] for r in rows]
 
-    if not release_ids:
+    if not all_release_ids:
         logger.info("📊 No releases need community enrichment")
-        return {"enriched": 0, "skipped": 0, "errors": 0}
+        return {"enriched": 0, "skipped": 0, "errors": 0, "remaining": 0}
+
+    # Bound the batch so this endpoint always returns inside the caller's read
+    # timeout — the leftover backlog is picked up by the next scheduled cycle.
+    release_ids = all_release_ids[:MAX_ENRICHMENT_RELEASES]
+    remaining = len(all_release_ids) - len(release_ids)
+    if remaining:
+        logger.info(
+            "📊 Community enrichment backlog capped for this cycle",
+            batch_size=len(release_ids),
+            backlog=len(all_release_ids),
+            remaining=remaining,
+        )
 
     logger.info("📊 Releases needing community enrichment", count=len(release_ids))
 
@@ -231,7 +304,7 @@ async def _enrich_community_counts(
 
         if not token:
             logger.warning("⚠️ No Discogs OAuth credentials for community enrichment")
-            return {"enriched": 0, "skipped": len(release_ids), "errors": 0, "error": "no_credentials"}
+            return {"enriched": 0, "skipped": len(release_ids), "errors": 0, "remaining": remaining, "error": "no_credentials"}
 
         access_token = decrypt_oauth_token(token["access_token"], encryption_key)
         access_secret = decrypt_oauth_token(token["access_secret"], encryption_key)
@@ -241,7 +314,7 @@ async def _enrich_community_counts(
         app_config = {r["key"]: r["value"] for r in config_rows}
         if "discogs_consumer_key" not in app_config or "discogs_consumer_secret" not in app_config:
             logger.warning("⚠️ Discogs app credentials not configured")
-            return {"enriched": 0, "skipped": len(release_ids), "errors": 0, "error": "no_credentials"}
+            return {"enriched": 0, "skipped": len(release_ids), "errors": 0, "remaining": remaining, "error": "no_credentials"}
         consumer_key = decrypt_oauth_token(app_config["discogs_consumer_key"], encryption_key)
         consumer_secret = decrypt_oauth_token(app_config["discogs_consumer_secret"], encryption_key)
 
@@ -281,7 +354,7 @@ async def _enrich_community_counts(
                 try:
                     response = await client.get(url, headers=headers)
                 except httpx.HTTPError as exc:
-                    logger.warning("⚠️ Discogs API request failed for release", release_id=release_id, error=str(exc))
+                    logger.warning("⚠️ Discogs API request failed for release", release_id=release_id, error=describe_exception(exc))
                     fetch_failed = True
                     break
 
@@ -357,8 +430,13 @@ async def _enrich_community_counts(
         except Exception as e:
             logger.error("❌ Failed to update Neo4j community counts", error=str(e))
 
-    logger.info("✅ Community enrichment complete", enriched=enriched, errors=errors)
-    return {"enriched": enriched, "skipped": len(release_ids) - enriched - errors, "errors": errors}
+    logger.info("✅ Community enrichment complete", enriched=enriched, errors=errors, remaining=remaining)
+    return {
+        "enriched": enriched,
+        "skipped": len(release_ids) - enriched - errors,
+        "errors": errors,
+        "remaining": remaining,
+    }
 
 
 @router.get("/community-enrichment")

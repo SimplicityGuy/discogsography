@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import json
+import re
 import signal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -4488,3 +4489,182 @@ class TestStubCleanupBatchAndOrdering:
         assert "releases" in g.extraction_complete_signals
 
         g.extraction_complete_signals = set()
+
+
+class TestMaintenanceUnderMemoryPressure:
+    """discogsography-79p9: Neo4j transaction-memory exhaustion (16 GiB pool).
+
+    Jul 5-9 production hit Neo.TransientError.General.MemoryPoolOutOfMemoryError
+    repeatedly. Stub-Master cleanup failed twice and was silently skipped with no
+    retry, and dashboard health checks failed 7 times.
+    """
+
+    @staticmethod
+    def _pressure_graph(fail_times: int) -> tuple[MagicMock, list[str]]:
+        """Graph mock whose first ``fail_times`` runs raise MemoryPoolOutOfMemoryError."""
+        from neo4j.exceptions import Neo4jError
+
+        run_calls: list[str] = []
+        attempts = {"n": 0}
+
+        class _Result:
+            async def consume(self) -> MagicMock:
+                summary = MagicMock()
+                summary.counters.nodes_deleted = 7
+                return summary
+
+        class _Session:
+            async def __aenter__(self) -> "_Session":
+                return self
+
+            async def __aexit__(self, *args: Any) -> None:
+                return None
+
+            async def run(self, cypher: str, *_args: Any, **_kwargs: Any) -> "_Result":
+                run_calls.append(cypher)
+                attempts["n"] += 1
+                if attempts["n"] <= fail_times:
+                    raise Neo4jError._hydrate_neo4j(
+                        code="Neo.TransientError.General.MemoryPoolOutOfMemoryError",
+                        message="using 16.0 GiB of 16.0 GiB dbms.memory.transaction.total.max",
+                    )
+                return _Result()
+
+        graph_mock = MagicMock()
+        graph_mock.session = MagicMock(return_value=_Session())
+        return graph_mock, run_calls
+
+    def test_cleanup_batch_size_is_bounded(self) -> None:
+        """Reduced from 10000 — a chunk that large still contended for the pool."""
+        import graphinator.graphinator as g
+
+        assert g.STUB_CLEANUP_BATCH_SIZE <= 1000
+        assert g.MAINTENANCE_MIN_BATCH_SIZE <= g.STUB_CLEANUP_BATCH_SIZE
+
+    @pytest.mark.asyncio
+    async def test_cleanup_retries_on_transaction_memory_exhaustion(self) -> None:
+        """The maintenance is retried, not silently skipped."""
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._pressure_graph(fail_times=2)
+        with patch.object(g, "graph", graph_mock):
+            ok = await g.cleanup_stub_nodes("masters")
+
+        assert ok is True, "cleanup must recover once the pool frees up"
+        assert len(run_calls) == 3, "two failures then a success"
+        assert all("Master" in c for c in run_calls)
+
+    @pytest.mark.asyncio
+    async def test_each_retry_halves_the_batch_size(self) -> None:
+        """Under memory pressure, ask the database for less work, not the same."""
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._pressure_graph(fail_times=2)
+        with patch.object(g, "graph", graph_mock):
+            await g.cleanup_stub_nodes("masters")
+
+        sizes = [int(re.search(r"IN TRANSACTIONS OF (\d+) ROWS", c).group(1)) for c in run_calls]
+        assert sizes == [
+            g.STUB_CLEANUP_BATCH_SIZE,
+            g.STUB_CLEANUP_BATCH_SIZE // 2,
+            g.STUB_CLEANUP_BATCH_SIZE // 4,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_batch_size_never_falls_below_the_floor(self) -> None:
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._pressure_graph(fail_times=3)
+        with (
+            patch.object(g, "graph", graph_mock),
+            patch.object(g, "STUB_CLEANUP_BATCH_SIZE", g.MAINTENANCE_MIN_BATCH_SIZE),
+        ):
+            await g.cleanup_stub_nodes("masters")
+
+        sizes = [int(re.search(r"IN TRANSACTIONS OF (\d+) ROWS", c).group(1)) for c in run_calls]
+        assert all(size >= g.MAINTENANCE_MIN_BATCH_SIZE for size in sizes)
+
+    @pytest.mark.asyncio
+    async def test_exhausted_retries_report_failure_for_the_next_cycle(self) -> None:
+        """Never silently skip — return False so the caller nacks and retries."""
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._pressure_graph(fail_times=99)
+        with patch.object(g, "graph", graph_mock):
+            ok = await g.cleanup_stub_nodes("masters")
+
+        assert ok is False
+        assert len(run_calls) == g.MAINTENANCE_MAX_ATTEMPTS
+
+    @pytest.mark.asyncio
+    async def test_non_transient_errors_are_not_retried(self) -> None:
+        """A real bug must fail fast, not burn four attempts and a backoff."""
+        import graphinator.graphinator as g
+
+        run_calls: list[str] = []
+
+        class _Session:
+            async def __aenter__(self) -> "_Session":
+                return self
+
+            async def __aexit__(self, *args: Any) -> None:
+                return None
+
+            async def run(self, cypher: str, *_args: Any, **_kwargs: Any) -> Any:
+                run_calls.append(cypher)
+                raise RuntimeError("syntax error")
+
+        graph_mock = MagicMock()
+        graph_mock.session = MagicMock(return_value=_Session())
+
+        with patch.object(g, "graph", graph_mock), patch.object(g, "logger"):
+            ok = await g.cleanup_stub_nodes("masters")
+
+        assert ok is False
+        assert len(run_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_stats_computation_retries_under_pressure(self) -> None:
+        """Fix-one-fix-all: the sibling maintenance query shares the same pool."""
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._pressure_graph(fail_times=1)
+        with patch.object(g, "graph", graph_mock):
+            ok = await g.compute_genre_style_stats()
+
+        assert ok is True
+        # 1 failed Genre attempt + Genre retry + Style + Label
+        assert len(run_calls) == 4
+
+    @pytest.mark.asyncio
+    async def test_stats_computation_reports_failure_when_retries_exhaust(self) -> None:
+        import graphinator.graphinator as g
+
+        graph_mock, _ = self._pressure_graph(fail_times=99)
+        with patch.object(g, "graph", graph_mock):
+            ok = await g.compute_genre_style_stats()
+
+        assert ok is False
+
+    @pytest.mark.asyncio
+    async def test_cleanup_sweeps_are_staggered(self) -> None:
+        """Four DETACH DELETE sweeps must not fire back to back at the pool."""
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._pressure_graph(fail_times=0)
+        sleeps: list[float] = []
+
+        async def _record_sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+
+        with (
+            patch.object(g, "graph", graph_mock),
+            patch.object(g, "MAINTENANCE_SETTLE_SECONDS", 7.5),
+            patch.object(g.asyncio, "sleep", _record_sleep),
+        ):
+            ok = await g.cleanup_all_stub_nodes()
+
+        assert ok is True
+        assert len(run_calls) == 4
+        # One settle between each pair of labels — not before the first.
+        assert sleeps == [7.5, 7.5, 7.5]
