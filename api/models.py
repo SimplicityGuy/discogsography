@@ -58,10 +58,17 @@ class UserResponse(BaseModel):
 
 
 class SnapshotNode(BaseModel):
-    """A single node in a graph snapshot."""
+    """A single node in a graph snapshot.
 
-    id: str
-    type: str
+    ``id``/``type`` are bounded so a caller can't inflate the serialized
+    snapshot payload with megabyte-sized strings per node — the node-count
+    cap (`SnapshotStore.max_nodes`, enforced at save time) only bounds the
+    number of nodes, not their size (discogsography-cu2.110). Real Discogs/
+    MusicBrainz entity ids and type names are far shorter than these caps.
+    """
+
+    id: str = Field(max_length=128)
+    type: str = Field(max_length=32)
 
 
 class SnapshotRequest(BaseModel):
