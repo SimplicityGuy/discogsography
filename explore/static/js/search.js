@@ -82,15 +82,26 @@
 
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
+            resetGenresOnNewQuery();
             currentOffset = 0;
             triggerSearch();
         }
     });
 
     searchBtn.addEventListener('click', () => {
+        resetGenresOnNewQuery();
         currentOffset = 0;
         triggerSearch();
     });
+
+    // A genre facet chip is semantically coupled to the query that produced
+    // it — carrying it forward silently narrows (or zeroes) an unrelated
+    // query with no on-screen indication why. Clear it only when the query
+    // text actually changed; refining/re-running the same query keeps it.
+    function resetGenresOnNewQuery() {
+        const q = input.value.trim();
+        if (q !== lastQuery) selectedGenres = [];
+    }
 
     // ------------------------------------------------------------------
     // Core search
