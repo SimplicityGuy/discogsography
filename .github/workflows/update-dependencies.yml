@@ -155,7 +155,14 @@ jobs:
         id: create-pr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1  # v8.1.1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # The default GITHUB_TOKEN is intentionally excluded from triggering new
+          # workflow runs (GitHub's recursion-prevention rule), so a PR opened with
+          # it never fires build.yml's `pull_request` trigger and ships with zero CI
+          # checks. DEPENDENCY_UPDATE_PAT is a fine-grained PAT (or GitHub App
+          # installation token) with `contents: write` + `pull-requests: write` on
+          # this repo, added as a repo secret, so the PR triggers CI like any other.
+          # Falls back to GITHUB_TOKEN (PR still opens, just without CI) if unset.
+          token: ${{ secrets.DEPENDENCY_UPDATE_PAT || secrets.GITHUB_TOKEN }}
           branch: automation/updates
           delete-branch: true
           title: ${{ steps.summary.outputs.pr_title }}
@@ -174,14 +181,18 @@ jobs:
 
             - ✅ Updated dependencies to latest compatible versions
             - 🔒 All security patches applied
-            - 🧪 Tests have been run automatically
+            - 🧪 Lint/tests were run during the update; failures are reported as warnings
+              in the update-logs artifact and do **not** block this PR from being opened
 
             ### 🔍 Manual Verification Required
 
             Before merging, please:
 
             1. **Review dependency changes**: Check the Files tab for `uv.lock` changes
-            2. **Check CI status**: Ensure all checks pass
+            2. **Check CI status**: If `DEPENDENCY_UPDATE_PAT` is configured (see workflow
+               comments), this PR triggers the normal CI checks — ensure they pass. If not
+               configured, no automated checks run on this PR; review the `update-logs`
+               artifact from the workflow run and test locally before merging.
             3. **Test locally** (optional):
                ```bash
                git checkout automation/updates
