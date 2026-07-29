@@ -1047,6 +1047,114 @@ class TestRunFullSync:
         assert mock_decrypt.call_count == 4
 
     @pytest.mark.asyncio
+    async def test_success_invalidates_recommendation_cache(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """A fully successful sync invalidates the user-scoped recommendation cache."""
+        mock_pg_pool._mock_cur.fetchone.return_value = {
+            "access_token": "at",
+            "access_secret": "as",
+            "provider_username": "user",
+        }
+        mock_pg_pool._mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ck"},
+            {"key": "discogs_consumer_secret", "value": "cs"},
+        ]
+
+        mock_redis = MagicMock()
+
+        with (
+            patch("api.syncer.sync_collection", new_callable=AsyncMock, return_value=10),
+            patch("api.syncer.sync_wantlist", new_callable=AsyncMock, return_value=5),
+            patch("api.syncer.decrypt_oauth_token", side_effect=lambda val, _key: val),
+            patch("api.syncer.RecommendCache") as mock_cache_cls,
+        ):
+            mock_cache = mock_cache_cls.return_value
+            mock_cache.invalidate_user = AsyncMock()
+
+            result = await run_full_sync(
+                TEST_USER_UUID,
+                "sync-cache-ok",
+                mock_pg_pool,
+                mock_neo4j,
+                TEST_USER_AGENT,
+                redis_client=mock_redis,
+            )
+
+        assert result["status"] == "completed"
+        mock_cache.invalidate_user.assert_awaited_once_with(str(TEST_USER_UUID))
+
+    @pytest.mark.asyncio
+    async def test_partial_failure_still_invalidates_recommendation_cache(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """discogsography-cu2.99 regression: a partial failure (collection synced,
+        wantlist raises) must still invalidate the recommendation cache — the
+        collection sync already durably wrote data via autocommit executemany,
+        so skipping invalidation on the exception path would serve stale
+        personalized results for up to the cache TTL.
+        """
+        mock_pg_pool._mock_cur.fetchone.return_value = {
+            "access_token": "at",
+            "access_secret": "as",
+            "provider_username": "user",
+        }
+        mock_pg_pool._mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ck"},
+            {"key": "discogs_consumer_secret", "value": "cs"},
+        ]
+
+        mock_redis = MagicMock()
+
+        with (
+            patch("api.syncer.sync_collection", new_callable=AsyncMock, return_value=10),
+            patch("api.syncer.sync_wantlist", new_callable=AsyncMock, side_effect=RuntimeError("neo4j hiccup")),
+            patch("api.syncer.decrypt_oauth_token", side_effect=lambda val, _key: val),
+            patch("api.syncer.RecommendCache") as mock_cache_cls,
+        ):
+            mock_cache = mock_cache_cls.return_value
+            mock_cache.invalidate_user = AsyncMock()
+
+            result = await run_full_sync(
+                TEST_USER_UUID,
+                "sync-cache-partial",
+                mock_pg_pool,
+                mock_neo4j,
+                TEST_USER_AGENT,
+                redis_client=mock_redis,
+            )
+
+        assert result["status"] == "failed"
+        mock_cache.invalidate_user.assert_awaited_once_with(str(TEST_USER_UUID))
+
+    @pytest.mark.asyncio
+    async def test_no_redis_client_skips_invalidation(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """When redis_client is None, no RecommendCache is constructed."""
+        mock_pg_pool._mock_cur.fetchone.return_value = {
+            "access_token": "at",
+            "access_secret": "as",
+            "provider_username": "user",
+        }
+        mock_pg_pool._mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ck"},
+            {"key": "discogs_consumer_secret", "value": "cs"},
+        ]
+
+        with (
+            patch("api.syncer.sync_collection", new_callable=AsyncMock, return_value=10),
+            patch("api.syncer.sync_wantlist", new_callable=AsyncMock, return_value=5),
+            patch("api.syncer.decrypt_oauth_token", side_effect=lambda val, _key: val),
+            patch("api.syncer.RecommendCache") as mock_cache_cls,
+        ):
+            result = await run_full_sync(
+                TEST_USER_UUID,
+                "sync-no-redis",
+                mock_pg_pool,
+                mock_neo4j,
+                TEST_USER_AGENT,
+                redis_client=None,
+            )
+
+        assert result["status"] == "completed"
+        mock_cache_cls.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_return_dict_structure(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
         mock_pg_pool._mock_cur.fetchone.return_value = None
 

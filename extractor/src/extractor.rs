@@ -581,7 +581,17 @@ pub async fn process_single_file(
 
     let total_count = validator_handle.unwrap_or(0);
 
-    // Mark file as completed in state marker FIRST (consistent with Python)
+    // Send the file completion message BEFORE marking the file Completed in
+    // the state marker. If this AMQP send fails, the marker stays NOT
+    // Completed, so pending_files() on the next run still includes this file
+    // and send_file_complete is retried — instead of the signal being
+    // silently and permanently dropped (the previous "marker first" ordering
+    // let an AMQP failure land in the window after the marker was already
+    // durably Completed, so a retry would skip the file and never resend).
+    mq.send_file_complete(data_type, file_name, total_count).await?;
+
+    // Now that the completion signal has been durably handed off to the
+    // broker, mark the file as completed in the state marker.
     {
         let mut marker = state_marker.lock().await;
         marker.complete_file_processing(file_name, total_count);
@@ -596,11 +606,13 @@ pub async fn process_single_file(
         s.active_connections.remove(&data_type);
     }
 
-    // THEN send file completion message (consistent with Python)
-    mq.send_file_complete(data_type, file_name, total_count).await?;
-
-    // Clean up
-    mq.close().await?;
+    // Clean up — best-effort. A cleanup failure here is purely cosmetic (the
+    // completion signal was already sent and the marker already committed
+    // above), so it must not flip an otherwise fully-successful file to
+    // Failed and trigger the failure cooldown.
+    if let Err(e) = mq.close().await {
+        warn!("⚠️ Failed to cleanly close per-file MQ connection for {}: {}", file_name, e);
+    }
 
     info!("✅ Completed processing {} with {} records", file_name, total_count);
     Ok(())
@@ -1059,12 +1071,39 @@ pub(crate) const DISCOGS_POLL_INTERVAL: Duration = Duration::from_secs(3600);
 pub(crate) const DISCOGS_HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const DISCOGS_MAX_UNREACHABLE_RETRIES: u32 = 10;
 
+// The "unreachable" case (connection refused, DNS failure, timeout) is a startup-ordering
+// race — extractor-musicbrainz starting before extractor-discogs is reachable — not
+// "Discogs is busy". It must use a short escalating backoff distinct from
+// DISCOGS_POLL_INTERVAL's hourly busy-wait cadence, or the race costs hours instead of
+// minutes (discogsography-i7sa: observed a 4-hour idle wait from a single unlucky
+// restart-timing race, at the old fixed 3600s-per-attempt retry).
+#[cfg(not(test))]
+pub(crate) const DISCOGS_UNREACHABLE_BASE_DELAY: Duration = Duration::from_secs(5);
+#[cfg(test)]
+pub(crate) const DISCOGS_UNREACHABLE_BASE_DELAY: Duration = Duration::from_millis(5);
+
+#[cfg(not(test))]
+pub(crate) const DISCOGS_UNREACHABLE_MAX_DELAY: Duration = Duration::from_secs(300);
+#[cfg(test)]
+pub(crate) const DISCOGS_UNREACHABLE_MAX_DELAY: Duration = Duration::from_millis(50);
+
+/// Escalating backoff for a consecutive-unreachable attempt count: doubles from
+/// `DISCOGS_UNREACHABLE_BASE_DELAY`, capped at `DISCOGS_UNREACHABLE_MAX_DELAY`. `attempt` is
+/// 1-based (the count *after* incrementing for the failure that just happened).
+pub(crate) fn discogs_unreachable_backoff(attempt: u32) -> Duration {
+    let exponent = attempt.saturating_sub(1).min(16); // guard against shl overflow
+    let multiplier = 1u32.checked_shl(exponent).unwrap_or(u32::MAX);
+    DISCOGS_UNREACHABLE_BASE_DELAY.saturating_mul(multiplier).min(DISCOGS_UNREACHABLE_MAX_DELAY)
+}
+
 /// Wait until the Discogs extractor is not actively extracting.
 pub async fn wait_for_discogs_idle(url: &str, shutdown_flag: &AtomicBool) -> Result<()> {
     wait_for_discogs_idle_with_interval(url, shutdown_flag, DISCOGS_POLL_INTERVAL).await
 }
 
-/// Internal implementation with configurable poll interval (for testing).
+/// Internal implementation with configurable poll interval (for testing). `poll_interval`
+/// governs only the "Discogs is busy" (status == "running") wait; an unreachable endpoint
+/// always uses the short escalating backoff from `discogs_unreachable_backoff`.
 pub async fn wait_for_discogs_idle_with_interval(url: &str, shutdown_flag: &AtomicBool, poll_interval: Duration) -> Result<()> {
     let client = reqwest::Client::builder().timeout(DISCOGS_HEALTH_TIMEOUT).build()?;
 
@@ -1095,6 +1134,7 @@ pub async fn wait_for_discogs_idle_with_interval(url: &str, shutdown_flag: &Atom
                         return Ok(());
                     }
                 }
+                tokio::time::sleep(poll_interval).await;
             }
             Err(_) => {
                 unreachable_count += 1;
@@ -1105,14 +1145,14 @@ pub async fn wait_for_discogs_idle_with_interval(url: &str, shutdown_flag: &Atom
                     );
                     return Ok(());
                 }
+                let backoff = discogs_unreachable_backoff(unreachable_count);
                 warn!(
                     "⚠️ Discogs health endpoint unreachable (attempt {}/{}), retrying in {:?}...",
-                    unreachable_count, DISCOGS_MAX_UNREACHABLE_RETRIES, poll_interval
+                    unreachable_count, DISCOGS_MAX_UNREACHABLE_RETRIES, backoff
                 );
+                tokio::time::sleep(backoff).await;
             }
         }
-
-        tokio::time::sleep(poll_interval).await;
     }
 }
 
@@ -1464,6 +1504,18 @@ pub async fn process_musicbrainz_data(
             success = false;
         }
 
+        // Send file_complete BEFORE marking the file Completed in the state marker
+        // (only attempted on success, to avoid misleading consumers). A failed send
+        // must also flip file_success back off so the marker below stays NOT
+        // Completed and the file remains pending on the next run — instead of the
+        // signal being silently and permanently dropped for a file the marker
+        // already claims is done.
+        if file_success && let Err(e) = mq.send_file_complete(*data_type, file_name, total_count).await {
+            error!("❌ Failed to send file_complete for {}: {}", data_type, e);
+            file_success = false;
+            success = false;
+        }
+
         // Mark file complete only on success; on failure, save current state without marking complete
         {
             let mut sm = state_marker.lock().await;
@@ -1480,12 +1532,6 @@ pub async fn process_musicbrainz_data(
                 s.completed_files.insert(file_name.to_string());
             }
             s.active_connections.remove(data_type);
-        }
-
-        // Send file_complete message only on success to avoid misleading consumers
-        if file_success && let Err(e) = mq.send_file_complete(*data_type, file_name, total_count).await {
-            error!("❌ Failed to send file_complete for {}: {}", data_type, e);
-            success = false;
         }
 
         record_counts.insert(data_type.to_string(), total_count);

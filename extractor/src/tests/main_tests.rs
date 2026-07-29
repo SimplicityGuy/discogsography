@@ -54,6 +54,17 @@ fn test_ascii_art_display_musicbrainz() {
 }
 
 #[test]
+fn test_startup_banner_message_reflects_source() {
+    // discogsography-i7sa regression: the startup banner must name the actual --source
+    // mode, not unconditionally claim "Discogs" regardless of which container is running.
+    assert!(startup_banner_message(Source::Discogs).contains("Discogs"));
+    assert!(!startup_banner_message(Source::Discogs).contains("MusicBrainz"));
+
+    assert!(startup_banner_message(Source::MusicBrainz).contains("MusicBrainz"));
+    assert!(!startup_banner_message(Source::MusicBrainz).contains("Discogs"));
+}
+
+#[test]
 fn test_ascii_art_display_none() {
     // Just verify the function doesn't panic with no source
     print_ascii_art(None);

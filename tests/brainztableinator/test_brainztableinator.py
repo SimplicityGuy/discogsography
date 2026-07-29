@@ -534,7 +534,7 @@ class TestOnDataMessage:
     async def test_valid_data_message_calls_processor(self):
         """A valid data message with 'id' should call the appropriate processor."""
         mock_message = AsyncMock()
-        mock_message.body = b'{"id": "artist-mbid-1", "name": "Test Artist"}'
+        mock_message.body = b'{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test Artist"}'
 
         mock_pool = MagicMock()
         mock_conn = AsyncMock()
@@ -569,14 +569,14 @@ class TestOnDataMessage:
         ):
             await on_data_message(mock_message, "artists")
 
-            mock_processor.assert_called_once_with(mock_conn, {"id": "artist-mbid-1", "name": "Test Artist"})
+            mock_processor.assert_called_once_with(mock_conn, {"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test Artist"})
             mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_shutdown_requested_nacks_with_requeue(self):
         """When shutdown_requested is True, message should be nacked with requeue."""
         mock_message = AsyncMock()
-        mock_message.body = b'{"id": "artist-mbid-1", "name": "Test Artist"}'
+        mock_message.body = b'{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test Artist"}'
 
         with patch("brainztableinator.brainztableinator.shutdown_requested", True):
             await on_data_message(mock_message, "artists")
@@ -633,10 +633,85 @@ class TestOnDataMessage:
             mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_message_non_uuid_id_nacks_without_requeue(self):
+        """The extractor's 'unknown' sentinel (or any non-UUID id) should be nacked without
+        requeue instead of deterministically failing the PostgreSQL UUID cast and churning
+        through the quorum queue's redelivery limit."""
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "unknown", "name": "Missing ID Artist"}'
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", MagicMock()),
+        ):
+            await on_data_message(mock_message, "artists")
+
+            mock_message.nack.assert_called_once_with(requeue=False)
+            mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_message_truncated_id_nacks_without_requeue(self):
+        """A truncated/corrupt id string that isn't a valid UUID should also be rejected."""
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "550e8400-e29b-41d4-a716", "name": "Truncated ID Artist"}'
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", MagicMock()),
+        ):
+            await on_data_message(mock_message, "artists")
+
+            mock_message.nack.assert_called_once_with(requeue=False)
+            mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_data_error_nacks_without_requeue(self):
+        """A DataError raised during processing (e.g. a downstream cast failure) is
+        non-retryable and must nack without requeue instead of churning redeliveries."""
+        from psycopg.errors import DataError
+
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test"}'
+
+        mock_pool = MagicMock()
+        mock_conn = AsyncMock()
+        mock_conn.transaction = MagicMock(return_value=AsyncMock())
+        mock_conn_cm = AsyncMock()
+        mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.connection = MagicMock(return_value=mock_conn_cm)
+
+        mock_processor = AsyncMock(side_effect=DataError("invalid input syntax for type uuid"))
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
+            patch(
+                "brainztableinator.brainztableinator.message_counts",
+                {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0},
+            ),
+            patch(
+                "brainztableinator.brainztableinator.last_message_time",
+                {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0},
+            ),
+            patch.dict(
+                "brainztableinator.brainztableinator.PROCESSORS",
+                {"artists": mock_processor},
+            ),
+        ):
+            await on_data_message(mock_message, "artists")
+
+            mock_message.nack.assert_called_once_with(requeue=False)
+            mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_no_processor_for_data_type_nacks(self):
         """Unknown data type with no processor should nack without requeue."""
         mock_message = AsyncMock()
-        mock_message.body = b'{"id": "mbid-1", "name": "Test"}'
+        mock_message.body = b'{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test"}'
 
         mock_pool = MagicMock()
         mock_conn = AsyncMock()
@@ -666,7 +741,7 @@ class TestOnDataMessage:
     async def test_connection_pool_none_nacks_with_requeue(self):
         """When connection_pool is None, message should be nacked with requeue."""
         mock_message = AsyncMock()
-        mock_message.body = b'{"id": "mbid-1", "name": "Test"}'
+        mock_message.body = b'{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test"}'
 
         with (
             patch("brainztableinator.brainztableinator.shutdown_requested", False),
@@ -692,7 +767,7 @@ class TestOnDataMessage:
         from psycopg.errors import OperationalError
 
         mock_message = AsyncMock()
-        mock_message.body = b'{"id": "mbid-1", "name": "Test"}'
+        mock_message.body = b'{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test"}'
 
         mock_pool = MagicMock()
         mock_conn = AsyncMock()
@@ -1682,7 +1757,7 @@ class TestOnDataMessageExtended:
         from psycopg.errors import InterfaceError
 
         mock_message = AsyncMock()
-        mock_message.body = json.dumps({"id": "mbid-1", "name": "Test"}).encode()
+        mock_message.body = json.dumps({"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test"}).encode()
 
         mock_pool = MagicMock()
         mock_pool.connection.side_effect = InterfaceError("Interface error")
@@ -1708,7 +1783,7 @@ class TestOnDataMessageExtended:
     async def test_handles_generic_exception_nack_with_requeue(self) -> None:
         """Test generic exception triggers nack with requeue."""
         mock_message = AsyncMock()
-        mock_message.body = json.dumps({"id": "mbid-1", "name": "Test"}).encode()
+        mock_message.body = json.dumps({"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test"}).encode()
 
         mock_pool = MagicMock()
         mock_pool.connection.side_effect = Exception("Unexpected failure")
@@ -1734,7 +1809,7 @@ class TestOnDataMessageExtended:
     async def test_handles_nack_failure(self) -> None:
         """Test handling failure during nack operation."""
         mock_message = AsyncMock()
-        mock_message.body = json.dumps({"id": "mbid-1", "name": "Test"}).encode()
+        mock_message.body = json.dumps({"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test"}).encode()
         mock_message.nack.side_effect = Exception("Nack failed")
 
         mock_pool = MagicMock()
@@ -1763,7 +1838,7 @@ class TestOnDataMessageExtended:
         """Test that progress is logged at the correct interval."""
 
         mock_message = AsyncMock()
-        mock_message.body = json.dumps({"id": "mbid-1", "name": "Test Artist"}).encode()
+        mock_message.body = json.dumps({"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test Artist"}).encode()
 
         mock_pool = MagicMock()
         mock_conn = AsyncMock()

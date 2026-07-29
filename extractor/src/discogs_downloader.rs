@@ -112,6 +112,29 @@ impl Downloader {
         let month = extract_month_from_filename(&latest_files[0].name);
         info!("📅 Latest available month: {}", month);
 
+        // Fetch the Discogs-published CHECKSUM file so each data file's SHA-256 can be
+        // verified against an authoritative source rather than only the self-generated
+        // hash computed from whatever bytes happened to arrive (discogsography-cu2.106).
+        // Best-effort: if the CHECKSUM file can't be fetched or parsed, log and proceed
+        // without verification rather than blocking the whole dump on a transient
+        // fetch failure — this is additive hardening, not a hard gate.
+        let published_checksums = match Self::find_checksum_entry(&available_files, &latest_files) {
+            Some(checksum_file) => match self.fetch_checksums(&checksum_file).await {
+                Ok(map) => {
+                    info!("🔐 Fetched published CHECKSUM file ({} entries)", map.len());
+                    Some(map)
+                }
+                Err(e) => {
+                    warn!("⚠️ Failed to fetch/parse published CHECKSUM file — proceeding without integrity verification: {}", e);
+                    None
+                }
+            },
+            None => {
+                warn!("⚠️ No CHECKSUM file found alongside the latest monthly dump — proceeding without integrity verification");
+                None
+            }
+        };
+
         // Start download phase tracking if state marker is available
         if let Some(ref mut marker) = self.state_marker {
             marker.start_download(latest_files.len());
@@ -123,7 +146,25 @@ impl Downloader {
         for file_info in &latest_files {
             let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
 
-            if self.should_download(file_info).await? {
+            let mut needs_download = self.should_download(file_info).await?;
+
+            // should_download() only proves the local file hasn't changed since it was
+            // downloaded — it can't tell a genuine dump from a previously-trusted bad
+            // 200-response body (the exact hole this bead closes). Cross-check the
+            // locally-trusted checksum against the published one whenever available, and
+            // force a re-download on mismatch instead of trusting it forever.
+            if !needs_download
+                && let Some(ref published) = published_checksums
+                && let Some(expected) = published.get(filename)
+            {
+                let locally_trusted = self.metadata.get(filename).map(|info| info.checksum.as_str());
+                if locally_trusted != Some(expected.as_str()) {
+                    warn!("⚠️ Locally-trusted checksum for {} does not match the published CHECKSUM — forcing re-download", filename);
+                    needs_download = true;
+                }
+            }
+
+            if needs_download {
                 // Start tracking file download
                 if let Some(ref mut marker) = self.state_marker {
                     marker.start_file_download(filename);
@@ -132,6 +173,33 @@ impl Downloader {
 
                 match self.download_file(file_info).await {
                     Ok(downloaded_size) => {
+                        // Verify the downloaded bytes against the Discogs-published CHECKSUM
+                        // before trusting them. Without this, a 200-response whose body isn't
+                        // the real dump (CDN/interstitial error page, a proxy-truncated stream)
+                        // would be hashed by download_file, recorded as metadata truth, and
+                        // never re-downloaded until the next monthly release or a manual
+                        // file/metadata deletion.
+                        if let Some(ref published) = published_checksums
+                            && let Some(expected) = published.get(filename)
+                        {
+                            let actual = self.metadata.get(filename).map(|info| info.checksum.clone());
+                            if actual.as_deref() != Some(expected.as_str()) {
+                                error!(
+                                    "❌ Checksum mismatch for {}: expected {} from published CHECKSUM, got {:?}. Deleting corrupt download.",
+                                    filename, expected, actual
+                                );
+                                self.metadata.remove(filename);
+                                let local_path = self.output_directory.join(filename);
+                                if local_path.exists()
+                                    && let Err(e) = fs::remove_file(&local_path).await
+                                {
+                                    warn!("⚠️ Failed to remove corrupt file {}: {}", filename, e);
+                                }
+                                return Err(anyhow::anyhow!("Checksum verification failed for {} against published CHECKSUM", filename));
+                            }
+                            debug!("🔐 Verified {} against published CHECKSUM", filename);
+                        }
+
                         info!("✅ Successfully downloaded: {}", filename);
 
                         // Persist metadata immediately so a later file's failure can't
@@ -335,6 +403,58 @@ impl Downloader {
 
         warn!("No complete version found with all expected data files");
         Ok(Vec::new())
+    }
+
+    /// Locate the CHECKSUM entry sharing the same version id as `data_files`, among the
+    /// unfiltered `files` list (`get_latest_monthly_files` drops the CHECKSUM entry from
+    /// its own return value, so callers that need it look it up here instead).
+    fn find_checksum_entry(files: &[S3FileInfo], data_files: &[S3FileInfo]) -> Option<S3FileInfo> {
+        let sample = data_files.first()?;
+        let sample_basename = std::path::Path::new(&sample.name).file_name().and_then(|f| f.to_str())?;
+        let version_id = sample_basename.split('_').nth(1)?;
+
+        files
+            .iter()
+            .find(|f| {
+                let basename = std::path::Path::new(&f.name).file_name().and_then(|n| n.to_str()).unwrap_or("");
+                basename.contains("CHECKSUM") && basename.split('_').nth(1) == Some(version_id)
+            })
+            .cloned()
+    }
+
+    /// Fetch and parse the Discogs-published CHECKSUM file for a version, mapping each data
+    /// filename to its published SHA-256. Standard `sha256sum`-style lines are expected:
+    /// `<hex64>  <filename>` (optionally `*filename` for binary mode).
+    async fn fetch_checksums(&self, checksum_file: &S3FileInfo) -> Result<HashMap<String, String>> {
+        let download_url = format!("{}?download={}", self.base_url, urlencoding::encode(&checksum_file.name));
+
+        let response = self.client.get(&download_url).await.context("Failed to fetch CHECKSUM file")?;
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("CHECKSUM file fetch returned HTTP {}", response.status()));
+        }
+        let text = response.text().await.context("Failed to read CHECKSUM file body")?;
+
+        let mut checksums = HashMap::new();
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let mut parts = line.splitn(2, char::is_whitespace);
+            let hash = parts.next().unwrap_or("");
+            let name_part = parts.next().unwrap_or("").trim();
+            let name_part = name_part.strip_prefix('*').unwrap_or(name_part);
+            if hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()) && !name_part.is_empty() {
+                let basename = std::path::Path::new(name_part).file_name().and_then(|n| n.to_str()).unwrap_or(name_part);
+                checksums.insert(basename.to_string(), hash.to_lowercase());
+            }
+        }
+
+        if checksums.is_empty() {
+            return Err(anyhow::anyhow!("No checksum entries parsed from CHECKSUM file"));
+        }
+
+        Ok(checksums)
     }
 
     pub async fn should_download(&self, file_info: &S3FileInfo) -> Result<bool> {

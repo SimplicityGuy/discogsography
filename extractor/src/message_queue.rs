@@ -269,12 +269,22 @@ impl MessagePublisher for MessageQueue {
     }
 
     async fn close(&self) -> Result<()> {
-        if let Some(channel) = self.channel.write().await.take() {
-            channel.close(200, "Normal shutdown".into()).await?;
+        // Best-effort on both halves: a channel-close error (typical when the
+        // broker already dropped the connection) must not skip the connection
+        // close. Every call site except one already treats close() as
+        // best-effort (`let _ = mq.close().await;`); make the implementation
+        // match that contract instead of early-returning via `?` and leaving
+        // the connection open.
+        if let Some(channel) = self.channel.write().await.take()
+            && let Err(e) = channel.close(200, "Normal shutdown".into()).await
+        {
+            warn!("⚠️ Failed to close AMQP channel cleanly: {}", e);
         }
 
-        if let Some(conn) = self.connection.write().await.take() {
-            conn.close(200, "Normal shutdown".into()).await?;
+        if let Some(conn) = self.connection.write().await.take()
+            && let Err(e) = conn.close(200, "Normal shutdown".into()).await
+        {
+            warn!("⚠️ Failed to close AMQP connection cleanly: {}", e);
         }
 
         info!("🔌 AMQP connection closed");

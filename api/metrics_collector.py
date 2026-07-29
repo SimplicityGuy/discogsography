@@ -87,15 +87,21 @@ class MetricsBuffer:
         self._entries.append(_Entry(path=path, status_code=status_code, duration_ms=duration_ms))
 
     def flush(self) -> dict[str, dict[str, Any]]:
-        """Group buffered entries by path, compute stats, clear buffer, and return results."""
+        """Group buffered entries by path and compute stats, WITHOUT clearing the buffer.
+
+        Non-destructive on purpose: the caller is responsible for calling
+        :meth:`clear` only after the returned stats have been durably persisted.
+        This keeps a failed persist from silently discarding the window's
+        samples — they simply stay buffered (growth still bounded by
+        ``max_size`` via ``record()``'s eviction) and are folded into the next
+        cycle's stats until a persist finally succeeds.
+        """
         if not self._entries:
             return {}
 
-        entries, self._entries = self._entries, deque()
-
         groups: dict[str, list[float]] = {}
         error_counts: dict[str, int] = {}
-        for entry in entries:
+        for entry in self._entries:
             groups.setdefault(entry.path, []).append(entry.duration_ms)
             if entry.status_code >= 500:
                 error_counts[entry.path] = error_counts.get(entry.path, 0) + 1
@@ -112,6 +118,10 @@ class MetricsBuffer:
                 "error_count": error_counts.get(path, 0),
             }
         return result
+
+    def clear(self) -> None:
+        """Drop all buffered entries.  Call only after a successful persist of ``flush()``'s result."""
+        self._entries = deque()
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +299,8 @@ async def run_collector(
         except Exception:
             logger.error("❌ Error collecting service health")
 
-        # 3. Flush metrics buffer and attach endpoint_stats to API row
+        # 3. Flush metrics buffer (non-destructive) and attach endpoint_stats to API row
+        endpoint_stats: dict[str, dict[str, Any]] = {}
         try:
             endpoint_stats = metrics_buffer.flush()
             if endpoint_stats:
@@ -310,10 +321,14 @@ async def run_collector(
         except Exception:
             logger.error("❌ Error flushing metrics buffer")
 
-        # 4. Persist
+        # 4. Persist — only drop the buffered endpoint stats once they're durably
+        # written; on failure they stay buffered (bounded by max_size) and are
+        # retried as part of the next cycle's stats instead of being lost.
         try:
             await persist_metrics(pool, queue_rows, health_rows)
             logger.info("📊 Persisted metrics", queues=len(queue_rows), health=len(health_rows))
+            if endpoint_stats:
+                metrics_buffer.clear()
         except asyncio.CancelledError:
             raise
         except Exception:

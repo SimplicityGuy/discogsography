@@ -422,6 +422,200 @@ async fn test_download_discogs_data_with_state_marker() {
     assert_eq!(marker.download_phase.status, crate::state_marker::PhaseStatus::Completed);
 }
 
+/// SHA-256 of the literal bodies the mockito download mocks below serve
+/// (`"fake {type} data"`), computed once and hardcoded so tests don't
+/// depend on `sha2` at the call site for the published-CHECKSUM fixture.
+fn fake_data_checksums_txt() -> String {
+    "2d89e4146a50731264b28056ed61c904a99de6bfe1af8c82d139bd8cbee850f6  discogs_20260101_artists.xml.gz\n\
+     246d842084dfd15b2da652a5a19da2287ae7cc2235f0d71aa7ab3ee64140a813  discogs_20260101_labels.xml.gz\n\
+     613e7e23d0ce2d0c60dd2da6216457bbd8de38c940696c11d3fc57a352cb1851  discogs_20260101_masters.xml.gz\n\
+     bd804e5e894bd322addead6469d641f07fe36650cd2ae637a5912e28f28c5ee8  discogs_20260101_releases.xml.gz\n"
+        .to_string()
+}
+
+#[tokio::test]
+async fn test_download_discogs_data_verifies_against_published_checksum() {
+    // discogsography-cu2.106 regression: a genuine download whose bytes match the
+    // Discogs-published CHECKSUM must succeed as before.
+    let temp_dir = TempDir::new().unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let main_page_html = r#"<html><body>
+        <a href="?prefix=data%2F2026%2F">2026/</a>
+    </body></html>"#;
+    let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_page_html).create_async().await;
+
+    let year_page_html = r#"<html><body>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
+    </body></html>"#;
+    let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(year_page_html).create_async().await;
+
+    let _checksum_mock = server
+        .mock("GET", "/?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt")
+        .with_status(200)
+        .with_body(fake_data_checksums_txt())
+        .create_async()
+        .await;
+
+    let file_types = ["artists", "labels", "masters", "releases"];
+    let mut _download_mocks = Vec::new();
+    for file_type in &file_types {
+        let download_path = format!("/?download=data%2F2026%2Fdiscogs_20260101_{}.xml.gz", file_type);
+        let mock = server
+            .mock("GET", download_path.as_str())
+            .with_status(200)
+            .with_body(format!("fake {} data", file_type))
+            .create_async()
+            .await;
+        _download_mocks.push(mock);
+    }
+
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
+
+    let result = downloader.download_discogs_data().await.unwrap();
+
+    assert_eq!(result.len(), 4);
+    for file_type in &file_types {
+        let filename = format!("discogs_20260101_{}.xml.gz", file_type);
+        assert!(downloader.metadata.contains_key(&filename), "expected metadata for {}", filename);
+    }
+}
+
+#[tokio::test]
+async fn test_download_discogs_data_checksum_mismatch_deletes_corrupt_file() {
+    // discogsography-cu2.106 regression: a 200-response whose body isn't the real dump
+    // (a bad-but-complete download) must NOT be permanently trusted. On a
+    // published-CHECKSUM mismatch, the corrupt local file and its metadata entry must be
+    // removed and the run must fail loudly instead of silently succeeding.
+    let temp_dir = TempDir::new().unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let main_page_html = r#"<html><body>
+        <a href="?prefix=data%2F2026%2F">2026/</a>
+    </body></html>"#;
+    let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_page_html).create_async().await;
+
+    let year_page_html = r#"<html><body>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
+    </body></html>"#;
+    let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(year_page_html).create_async().await;
+
+    // Published CHECKSUM disagrees with what the mocked artists download actually
+    // serves below (an interstitial error page, standing in for a bad 200 body).
+    let bogus_checksum = format!("{}  discogs_20260101_artists.xml.gz\n", "0".repeat(64));
+    let _checksum_mock = server
+        .mock("GET", "/?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt")
+        .with_status(200)
+        .with_body(bogus_checksum)
+        .create_async()
+        .await;
+
+    let _artists_mock = server
+        .mock("GET", "/?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz")
+        .with_status(200)
+        .with_body("<html>upstream interstitial error page</html>")
+        .create_async()
+        .await;
+
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
+
+    let result = downloader.download_discogs_data().await;
+
+    assert!(result.is_err(), "a published-CHECKSUM mismatch must fail the run, not silently succeed");
+
+    let corrupt_path = temp_dir.path().join("discogs_20260101_artists.xml.gz");
+    assert!(!corrupt_path.exists(), "the corrupt file must be deleted on checksum mismatch");
+    assert!(!downloader.metadata.contains_key("discogs_20260101_artists.xml.gz"), "the corrupt metadata entry must be removed");
+}
+
+#[tokio::test]
+async fn test_download_discogs_data_redownloads_when_locally_trusted_checksum_disagrees_with_published() {
+    // discogsography-cu2.106 regression: a file that was previously downloaded and
+    // self-checksummed (should_download() would normally skip it as "up to date") must
+    // be forced to re-download when the published CHECKSUM disagrees — closing the
+    // "permanently trusted" hole for files that were already corrupted before this fix
+    // shipped.
+    use sha2::{Digest, Sha256};
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let main_page_html = r#"<html><body>
+        <a href="?prefix=data%2F2026%2F">2026/</a>
+    </body></html>"#;
+    let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_page_html).create_async().await;
+
+    let year_page_html = r#"<html><body>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
+    </body></html>"#;
+    let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(year_page_html).create_async().await;
+
+    let _checksum_mock = server
+        .mock("GET", "/?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt")
+        .with_status(200)
+        .with_body(fake_data_checksums_txt())
+        .create_async()
+        .await;
+
+    // Pre-create all 4 local files with a self-consistent (but WRONG, i.e. not matching
+    // the published CHECKSUM) checksum in metadata — as if a bad download was trusted
+    // under the pre-fix behavior.
+    let file_types = ["artists", "labels", "masters", "releases"];
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
+    for file_type in &file_types {
+        let filename = format!("discogs_20260101_{}.xml.gz", file_type);
+        let content = format!("previously trusted bad {} data", file_type);
+        let local_path = temp_dir.path().join(&filename);
+        fs::write(&local_path, content.as_bytes()).await.unwrap();
+
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        let checksum = hex::encode(hasher.finalize());
+
+        downloader.metadata.insert(
+            filename,
+            LocalFileInfo { path: local_path.to_string_lossy().to_string(), checksum, version: "202601".to_string(), size: content.len() as u64 },
+        );
+    }
+
+    // Re-download mocks serving content that DOES match the published CHECKSUM.
+    let mut _download_mocks = Vec::new();
+    for file_type in &file_types {
+        let download_path = format!("/?download=data%2F2026%2Fdiscogs_20260101_{}.xml.gz", file_type);
+        let mock = server
+            .mock("GET", download_path.as_str())
+            .with_status(200)
+            .with_body(format!("fake {} data", file_type))
+            .create_async()
+            .await;
+        _download_mocks.push(mock);
+    }
+
+    let result = downloader.download_discogs_data().await.unwrap();
+
+    assert_eq!(result.len(), 4);
+    for file_type in &file_types {
+        let filename = format!("discogs_20260101_{}.xml.gz", file_type);
+        let content = std::fs::read_to_string(temp_dir.path().join(&filename)).unwrap();
+        assert_eq!(content, format!("fake {} data", file_type), "{} must have been re-downloaded with fresh, verified content", filename);
+    }
+}
+
 #[tokio::test]
 async fn test_download_discogs_data_skips_already_downloaded() {
     use sha2::{Digest, Sha256};

@@ -298,6 +298,45 @@ class TestSetupLogging:
         logger = logging.getLogger()
         assert logger.level == logging.ERROR
 
+    def test_setup_logging_strips_trailing_whitespace(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that a trailing-whitespace LOG_LEVEL (e.g. from a compose file) does not crash."""
+        import logging
+
+        logging.root.handlers = []
+        monkeypatch.setenv("LOG_LEVEL", "INFO ")
+
+        setup_logging("test_service")
+
+        logger = logging.getLogger()
+        assert logger.level == logging.INFO
+
+    def test_setup_logging_falls_back_to_info_on_unrecognized_level(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Test that an unrecognized LOG_LEVEL (e.g. 'TRACE') falls back to INFO with a warning instead of raising."""
+        import logging
+
+        logging.root.handlers = []
+        monkeypatch.setenv("LOG_LEVEL", "TRACE")
+
+        setup_logging("test_service")
+
+        logger = logging.getLogger()
+        assert logger.level == logging.INFO
+        captured = capsys.readouterr()
+        assert "Unrecognized LOG_LEVEL" in captured.out
+
+    def test_setup_logging_falls_back_to_info_on_explicit_invalid_level(self) -> None:
+        """Test that an explicit invalid level parameter also falls back instead of raising."""
+        import logging
+
+        logging.root.handlers = []
+
+        setup_logging("test_service", level="NOTALEVEL")
+
+        logger = logging.getLogger()
+        assert logger.level == logging.INFO
+
     def test_setup_logging_warns_db_profiling(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that setup_logging warns when database profiling is enabled."""
         import logging
