@@ -25,7 +25,7 @@ from common import (
     parse_postgres_host_port,
     setup_logging,
 )
-from common.config import get_secret
+from common.config import _build_neo4j_uri, get_secret
 from psycopg import sql
 
 from neo4j_schema import create_neo4j_schema
@@ -35,8 +35,7 @@ logger = structlog.get_logger(__name__)
 
 # ── Configuration from environment ───────────────────────────────────────────
 
-_neo4j_host = os.environ.get("NEO4J_HOST", "localhost")
-NEO4J_URI = f"bolt://{_neo4j_host}:7687"
+NEO4J_URI = _build_neo4j_uri()
 NEO4J_USERNAME = os.environ.get("NEO4J_USERNAME", "neo4j")
 NEO4J_PASSWORD = get_secret("NEO4J_PASSWORD", "discogsography")
 

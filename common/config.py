@@ -61,9 +61,22 @@ def _build_amqp_url() -> str:
 
 
 def _build_neo4j_uri() -> str:
-    """Build Neo4j bolt URI from plain hostname environment variable."""
+    """Build a Neo4j connection URI from environment variables.
+
+    NEO4J_HOST accepts two forms:
+
+    - a bare hostname (e.g. ``"localhost"`` or ``"neo4j"``) — wrapped as
+      ``bolt://<host>:<NEO4J_PORT or 7687>``, the historical default.
+    - a full connection URI (e.g. ``"neo4j+s://xxxxx.databases.neo4j.io"`` for
+      Neo4j Aura) — detected by the presence of a ``scheme://`` prefix and
+      passed through unchanged, so routing schemes (``neo4j://``,
+      ``neo4j+s://``) and non-default ports are honored as documented.
+    """
     host = getenv("NEO4J_HOST", "localhost")
-    return f"bolt://{host}:7687"
+    if "://" in host:
+        return host
+    port = getenv("NEO4J_PORT", "7687")
+    return f"bolt://{host}:{port}"
 
 
 def _coerce_port(value: str | None, default_port: int) -> int:
@@ -599,6 +612,8 @@ class DashboardConfig:
     rabbitmq_username: str
     rabbitmq_password: str
     redis_host: str = "redis://localhost:6379/0"
+    rabbitmq_management_host: str = "rabbitmq"
+    rabbitmq_management_port: int = 15672
     cors_origins: list[str] | None = None  # None = default to localhost only
     cache_warming_enabled: bool = True  # Enable cache warming on service startup
     cache_webhook_secret: str | None = None  # Secret for cache invalidation webhooks
@@ -642,6 +657,8 @@ class DashboardConfig:
             redis_host=redis_host,
             rabbitmq_username=rabbitmq_username,
             rabbitmq_password=rabbitmq_password,
+            rabbitmq_management_host=getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),
+            rabbitmq_management_port=int(getenv("RABBITMQ_MANAGEMENT_PORT", "15672")),
             cors_origins=cors_origins,
             cache_warming_enabled=cache_warming_enabled,
             cache_webhook_secret=cache_webhook_secret,
@@ -699,8 +716,8 @@ class ApiConfig:
     # Admin dashboard — RabbitMQ management API
     rabbitmq_management_host: str = "rabbitmq"
     rabbitmq_management_port: int = 15672
-    rabbitmq_username: str = "guest"
-    rabbitmq_password: str = "guest"  # noqa: S105
+    rabbitmq_username: str = "discogsography"
+    rabbitmq_password: str = "discogsography"  # noqa: S105
 
     # Admin dashboard — metrics collection
     metrics_retention_days: int = 366
@@ -816,8 +833,8 @@ class ApiConfig:
             extractor_health_port=int(getenv("EXTRACTOR_HEALTH_PORT", "8000")),
             rabbitmq_management_host=getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),
             rabbitmq_management_port=int(getenv("RABBITMQ_MANAGEMENT_PORT", "15672")),
-            rabbitmq_username=get_secret("RABBITMQ_USERNAME", "guest"),
-            rabbitmq_password=get_secret("RABBITMQ_PASSWORD") or "guest",
+            rabbitmq_username=get_secret("RABBITMQ_USERNAME", "discogsography"),
+            rabbitmq_password=get_secret("RABBITMQ_PASSWORD", "discogsography"),
             metrics_retention_days=metrics_retention_days,
             metrics_collection_interval=metrics_collection_interval,
         )

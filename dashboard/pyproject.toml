@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [project.scripts]
-dashboard = "dashboard:main"
+dashboard = "dashboard.dashboard:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]

@@ -14,7 +14,13 @@ from common import (
     neo4j_security_kwargs,
     setup_logging,
 )
-from common.config import _build_postgres_connstr, get_secret, parse_postgres_host_port, resolve_postgres_pool_sizes
+from common.config import (
+    _build_neo4j_uri,
+    _build_postgres_connstr,
+    get_secret,
+    parse_postgres_host_port,
+    resolve_postgres_pool_sizes,
+)
 
 
 class TestExtractorConfig:
@@ -489,6 +495,32 @@ class TestDashboardConfig:
 
         assert config.redis_host == "redis://myredis:6379/0"
 
+    def test_rabbitmq_management_host_defaults_to_rabbitmq_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """RABBITMQ_MANAGEMENT_HOST falls back to RABBITMQ_HOST — regression for the
+        dashboard's management-API call ignoring RABBITMQ_HOST and hardcoding 'rabbitmq'."""
+        from common import DashboardConfig
+
+        monkeypatch.delenv("RABBITMQ_MANAGEMENT_HOST", raising=False)
+        monkeypatch.setenv("RABBITMQ_HOST", "mq.internal")
+
+        config = DashboardConfig.from_env()
+
+        assert config.rabbitmq_management_host == "mq.internal"
+        assert config.rabbitmq_management_port == 15672
+
+    def test_rabbitmq_management_host_explicit_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """RABBITMQ_MANAGEMENT_HOST/_PORT take precedence over RABBITMQ_HOST."""
+        from common import DashboardConfig
+
+        monkeypatch.setenv("RABBITMQ_HOST", "rabbitmq-amqp")
+        monkeypatch.setenv("RABBITMQ_MANAGEMENT_HOST", "rabbitmq-mgmt")
+        monkeypatch.setenv("RABBITMQ_MANAGEMENT_PORT", "25672")
+
+        config = DashboardConfig.from_env()
+
+        assert config.rabbitmq_management_host == "rabbitmq-mgmt"
+        assert config.rabbitmq_management_port == 25672
+
 
 class TestExploreConfig:
     """Test ExploreConfig from_env."""
@@ -879,6 +911,50 @@ class TestApiConfigFromEnv:
 
         with pytest.raises(ValueError, match="JWT_SECRET_KEY"):
             ApiConfig.from_env()
+
+    def test_rabbitmq_management_credentials_default_to_discogsography(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """RABBITMQ_USERNAME/PASSWORD unset must default to 'discogsography' — matching
+        _build_amqp_url(), DashboardConfig, and docs/configuration.md — not 'guest',
+        which 401s against the discogsography-provisioned broker."""
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
+        monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
+        monkeypatch.delenv("RABBITMQ_USERNAME", raising=False)
+        monkeypatch.delenv("RABBITMQ_PASSWORD", raising=False)
+
+        from common.config import ApiConfig
+
+        config = ApiConfig.from_env()
+        assert config.rabbitmq_username == "discogsography"
+        assert config.rabbitmq_password == "discogsography"
+
+    def test_rabbitmq_management_credentials_symmetric_get_secret(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Username and password must use the same get_secret(key, default) form —
+        regression for the prior asymmetry where password additionally fell back via
+        `or "guest"` on an empty string while username did not."""
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
+        monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
+        monkeypatch.setenv("RABBITMQ_USERNAME", "")
+        monkeypatch.setenv("RABBITMQ_PASSWORD", "")
+
+        from common.config import ApiConfig
+
+        config = ApiConfig.from_env()
+        # Both pass an explicitly empty value through unchanged — same behavior,
+        # rather than password silently substituting a different fallback than username.
+        assert config.rabbitmq_username == ""
+        assert config.rabbitmq_password == ""
 
 
 class TestApiConfigNewFields:
@@ -1296,6 +1372,40 @@ class TestInsightsConfig:
 
         config = InsightsConfig.from_env()
         assert config.schedule_hours == 24
+
+
+class TestBuildNeo4jUri:
+    """Tests for _build_neo4j_uri() — bare-hostname vs full-URI NEO4J_HOST handling."""
+
+    def test_bare_hostname_defaults_to_bolt_7687(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
+        monkeypatch.delenv("NEO4J_PORT", raising=False)
+        assert _build_neo4j_uri() == "bolt://neo4j:7687"
+
+    def test_missing_host_defaults_to_localhost(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("NEO4J_HOST", raising=False)
+        monkeypatch.delenv("NEO4J_PORT", raising=False)
+        assert _build_neo4j_uri() == "bolt://localhost:7687"
+
+    def test_bare_hostname_honors_neo4j_port_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
+        monkeypatch.setenv("NEO4J_PORT", "17687")
+        assert _build_neo4j_uri() == "bolt://neo4j:17687"
+
+    def test_full_aura_uri_passed_through_unchanged(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Documented Aura deployment: a full neo4j+s:// URI must not be re-wrapped in bolt://."""
+        monkeypatch.setenv("NEO4J_HOST", "neo4j+s://xxxxx.databases.neo4j.io")
+        assert _build_neo4j_uri() == "neo4j+s://xxxxx.databases.neo4j.io"
+
+    def test_full_neo4j_uri_with_custom_port_passed_through(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEO4J_HOST", "neo4j://neo4j.example.com:8687")
+        assert _build_neo4j_uri() == "neo4j://neo4j.example.com:8687"
+
+    def test_full_uri_ignores_neo4j_port_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A full URI already carries its own port; NEO4J_PORT must not be applied to it."""
+        monkeypatch.setenv("NEO4J_HOST", "neo4j+s://xxxxx.databases.neo4j.io")
+        monkeypatch.setenv("NEO4J_PORT", "17687")
+        assert _build_neo4j_uri() == "neo4j+s://xxxxx.databases.neo4j.io"
 
 
 class TestNeo4jSecurityKwargs:

@@ -181,8 +181,10 @@ NEO4J_HOST="neo4j"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
 
-# Neo4j Aura (cloud) — full URI supported
-NEO4J_HOST="xxxxx.databases.neo4j.io"
+# Neo4j Aura (cloud) — NEO4J_HOST accepts a full "scheme://host" URI, passed
+# through unchanged (Aura requires the neo4j+s:// routing+TLS scheme; do not
+# set NEO4J_TLS_ENABLED here — the scheme already encrypts the connection)
+NEO4J_HOST="neo4j+s://xxxxx.databases.neo4j.io"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="your-secure-password"
 
@@ -291,11 +293,14 @@ POSTGRES_DATABASE="discogsography_prod"
 **Performance Tuning**:
 
 ```bash
-# For services using asyncpg
-POSTGRES_POOL_MIN=10
-POSTGRES_POOL_MAX=20
-POSTGRES_COMMAND_TIMEOUT=30
+# Clamp the connection-pool min/max across the whole fleet (see the
+# "Connection-pool sizing" note above — per-service defaults otherwise apply)
+POSTGRES_POOL_MIN_SIZE=10
+POSTGRES_POOL_MAX_SIZE=20
 ```
+
+> Query timeout (30 seconds, see **Connection Details** above) is a fixed value in
+> code, not a configurable env var.
 
 ### Redis Configuration
 
@@ -1039,8 +1044,10 @@ For production deployments, use `docker-compose.prod.yml` with `scripts/create-s
 Enable encryption for production:
 
 ```bash
-# Neo4j with TLS (bolt+s:// scheme constructed in code from hostname)
+# Neo4j with TLS (encrypted Bolt via NEO4J_TLS_ENABLED — see "Enabling TLS
+# for Neo4j" above; for Aura, pass a full "neo4j+s://host" URI instead)
 NEO4J_HOST=neo4j.example.com
+NEO4J_TLS_ENABLED=true
 
 # PostgreSQL hostname
 POSTGRES_HOST=postgres.example.com

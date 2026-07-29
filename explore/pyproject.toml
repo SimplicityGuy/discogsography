@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.scripts]
-explore = "explore:main"
+explore = "explore.explore:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
