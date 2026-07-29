@@ -581,7 +581,17 @@ pub async fn process_single_file(
 
     let total_count = validator_handle.unwrap_or(0);
 
-    // Mark file as completed in state marker FIRST (consistent with Python)
+    // Send the file completion message BEFORE marking the file Completed in
+    // the state marker. If this AMQP send fails, the marker stays NOT
+    // Completed, so pending_files() on the next run still includes this file
+    // and send_file_complete is retried — instead of the signal being
+    // silently and permanently dropped (the previous "marker first" ordering
+    // let an AMQP failure land in the window after the marker was already
+    // durably Completed, so a retry would skip the file and never resend).
+    mq.send_file_complete(data_type, file_name, total_count).await?;
+
+    // Now that the completion signal has been durably handed off to the
+    // broker, mark the file as completed in the state marker.
     {
         let mut marker = state_marker.lock().await;
         marker.complete_file_processing(file_name, total_count);
@@ -596,11 +606,13 @@ pub async fn process_single_file(
         s.active_connections.remove(&data_type);
     }
 
-    // THEN send file completion message (consistent with Python)
-    mq.send_file_complete(data_type, file_name, total_count).await?;
-
-    // Clean up
-    mq.close().await?;
+    // Clean up — best-effort. A cleanup failure here is purely cosmetic (the
+    // completion signal was already sent and the marker already committed
+    // above), so it must not flip an otherwise fully-successful file to
+    // Failed and trigger the failure cooldown.
+    if let Err(e) = mq.close().await {
+        warn!("⚠️ Failed to cleanly close per-file MQ connection for {}: {}", file_name, e);
+    }
 
     info!("✅ Completed processing {} with {} records", file_name, total_count);
     Ok(())
@@ -1464,6 +1476,18 @@ pub async fn process_musicbrainz_data(
             success = false;
         }
 
+        // Send file_complete BEFORE marking the file Completed in the state marker
+        // (only attempted on success, to avoid misleading consumers). A failed send
+        // must also flip file_success back off so the marker below stays NOT
+        // Completed and the file remains pending on the next run — instead of the
+        // signal being silently and permanently dropped for a file the marker
+        // already claims is done.
+        if file_success && let Err(e) = mq.send_file_complete(*data_type, file_name, total_count).await {
+            error!("❌ Failed to send file_complete for {}: {}", data_type, e);
+            file_success = false;
+            success = false;
+        }
+
         // Mark file complete only on success; on failure, save current state without marking complete
         {
             let mut sm = state_marker.lock().await;
@@ -1480,12 +1504,6 @@ pub async fn process_musicbrainz_data(
                 s.completed_files.insert(file_name.to_string());
             }
             s.active_connections.remove(data_type);
-        }
-
-        // Send file_complete message only on success to avoid misleading consumers
-        if file_success && let Err(e) = mq.send_file_complete(*data_type, file_name, total_count).await {
-            error!("❌ Failed to send file_complete for {}: {}", data_type, e);
-            success = false;
         }
 
         record_counts.insert(data_type.to_string(), total_count);

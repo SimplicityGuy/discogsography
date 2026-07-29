@@ -64,6 +64,85 @@ async fn test_process_single_file_mq_setup_called() {
     assert!(result.is_err());
 }
 
+/// Write a minimal valid (empty) gzip-compressed artists XML file, as parser_test.rs does,
+/// so process_single_file can run its full pipeline to a real success.
+fn write_empty_artists_gz(path: &std::path::Path) {
+    let xml_content = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<artists>\n</artists>";
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    std::fs::write(path, compressed).unwrap();
+}
+
+#[tokio::test]
+async fn test_process_single_file_amqp_failure_at_send_file_complete_leaves_marker_not_completed() {
+    // discogsography-cu2.107 regression: a send_file_complete failure must leave the
+    // state marker NOT Completed for this file, so pending_files() still includes it
+    // on the next run and the signal is retried — instead of the marker already
+    // claiming the file done (the old "marker first" ordering) and the signal being
+    // silently and permanently dropped.
+    let temp_dir = TempDir::new().unwrap();
+    let file_name = "discogs_20260101_artists.xml.gz";
+    write_empty_artists_gz(&temp_dir.path().join(file_name));
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let state_marker = Arc::new(Mutex::new(StateMarker::new("20260101".to_string())));
+    let marker_path = temp_dir.path().join("marker.json");
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().times(1).returning(|_, _, _| Err(anyhow::anyhow!("AMQP connection dropped")));
+    mock_mq.expect_close().times(..).returning(|| Ok(()));
+
+    let mq: Arc<dyn extractor::message_queue::MessagePublisher> = Arc::new(mock_mq);
+
+    let result = process_single_file(file_name, config, state, state_marker.clone(), marker_path, mq, None).await;
+
+    assert!(result.is_err(), "a send_file_complete failure must propagate as an error");
+
+    let marker = state_marker.lock().await;
+    let file_status = marker.processing_phase.progress_by_file.get(file_name);
+    assert_ne!(
+        file_status.map(|s| s.status),
+        Some(extractor::state_marker::PhaseStatus::Completed),
+        "the file must NOT be marked Completed when send_file_complete failed — otherwise \
+         pending_files() would skip it on the next run and the signal would never be retried"
+    );
+}
+
+#[tokio::test]
+async fn test_process_single_file_close_failure_does_not_fail_the_run() {
+    // discogsography-cu2.108 regression: a cleanup (mq.close()) failure is purely
+    // cosmetic — the completion signal was already sent and the marker already
+    // committed — so it must not flip an otherwise fully-successful file to Failed.
+    let temp_dir = TempDir::new().unwrap();
+    let file_name = "discogs_20260101_artists.xml.gz";
+    write_empty_artists_gz(&temp_dir.path().join(file_name));
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let state_marker = Arc::new(Mutex::new(StateMarker::new("20260101".to_string())));
+    let marker_path = temp_dir.path().join("marker.json");
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().times(1).returning(|_, _, _| Ok(()));
+    mock_mq.expect_close().times(1).returning(|| Err(anyhow::anyhow!("channel already closed")));
+
+    let mq: Arc<dyn extractor::message_queue::MessagePublisher> = Arc::new(mock_mq);
+
+    let result = process_single_file(file_name, config, state, state_marker.clone(), marker_path, mq, None).await;
+
+    assert!(result.is_ok(), "a cosmetic close() failure must not fail an otherwise successful file: {:?}", result.err());
+
+    let marker = state_marker.lock().await;
+    let file_status = marker.processing_phase.progress_by_file.get(file_name);
+    assert_eq!(file_status.map(|s| s.status), Some(extractor::state_marker::PhaseStatus::Completed));
+}
+
 #[tokio::test]
 async fn test_message_publisher_increments_error_count_on_failure() {
     let state = Arc::new(RwLock::new(ExtractorState::default()));
