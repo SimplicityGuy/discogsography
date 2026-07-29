@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadScript } from './helpers.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
  * Set up the DOM elements required by theme.js.
@@ -168,5 +173,43 @@ describe('theme toggle (tri-state)', () => {
     it('should not crash when required DOM elements are missing', () => {
         document.body.textContent = '';
         expect(() => loadScript('theme.js')).not.toThrow();
+    });
+
+    it('should apply a persisted preference even when the toggle button markup is absent', () => {
+        // Regression: previously applyMode() was gated behind the toggle
+        // button + icon spans existing, so a stored preference was silently
+        // ignored whenever that markup was missing.
+        document.body.textContent = '';
+        localStorage.setItem('theme', 'dark');
+
+        loadScript('theme.js');
+
+        expect(document.documentElement.classList.contains('dark')).toBe(true);
+    });
+
+    it('should apply the OS dark preference in auto mode even when the toggle button markup is absent', () => {
+        document.body.textContent = '';
+        globalThis.window.matchMedia = vi.fn((query) => ({
+            matches: query.includes('dark'),
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+        }));
+
+        loadScript('theme.js');
+
+        expect(document.documentElement.classList.contains('dark')).toBe(true);
+    });
+});
+
+describe('theme toggle markup', () => {
+    it('index.html wires up the #theme-toggle button and icon spans theme.js requires', () => {
+        const html = readFileSync(resolve(__dirname, '..', 'static', 'index.html'), 'utf-8');
+
+        expect(html).toContain('id="theme-toggle"');
+        expect(html).toContain('id="theme-icon-auto"');
+        expect(html).toContain('id="theme-icon-sun"');
+        expect(html).toContain('id="theme-icon-moon"');
+        // The toggle must be included as a real page script for it to run.
+        expect(html).toContain('js/theme.js');
     });
 });
