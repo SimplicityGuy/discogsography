@@ -64,6 +64,120 @@ class TestSaveSnapshot:
             snap_module._snapshot_store = original
 
 
+class TestSnapshotNodeFieldLimits:
+    """Regression for discogsography-cu2.110: SnapshotNode.id/type had no
+    max_length, so 100 nodes (the node-count cap) could each carry a
+    megabyte-sized id/type string — the count cap alone didn't bound payload
+    size."""
+
+    def test_rejects_oversized_node_id(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        body = {
+            "nodes": [{"id": "x" * 200, "type": "artist"}],
+            "center": {"id": "1", "type": "artist"},
+        }
+        response = test_client.post("/api/snapshot", json=body, headers=auth_headers)
+        assert response.status_code == 422
+
+    def test_rejects_oversized_node_type(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        body = {
+            "nodes": [{"id": "1", "type": "x" * 200}],
+            "center": {"id": "1", "type": "artist"},
+        }
+        response = test_client.post("/api/snapshot", json=body, headers=auth_headers)
+        assert response.status_code == 422
+
+    def test_rejects_oversized_center_id(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        body = {
+            "nodes": [{"id": "1", "type": "artist"}],
+            "center": {"id": "x" * 200, "type": "artist"},
+        }
+        response = test_client.post("/api/snapshot", json=body, headers=auth_headers)
+        assert response.status_code == 422
+
+    def test_accepts_id_and_type_at_the_boundary(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        """max_length is inclusive — exactly at the cap must still be accepted."""
+        body = {
+            "nodes": [{"id": "1" * 128, "type": "a" * 32}],
+            "center": {"id": "1", "type": "artist"},
+        }
+        response = test_client.post("/api/snapshot", json=body, headers=auth_headers)
+        assert response.status_code == 201
+
+
+class TestSnapshotPayloadAndQuotaLimits:
+    """Regression for discogsography-cu2.110: the serialized payload size cap and
+    per-user quota, exercised end-to-end through the router."""
+
+    def test_save_snapshot_rejects_oversized_payload(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        import api.routers.snapshot as snap_module
+
+        original_store = snap_module._snapshot_store
+        import fakeredis.aioredis as aioredis_fake
+
+        small_payload_store = SnapshotStore(aioredis_fake.FakeRedis(), max_payload_bytes=50)
+        snap_module._snapshot_store = small_payload_store
+        try:
+            body = {
+                "nodes": [{"id": "1", "type": "artist"}],
+                "center": {"id": "1", "type": "artist"},
+            }
+            response = test_client.post("/api/snapshot", json=body, headers=auth_headers)
+        finally:
+            snap_module._snapshot_store = original_store
+        assert response.status_code == 413
+
+    def test_save_snapshot_enforces_per_user_quota(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        import api.routers.snapshot as snap_module
+
+        original_store = snap_module._snapshot_store
+        import fakeredis.aioredis as aioredis_fake
+
+        quota_store = SnapshotStore(aioredis_fake.FakeRedis(), max_per_user=1)
+        snap_module._snapshot_store = quota_store
+        try:
+            body = {
+                "nodes": [{"id": "1", "type": "artist"}],
+                "center": {"id": "1", "type": "artist"},
+            }
+            first = test_client.post("/api/snapshot", json=body, headers=auth_headers)
+            second = test_client.post("/api/snapshot", json=body, headers=auth_headers)
+        finally:
+            snap_module._snapshot_store = original_store
+        assert first.status_code == 201
+        assert second.status_code == 429
+
+
+class TestSnapshotRateLimits:
+    """Regression for discogsography-cu2.110: POST /api/snapshot had no
+    @limiter.limit decorator (unlike every other write endpoint), so looping
+    the endpoint had no per-minute throttle independent of the payload/quota
+    checks above."""
+
+    def test_save_snapshot_rate_limited_after_threshold(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        import api.routers.snapshot as snap_module
+
+        original_store = snap_module._snapshot_store
+        import fakeredis.aioredis as aioredis_fake
+
+        # Quota comfortably above the rate limit so the quota check doesn't
+        # mask the rate-limit behavior under test.
+        store = SnapshotStore(aioredis_fake.FakeRedis(), max_per_user=1000)
+        snap_module._snapshot_store = store
+        try:
+            body = {"nodes": [{"id": "1", "type": "artist"}], "center": {"id": "1", "type": "artist"}}
+            responses = [test_client.post("/api/snapshot", json=body, headers=auth_headers) for _ in range(21)]
+        finally:
+            snap_module._snapshot_store = original_store
+
+        assert responses[-1].status_code == 429
+        assert all(r.status_code == 201 for r in responses[:20])
+
+    def test_restore_snapshot_rate_limited_after_threshold(self, test_client: TestClient) -> None:
+        responses = [test_client.get("/api/snapshot/nonexistent-token") for _ in range(31)]
+        assert responses[-1].status_code == 429
+        assert all(r.status_code == 404 for r in responses[:30])
+
+
 class TestRestoreSnapshot:
     """Tests for GET /api/snapshot/{token}."""
 

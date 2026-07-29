@@ -102,7 +102,12 @@ def get_public_tool_schemas() -> list[dict[str, Any]]:
                         "enum": ["artist", "genre", "label", "style"],
                         "description": "Type of the target entity",
                     },
-                    "max_depth": {"type": "integer", "description": "Maximum path length (default: 6)"},
+                    "max_depth": {
+                        "type": "integer",
+                        "description": "Maximum path length (default: 6, min: 1, max: 10)",
+                        "minimum": 1,
+                        "maximum": 10,
+                    },
                 },
                 "required": ["from_id", "to_id"],
             },
@@ -647,13 +652,26 @@ class NLQToolRunner:
             result: dict[str, Any] | None = await handler(driver, name)
             return result
 
+        # Clamp the model-supplied max_depth to the same bound the HTTP
+        # /api/path route enforces (FastAPI Query(ge=1, le=MAX_PATH_DEPTH)).
+        # find_shortest_path also clamps internally as a backstop, but the
+        # NLQ engine calls it in-process (bypassing that HTTP validation
+        # layer entirely), so a user-steerable value must not reach it
+        # unbounded — an unclamped max_depth produces an exhaustive
+        # shortestPath BFS that runs up to the query timeout.
+        try:
+            raw_max_depth = int(params.get("max_depth", neo4j_queries.DEFAULT_PATH_DEPTH))
+        except (TypeError, ValueError):
+            raw_max_depth = neo4j_queries.DEFAULT_PATH_DEPTH
+        max_depth = max(neo4j_queries.MIN_PATH_DEPTH, min(raw_max_depth, neo4j_queries.MAX_PATH_DEPTH))
+
         return await agent_tools.find_path(
             driver=self._driver,
             from_name=params.get("from_id", ""),
             from_type=params.get("from_type", ""),
             to_name=params.get("to_id", ""),
             to_type=params.get("to_type", ""),
-            max_depth=params.get("max_depth", 6),
+            max_depth=max_depth,
             resolve_name=resolve_name,
             find_shortest_path_fn=neo4j_queries.find_shortest_path,
         )

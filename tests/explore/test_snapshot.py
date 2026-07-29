@@ -99,6 +99,97 @@ class TestSnapshotStore:
         assert expected - 5 <= ttl <= expected
 
 
+class TestSnapshotStoreLimits:
+    """Regression for discogsography-cu2.110: SnapshotStore had no cap on the
+    serialized payload size and no per-user quota, so a looping authenticated
+    user could mint unbounded 28-day-TTL Redis keys — even with small, valid
+    payloads under the node-count cap (`max_nodes` only bounds node count, not
+    per-node string size or the number of distinct snapshots per user)."""
+
+    @pytest.mark.asyncio
+    async def test_save_rejects_oversized_payload(self) -> None:
+        from api.snapshot_store import SnapshotTooLargeError
+
+        store = SnapshotStore(aioredis_fake.FakeRedis(), max_payload_bytes=100)
+        nodes = [{"id": "1", "type": "artist", "extra": "x" * 200}]
+        center = {"id": "1", "type": "artist"}
+        with pytest.raises(SnapshotTooLargeError):
+            await store.save(nodes, center)
+
+    @pytest.mark.asyncio
+    async def test_save_under_payload_cap_succeeds(self) -> None:
+        store = SnapshotStore(aioredis_fake.FakeRedis(), max_payload_bytes=64 * 1024)
+        nodes = [{"id": "1", "type": "artist"}]
+        center = {"id": "1", "type": "artist"}
+        token, _ = await store.save(nodes, center)
+        assert token
+
+    @pytest.mark.asyncio
+    async def test_max_payload_bytes_from_env(self) -> None:
+        with patch.dict("os.environ", {"SNAPSHOT_MAX_PAYLOAD_BYTES": "12345"}):
+            store = SnapshotStore(aioredis_fake.FakeRedis())
+            assert store.max_payload_bytes == 12345
+
+    @pytest.mark.asyncio
+    async def test_save_enforces_per_user_quota(self) -> None:
+        from api.snapshot_store import SnapshotQuotaExceededError
+
+        store = SnapshotStore(aioredis_fake.FakeRedis(), max_per_user=2)
+        nodes = [{"id": "1", "type": "artist"}]
+        center = {"id": "1", "type": "artist"}
+
+        await store.save(nodes, center, user_id="user-1")
+        await store.save(nodes, center, user_id="user-1")
+        with pytest.raises(SnapshotQuotaExceededError):
+            await store.save(nodes, center, user_id="user-1")
+
+    @pytest.mark.asyncio
+    async def test_per_user_quota_is_scoped_per_user(self) -> None:
+        """Hitting one user's quota must not affect a different user's ability to save."""
+        store = SnapshotStore(aioredis_fake.FakeRedis(), max_per_user=1)
+        nodes = [{"id": "1", "type": "artist"}]
+        center = {"id": "1", "type": "artist"}
+
+        await store.save(nodes, center, user_id="user-1")
+        # user-1 is now at quota; user-2 must still be able to save.
+        token, _ = await store.save(nodes, center, user_id="user-2")
+        assert token
+
+    @pytest.mark.asyncio
+    async def test_save_without_user_id_skips_quota_check(self) -> None:
+        """No user_id (e.g. anonymous callers, if any exist) means no quota is tracked."""
+        store = SnapshotStore(aioredis_fake.FakeRedis(), max_per_user=1)
+        nodes = [{"id": "1", "type": "artist"}]
+        center = {"id": "1", "type": "artist"}
+
+        await store.save(nodes, center)
+        token, _ = await store.save(nodes, center)
+        assert token
+
+    @pytest.mark.asyncio
+    async def test_max_per_user_from_env(self) -> None:
+        with patch.dict("os.environ", {"SNAPSHOT_MAX_PER_USER": "7"}):
+            store = SnapshotStore(aioredis_fake.FakeRedis())
+            assert store.max_per_user == 7
+
+    @pytest.mark.asyncio
+    async def test_rejected_save_does_not_consume_quota(self) -> None:
+        """A save rejected for being oversized must not still count against the
+        user's quota (roll back the increment on the size-cap failure path)."""
+        from api.snapshot_store import SnapshotTooLargeError
+
+        redis = aioredis_fake.FakeRedis()
+        store = SnapshotStore(redis, max_per_user=5, max_payload_bytes=100)
+        oversized_nodes = [{"id": "1", "type": "artist", "extra": "x" * 200}]
+        center = {"id": "1", "type": "artist"}
+
+        with pytest.raises(SnapshotTooLargeError):
+            await store.save(oversized_nodes, center, user_id="user-1")
+
+        count = await redis.get("snapshot:usercount:user-1")
+        assert count is None
+
+
 # ---------------------------------------------------------------------------
 # API endpoint tests
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ and is never recoverable thereafter — only its SHA-256 hex hash is persisted.
 """
 
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import JSONResponse
@@ -113,10 +114,19 @@ async def revoke_app_token(
     token_id: str,
     current_user: Annotated[dict[str, Any], Depends(require_user)],
 ) -> Response:
-    """Revoke (tombstone) the named token. 404 if not owned by the caller."""
+    """Revoke (tombstone) the named token. 404 if not owned by the caller (or malformed id)."""
     user_id: str = current_user.get("sub", "")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    # token_id is an arbitrary caller-supplied path string — validate its format
+    # before it reaches the `::uuid` cast in revoke_token's SQL. A malformed id is
+    # indistinguishable from an unknown one, so both surface as the same 404
+    # rather than a 500 (or leaking format-vs-existence information).
+    try:
+        UUID(token_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Token not found") from None
 
     success = await _revoke_token(token_id=token_id, user_id=user_id)
     if not success:

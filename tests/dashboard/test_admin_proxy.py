@@ -86,6 +86,16 @@ class TestValidatePathSegment:
     def test_rejects_spaces(self) -> None:
         assert _validate_path_segment("foo bar") is False
 
+    def test_rejects_dot_dot_dot_segment(self) -> None:
+        """Regression for discogsography-cu2.83: a pure ``..`` segment matches the
+        alphanumeric-plus-dot allowlist regex, but httpx/RFC 3986 URL normalization
+        collapses it during base_url merge — silently retargeting the request to a
+        sibling endpoint. Must be rejected explicitly."""
+        assert _validate_path_segment("..") is False
+
+    def test_rejects_single_dot_segment(self) -> None:
+        assert _validate_path_segment(".") is False
+
 
 # ---------------------------------------------------------------------------
 # POST /admin/api/login
@@ -711,3 +721,32 @@ class TestAuthHeaderForwarding:
         call_kwargs = mock_instance.get.call_args
         headers = call_kwargs.kwargs.get("headers", {})
         assert "Authorization" not in headers
+
+
+class TestExtractionAnalysisTraversalRejected:
+    """Regression for discogsography-cu2.83: a ``..`` path segment previously passed
+    `_validate_path_segment` (dots are allowlisted for version strings) and was then
+    silently collapsed by httpx/RFC 3986 URL normalization, retargeting the proxied
+    request to a sibling `/api/admin/*` endpoint. Use a percent-encoded segment so the
+    test client doesn't itself normalize the dot-segment away before the request is
+    sent — the same technique an adversary would use against the deployed server."""
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_ea_summary_rejects_dot_dot_version(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        resp = proxy_client.get("/admin/api/extraction-analysis/%2e%2e/summary")
+        assert resp.status_code == 400
+        mock_cls_patch.assert_not_called()
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_ea_compare_rejects_dot_dot_in_either_version(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        resp = proxy_client.get("/admin/api/extraction-analysis/%2e%2e/compare/1.0")
+        assert resp.status_code == 400
+        resp2 = proxy_client.get("/admin/api/extraction-analysis/1.0/compare/%2e%2e")
+        assert resp2.status_code == 400
+        mock_cls_patch.assert_not_called()
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_ea_violation_detail_rejects_dot_dot_record_id(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        resp = proxy_client.get("/admin/api/extraction-analysis/1.0/violations/%2e%2e")
+        assert resp.status_code == 400
+        mock_cls_patch.assert_not_called()

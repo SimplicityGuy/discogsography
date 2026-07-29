@@ -2,14 +2,15 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import redis.asyncio as aioredis
 
 from api.auth import decode_token
+from api.limiter import bearer_token_key_func, limiter
 from api.models import SnapshotRequest, SnapshotResponse, SnapshotRestoreResponse
-from api.snapshot_store import SnapshotStore
+from api.snapshot_store import SnapshotQuotaExceededError, SnapshotStore, SnapshotTooLargeError
 
 
 router = APIRouter()
@@ -81,7 +82,9 @@ async def _get_current_user(
 
 
 @router.post("/api/snapshot", status_code=201)
+@limiter.limit("20/minute", key_func=bearer_token_key_func)
 async def save_snapshot(
+    request: Request,  # noqa: ARG001 — required by slowapi rate limiter
     body: SnapshotRequest,
     _current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
 ) -> JSONResponse:
@@ -91,16 +94,24 @@ async def save_snapshot(
         return JSONResponse(content={"error": f"Too many nodes: maximum is {_snapshot_store.max_nodes}"}, status_code=422)
     nodes = [n.model_dump() for n in body.nodes]
     center = body.center.model_dump()
+    user_id = _current_user.get("sub")
     try:
-        token, expires_at = await _snapshot_store.save(nodes, center)
+        token, expires_at = await _snapshot_store.save(nodes, center, user_id=user_id)
+    except SnapshotTooLargeError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=413)
+    except SnapshotQuotaExceededError as exc:
+        return JSONResponse(content={"error": str(exc)}, status_code=429)
     except ValueError as exc:
+        # Defense-in-depth: SnapshotStore.save's own max_nodes guard, for any
+        # direct caller that bypasses this router's pre-check above.
         return JSONResponse(content={"error": str(exc)}, status_code=422)
     response = SnapshotResponse(token=token, url=f"/snapshot/{token}", expires_at=expires_at.isoformat())
     return JSONResponse(content=response.model_dump(), status_code=201)
 
 
 @router.get("/api/snapshot/{token}")
-async def restore_snapshot(token: str) -> JSONResponse:
+@limiter.limit("30/minute")
+async def restore_snapshot(request: Request, token: str) -> JSONResponse:  # noqa: ARG001 — request required by slowapi rate limiter
     if _snapshot_store is None:
         return JSONResponse(content={"error": "Snapshot service not ready"}, status_code=503)
     entry = await _snapshot_store.load(token)

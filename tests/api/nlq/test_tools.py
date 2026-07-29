@@ -188,6 +188,52 @@ async def test_execute_find_path_no_path(runner: NLQToolRunner) -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_find_path_clamps_oversized_max_depth(runner: NLQToolRunner) -> None:
+    """Regression for discogsography-cu2.93: a model-steered max_depth far beyond
+    the HTTP route's bound must be clamped before it reaches find_shortest_path's
+    shortestPath depth literal, not forwarded unbounded."""
+    from api.queries import neo4j_queries
+
+    mock_find = AsyncMock(return_value={"nodes": [], "rels": []})
+    with patch("api.queries.neo4j_queries.find_shortest_path", new=mock_find):
+        await runner.execute("find_path", {"from_id": "a1", "to_id": "l1", "max_depth": 1000})
+    assert mock_find.await_args.kwargs["max_depth"] == neo4j_queries.MAX_PATH_DEPTH
+
+
+@pytest.mark.asyncio
+async def test_execute_find_path_clamps_non_positive_max_depth(runner: NLQToolRunner) -> None:
+    """A non-positive (or otherwise below-minimum) max_depth is clamped up, not
+    passed through as-is or allowed to disable the traversal bound."""
+    from api.queries import neo4j_queries
+
+    mock_find = AsyncMock(return_value={"nodes": [], "rels": []})
+    with patch("api.queries.neo4j_queries.find_shortest_path", new=mock_find):
+        await runner.execute("find_path", {"from_id": "a1", "to_id": "l1", "max_depth": -5})
+    assert mock_find.await_args.kwargs["max_depth"] == neo4j_queries.MIN_PATH_DEPTH
+
+
+@pytest.mark.asyncio
+async def test_execute_find_path_within_bound_passes_through_unchanged(runner: NLQToolRunner) -> None:
+    """A max_depth already inside the valid range is forwarded as-is (not floored
+    or ceilinged to a bound endpoint)."""
+    mock_find = AsyncMock(return_value={"nodes": [], "rels": []})
+    with patch("api.queries.neo4j_queries.find_shortest_path", new=mock_find):
+        await runner.execute("find_path", {"from_id": "a1", "to_id": "l1", "max_depth": 3})
+    assert mock_find.await_args.kwargs["max_depth"] == 3
+
+
+@pytest.mark.asyncio
+async def test_execute_find_path_missing_max_depth_uses_default(runner: NLQToolRunner) -> None:
+    """No max_depth supplied falls back to the shared default, not an unbounded value."""
+    from api.queries import neo4j_queries
+
+    mock_find = AsyncMock(return_value={"nodes": [], "rels": []})
+    with patch("api.queries.neo4j_queries.find_shortest_path", new=mock_find):
+        await runner.execute("find_path", {"from_id": "a1", "to_id": "l1"})
+    assert mock_find.await_args.kwargs["max_depth"] == neo4j_queries.DEFAULT_PATH_DEPTH
+
+
+@pytest.mark.asyncio
 async def test_execute_find_path_name_resolution_both(runner: NLQToolRunner) -> None:
     """Find path resolves both from_id and to_id names via EXPLORE_DISPATCH when types are provided."""
     fake_path: dict[str, Any] = {

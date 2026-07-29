@@ -17,9 +17,11 @@ from api.queries import collaborator_queries, genre_tree_queries
 from api.queries.neo4j_queries import (
     AUTOCOMPLETE_DISPATCH,
     COUNT_DISPATCH,
+    DEFAULT_PATH_DEPTH as _DEFAULT_PATH_DEPTH,
     DETAILS_DISPATCH,
     EXPAND_DISPATCH,
     EXPLORE_DISPATCH,
+    MAX_PATH_DEPTH as _MAX_PATH_DEPTH,
     TRENDS_DISPATCH,
     find_shortest_path,
     get_genre_emergence,
@@ -345,8 +347,9 @@ async def get_trends(
 
 
 _VALID_PATH_TYPES = frozenset(EXPLORE_DISPATCH.keys())
-_MAX_PATH_DEPTH = 10
-_DEFAULT_PATH_DEPTH = 6
+# _MAX_PATH_DEPTH / _DEFAULT_PATH_DEPTH are re-exported (aliased on import,
+# above) from neo4j_queries — the single source of truth for shortestPath
+# depth bounds, also used by the NLQ find_path tool handler.
 
 
 def _node_label_to_type(labels: list[str]) -> str:

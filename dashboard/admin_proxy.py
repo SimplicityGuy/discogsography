@@ -38,7 +38,18 @@ def configure(api_host: str, api_port: int) -> None:
 
 
 def _validate_path_segment(value: str) -> bool:
-    """Return True when *value* is safe to embed in a URL path."""
+    """Return True when *value* is safe to embed in a URL path.
+
+    The alphanumeric-plus-dot allowlist intentionally permits dots for
+    version strings like "20240101.0", but a segment of pure dots (``.``
+    or ``..``) also matches that pattern and is a reserved dot-segment:
+    httpx/RFC 3986 URL normalization collapses it during `base_url` merge,
+    silently retargeting the request to a sibling endpoint. Reject those
+    explicitly so the allowlist actually prevents path-traversal, as the
+    module docstring claims.
+    """
+    if value in {".", ".."}:
+        return False
     return bool(_SAFE_PATH_SEGMENT.match(value))
 
 

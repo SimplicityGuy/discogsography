@@ -1,5 +1,6 @@
 """Extraction Analysis router — versions, summary, violations, and parsing errors for flagged records."""
 
+import asyncio
 import json
 import math
 from pathlib import Path
@@ -74,16 +75,25 @@ def configure(
 # ---------------------------------------------------------------------------
 
 
+# Reserved dot-segments. Both _SAFE_VERSION and _SAFE_RECORD_ID allow dots
+# (to support version strings like "20240101.0"), but a segment consisting
+# solely of dots is a reserved path-traversal token: "." is a no-op segment
+# and ".." climbs to the parent directory when joined onto a Path. Neither
+# regex excludes them on its own, so reject them explicitly after the
+# character-class match — the allowlist alone doesn't stop traversal.
+_RESERVED_DOT_SEGMENTS = frozenset({".", ".."})
+
+
 def _validate_version(version: str) -> str:
     """Validate that *version* contains only safe characters. Raises HTTP 400 on failure."""
-    if not _SAFE_VERSION.match(version):
+    if not _SAFE_VERSION.match(version) or version in _RESERVED_DOT_SEGMENTS:
         raise HTTPException(status_code=400, detail=f"Invalid version identifier: {version!r}")
     return version
 
 
 def _validate_record_id(record_id: str) -> str:
     """Validate that *record_id* contains only safe characters. Raises HTTP 400 on failure."""
-    if not _SAFE_RECORD_ID.match(record_id):
+    if not _SAFE_RECORD_ID.match(record_id) or record_id in _RESERVED_DOT_SEGMENTS:
         raise HTTPException(status_code=400, detail=f"Invalid record_id: {record_id!r}")
     return record_id
 
@@ -125,12 +135,28 @@ def _find_version_root(version: str) -> tuple[Path, str] | None:
     return None
 
 
+# Aggregate caps on the JSONL scan (across every entity's violations.jsonl /
+# skipped.jsonl for a single version). A bad extraction can flag millions of
+# records — a multi-hundred-MB violations.jsonl loaded whole into memory (and
+# then classified with an O(N) per-violation filesystem scan) can OOM the
+# process and pin the event loop. These bound the *aggregate* read the same
+# way _MAX_RECORD_FILE_BYTES already bounds a single record's raw XML/JSON.
+_MAX_JSONL_TOTAL_BYTES = 64 * 1024 * 1024  # 64 MiB aggregate per version
+_MAX_JSONL_RECORDS = 200_000  # hard record-count backstop independent of byte size
+
+
 def _read_violations(flagged_version_dir: Path) -> list[dict[str, Any]]:
     """Read all violations.jsonl files under *flagged_version_dir*, injecting entity_type from the directory name.
 
-    Corrupt lines are logged and skipped.
+    Streams each file line-by-line (never loads a whole file into memory) and
+    stops once the aggregate byte or record cap is hit, logging a warning so
+    the truncation is visible rather than silent. Corrupt lines are logged
+    and skipped. Synchronous/blocking — callers on the event loop should run
+    this via `_get_violations` (which offloads to a worker thread and caches
+    the result), not call it directly.
     """
     violations: list[dict[str, Any]] = []
+    bytes_read = 0
     for entity_dir in sorted(flagged_version_dir.iterdir()):
         if not entity_dir.is_dir():
             continue
@@ -138,23 +164,38 @@ def _read_violations(flagged_version_dir: Path) -> list[dict[str, Any]]:
         if not jsonl_file.is_file():
             continue
         entity_type = entity_dir.name
-        for lineno, raw_line in enumerate(jsonl_file.read_text(encoding="utf-8").splitlines(), start=1):
-            line = raw_line.strip()
-            if not line:
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                logger.warning("⚠️ Skipping corrupt JSONL line", file=str(jsonl_file), lineno=lineno)
-                continue
-            record["entity_type"] = entity_type
-            violations.append(record)
+        with jsonl_file.open(encoding="utf-8") as fh:
+            for lineno, raw_line in enumerate(fh, start=1):
+                bytes_read += len(raw_line.encode("utf-8"))
+                if bytes_read > _MAX_JSONL_TOTAL_BYTES or len(violations) >= _MAX_JSONL_RECORDS:
+                    logger.warning(
+                        "⚠️ Violations read capped — results are truncated",
+                        dir=str(flagged_version_dir),
+                        records_read=len(violations),
+                        bytes_read=bytes_read,
+                    )
+                    return violations
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.warning("⚠️ Skipping corrupt JSONL line", file=str(jsonl_file), lineno=lineno)
+                    continue
+                record["entity_type"] = entity_type
+                violations.append(record)
     return violations
 
 
 def _read_skipped(flagged_version_dir: Path) -> list[dict[str, Any]]:
-    """Read all skipped.jsonl files under *flagged_version_dir*, injecting entity_type from the directory name."""
+    """Read all skipped.jsonl files under *flagged_version_dir*, injecting entity_type from the directory name.
+
+    Same streaming + aggregate-cap behavior as `_read_violations`. Synchronous
+    — callers on the event loop should use `_get_skipped`.
+    """
     skipped: list[dict[str, Any]] = []
+    bytes_read = 0
     for entity_dir in sorted(flagged_version_dir.iterdir()):
         if not entity_dir.is_dir():
             continue
@@ -162,17 +203,65 @@ def _read_skipped(flagged_version_dir: Path) -> list[dict[str, Any]]:
         if not jsonl_file.is_file():
             continue
         entity_type = entity_dir.name
-        for lineno, raw_line in enumerate(jsonl_file.read_text(encoding="utf-8").splitlines(), start=1):
-            line = raw_line.strip()
-            if not line:
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                logger.warning("⚠️ Skipping corrupt skipped JSONL line", file=str(jsonl_file), lineno=lineno)
-                continue
-            record["entity_type"] = entity_type
-            skipped.append(record)
+        with jsonl_file.open(encoding="utf-8") as fh:
+            for lineno, raw_line in enumerate(fh, start=1):
+                bytes_read += len(raw_line.encode("utf-8"))
+                if bytes_read > _MAX_JSONL_TOTAL_BYTES or len(skipped) >= _MAX_JSONL_RECORDS:
+                    logger.warning(
+                        "⚠️ Skipped-records read capped — results are truncated",
+                        dir=str(flagged_version_dir),
+                        records_read=len(skipped),
+                        bytes_read=bytes_read,
+                    )
+                    return skipped
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.warning("⚠️ Skipping corrupt skipped JSONL line", file=str(jsonl_file), lineno=lineno)
+                    continue
+                record["entity_type"] = entity_type
+                skipped.append(record)
+    return skipped
+
+
+# version-dir path → (expiry_timestamp, cached result). Shared by every endpoint
+# that needs a version's full violation/skipped set, so the aggregate JSONL scan
+# runs at most once per version per TTL window instead of once per request.
+_violations_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_skipped_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_JSONL_CACHE_TTL: float = 300.0  # 5 minutes — matches _PARSING_ERROR_CACHE_TTL
+
+
+async def _get_violations(flagged_version_dir: Path) -> list[dict[str, Any]]:
+    """Cached, off-event-loop accessor for a version's full violation set.
+
+    Every endpoint handler should call this instead of `_read_violations`
+    directly: it runs the blocking filesystem scan via `asyncio.to_thread` so
+    it can't pin the event loop, and reuses the result across endpoints/
+    requests for the cache TTL instead of re-scanning the corpus each time.
+    """
+    cache_key = str(flagged_version_dir)
+    now = time.monotonic()
+    cached = _violations_cache.get(cache_key)
+    if cached is not None and now < cached[0]:
+        return cached[1]
+    violations = await asyncio.to_thread(_read_violations, flagged_version_dir)
+    _violations_cache[cache_key] = (now + _JSONL_CACHE_TTL, violations)
+    return violations
+
+
+async def _get_skipped(flagged_version_dir: Path) -> list[dict[str, Any]]:
+    """Cached, off-event-loop accessor for a version's full skipped-record set. See `_get_violations`."""
+    cache_key = str(flagged_version_dir)
+    now = time.monotonic()
+    cached = _skipped_cache.get(cache_key)
+    if cached is not None and now < cached[0]:
+        return cached[1]
+    skipped = await asyncio.to_thread(_read_skipped, flagged_version_dir)
+    _skipped_cache[cache_key] = (now + _JSONL_CACHE_TTL, skipped)
     return skipped
 
 
@@ -339,11 +428,11 @@ async def get_summary(
     data_root, source = location
     flagged_version_dir = data_root / "flagged" / version
 
-    violations = _read_violations(flagged_version_dir)
+    violations = await _get_violations(flagged_version_dir)
     raw_state = _load_state_marker(data_root, version, source)
     summary = _build_violation_summary(violations)
 
-    skipped = _read_skipped(flagged_version_dir)
+    skipped = await _get_skipped(flagged_version_dir)
     skipped_summary = _build_skipped_summary(skipped)
 
     # Extract phase statuses from the state marker for the frontend.
@@ -384,7 +473,7 @@ async def list_skipped(
     data_root, _source = location
     flagged_version_dir = data_root / "flagged" / version
 
-    skipped = _read_skipped(flagged_version_dir)
+    skipped = await _get_skipped(flagged_version_dir)
 
     if entity_type:
         skipped = [s for s in skipped if s.get("entity_type") == entity_type]
@@ -423,7 +512,7 @@ async def list_violations(
     data_root, _source = location
     flagged_version_dir = data_root / "flagged" / version
 
-    violations = _read_violations(flagged_version_dir)
+    violations = await _get_violations(flagged_version_dir)
 
     # Apply filters
     if entity_type is not None:
@@ -469,7 +558,7 @@ async def get_violation_detail(
     data_root, _source = location
     flagged_version_dir = data_root / "flagged" / version
 
-    all_violations = _read_violations(flagged_version_dir)
+    all_violations = await _get_violations(flagged_version_dir)
     record_violations = [v for v in all_violations if v.get("record_id") == record_id]
 
     if not record_violations:
@@ -477,7 +566,7 @@ async def get_violation_detail(
 
     # Determine the entity type (use the first match)
     found_entity_type: str = record_violations[0].get("entity_type", "unknown")
-    raw_xml, parsed_json, truncated = _load_record_files(flagged_version_dir, found_entity_type, record_id)
+    raw_xml, parsed_json, truncated = await asyncio.to_thread(_load_record_files, flagged_version_dir, found_entity_type, record_id)
 
     return JSONResponse(
         content={
@@ -572,6 +661,33 @@ def _classify_violation(
     }
 
 
+def _classify_all_violations(
+    violations: list[dict[str, Any]], flagged_version_dir: Path
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Classify every violation, doing up to two stat + two file reads each.
+
+    Synchronous/blocking (O(N) filesystem I/O) — run via `asyncio.to_thread`
+    from an async handler rather than calling directly, so an oversized
+    corpus can't pin the event loop for the whole scan.
+    """
+    parsing_errors: list[dict[str, Any]] = []
+    source_issues: list[dict[str, Any]] = []
+    indeterminate: list[dict[str, Any]] = []
+
+    for v in violations:
+        entity_type: str = v.get("entity_type", "unknown")
+        entry = _classify_violation(v, flagged_version_dir, entity_type)
+        cls = entry["classification"]
+        if cls == "parsing_error":
+            parsing_errors.append(entry)
+        elif cls == "source_issue":
+            source_issues.append(entry)
+        else:
+            indeterminate.append(entry)
+
+    return parsing_errors, source_issues, indeterminate
+
+
 # ---------------------------------------------------------------------------
 # Task 5 — endpoint
 # ---------------------------------------------------------------------------
@@ -602,22 +718,8 @@ async def get_parsing_errors(
     data_root, _source = location
     flagged_version_dir = data_root / "flagged" / version
 
-    violations = _read_violations(flagged_version_dir)
-
-    parsing_errors: list[dict[str, Any]] = []
-    source_issues: list[dict[str, Any]] = []
-    indeterminate: list[dict[str, Any]] = []
-
-    for v in violations:
-        entity_type: str = v.get("entity_type", "unknown")
-        entry = _classify_violation(v, flagged_version_dir, entity_type)
-        cls = entry["classification"]
-        if cls == "parsing_error":
-            parsing_errors.append(entry)
-        elif cls == "source_issue":
-            source_issues.append(entry)
-        else:
-            indeterminate.append(entry)
+    violations = await _get_violations(flagged_version_dir)
+    parsing_errors, source_issues, indeterminate = await asyncio.to_thread(_classify_all_violations, violations, flagged_version_dir)
 
     result: dict[str, Any] = {
         "parsing_errors": parsing_errors,
@@ -657,19 +759,19 @@ async def compare_versions(
     if loc_b is None:
         raise HTTPException(status_code=404, detail=f"Version not found: {other_version!r}")
 
-    def _count_violations(data_root: Path, ver: str) -> dict[tuple[str, str, str], int]:
+    async def _count_violations(data_root: Path, ver: str) -> dict[tuple[str, str, str], int]:
         flagged_version_dir = data_root / "flagged" / ver
         counts: dict[tuple[str, str, str], int] = {}
-        for v in _read_violations(flagged_version_dir):
+        for v in await _get_violations(flagged_version_dir):
             key = (v.get("rule", "unknown"), v.get("severity", "unknown"), v.get("entity_type", "unknown"))
             counts[key] = counts.get(key, 0) + 1
         return counts
 
-    counts_a = _count_violations(loc_a[0], version)
-    counts_b = _count_violations(loc_b[0], other_version)
+    counts_a = await _count_violations(loc_a[0], version)
+    counts_b = await _count_violations(loc_b[0], other_version)
 
-    skipped_a = _read_skipped(loc_a[0] / "flagged" / version)
-    skipped_b = _read_skipped(loc_b[0] / "flagged" / other_version)
+    skipped_a = await _get_skipped(loc_a[0] / "flagged" / version)
+    skipped_b = await _get_skipped(loc_b[0] / "flagged" / other_version)
 
     def _count_by_entity(skipped: list[dict[str, Any]]) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -743,27 +845,17 @@ async def compare_versions(
     )
 
 
-@router.post("/api/admin/extraction-analysis/{version}/prompt-context")
-async def get_prompt_context(
-    version: str,
-    body: PromptContextRequest,
-    _admin: Annotated[dict[str, Any], Depends(require_admin)],
-) -> JSONResponse:
-    """Assemble structured context for AI prompts — violations and sample records grouped by rule+entity_type."""
-    _validate_version(version)
+_MAX_PROMPT_CONTEXT_SAMPLES = 5
 
-    location = _find_version_root(version)
-    if location is None:
-        raise HTTPException(status_code=404, detail=f"Version not found: {version!r}")
 
-    data_root, _source = location
-    flagged_version_dir = data_root / "flagged" / version
+def _build_prompt_contexts(all_violations: list[dict[str, Any]], flagged_version_dir: Path, rules: list[_RuleSelection]) -> list[dict[str, Any]]:
+    """Build per-rule sample-record contexts, reading each sample's raw XML/JSON.
 
-    all_violations = _read_violations(flagged_version_dir)
-
-    max_samples = 5
+    Synchronous/blocking (bounded to `_MAX_PROMPT_CONTEXT_SAMPLES` file reads per
+    rule, but still real filesystem I/O) — run via `asyncio.to_thread`.
+    """
     contexts: list[dict[str, Any]] = []
-    for sel in body.rules:
+    for sel in rules:
         matching = [v for v in all_violations if v.get("rule") == sel.rule and v.get("entity_type") == sel.entity_type]
         severity = matching[0].get("severity", "unknown") if matching else "unknown"
 
@@ -784,7 +876,7 @@ async def get_prompt_context(
                     "parsed_json": parsed_json,
                 }
             )
-            if len(sample_records) >= max_samples:
+            if len(sample_records) >= _MAX_PROMPT_CONTEXT_SAMPLES:
                 break
 
         contexts.append(
@@ -796,6 +888,27 @@ async def get_prompt_context(
                 "sample_records": sample_records,
             }
         )
+    return contexts
+
+
+@router.post("/api/admin/extraction-analysis/{version}/prompt-context")
+async def get_prompt_context(
+    version: str,
+    body: PromptContextRequest,
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+) -> JSONResponse:
+    """Assemble structured context for AI prompts — violations and sample records grouped by rule+entity_type."""
+    _validate_version(version)
+
+    location = _find_version_root(version)
+    if location is None:
+        raise HTTPException(status_code=404, detail=f"Version not found: {version!r}")
+
+    data_root, _source = location
+    flagged_version_dir = data_root / "flagged" / version
+
+    all_violations = await _get_violations(flagged_version_dir)
+    contexts = await asyncio.to_thread(_build_prompt_contexts, all_violations, flagged_version_dir, body.rules)
 
     return JSONResponse(content={"contexts": contexts})
 
@@ -809,28 +922,14 @@ _MAX_JSON_CHARS_PER_RECORD = 1500
 _MAX_SAMPLES_FOR_AI = 3
 
 
-@router.post("/api/admin/extraction-analysis/{version}/generate-ai-prompt")
-async def generate_ai_prompt(
-    version: str,
-    body: PromptContextRequest,
-    _admin: Annotated[dict[str, Any], Depends(require_admin)],
-) -> JSONResponse:
-    """Use Claude to analyze violations and produce a targeted debugging prompt."""
-    if _anthropic_client is None:
-        raise HTTPException(status_code=503, detail="AI prompt generation unavailable — NLQ_API_KEY not configured")
+def _build_rule_sections(all_violations: list[dict[str, Any]], flagged_version_dir: Path, rules: list[_RuleSelection]) -> list[str]:
+    """Build the per-rule markdown sections for the AI prompt, reading each sample's raw XML/JSON.
 
-    _validate_version(version)
-    location = _find_version_root(version)
-    if location is None:
-        raise HTTPException(status_code=404, detail=f"Version not found: {version!r}")
-
-    data_root, source = location
-    flagged_version_dir = data_root / "flagged" / version
-    all_violations = _read_violations(flagged_version_dir)
-
-    # Build a compact context payload for Claude
+    Synchronous/blocking (bounded to `_MAX_SAMPLES_FOR_AI` file reads per rule,
+    but still real filesystem I/O) — run via `asyncio.to_thread`.
+    """
     rule_sections: list[str] = []
-    for sel in body.rules:
+    for sel in rules:
         matching = [v for v in all_violations if v.get("rule") == sel.rule and v.get("entity_type") == sel.entity_type]
         if not matching:
             continue
@@ -890,6 +989,28 @@ async def generate_ai_prompt(
                 break
 
         rule_sections.append("\n".join(section_lines))
+    return rule_sections
+
+
+@router.post("/api/admin/extraction-analysis/{version}/generate-ai-prompt")
+async def generate_ai_prompt(
+    version: str,
+    body: PromptContextRequest,
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+) -> JSONResponse:
+    """Use Claude to analyze violations and produce a targeted debugging prompt."""
+    if _anthropic_client is None:
+        raise HTTPException(status_code=503, detail="AI prompt generation unavailable — NLQ_API_KEY not configured")
+
+    _validate_version(version)
+    location = _find_version_root(version)
+    if location is None:
+        raise HTTPException(status_code=404, detail=f"Version not found: {version!r}")
+
+    data_root, source = location
+    flagged_version_dir = data_root / "flagged" / version
+    all_violations = await _get_violations(flagged_version_dir)
+    rule_sections = await asyncio.to_thread(_build_rule_sections, all_violations, flagged_version_dir, body.rules)
 
     user_content = f"# Extraction Analysis — Version {version} (source: {source})\n\n" + "\n\n---\n\n".join(rule_sections)
 
