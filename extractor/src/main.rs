@@ -63,8 +63,6 @@ async fn main() -> Result<()> {
     // Display ASCII art
     print_ascii_art(args.source.as_ref());
 
-    info!("🚀 Starting Rust-based Discogs data extractor with high performance");
-
     // Load configuration from environment (drop-in replacement for extractor)
     let mut config = match ExtractorConfig::from_env() {
         Ok(c) => c,
@@ -83,6 +81,11 @@ async fn main() -> Result<()> {
     if let Some(s) = args.source {
         config.source = s;
     }
+
+    // Logged AFTER config.source is fully resolved (env var + CLI override) so the
+    // startup banner reflects the actual --source mode instead of always claiming
+    // "Discogs" — cosmetic, but misleading in the extractor-musicbrainz container's logs.
+    info!("{}", startup_banner_message(config.source));
 
     // Load and compile data quality rules if configured
     let compiled_rules = if let Some(ref rules_path) = config.data_quality_rules {
@@ -196,6 +199,15 @@ async fn apply_failure_cooldown(env_value: Option<&str>) {
     if cooldown > 0 {
         error!("😴 Sleeping {}s before exiting to avoid restart-loop flapping (override with FAILURE_COOLDOWN_SECS=0)", cooldown);
         tokio::time::sleep(std::time::Duration::from_secs(cooldown)).await;
+    }
+}
+
+/// Startup banner text reflecting the actual resolved `--source` mode, instead of a
+/// hardcoded "Discogs" claim regardless of which extractor container is running.
+fn startup_banner_message(source: Source) -> &'static str {
+    match source {
+        Source::Discogs => "🚀 Starting Rust-based Discogs data extractor with high performance",
+        Source::MusicBrainz => "🚀 Starting Rust-based MusicBrainz data extractor with high performance",
     }
 }
 

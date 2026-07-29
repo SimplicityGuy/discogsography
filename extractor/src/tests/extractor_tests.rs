@@ -1383,4 +1383,51 @@ mod wait_for_discogs_idle_tests {
 
         assert!(result.is_ok());
     }
+
+    #[tokio::test]
+    async fn test_unreachable_endpoint_uses_short_backoff_not_poll_interval() {
+        // discogsography-i7sa regression: an unreachable Discogs health endpoint (a
+        // startup-ordering race, not "Discogs is busy") must retry on the short
+        // escalating backoff, NOT the hourly poll_interval — otherwise a single
+        // unlucky restart-timing race costs hours instead of minutes. Pass a
+        // deliberately huge poll_interval (as production does — DISCOGS_POLL_INTERVAL
+        // is 3600s) and prove all DISCOGS_MAX_UNREACHABLE_RETRIES attempts complete
+        // in well under one poll_interval's worth of real time.
+        let url = "http://127.0.0.1:19999/health";
+        let shutdown = AtomicBool::new(false);
+        let huge_poll_interval = Duration::from_secs(3600);
+
+        let start = tokio::time::Instant::now();
+        let result = tokio::time::timeout(Duration::from_secs(10), wait_for_discogs_idle_with_interval(url, &shutdown, huge_poll_interval)).await;
+        let elapsed = start.elapsed();
+
+        assert!(result.is_ok(), "must give up after DISCOGS_MAX_UNREACHABLE_RETRIES, not hang for poll_interval-per-attempt");
+        assert!(result.unwrap().is_ok());
+        assert!(elapsed < Duration::from_secs(5), "unreachable retries must not wait a full poll_interval per attempt: took {:?}", elapsed);
+    }
+}
+
+mod discogs_unreachable_backoff_tests {
+    use crate::extractor::{DISCOGS_UNREACHABLE_MAX_DELAY, discogs_unreachable_backoff};
+
+    #[test]
+    fn test_escalates_and_caps() {
+        // discogsography-i7sa: escalating (each attempt waits longer than the last)
+        // and bounded (never exceeds the cap, so retries stay "minutes, not hours").
+        let mut previous = discogs_unreachable_backoff(1);
+        for attempt in 2..=10u32 {
+            let backoff = discogs_unreachable_backoff(attempt);
+            assert!(backoff >= previous, "attempt {} backoff must not shrink vs attempt {}", attempt, attempt - 1);
+            assert!(backoff <= DISCOGS_UNREACHABLE_MAX_DELAY, "attempt {} backoff must never exceed the cap", attempt);
+            previous = backoff;
+        }
+    }
+
+    #[test]
+    fn test_zero_and_overflow_safe_attempts() {
+        // attempt=0 and very large attempts must not panic (shift-overflow guard).
+        let _ = discogs_unreachable_backoff(0);
+        let capped = discogs_unreachable_backoff(u32::MAX);
+        assert_eq!(capped, DISCOGS_UNREACHABLE_MAX_DELAY);
+    }
 }

@@ -1071,12 +1071,39 @@ pub(crate) const DISCOGS_POLL_INTERVAL: Duration = Duration::from_secs(3600);
 pub(crate) const DISCOGS_HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const DISCOGS_MAX_UNREACHABLE_RETRIES: u32 = 10;
 
+// The "unreachable" case (connection refused, DNS failure, timeout) is a startup-ordering
+// race — extractor-musicbrainz starting before extractor-discogs is reachable — not
+// "Discogs is busy". It must use a short escalating backoff distinct from
+// DISCOGS_POLL_INTERVAL's hourly busy-wait cadence, or the race costs hours instead of
+// minutes (discogsography-i7sa: observed a 4-hour idle wait from a single unlucky
+// restart-timing race, at the old fixed 3600s-per-attempt retry).
+#[cfg(not(test))]
+pub(crate) const DISCOGS_UNREACHABLE_BASE_DELAY: Duration = Duration::from_secs(5);
+#[cfg(test)]
+pub(crate) const DISCOGS_UNREACHABLE_BASE_DELAY: Duration = Duration::from_millis(5);
+
+#[cfg(not(test))]
+pub(crate) const DISCOGS_UNREACHABLE_MAX_DELAY: Duration = Duration::from_secs(300);
+#[cfg(test)]
+pub(crate) const DISCOGS_UNREACHABLE_MAX_DELAY: Duration = Duration::from_millis(50);
+
+/// Escalating backoff for a consecutive-unreachable attempt count: doubles from
+/// `DISCOGS_UNREACHABLE_BASE_DELAY`, capped at `DISCOGS_UNREACHABLE_MAX_DELAY`. `attempt` is
+/// 1-based (the count *after* incrementing for the failure that just happened).
+pub(crate) fn discogs_unreachable_backoff(attempt: u32) -> Duration {
+    let exponent = attempt.saturating_sub(1).min(16); // guard against shl overflow
+    let multiplier = 1u32.checked_shl(exponent).unwrap_or(u32::MAX);
+    DISCOGS_UNREACHABLE_BASE_DELAY.saturating_mul(multiplier).min(DISCOGS_UNREACHABLE_MAX_DELAY)
+}
+
 /// Wait until the Discogs extractor is not actively extracting.
 pub async fn wait_for_discogs_idle(url: &str, shutdown_flag: &AtomicBool) -> Result<()> {
     wait_for_discogs_idle_with_interval(url, shutdown_flag, DISCOGS_POLL_INTERVAL).await
 }
 
-/// Internal implementation with configurable poll interval (for testing).
+/// Internal implementation with configurable poll interval (for testing). `poll_interval`
+/// governs only the "Discogs is busy" (status == "running") wait; an unreachable endpoint
+/// always uses the short escalating backoff from `discogs_unreachable_backoff`.
 pub async fn wait_for_discogs_idle_with_interval(url: &str, shutdown_flag: &AtomicBool, poll_interval: Duration) -> Result<()> {
     let client = reqwest::Client::builder().timeout(DISCOGS_HEALTH_TIMEOUT).build()?;
 
@@ -1107,6 +1134,7 @@ pub async fn wait_for_discogs_idle_with_interval(url: &str, shutdown_flag: &Atom
                         return Ok(());
                     }
                 }
+                tokio::time::sleep(poll_interval).await;
             }
             Err(_) => {
                 unreachable_count += 1;
@@ -1117,14 +1145,14 @@ pub async fn wait_for_discogs_idle_with_interval(url: &str, shutdown_flag: &Atom
                     );
                     return Ok(());
                 }
+                let backoff = discogs_unreachable_backoff(unreachable_count);
                 warn!(
                     "⚠️ Discogs health endpoint unreachable (attempt {}/{}), retrying in {:?}...",
-                    unreachable_count, DISCOGS_MAX_UNREACHABLE_RETRIES, poll_interval
+                    unreachable_count, DISCOGS_MAX_UNREACHABLE_RETRIES, backoff
                 );
+                tokio::time::sleep(backoff).await;
             }
         }
-
-        tokio::time::sleep(poll_interval).await;
     }
 }
 
