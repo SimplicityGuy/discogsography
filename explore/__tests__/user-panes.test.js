@@ -156,6 +156,24 @@ describe('UserPanes', () => {
 
             expect(loading.classList.contains('active')).toBe(false);
         });
+
+        it('should replace the stale table instead of appending an error under it', async () => {
+            window.apiClient.getUserCollection.mockResolvedValue({
+                releases: [{ title: 'OK Computer', artist: 'Radiohead', year: 1997 }],
+                total: 1,
+                has_more: false,
+            });
+            await userPanes.loadCollection();
+            const body = document.getElementById('collectionBody');
+            expect(body.querySelector('table')).not.toBeNull();
+
+            window.apiClient.getUserCollection.mockResolvedValue(null);
+            await userPanes.loadCollection();
+
+            expect(body.querySelector('table')).toBeNull();
+            expect(body.querySelectorAll('.user-pane-empty')).toHaveLength(1);
+            expect(body.textContent).toContain('Failed to load collection.');
+        });
     });
 
     describe('loadWantlist', () => {
@@ -193,6 +211,24 @@ describe('UserPanes', () => {
 
             const body = document.getElementById('wantlistBody');
             expect(body.querySelector('table')).not.toBeNull();
+        });
+
+        it('should replace the stale table instead of appending an error under it', async () => {
+            window.apiClient.getUserWantlist.mockResolvedValue({
+                releases: [{ title: 'Loveless', artist: 'My Bloody Valentine', year: 1991 }],
+                total: 1,
+                has_more: false,
+            });
+            await userPanes.loadWantlist();
+            const body = document.getElementById('wantlistBody');
+            expect(body.querySelector('table')).not.toBeNull();
+
+            window.apiClient.getUserWantlist.mockResolvedValue(null);
+            await userPanes.loadWantlist();
+
+            expect(body.querySelector('table')).toBeNull();
+            expect(body.querySelectorAll('.user-pane-empty')).toHaveLength(1);
+            expect(body.textContent).toContain('Failed to load wantlist.');
         });
     });
 
@@ -1239,6 +1275,25 @@ describe('UserPanes', () => {
             await userPanes.loadGapAnalysis('artist', '123');
             const gapsPane = document.getElementById('gapsPane');
             expect(gapsPane.classList.contains('active')).toBe(true);
+        });
+
+        it('should replace the stale table instead of appending an error under it', async () => {
+            window.apiClient.getCollectionGaps.mockResolvedValue({
+                entity: { name: 'Test', type: 'artist' },
+                summary: { total: 1, owned: 0, missing: 1 },
+                results: [{ title: 'Missing Release', artist: 'Test Artist' }],
+                pagination: { total: 1, offset: 0, limit: 50, has_more: false },
+            });
+            await userPanes.loadGapAnalysis('artist', '123');
+            const body = document.getElementById('gapsBody');
+            expect(body.querySelector('.gap-summary')).not.toBeNull();
+
+            window.apiClient.getCollectionGaps.mockResolvedValue(null);
+            await userPanes.loadGapAnalysis('artist', '123');
+
+            expect(body.querySelector('.gap-summary')).toBeNull();
+            expect(body.querySelectorAll('.user-pane-empty')).toHaveLength(1);
+            expect(body.textContent).toContain('Failed to load gap analysis.');
         });
     });
 

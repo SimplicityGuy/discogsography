@@ -69,6 +69,7 @@ class UserPanes {
 
     _renderCollectionEmpty(container, msg) {
         if (!container) return;
+        container.replaceChildren();
         const div = document.createElement('div');
         div.className = 'user-pane-empty';
         const icon = document.createElement('span');
@@ -133,6 +134,7 @@ class UserPanes {
 
     _renderWantlistEmpty(container, msg) {
         if (!container) return;
+        container.replaceChildren();
         const div = document.createElement('div');
         div.className = 'user-pane-empty';
         const icon = document.createElement('span');
@@ -1032,6 +1034,7 @@ class UserPanes {
 
     _renderGapsEmpty(container, msg) {
         if (!container) return;
+        container.replaceChildren();
         const div = document.createElement('div');
         div.className = 'user-pane-empty';
         const icon = document.createElement('span');
