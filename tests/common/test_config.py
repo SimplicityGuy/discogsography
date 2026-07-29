@@ -873,6 +873,50 @@ class TestApiConfigFromEnv:
         with pytest.raises(ValueError, match="JWT_SECRET_KEY"):
             ApiConfig.from_env()
 
+    def test_rabbitmq_management_credentials_default_to_discogsography(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """RABBITMQ_USERNAME/PASSWORD unset must default to 'discogsography' — matching
+        _build_amqp_url(), DashboardConfig, and docs/configuration.md — not 'guest',
+        which 401s against the discogsography-provisioned broker."""
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
+        monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
+        monkeypatch.delenv("RABBITMQ_USERNAME", raising=False)
+        monkeypatch.delenv("RABBITMQ_PASSWORD", raising=False)
+
+        from common.config import ApiConfig
+
+        config = ApiConfig.from_env()
+        assert config.rabbitmq_username == "discogsography"
+        assert config.rabbitmq_password == "discogsography"
+
+    def test_rabbitmq_management_credentials_symmetric_get_secret(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Username and password must use the same get_secret(key, default) form —
+        regression for the prior asymmetry where password additionally fell back via
+        `or "guest"` on an empty string while username did not."""
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
+        monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
+        monkeypatch.setenv("RABBITMQ_USERNAME", "")
+        monkeypatch.setenv("RABBITMQ_PASSWORD", "")
+
+        from common.config import ApiConfig
+
+        config = ApiConfig.from_env()
+        # Both pass an explicitly empty value through unchanged — same behavior,
+        # rather than password silently substituting a different fallback than username.
+        assert config.rabbitmq_username == ""
+        assert config.rabbitmq_password == ""
+
 
 class TestApiConfigNewFields:
     """Tests for new ApiConfig fields added in the security hardening."""
