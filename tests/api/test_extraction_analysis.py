@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -10,8 +12,6 @@ import pytest
 
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from fastapi.testclient import TestClient
 
 from tests.api.test_admin_endpoints import _admin_auth_headers
@@ -1121,6 +1121,135 @@ class TestReadViolationsEdgeCases:
         assert resp.status_code == 200
         # Empty lines must be skipped; only 2 real records
         assert resp.json()["total"] == 2
+
+
+class TestViolationsReadBoundedAndOffloaded:
+    """Regression for discogsography-cu2.98: the aggregate violations.jsonl scan
+    must be capped, streamed (never `.read_text().splitlines()` a whole file into
+    memory), cached per version, and run off the event loop."""
+
+    def setup_method(self) -> None:
+        import api.routers.extraction_analysis as ea
+
+        # Caches are module-level and would otherwise leak state between tests
+        # (including the pre-existing parsing-error cache, which every test in
+        # this class's module reuses version "20260101" against).
+        ea._violations_cache.clear()
+        ea._skipped_cache.clear()
+        ea._parsing_error_cache.clear()
+
+    def test_read_violations_caps_at_max_records(self, tmp_path: Path) -> None:
+        """A corpus larger than _MAX_JSONL_RECORDS is truncated, not loaded whole."""
+        import api.routers.extraction_analysis as ea
+
+        entity_dir = tmp_path / "flagged" / "20260101" / "artists"
+        entity_dir.mkdir(parents=True)
+        # Small cap for the test so we don't have to write hundreds of thousands of lines.
+        line = json.dumps({"record_id": "r", "rule": "x", "severity": "warning"})
+        with patch.object(ea, "_MAX_JSONL_RECORDS", 10), patch.object(ea, "_MAX_JSONL_TOTAL_BYTES", 10 * 1024 * 1024):
+            (entity_dir / "violations.jsonl").write_text("\n".join([line] * 50) + "\n")
+            violations = ea._read_violations(entity_dir.parent)
+
+        assert len(violations) == 10
+
+    def test_read_violations_caps_at_max_bytes(self, tmp_path: Path) -> None:
+        """A corpus whose aggregate size exceeds _MAX_JSONL_TOTAL_BYTES is truncated."""
+        import api.routers.extraction_analysis as ea
+
+        entity_dir = tmp_path / "flagged" / "20260101" / "artists"
+        entity_dir.mkdir(parents=True)
+        line = json.dumps({"record_id": "r", "rule": "x", "severity": "warning", "field_value": "y" * 200})
+        with patch.object(ea, "_MAX_JSONL_RECORDS", 1_000_000), patch.object(ea, "_MAX_JSONL_TOTAL_BYTES", 1024):
+            (entity_dir / "violations.jsonl").write_text("\n".join([line] * 50) + "\n")
+            violations = ea._read_violations(entity_dir.parent)
+
+        assert 0 < len(violations) < 50
+
+    def test_read_violations_streams_never_loads_whole_file_via_read_text(self, tmp_path: Path) -> None:
+        """_read_violations must not call Path.read_text() on the jsonl file — that
+        would defeat the streaming fix by loading the whole file into memory anyway."""
+        import api.routers.extraction_analysis as ea
+
+        entity_dir = tmp_path / "flagged" / "20260101" / "artists"
+        entity_dir.mkdir(parents=True)
+        (entity_dir / "violations.jsonl").write_text(json.dumps({"record_id": "1", "rule": "x", "severity": "warning"}) + "\n")
+
+        with patch.object(Path, "read_text", side_effect=AssertionError("read_text must not be used for the JSONL scan")):
+            violations = ea._read_violations(entity_dir.parent)
+
+        assert len(violations) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_violations_caches_across_calls(self, tmp_path: Path) -> None:
+        """_get_violations must not re-scan the filesystem on a cache hit."""
+        import api.routers.extraction_analysis as ea
+
+        entity_dir = tmp_path / "flagged" / "20260101" / "artists"
+        entity_dir.mkdir(parents=True)
+        (entity_dir / "violations.jsonl").write_text(json.dumps({"record_id": "1", "rule": "x", "severity": "warning"}) + "\n")
+
+        flagged_version_dir = entity_dir.parent
+        with patch.object(ea, "_read_violations", wraps=ea._read_violations) as spy:
+            first = await ea._get_violations(flagged_version_dir)
+            second = await ea._get_violations(flagged_version_dir)
+
+        assert first == second
+        spy.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_violations_runs_off_the_event_loop(self, tmp_path: Path) -> None:
+        """_get_violations must offload the blocking scan via asyncio.to_thread, not
+        call the synchronous reader directly on the event loop."""
+        import api.routers.extraction_analysis as ea
+
+        entity_dir = tmp_path / "flagged" / "20260101" / "artists"
+        entity_dir.mkdir(parents=True)
+        (entity_dir / "violations.jsonl").write_text(json.dumps({"record_id": "1", "rule": "x", "severity": "warning"}) + "\n")
+
+        with patch("api.routers.extraction_analysis.asyncio.to_thread", wraps=asyncio.to_thread) as mock_to_thread:
+            await ea._get_violations(entity_dir.parent)
+
+        mock_to_thread.assert_called_once_with(ea._read_violations, entity_dir.parent)
+
+    def test_parsing_errors_classification_runs_off_the_event_loop(self, test_client: TestClient, tmp_path: Path) -> None:
+        """get_parsing_errors' O(N) per-violation classification loop must run via
+        asyncio.to_thread rather than blocking the event loop for the whole scan."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with (
+            patch.object(ea, "_discogs_data_root", tmp_path),
+            patch.object(ea, "_musicbrainz_data_root", None),
+            patch("api.routers.extraction_analysis.asyncio.to_thread", wraps=asyncio.to_thread) as mock_to_thread,
+        ):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/parsing-errors",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        classify_calls = [c for c in mock_to_thread.call_args_list if c.args and c.args[0] is ea._classify_all_violations]
+        assert len(classify_calls) == 1
+
+    def test_summary_and_violations_endpoints_share_cached_scan(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Two different endpoints for the same version must not each independently
+        re-scan the full violations.jsonl corpus within the cache TTL."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with (
+            patch.object(ea, "_discogs_data_root", tmp_path),
+            patch.object(ea, "_musicbrainz_data_root", None),
+            patch.object(ea, "_read_violations", wraps=ea._read_violations) as spy,
+        ):
+            resp1 = test_client.get("/api/admin/extraction-analysis/20260101/summary", headers=_admin_auth_headers())
+            resp2 = test_client.get("/api/admin/extraction-analysis/20260101/violations", headers=_admin_auth_headers())
+
+        assert resp1.status_code == 200
+        assert resp2.status_code == 200
+        spy.assert_called_once()
 
 
 class TestLoadStateMarkerCorrupt:
