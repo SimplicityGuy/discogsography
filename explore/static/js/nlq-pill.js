@@ -218,6 +218,7 @@ export class NlqPill {
         input.placeholder = 'Ask anything about the music graph…';
         input.maxLength = 500;
         input.value = this._pendingInputValue || '';
+        input.disabled = this.state === 'loading';
         input.addEventListener('input', () => {
             this._pendingInputValue = input.value;
         });
@@ -328,6 +329,12 @@ export class NlqPill {
     }
 
     _submitQuery(query) {
+        // A second submit while the first is still in flight would race two
+        // independent SSE streams against the shared NlqActionApplier's single
+        // undo snapshot — whichever stream resolves last silently wins,
+        // corrupting the undo snapshot / displayed answer. Only one query may
+        // be in flight at a time.
+        if (this.state === 'loading') return;
         const trimmed = (query || '').trim();
         if (!trimmed) return;
         NlqSuggestions.addRecent(trimmed);
