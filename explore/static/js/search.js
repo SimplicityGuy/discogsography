@@ -24,6 +24,11 @@
     let lastQuery = '';
     let lastResult = null;
     let selectedGenres = [];
+    // Monotonic request id — discards a response from an earlier request that
+    // resolves after a newer one was issued (type-chip toggle, year debounce,
+    // genre chip, pagination, or a fresh Enter/search-button submit can all
+    // fire while a prior search is still in flight).
+    let searchRequestId = 0;
 
     // ------------------------------------------------------------------
     // Parse ts_headline highlight into DOM nodes (no innerHTML)
@@ -82,15 +87,26 @@
 
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
+            resetGenresOnNewQuery();
             currentOffset = 0;
             triggerSearch();
         }
     });
 
     searchBtn.addEventListener('click', () => {
+        resetGenresOnNewQuery();
         currentOffset = 0;
         triggerSearch();
     });
+
+    // A genre facet chip is semantically coupled to the query that produced
+    // it — carrying it forward silently narrows (or zeroes) an unrelated
+    // query with no on-screen indication why. Clear it only when the query
+    // text actually changed; refining/re-running the same query keeps it.
+    function resetGenresOnNewQuery() {
+        const q = input.value.trim();
+        if (q !== lastQuery) selectedGenres = [];
+    }
 
     // ------------------------------------------------------------------
     // Core search
@@ -102,6 +118,8 @@
             showPlaceholder();
             return;
         }
+
+        const requestId = ++searchRequestId;
 
         lastQuery = q;
         setVisible(placeholder, false);
@@ -115,6 +133,10 @@
         const yearMax = yearMaxEl.value ? parseInt(yearMaxEl.value, 10) : null;
 
         const data = await window.apiClient.search(q, types, selectedGenres, yearMin, yearMax, PAGE_SIZE, currentOffset);
+
+        // A newer search has since been issued — discard this stale response
+        // rather than let it overwrite results/pagination for the current one.
+        if (requestId !== searchRequestId) return;
 
         setVisible(loadingEl, false);
 

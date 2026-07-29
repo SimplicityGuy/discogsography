@@ -45,7 +45,7 @@ async def get_user_collection(
            genres, styles,
            c.rating AS rating, c.date_added AS date_added,
            c.folder_id AS folder_id
-    ORDER BY c.date_added DESC
+    ORDER BY c.date_added DESC, r.id
     SKIP $offset LIMIT $limit
     """
     count_cypher = """
@@ -85,7 +85,7 @@ async def get_user_wantlist(
            artist_name AS artist, label_name AS label,
            genres, styles,
            w.rating AS rating, w.date_added AS date_added
-    ORDER BY w.date_added DESC
+    ORDER BY w.date_added DESC, r.id
     SKIP $offset LIMIT $limit
     """
     count_cypher = """

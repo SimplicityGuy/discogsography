@@ -156,6 +156,47 @@ describe('UserPanes', () => {
 
             expect(loading.classList.contains('active')).toBe(false);
         });
+
+        it('should replace the stale table instead of appending an error under it', async () => {
+            window.apiClient.getUserCollection.mockResolvedValue({
+                releases: [{ title: 'OK Computer', artist: 'Radiohead', year: 1997 }],
+                total: 1,
+                has_more: false,
+            });
+            await userPanes.loadCollection();
+            const body = document.getElementById('collectionBody');
+            expect(body.querySelector('table')).not.toBeNull();
+
+            window.apiClient.getUserCollection.mockResolvedValue(null);
+            await userPanes.loadCollection();
+
+            expect(body.querySelector('table')).toBeNull();
+            expect(body.querySelectorAll('.user-pane-empty')).toHaveLength(1);
+            expect(body.textContent).toContain('Failed to load collection.');
+        });
+
+        it('should discard a stale response that resolves after a newer request', async () => {
+            let resolveFirst, resolveSecond;
+            window.apiClient.getUserCollection
+                .mockReturnValueOnce(new Promise(r => { resolveFirst = r; }))
+                .mockReturnValueOnce(new Promise(r => { resolveSecond = r; }));
+
+            const first = userPanes.loadCollection(); // offset 0
+            userPanes._collectionOffset = 50;
+            const second = userPanes.loadCollection(); // offset 50 — supersedes the first
+
+            // Newer request resolves first — should render normally.
+            resolveSecond({ releases: [{ title: 'Second Page', artist: 'B', year: 2000 }], total: 100, has_more: true });
+            await second;
+
+            // Stale request resolves after — must be discarded, not overwrite the render.
+            resolveFirst({ releases: [{ title: 'First Page', artist: 'A', year: 1990 }], total: 100, has_more: true });
+            await first;
+
+            const body = document.getElementById('collectionBody');
+            expect(body.textContent).toContain('Second Page');
+            expect(body.textContent).not.toContain('First Page');
+        });
     });
 
     describe('loadWantlist', () => {
@@ -194,6 +235,45 @@ describe('UserPanes', () => {
             const body = document.getElementById('wantlistBody');
             expect(body.querySelector('table')).not.toBeNull();
         });
+
+        it('should replace the stale table instead of appending an error under it', async () => {
+            window.apiClient.getUserWantlist.mockResolvedValue({
+                releases: [{ title: 'Loveless', artist: 'My Bloody Valentine', year: 1991 }],
+                total: 1,
+                has_more: false,
+            });
+            await userPanes.loadWantlist();
+            const body = document.getElementById('wantlistBody');
+            expect(body.querySelector('table')).not.toBeNull();
+
+            window.apiClient.getUserWantlist.mockResolvedValue(null);
+            await userPanes.loadWantlist();
+
+            expect(body.querySelector('table')).toBeNull();
+            expect(body.querySelectorAll('.user-pane-empty')).toHaveLength(1);
+            expect(body.textContent).toContain('Failed to load wantlist.');
+        });
+
+        it('should discard a stale response that resolves after a newer request', async () => {
+            let resolveFirst, resolveSecond;
+            window.apiClient.getUserWantlist
+                .mockReturnValueOnce(new Promise(r => { resolveFirst = r; }))
+                .mockReturnValueOnce(new Promise(r => { resolveSecond = r; }));
+
+            const first = userPanes.loadWantlist(); // offset 0
+            userPanes._wantlistOffset = 50;
+            const second = userPanes.loadWantlist(); // offset 50 — supersedes the first
+
+            resolveSecond({ releases: [{ title: 'Second Page', artist: 'B', year: 2000 }], total: 100, has_more: true });
+            await second;
+
+            resolveFirst({ releases: [{ title: 'First Page', artist: 'A', year: 1990 }], total: 100, has_more: true });
+            await first;
+
+            const body = document.getElementById('wantlistBody');
+            expect(body.textContent).toContain('Second Page');
+            expect(body.textContent).not.toContain('First Page');
+        });
     });
 
     describe('loadRecommendations', () => {
@@ -212,6 +292,18 @@ describe('UserPanes', () => {
 
             const body = document.getElementById('recommendationsBody');
             expect(body.querySelector('.user-pane-empty')).not.toBeNull();
+        });
+
+        it('should render a distinct error state (not the empty-collection prompt) when the API returns null', async () => {
+            // apiClient returns null for a non-ok HTTP response — a server/network
+            // error, not a genuinely empty recommendations list.
+            window.apiClient.getUserRecommendations.mockResolvedValue(null);
+
+            await userPanes.loadRecommendations();
+
+            const body = document.getElementById('recommendationsBody');
+            expect(body.textContent).toContain('Failed to load recommendations');
+            expect(body.textContent).not.toContain('No recommendations yet');
         });
 
         it('should render recommendation items', async () => {
@@ -490,11 +582,21 @@ describe('UserPanes', () => {
     });
 
     describe('_renderRecommendations', () => {
-        it('should render empty state for null data', () => {
+        it('should render an error state (not the empty-collection prompt) for null data', () => {
             const container = document.createElement('div');
             userPanes._renderRecommendations(container, null);
 
             expect(container.querySelector('.user-pane-empty')).not.toBeNull();
+            expect(container.textContent).toContain('Failed to load recommendations');
+            expect(container.textContent).not.toContain('No recommendations yet');
+        });
+
+        it('should render the empty-collection prompt for a genuinely empty recommendations array', () => {
+            const container = document.createElement('div');
+            userPanes._renderRecommendations(container, { recommendations: [] });
+
+            expect(container.querySelector('.user-pane-empty')).not.toBeNull();
+            expect(container.textContent).toContain('No recommendations yet');
         });
 
         it('should render recommendation with score', () => {
@@ -1239,6 +1341,56 @@ describe('UserPanes', () => {
             await userPanes.loadGapAnalysis('artist', '123');
             const gapsPane = document.getElementById('gapsPane');
             expect(gapsPane.classList.contains('active')).toBe(true);
+        });
+
+        it('should replace the stale table instead of appending an error under it', async () => {
+            window.apiClient.getCollectionGaps.mockResolvedValue({
+                entity: { name: 'Test', type: 'artist' },
+                summary: { total: 1, owned: 0, missing: 1 },
+                results: [{ title: 'Missing Release', artist: 'Test Artist' }],
+                pagination: { total: 1, offset: 0, limit: 50, has_more: false },
+            });
+            await userPanes.loadGapAnalysis('artist', '123');
+            const body = document.getElementById('gapsBody');
+            expect(body.querySelector('.gap-summary')).not.toBeNull();
+
+            window.apiClient.getCollectionGaps.mockResolvedValue(null);
+            await userPanes.loadGapAnalysis('artist', '123');
+
+            expect(body.querySelector('.gap-summary')).toBeNull();
+            expect(body.querySelectorAll('.user-pane-empty')).toHaveLength(1);
+            expect(body.textContent).toContain('Failed to load gap analysis.');
+        });
+
+        it('should discard a stale response that resolves after a newer request', async () => {
+            let resolveFirst, resolveSecond;
+            window.apiClient.getCollectionGaps
+                .mockReturnValueOnce(new Promise(r => { resolveFirst = r; }))
+                .mockReturnValueOnce(new Promise(r => { resolveSecond = r; }));
+
+            const first = userPanes.loadGapAnalysis('artist', '123'); // offset 0
+            userPanes._gapOffset = 50;
+            const second = userPanes.loadGapAnalysis('artist', '123'); // offset 50 — supersedes the first
+
+            resolveSecond({
+                entity: { name: 'Test', type: 'artist' },
+                summary: { total: 1, owned: 0, missing: 1 },
+                results: [{ title: 'Second Page Release', artist: 'B' }],
+                pagination: { total: 100, offset: 50, limit: 50, has_more: true },
+            });
+            await second;
+
+            resolveFirst({
+                entity: { name: 'Test', type: 'artist' },
+                summary: { total: 1, owned: 0, missing: 1 },
+                results: [{ title: 'First Page Release', artist: 'A' }],
+                pagination: { total: 100, offset: 0, limit: 50, has_more: true },
+            });
+            await first;
+
+            const body = document.getElementById('gapsBody');
+            expect(body.textContent).toContain('Second Page Release');
+            expect(body.textContent).not.toContain('First Page Release');
         });
     });
 

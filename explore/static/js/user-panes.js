@@ -14,6 +14,11 @@ class UserPanes {
         this._discogsOAuthState = null;
         this._tasteCache = null;
         this._tasteLoading = false;
+        // Monotonic request ids so an out-of-order (stale) fetch response
+        // can never overwrite the rows for a request issued after it.
+        this._collectionReqId = 0;
+        this._wantlistReqId = 0;
+        this._gapReqId = 0;
     }
 
     // ------------------------------------------------------------------ //
@@ -29,8 +34,12 @@ class UserPanes {
         const body = document.getElementById('collectionBody');
         if (loading) loading.classList.add('active');
 
+        const requestId = ++this._collectionReqId;
+        const requestOffset = this._collectionOffset;
         try {
-            const data = await window.apiClient.getUserCollection(token, this._pageSize, this._collectionOffset);
+            const data = await window.apiClient.getUserCollection(token, this._pageSize, requestOffset);
+            // A newer request has since been issued — discard this stale response.
+            if (requestId !== this._collectionReqId) return;
             if (!data) {
                 this._renderCollectionEmpty(body, 'Failed to load collection.');
                 return;
@@ -38,7 +47,7 @@ class UserPanes {
             this._collectionTotal = data.total;
             this._renderCollectionList(body, data);
         } finally {
-            if (loading) loading.classList.remove('active');
+            if (requestId === this._collectionReqId && loading) loading.classList.remove('active');
         }
     }
 
@@ -69,6 +78,7 @@ class UserPanes {
 
     _renderCollectionEmpty(container, msg) {
         if (!container) return;
+        container.replaceChildren();
         const div = document.createElement('div');
         div.className = 'user-pane-empty';
         const icon = document.createElement('span');
@@ -93,8 +103,12 @@ class UserPanes {
         const body = document.getElementById('wantlistBody');
         if (loading) loading.classList.add('active');
 
+        const requestId = ++this._wantlistReqId;
+        const requestOffset = this._wantlistOffset;
         try {
-            const data = await window.apiClient.getUserWantlist(token, this._pageSize, this._wantlistOffset);
+            const data = await window.apiClient.getUserWantlist(token, this._pageSize, requestOffset);
+            // A newer request has since been issued — discard this stale response.
+            if (requestId !== this._wantlistReqId) return;
             if (!data) {
                 this._renderWantlistEmpty(body, 'Failed to load wantlist.');
                 return;
@@ -102,7 +116,7 @@ class UserPanes {
             this._wantlistTotal = data.total;
             this._renderWantlistList(body, data);
         } finally {
-            if (loading) loading.classList.remove('active');
+            if (requestId === this._wantlistReqId && loading) loading.classList.remove('active');
         }
     }
 
@@ -133,6 +147,7 @@ class UserPanes {
 
     _renderWantlistEmpty(container, msg) {
         if (!container) return;
+        container.replaceChildren();
         const div = document.createElement('div');
         div.className = 'user-pane-empty';
         const icon = document.createElement('span');
@@ -168,7 +183,24 @@ class UserPanes {
         if (!container) return;
         container.replaceChildren();
 
-        if (!data || !data.recommendations || data.recommendations.length === 0) {
+        // apiClient returns null on a non-ok HTTP response (server/network error),
+        // which is distinct from a genuinely empty recommendations array — conflating
+        // the two misdirects the user into "sync your collection" when the real
+        // problem is a backend error.
+        if (!data) {
+            const errored = document.createElement('div');
+            errored.className = 'user-pane-empty';
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-outlined icon-3x mb-3';
+            icon.textContent = 'error_outline';
+            const msg = document.createElement('p');
+            msg.textContent = 'Failed to load recommendations. Please try again.';
+            errored.append(icon, msg);
+            container.appendChild(errored);
+            return;
+        }
+
+        if (!data.recommendations || data.recommendations.length === 0) {
             const empty = document.createElement('div');
             empty.className = 'user-pane-empty';
             const icon = document.createElement('span');
@@ -798,6 +830,8 @@ class UserPanes {
         const body = document.getElementById('gapsBody');
         if (loading) loading.classList.add('active');
 
+        const requestId = ++this._gapReqId;
+        const requestOffset = this._gapOffset;
         try {
             // Load available formats for filter (once)
             if (!this._gapAvailableFormats) {
@@ -807,10 +841,12 @@ class UserPanes {
 
             const data = await window.apiClient.getCollectionGaps(token, entityType, entityId, {
                 limit: this._pageSize,
-                offset: this._gapOffset,
+                offset: requestOffset,
                 formats: this._gapFormats,
                 excludeWantlist: this._gapExcludeWantlist,
             });
+            // A newer request has since been issued — discard this stale response.
+            if (requestId !== this._gapReqId) return;
             if (!data) {
                 this._renderGapsEmpty(body, 'Failed to load gap analysis.');
                 return;
@@ -818,7 +854,7 @@ class UserPanes {
             this._gapTotal = data.pagination?.total || 0;
             this._renderGaps(body, data);
         } finally {
-            if (loading) loading.classList.remove('active');
+            if (requestId === this._gapReqId && loading) loading.classList.remove('active');
         }
     }
 
@@ -1032,6 +1068,7 @@ class UserPanes {
 
     _renderGapsEmpty(container, msg) {
         if (!container) return;
+        container.replaceChildren();
         const div = document.createElement('div');
         div.className = 'user-pane-empty';
         const icon = document.createElement('span');

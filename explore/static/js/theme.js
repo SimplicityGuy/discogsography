@@ -5,12 +5,6 @@
 (function initThemeToggle() {
     'use strict';
 
-    const btn = document.getElementById('theme-toggle');
-    const autoIcon = document.getElementById('theme-icon-auto');
-    const sunIcon = document.getElementById('theme-icon-sun');
-    const moonIcon = document.getElementById('theme-icon-moon');
-    if (!btn || !autoIcon || !sunIcon || !moonIcon) return;
-
     function getMode() {
         return localStorage.getItem('theme') || 'auto';
     }
@@ -24,6 +18,23 @@
         }
     }
 
+    // Apply the persisted preference unconditionally — this must not depend on
+    // the toggle button existing so a stored choice is never silently ignored.
+    applyMode(getMode());
+
+    // Listen for OS-level theme changes — only applies when in auto mode
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (getMode() === 'auto') {
+            document.documentElement.classList.toggle('dark', e.matches);
+        }
+    });
+
+    const btn = document.getElementById('theme-toggle');
+    const autoIcon = document.getElementById('theme-icon-auto');
+    const sunIcon = document.getElementById('theme-icon-sun');
+    const moonIcon = document.getElementById('theme-icon-moon');
+    if (!btn || !autoIcon || !sunIcon || !moonIcon) return;
+
     function updateIcons() {
         const mode = getMode();
         autoIcon.classList.toggle('hidden', mode !== 'auto');
@@ -31,7 +42,6 @@
         moonIcon.classList.toggle('hidden', mode !== 'dark');
     }
 
-    applyMode(getMode());
     updateIcons();
 
     const cycle = { auto: 'light', light: 'dark', dark: 'auto' };
@@ -45,12 +55,5 @@
         }
         applyMode(next);
         updateIcons();
-    });
-
-    // Listen for OS-level theme changes — only applies when in auto mode
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-        if (getMode() === 'auto') {
-            document.documentElement.classList.toggle('dark', e.matches);
-        }
     });
 })();

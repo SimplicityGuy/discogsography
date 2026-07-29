@@ -273,6 +273,51 @@ describe('NlqPill state machine', () => {
         expect(document.querySelector('[data-testid="nlq-pill-answer"]')).not.toBeNull();
     });
 
+    it('ignores a second submit while a query is still loading, so only one stream is ever started', () => {
+        const onSubmit = vi.fn();
+        const pill = new NlqPill({ mountId: 'nlqPillMount', onSubmit });
+        pill.mount();
+        pill.expand();
+        const input = document.querySelector('[data-testid="nlq-pill-input"]');
+        input.value = 'show Radiohead';
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        expect(onSubmit).toHaveBeenCalledTimes(1);
+
+        // Simulate the caller putting the pill into loading state for the
+        // in-flight request, then a re-entrant submit attempt while it spins.
+        pill.setLoading();
+        const loadingInput = document.querySelector('[data-testid="nlq-pill-input"]');
+        loadingInput.value = 'switch to trends';
+        loadingInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+        expect(onSubmit).toHaveBeenCalledTimes(1);
+        expect(pill.state).toBe('loading');
+    });
+
+    it('disables the input while loading so a second stream cannot be raced in', () => {
+        const pill = new NlqPill({ mountId: 'nlqPillMount' });
+        pill.mount();
+        pill.expand();
+        pill.setLoading();
+        const input = document.querySelector('[data-testid="nlq-pill-input"]');
+        expect(input.disabled).toBe(true);
+    });
+
+    it('allows a follow-up submit once the pill has left the loading state', () => {
+        const onSubmit = vi.fn();
+        const pill = new NlqPill({ mountId: 'nlqPillMount', onSubmit });
+        pill.mount();
+        pill.expand();
+        pill.setLoading();
+        pill.setAnswer({ summary: 'done', entities: [], appliedActions: [], skipped: 0 });
+
+        const input = document.querySelector('[data-testid="nlq-pill-input"]');
+        expect(input.disabled).toBe(false);
+        input.value = 'follow up';
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        expect(onSubmit).toHaveBeenCalledWith('follow up');
+    });
+
     it('Esc collapses from loading and from answered', () => {
         const pill = new NlqPill({ mountId: 'nlqPillMount' });
         pill.mount();

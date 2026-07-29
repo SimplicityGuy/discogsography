@@ -246,6 +246,45 @@ describe('search pane', () => {
         });
     });
 
+    describe('request sequencing', () => {
+        it('should discard a stale response that resolves after a newer request', async () => {
+            let resolveFirst, resolveSecond;
+            window.apiClient.search
+                .mockReturnValueOnce(new Promise(r => { resolveFirst = r; }))
+                .mockReturnValueOnce(new Promise(r => { resolveSecond = r; }));
+
+            const input = document.getElementById('searchPaneInput');
+            input.value = 'radiohead';
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+            // A second, unrelated query is submitted before the first resolves.
+            input.value = 'herbie hancock';
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+            // Newer request resolves first — should render normally.
+            resolveSecond({
+                results: [{ name: 'Herbie Hancock', type: 'artist', relevance: 1 }],
+                total: 1,
+                facets: {},
+                pagination: { has_more: false },
+            });
+            await new Promise(r => setTimeout(r, 10));
+
+            // Stale (earlier) request resolves after — must not overwrite the render.
+            resolveFirst({
+                results: [{ name: 'Radiohead', type: 'artist', relevance: 1 }],
+                total: 1,
+                facets: {},
+                pagination: { has_more: false },
+            });
+            await new Promise(r => setTimeout(r, 10));
+
+            const resultsEl = document.getElementById('searchResults');
+            expect(resultsEl.textContent).toContain('Herbie Hancock');
+            expect(resultsEl.textContent).not.toContain('Radiohead');
+        });
+    });
+
     describe('highlight rendering', () => {
         it('should render highlighted text with bold elements', async () => {
             window.apiClient.search.mockResolvedValue({
@@ -474,6 +513,85 @@ describe('search pane', () => {
 
             expect(chips[0].classList.contains('active')).toBe(true);
             expect(window.apiClient.search).toHaveBeenCalled();
+        });
+
+        it('should reset selectedGenres when the query text changes on Enter', async () => {
+            window.apiClient.search.mockResolvedValue({
+                results: [{ name: 'X', type: 'artist', relevance: 1 }],
+                total: 1,
+                facets: { genre: { Rock: 10 } },
+                pagination: { has_more: false },
+            });
+
+            const input = document.getElementById('searchPaneInput');
+            input.value = 'beatles';
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            await new Promise(r => setTimeout(r, 10));
+
+            // Select the Rock genre facet chip.
+            const chip = document.getElementById('searchGenreFilter').querySelector('.search-chip');
+            chip.click();
+            await new Promise(r => setTimeout(r, 10));
+
+            // New, unrelated query — selectedGenres must not carry over.
+            window.apiClient.search.mockClear();
+            input.value = 'herbie hancock';
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            await new Promise(r => setTimeout(r, 10));
+
+            expect(window.apiClient.search).toHaveBeenCalledWith('herbie hancock', expect.any(Array), [], null, null, 20, 0);
+        });
+
+        it('should reset selectedGenres when the query text changes via search button', async () => {
+            window.apiClient.search.mockResolvedValue({
+                results: [{ name: 'X', type: 'artist', relevance: 1 }],
+                total: 1,
+                facets: { genre: { Rock: 10 } },
+                pagination: { has_more: false },
+            });
+
+            const input = document.getElementById('searchPaneInput');
+            const btn = document.getElementById('searchPaneBtn');
+            input.value = 'beatles';
+            btn.click();
+            await new Promise(r => setTimeout(r, 10));
+
+            const chip = document.getElementById('searchGenreFilter').querySelector('.search-chip');
+            chip.click();
+            await new Promise(r => setTimeout(r, 10));
+
+            window.apiClient.search.mockClear();
+            input.value = 'herbie hancock';
+            btn.click();
+            await new Promise(r => setTimeout(r, 10));
+
+            expect(window.apiClient.search).toHaveBeenCalledWith('herbie hancock', expect.any(Array), [], null, null, 20, 0);
+        });
+
+        it('should keep selectedGenres when re-submitting the same query', async () => {
+            window.apiClient.search.mockResolvedValue({
+                results: [{ name: 'X', type: 'artist', relevance: 1 }],
+                total: 1,
+                facets: { genre: { Rock: 10 } },
+                pagination: { has_more: false },
+            });
+
+            const input = document.getElementById('searchPaneInput');
+            input.value = 'beatles';
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            await new Promise(r => setTimeout(r, 10));
+
+            const chip = document.getElementById('searchGenreFilter').querySelector('.search-chip');
+            chip.click();
+            await new Promise(r => setTimeout(r, 10));
+
+            // Re-run the SAME query text (e.g. hitting Enter again) — the filter is
+            // still refining this query, so it must be kept.
+            window.apiClient.search.mockClear();
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            await new Promise(r => setTimeout(r, 10));
+
+            expect(window.apiClient.search).toHaveBeenCalledWith('beatles', expect.any(Array), ['Rock'], null, null, 20, 0);
         });
 
         it('should deactivate genre chip on second click', async () => {
