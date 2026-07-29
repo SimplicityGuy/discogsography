@@ -10,6 +10,7 @@ from api.queries.metrics_queries import (
     GRANULARITY_MAP,
     _bucket_to_trunc_unit,
     _round_or_int,
+    _round_rate,
     get_health_history,
     get_queue_history,
 )
@@ -103,6 +104,19 @@ class TestHelpers:
         assert _round_or_int(None, is_raw=True) == 0
         assert _round_or_int(None, is_raw=False) == 0.0
 
+    def test_round_rate_sub_one_preserves_float(self):
+        """Regression: sub-1 msg/s rates must not truncate to 0 (discogsography-cu2.73)."""
+        assert _round_rate(0.8) == 0.8
+        assert isinstance(_round_rate(0.8), float)
+        assert _round_rate(0.05) == 0.05
+
+    def test_round_rate_rounds_to_two_places(self):
+        assert _round_rate(2.9) == 2.9
+        assert _round_rate(42.678) == 42.68
+
+    def test_round_rate_none(self):
+        assert _round_rate(None) == 0.0
+
 
 class TestGetQueueHistory:
     """Tests for get_queue_history query function."""
@@ -141,6 +155,34 @@ class TestGetQueueHistory:
         assert len(queue["history"]) == 2
         assert queue["current"]["ready"] == 8
         assert result["dlq_summary"] == {}
+
+    @pytest.mark.asyncio
+    async def test_raw_range_sub_one_rate_not_truncated(self):
+        """Regression: 1h/6h (raw) ranges must preserve sub-1 msg/s rates as floats,
+        not truncate them to 0 via int() (discogsography-cu2.73)."""
+        rows = [
+            {
+                "queue_name": "graphinator-artists",
+                "ts": "2026-03-25T10:00:00",
+                "ready": 10,
+                "unacked": 2,
+                "total": 12,
+                "publish_rate": 0.8,
+                "deliver_rate": 0.5,
+            },
+        ]
+        pool, execute_side_effect = _mock_pool_with_rows(rows)
+
+        with patch("api.queries.metrics_queries.execute_sql", side_effect=execute_side_effect):
+            result = await get_queue_history(pool, "1h")
+
+        point = result["queues"]["graphinator-artists"]["history"][0]
+        assert point["publish_rate"] == 0.8
+        assert point["deliver_rate"] == 0.5
+        assert isinstance(point["publish_rate"], float)
+        assert isinstance(point["deliver_rate"], float)
+        # Integer count fields are still ints on raw ranges.
+        assert isinstance(point["ready"], int)
 
     @pytest.mark.asyncio
     async def test_dlq_separation(self):

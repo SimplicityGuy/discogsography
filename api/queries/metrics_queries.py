@@ -51,6 +51,18 @@ def _round_or_int(value: Any, *, is_raw: bool) -> int | float:
     return round(float(value), 2)
 
 
+def _round_rate(value: Any) -> float:
+    """Return a rounded float rate regardless of raw/aggregated range.
+
+    Rate columns (publish_rate, deliver_rate) are always floats collected from
+    RabbitMQ management stats — unlike the integer count gauges, they must never
+    be truncated with int(), or sub-1 msg/s rates render as a misleading 0.
+    """
+    if value is None:
+        return 0.0
+    return round(float(value), 2)
+
+
 async def get_queue_history(pool: Any, range_value: str) -> dict[str, Any]:
     """Fetch queue metrics history for the given time range.
 
@@ -108,8 +120,8 @@ async def get_queue_history(pool: Any, range_value: str) -> dict[str, Any]:
             "ready": _round_or_int(row["ready"], is_raw=is_raw),
             "unacked": _round_or_int(row["unacked"], is_raw=is_raw),
             "total": _round_or_int(row.get("ready", 0), is_raw=is_raw) + _round_or_int(row.get("unacked", 0), is_raw=is_raw),
-            "publish_rate": _round_or_int(row["publish_rate"], is_raw=is_raw),
-            "deliver_rate": _round_or_int(row["deliver_rate"], is_raw=is_raw),
+            "publish_rate": _round_rate(row["publish_rate"]),
+            "deliver_rate": _round_rate(row["deliver_rate"]),
         }
 
         target = dlq_summary if name.endswith(".dlq") else queues
