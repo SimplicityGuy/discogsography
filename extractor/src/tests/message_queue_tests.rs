@@ -277,6 +277,27 @@ async fn test_get_channel_with_no_channel_triggers_reconnect() {
 }
 
 #[tokio::test]
+async fn test_close_with_no_channel_or_connection_is_ok() {
+    // discogsography-cu2.108 regression: close() must be a best-effort no-op
+    // (never early-return via `?`) when there's nothing to close — the
+    // happy-path baseline for the "always attempt both closes" contract.
+    let mq = MessageQueue {
+        connection: Arc::new(RwLock::new(None)),
+        channel: Arc::new(RwLock::new(None)),
+        reconnect_mutex: tokio::sync::Mutex::new(()),
+        url: String::new(),
+        max_retries: 1,
+        exchange_prefix: DEFAULT_EXCHANGE_PREFIX.to_string(),
+    };
+
+    let result = mq.close().await;
+    assert!(result.is_ok(), "close() with no channel/connection must succeed: {:?}", result.err());
+    // Both slots must remain drained (taken) after close().
+    assert!(mq.channel.read().await.is_none());
+    assert!(mq.connection.read().await.is_none());
+}
+
+#[tokio::test]
 async fn test_new_connection_failure_with_retries() {
     // Use 2 retries to exercise the retry backoff loop (lines 72-75):
     // - First attempt: try_connect fails, retry_count=1 < 2, warn + sleep(1s) + backoff doubled
