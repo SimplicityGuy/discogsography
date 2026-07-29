@@ -236,6 +236,36 @@ class TestGetUserCollection:
         main_cypher = next((c for c in seen_cypher if "RETURN" in c and "r.catalog_number" in c), None)
         assert main_cypher is not None, f"Expected r.catalog_number in cypher; saw: {seen_cypher!r}"
 
+    @pytest.mark.asyncio
+    async def test_pagination_has_a_deterministic_tiebreaker(self) -> None:
+        """ORDER BY date_added alone has no unique secondary key, so same-day
+        items (e.g. a bulk import) can reappear on one page and be dropped from
+        another across separate SKIP/LIMIT executions. A tiebreaker on the
+        unique release id makes the total order deterministic.
+        """
+        from api.queries.user_queries import get_user_collection
+
+        seen_cypher: list[str] = []
+
+        async def _capture_run(*args: Any, **_kw: Any) -> _MockResult:
+            seen_cypher.append(args[0] if args else "")
+            if "count(r)" in seen_cypher[-1]:
+                return _MockResult(single={"total": 0})
+            return _MockResult(records=[])
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.run = AsyncMock(side_effect=_capture_run)
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=mock_session)
+
+        await get_user_collection(driver, "user-1")
+
+        main_cypher = next((c for c in seen_cypher if "ORDER BY" in c), None)
+        assert main_cypher is not None
+        assert "ORDER BY c.date_added DESC, r.id" in main_cypher
+
 
 # ---------------------------------------------------------------------------
 # get_user_wantlist
@@ -271,6 +301,32 @@ class TestGetUserWantlist:
         results, total = await get_user_wantlist(driver, "user-2")
         assert results == []
         assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_pagination_has_a_deterministic_tiebreaker(self) -> None:
+        """Same defect/fix as get_user_collection — see that test's docstring."""
+        from api.queries.user_queries import get_user_wantlist
+
+        seen_cypher: list[str] = []
+
+        async def _capture_run(*args: Any, **_kw: Any) -> _MockResult:
+            seen_cypher.append(args[0] if args else "")
+            if "count(r)" in seen_cypher[-1]:
+                return _MockResult(single={"total": 0})
+            return _MockResult(records=[])
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.run = AsyncMock(side_effect=_capture_run)
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=mock_session)
+
+        await get_user_wantlist(driver, "user-2")
+
+        main_cypher = next((c for c in seen_cypher if "ORDER BY" in c), None)
+        assert main_cypher is not None
+        assert "ORDER BY w.date_added DESC, r.id" in main_cypher
 
 
 # ---------------------------------------------------------------------------
