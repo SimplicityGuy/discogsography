@@ -330,9 +330,11 @@ class DashboardApp:
                 return queues
 
             async with httpx.AsyncClient(timeout=5.0) as client:
-                # Use RabbitMQ management API with credentials from config
+                # Use RabbitMQ management API with host/credentials from config
+                management_host = self.config.rabbitmq_management_host
+                management_port = self.config.rabbitmq_management_port
                 response = await client.get(
-                    "http://rabbitmq:15672/api/queues",
+                    f"http://{management_host}:{management_port}/api/queues",
                     auth=(self.config.rabbitmq_username, self.config.rabbitmq_password),
                 )
 

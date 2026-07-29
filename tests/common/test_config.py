@@ -456,6 +456,32 @@ class TestDashboardConfig:
 
         assert config.redis_host == "redis://myredis:6379/0"
 
+    def test_rabbitmq_management_host_defaults_to_rabbitmq_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """RABBITMQ_MANAGEMENT_HOST falls back to RABBITMQ_HOST — regression for the
+        dashboard's management-API call ignoring RABBITMQ_HOST and hardcoding 'rabbitmq'."""
+        from common import DashboardConfig
+
+        monkeypatch.delenv("RABBITMQ_MANAGEMENT_HOST", raising=False)
+        monkeypatch.setenv("RABBITMQ_HOST", "mq.internal")
+
+        config = DashboardConfig.from_env()
+
+        assert config.rabbitmq_management_host == "mq.internal"
+        assert config.rabbitmq_management_port == 15672
+
+    def test_rabbitmq_management_host_explicit_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """RABBITMQ_MANAGEMENT_HOST/_PORT take precedence over RABBITMQ_HOST."""
+        from common import DashboardConfig
+
+        monkeypatch.setenv("RABBITMQ_HOST", "rabbitmq-amqp")
+        monkeypatch.setenv("RABBITMQ_MANAGEMENT_HOST", "rabbitmq-mgmt")
+        monkeypatch.setenv("RABBITMQ_MANAGEMENT_PORT", "25672")
+
+        config = DashboardConfig.from_env()
+
+        assert config.rabbitmq_management_host == "rabbitmq-mgmt"
+        assert config.rabbitmq_management_port == 25672
+
 
 class TestExploreConfig:
     """Test ExploreConfig from_env."""

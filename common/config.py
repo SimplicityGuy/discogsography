@@ -595,6 +595,8 @@ class DashboardConfig:
     rabbitmq_username: str
     rabbitmq_password: str
     redis_host: str = "redis://localhost:6379/0"
+    rabbitmq_management_host: str = "rabbitmq"
+    rabbitmq_management_port: int = 15672
     cors_origins: list[str] | None = None  # None = default to localhost only
     cache_warming_enabled: bool = True  # Enable cache warming on service startup
     cache_webhook_secret: str | None = None  # Secret for cache invalidation webhooks
@@ -638,6 +640,8 @@ class DashboardConfig:
             redis_host=redis_host,
             rabbitmq_username=rabbitmq_username,
             rabbitmq_password=rabbitmq_password,
+            rabbitmq_management_host=getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),
+            rabbitmq_management_port=int(getenv("RABBITMQ_MANAGEMENT_PORT", "15672")),
             cors_origins=cors_origins,
             cache_warming_enabled=cache_warming_enabled,
             cache_webhook_secret=cache_webhook_secret,

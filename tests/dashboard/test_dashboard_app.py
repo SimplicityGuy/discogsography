@@ -633,6 +633,41 @@ class TestDashboardAppDataCollection:
                 assert queues[1].name == "discogsography.releases"
 
     @pytest.mark.asyncio
+    async def test_get_queue_info_uses_configured_management_host(self) -> None:
+        """The management API call must target config.rabbitmq_management_host/_port,
+        not a hardcoded 'rabbitmq' hostname — regression for a non-default RABBITMQ_HOST
+        silently producing empty queue metrics."""
+        mock_config = Mock()
+        mock_config.rabbitmq_username = "guest"
+        mock_config.rabbitmq_password = "guest"
+        mock_config.rabbitmq_management_host = "mq.internal"
+        mock_config.rabbitmq_management_port = 25672
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+            app.rabbitmq = AsyncMock()
+
+            captured_urls: list[str] = []
+
+            async def mock_get(url: str, **_kwargs: Any) -> Mock:
+                captured_urls.append(url)
+                response = Mock()
+                response.status_code = 200
+                response.json = Mock(return_value=[])
+                return response
+
+            with patch("httpx.AsyncClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client.get = mock_get
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                mock_client_class.return_value = mock_client
+
+                await app.get_queue_info("discogsography")
+
+            assert captured_urls == ["http://mq.internal:25672/api/queues"]
+
+    @pytest.mark.asyncio
     async def test_get_queue_info_no_rabbitmq(self) -> None:
         """Test getting queue info when RabbitMQ is not connected."""
         mock_config = Mock()
