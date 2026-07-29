@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
@@ -9,7 +10,7 @@ from fastapi.testclient import TestClient
 import httpx as httpx_mod
 import pytest
 
-from dashboard.admin_proxy import _validate_path_segment, configure, router
+from dashboard.admin_proxy import _validate_path_segment, _validated_json_body, configure, router
 
 
 def _mock_httpx(method: str = "post", status: int = 200, content: bytes = b"{}") -> tuple[AsyncMock, AsyncMock]:
@@ -647,6 +648,42 @@ class TestTriggerMusicBrainzProxy:
         assert resp.status_code == 502
 
 
+class TestValidatedJsonBody:
+    """Direct unit tests for _validated_json_body (discogsography-cu2.84)."""
+
+    @pytest.mark.asyncio
+    async def test_non_utf8_body_raises_json_decode_error(self) -> None:
+        """A non-UTF-8 body must raise json.JSONDecodeError, not UnicodeDecodeError,
+        so every caller's existing `except json.JSONDecodeError` clause catches it."""
+        request = MagicMock()
+        request.body = AsyncMock(return_value=b"\xff")
+
+        with pytest.raises(json.JSONDecodeError):
+            await _validated_json_body(request)
+
+    @pytest.mark.asyncio
+    async def test_malformed_json_raises_json_decode_error(self) -> None:
+        request = MagicMock()
+        request.body = AsyncMock(return_value=b"{not valid json")
+
+        with pytest.raises(json.JSONDecodeError):
+            await _validated_json_body(request)
+
+    @pytest.mark.asyncio
+    async def test_empty_body_returns_none(self) -> None:
+        request = MagicMock()
+        request.body = AsyncMock(return_value=b"")
+
+        assert await _validated_json_body(request) is None
+
+    @pytest.mark.asyncio
+    async def test_valid_json_body_reserialised(self) -> None:
+        request = MagicMock()
+        request.body = AsyncMock(return_value=b'{"a": 1}')
+
+        assert await _validated_json_body(request) == b'{"a":1}'
+
+
 class TestMalformedJsonBody:
     def test_login_malformed_json_returns_400(self, proxy_client: TestClient) -> None:
         """POST /admin/api/login with malformed JSON body returns 400."""
@@ -687,6 +724,41 @@ class TestMalformedJsonBody:
         )
         assert resp.status_code == 400
         assert "JSON object" in resp.json()["detail"]
+
+    def test_login_non_utf8_body_returns_400(self, proxy_client: TestClient) -> None:
+        """POST /admin/api/login with a non-UTF-8 body returns 400, not an unhandled 500.
+
+        Regression for discogsography-cu2.84: json.loads(bytes) raises
+        UnicodeDecodeError (a ValueError sibling, not a subclass, of
+        json.JSONDecodeError) for invalid UTF-8 bytes such as b"\\xff".
+        """
+        resp = proxy_client.post(
+            "/admin/api/login",
+            content=b"\xff",
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 400
+        assert "Malformed JSON" in resp.json()["detail"]
+
+    def test_trigger_non_utf8_body_returns_400(self, proxy_client: TestClient) -> None:
+        """POST /admin/api/extractions/trigger with a non-UTF-8 body returns 400."""
+        resp = proxy_client.post(
+            "/admin/api/extractions/trigger",
+            content=b"{\xff}",
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 400
+        assert "Malformed JSON" in resp.json()["detail"]
+
+    def test_trigger_musicbrainz_non_utf8_body_returns_400(self, proxy_client: TestClient) -> None:
+        """POST /admin/api/extractions/trigger-musicbrainz with a non-UTF-8 body returns 400."""
+        resp = proxy_client.post(
+            "/admin/api/extractions/trigger-musicbrainz",
+            content=b"\x80\x81",
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 400
+        assert "Malformed JSON" in resp.json()["detail"]
 
     def test_trigger_musicbrainz_sanitised_body_decode_error_returns_400(self, proxy_client: TestClient) -> None:
         """POST trigger-musicbrainz returns 400 when sanitised body fails json.loads (lines 189-190)."""

@@ -74,11 +74,21 @@ async def _validated_json_body(request: Request) -> bytes | None:
     Re-serialising through ``json.loads`` / ``json.dumps`` sanitises the
     payload so that no raw user bytes are forwarded verbatim.  Returns
     ``None`` when the body is empty.
+
+    Raises ``json.JSONDecodeError`` for both malformed JSON and non-UTF-8
+    bodies, so every caller's single ``except json.JSONDecodeError`` clause
+    handles both cases uniformly instead of only the former (a raw
+    ``UnicodeDecodeError`` is a ``ValueError`` sibling, not a subclass, of
+    ``json.JSONDecodeError``, and would otherwise escape as an unhandled 500).
     """
     raw = await request.body()
     if not raw:
         return None
-    parsed = json.loads(raw)
+    try:
+        parsed = json.loads(raw)
+    except UnicodeDecodeError as exc:
+        msg = f"Request body is not valid UTF-8: {exc}"
+        raise json.JSONDecodeError(msg, "", 0) from exc
     return json.dumps(parsed, separators=(",", ":")).encode()
 
 
