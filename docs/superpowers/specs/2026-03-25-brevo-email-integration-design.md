@@ -1,7 +1,14 @@
 # Brevo Email Integration for Password Reset
 
+> **SUPERSEDED — historical record only.** Brevo was removed in
+> `discogsography-iew6`; nothing described below is in the codebase any more.
+> Brevo's free tier rewrote outbound links to inject click tracking with no way
+> to disable it, which made password-reset mail unusable. See
+> [Transactional Email Provider Decision](../../transactional-email-provider-decision.md)
+> for the evaluation and the replacement (Resend, over plain `httpx` REST).
+
 **Date:** 2026-03-25
-**Status:** Approved
+**Status:** Superseded (was: Approved)
 **Builds on:** PR #210 (password reset & TOTP 2FA)
 
 ## Overview

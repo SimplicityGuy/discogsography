@@ -75,9 +75,9 @@ class TestResendNotificationChannel:
         assert "reset?token=abc" in body["html"]
         # No tracking field is ever sent — Resend has click/open tracking off
         # by default for every domain, so there is nothing to configure or
-        # disable per-message.
-        assert "tracking" not in body
-        assert "track" not in body
+        # disable per-message. Check every key, not just exact-name matches.
+        assert not [key for key in body if "track" in key.lower()]
+        assert set(body) == {"from", "to", "subject", "html"}
 
     @pytest.mark.asyncio
     async def test_outbound_link_delivered_byte_identical(self) -> None:
@@ -111,6 +111,37 @@ class TestResendNotificationChannel:
         assert reset_url in body["html"]
         assert "sendibt2.com" not in body["html"]
         assert body["html"].count(reset_url) == 1
+
+    @pytest.mark.asyncio
+    async def test_multi_param_link_round_trips_through_html_escaping(self) -> None:
+        """A URL with multiple query params survives HTML-escaping intact.
+
+        `&` is escaped to `&amp;` for valid HTML — that is correct and mail
+        clients unescape it. This asserts the escaping is the *only* thing
+        that happens to the URL: unescape the rendered href and the original
+        must come back exactly.
+        """
+        import html as html_module
+
+        from api.notifications import ResendNotificationChannel
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_client = _mock_async_client(mock_response)
+
+        reset_url = "https://discogsography.com/reset-password?token=abc123&source=email&ts=1234567890"
+
+        with patch("api.notifications.httpx.AsyncClient", return_value=mock_client):
+            channel = ResendNotificationChannel(
+                api_key="test-key",
+                sender_email="noreply@test.com",
+                sender_name="Test Sender",
+            )
+            await channel.send_password_reset("user@example.com", reset_url)
+
+        rendered = mock_client.post.call_args.kwargs["json"]["html"]
+        href = rendered.split('<a href="', 1)[1].split('"', 1)[0]
+        assert html_module.unescape(href) == reset_url
 
     @pytest.mark.asyncio
     async def test_send_password_reset_swallows_api_error(self) -> None:
