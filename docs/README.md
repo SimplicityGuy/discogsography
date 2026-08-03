@@ -48,6 +48,7 @@
 | **[Performance Guide](performance-guide.md)**       | ⚡ Performance optimization strategies           |
 | **[Maintenance Guide](maintenance.md)**             | 🔧 Keeping the system up-to-date and healthy     |
 | **[PostgreSQL Pool Exhaustion Analysis](postgres-pool-exhaustion-analysis.md)** | 🐘 Root-cause analysis of connection-pool sizing and prefetch coupling |
+| **[Transactional Email Provider Decision](transactional-email-provider-decision.md)** | 📧 Provider evaluation and the decision to replace Brevo with Resend |
 
 ### ⚙️ Workflow & Automation
 
