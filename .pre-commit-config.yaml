@@ -56,6 +56,9 @@ repos:
   - repo: https://github.com/hadolint/hadolint
     rev: 4e697ba704fd23b2409b947a319c19c3ee54d24f  # frozen: v2.14.0
     hooks:
+      # `language: system` — lints with the hadolint binary on PATH, not this rev.
+      # CI installs that binary in .github/workflows/code-quality.yml; keep the two
+      # versions in lockstep or CI and local will enforce different rule sets.
       - id: hadolint
 
   - repo: https://github.com/IamTheFij/docker-pre-commit
