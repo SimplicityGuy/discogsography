@@ -18,7 +18,6 @@ classifiers = [
 license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
     "anthropic>=0.120.2",
-    "brevo-python>=4.0.10,<5",
     "cryptography>=50.0.0",
     "fastapi>=0.141.1",
     "httpx>=0.28.1",

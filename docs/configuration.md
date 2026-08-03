@@ -611,12 +611,12 @@ ENCRYPTION_MASTER_KEY="your-master-key-here"
 # INSIGHTS_INTERNAL_SECRET_FILE (Docker secret) in production.
 INSIGHTS_INTERNAL_SECRET="change-me-in-production"
 
-# Optional — Brevo transactional email for password reset notifications
+# Optional — Resend transactional email for password reset notifications
 # When not set, password reset links are logged to stdout instead of emailed.
-# Get your API key from https://app.brevo.com/settings/keys/api
-# BREVO_API_KEY="your-brevo-api-key"
-# BREVO_SENDER_EMAIL="noreply@yourdomain.com"   # Must be verified in Brevo
-# BREVO_SENDER_NAME="Discogsography"
+# Get your API key from https://resend.com/api-keys
+# RESEND_API_KEY="your-resend-api-key"
+# RESEND_SENDER_EMAIL="noreply@yourdomain.com"   # Must be verified in Resend
+# RESEND_SENDER_NAME="Discogsography"
 
 # Optional — CORS origins (comma-separated; omit to disable CORS)
 CORS_ORIGINS="http://localhost:8003,http://localhost:8006"
@@ -965,7 +965,7 @@ This creates `secrets/` with these files (all `chmod 600`, directory `chmod 700`
 
 ```
 secrets/
-├── brevo_api_key.txt         # Optional — Brevo API key
+├── resend_api_key.txt        # Optional — Resend API key
 ├── encryption_master_key.txt # base64(urandom(32))
 ├── jwt_secret_key.txt        # openssl rand -hex 32
 ├── neo4j_password.txt        # openssl rand -base64 24

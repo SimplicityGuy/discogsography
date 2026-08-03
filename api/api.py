@@ -35,7 +35,7 @@ from api.auth import (
 import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.metrics_collector import MetricsBuffer, normalize_path, run_collector
-from api.notifications import BrevoNotificationChannel, LogNotificationChannel
+from api.notifications import LogNotificationChannel, ResendNotificationChannel
 from api.queries.search_queries import ALL_TYPES, execute_search
 import api.routers.admin as _admin_router
 import api.routers.app_tokens as _app_tokens_router
@@ -267,12 +267,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         _config,
         _get_current_user,
         _create_access_token,
-        notification_channel=BrevoNotificationChannel(
-            api_key=_config.brevo_api_key,
-            sender_email=_config.brevo_sender_email,
-            sender_name=_config.brevo_sender_name,
+        notification_channel=ResendNotificationChannel(
+            api_key=_config.resend_api_key,
+            sender_email=_config.resend_sender_email,
+            sender_name=_config.resend_sender_name,
         )
-        if _config.brevo_api_key
+        if _config.resend_api_key
         else LogNotificationChannel(),
     )
     _snapshot_router.configure(

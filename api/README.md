@@ -52,10 +52,10 @@ DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogs
 # Required for TOTP 2FA. Without it, OAuth tokens are stored unencrypted and 2FA is disabled.
 ENCRYPTION_MASTER_KEY=your-base64-master-key-here
 
-# Optional — Brevo email for password reset notifications (when not set, reset links are logged)
-# BREVO_API_KEY=your-brevo-api-key
-# BREVO_SENDER_EMAIL=noreply@yourdomain.com
-# BREVO_SENDER_NAME=Discogsography
+# Optional — Resend email for password reset notifications (when not set, reset links are logged)
+# RESEND_API_KEY=your-resend-api-key
+# RESEND_SENDER_EMAIL=noreply@yourdomain.com
+# RESEND_SENDER_NAME=Discogsography
 
 # Optional — CORS
 CORS_ORIGINS="http://localhost:8003,http://localhost:8006"  # Comma-separated allowed origins
