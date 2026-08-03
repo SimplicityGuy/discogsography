@@ -72,6 +72,61 @@ class TestResetRequest:
         response = test_client.post("/api/auth/reset-request", json={"email": " Test@Example.COM "})
         assert response.status_code == 200
 
+    def test_reset_link_is_absolute_and_uses_app_base_url(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,  # noqa: ARG002  # required so setex is stubbed
+    ) -> None:
+        """The emailed link must be absolute — a mail client cannot resolve a relative href."""
+        mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
+        channel = AsyncMock()
+        original_config = auth_router._config
+        original_channel = auth_router._notification_channel
+        auth_router._config = replace(original_config, app_base_url="https://discogsography.example")
+        auth_router._notification_channel = channel
+        try:
+            response = test_client.post("/api/auth/reset-request", json={"email": TEST_USER_EMAIL})
+        finally:
+            auth_router._config = original_config
+            auth_router._notification_channel = original_channel
+
+        assert response.status_code == 200
+        sent_url = channel.send_password_reset.call_args.args[1]
+        assert sent_url.startswith("https://discogsography.example/?reset_token=")
+        # Guard the regression directly: a bare relative path is what broke this.
+        assert not sent_url.startswith("/")
+
+    def test_reset_link_tolerates_trailing_slash_in_base_url(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,  # noqa: ARG002  # required so setex is stubbed
+    ) -> None:
+        """A trailing slash on the configured base must not produce a double slash."""
+        from common.config import ApiConfig
+
+        mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
+        channel = AsyncMock()
+        original_config = auth_router._config
+        original_channel = auth_router._notification_channel
+        # from_env() strips the trailing slash on load, so go through it rather
+        # than constructing the field directly.
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("APP_BASE_URL", "https://discogsography.example/")
+            mp.setenv("JWT_SECRET_KEY", "x" * 32)
+            loaded = ApiConfig.from_env()
+        auth_router._config = replace(original_config, app_base_url=loaded.app_base_url)
+        auth_router._notification_channel = channel
+        try:
+            test_client.post("/api/auth/reset-request", json={"email": TEST_USER_EMAIL})
+        finally:
+            auth_router._config = original_config
+            auth_router._notification_channel = original_channel
+
+        sent_url = channel.send_password_reset.call_args.args[1]
+        assert sent_url.startswith("https://discogsography.example/?reset_token=")
+
 
 class TestResetConfirm:
     """Tests for POST /api/auth/reset-confirm."""
