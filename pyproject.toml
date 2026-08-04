@@ -294,6 +294,11 @@ members = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard
 # to malicious or unstable releases (supply-chain hardening). Kept short enough that
 # a published security fix can be taken without carving per-package holes in the
 # policy — a 7-day window blocked CVE-2026-69247's fix and stalled the pipeline.
+#
+# The semgrep rule above wants exactly "7 days" and flags anything shorter as missing.
+# We keep a cooldown, just a shorter one — the rule cannot express that, so it is
+# suppressed rather than satisfied. Do not read the suppression as "no cooldown".
+# nosemgrep: package_managers.uv.uv-missing-dependency-cooldown.uv-missing-dependency-cooldown
 exclude-newer = "2 days"
 environments = [
     # Only support Linux platforms that we build for in CI/CD
