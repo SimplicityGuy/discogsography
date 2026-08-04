@@ -18,7 +18,7 @@ env:
   CI: true
   PLAYWRIGHT_BROWSERS_PATH: "0"  # Use default location
   PYTHON_VERSION: "3.13"
-  NODE_VERSION: "24"
+  NODE_VERSION: "26"
 
 permissions:
   contents: read
