@@ -7,7 +7,7 @@
     "@testing-library/dom": "^10.4.1",
     "@vitest/coverage-v8": "^4.1.9",
     "istanbul-lib-instrument": "^6.0.3",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "monocart-coverage-reports": "^2.12.12",
     "vitest": "^4.1.0"
   },
