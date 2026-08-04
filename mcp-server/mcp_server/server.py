@@ -22,7 +22,8 @@ from typing import Any
 from urllib.parse import quote as _url_quote
 
 import httpx
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server import MCPServer
+from mcp.server.mcpserver import Context
 import structlog
 
 
@@ -53,7 +54,7 @@ class AppContext:
 
 
 @asynccontextmanager
-async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:  # noqa: ARG001
+async def app_lifespan(server: MCPServer) -> AsyncIterator[AppContext]:  # noqa: ARG001
     """Initialize HTTP client on startup, close on shutdown."""
     base_url = getenv("API_BASE_URL", "http://localhost:8004")
 
@@ -67,7 +68,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:  # noqa: A
 # Server instance
 # ---------------------------------------------------------------------------
 
-mcp = FastMCP(
+mcp = MCPServer(
     "Discogsography",
     lifespan=app_lifespan,
     instructions=(
@@ -85,8 +86,12 @@ mcp = FastMCP(
 # ---------------------------------------------------------------------------
 
 
-def _ctx(ctx: Context) -> AppContext:
-    return ctx.request_context.lifespan_context  # type: ignore[no-any-return]
+def _ctx(ctx: Context[AppContext, Any]) -> AppContext:
+    # Context is generic over the lifespan type in v2, so parameterizing it types
+    # `lifespan_context` as AppContext instead of dict[str, Any] — no cast, no ignore.
+    # Tool signatures use the same parameterized form; the SDK injects on the Context
+    # origin, so the type argument is invisible to it and never reaches a tool schema.
+    return ctx.request_context.lifespan_context
 
 
 async def _api_get(app: AppContext, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -156,10 +161,10 @@ async def _call_shared_find_path(app: AppContext, **kwargs: Any) -> dict[str, An
 
 @mcp.tool()
 async def search(
+    ctx: Context[AppContext, Any],
     query: str,
     types: str = "artist,label,master,release",
     limit: int = 20,
-    ctx: Context = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Search the music database across artists, labels, masters, and releases.
 
@@ -197,8 +202,8 @@ async def search(
 
 @mcp.tool()
 async def get_artist_details(
+    ctx: Context[AppContext, Any],
     artist_id: str,
-    ctx: Context = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Get detailed information about an artist.
 
@@ -216,8 +221,8 @@ async def get_artist_details(
 
 @mcp.tool()
 async def get_label_details(
+    ctx: Context[AppContext, Any],
     label_id: str,
-    ctx: Context = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Get detailed information about a record label.
 
@@ -235,8 +240,8 @@ async def get_label_details(
 
 @mcp.tool()
 async def get_release_details(
+    ctx: Context[AppContext, Any],
     release_id: str,
-    ctx: Context = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Get detailed information about a release (album, single, etc.).
 
@@ -254,8 +259,8 @@ async def get_release_details(
 
 @mcp.tool()
 async def get_genre_details(
+    ctx: Context[AppContext, Any],
     genre_name: str,
-    ctx: Context = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Get detailed information about a music genre.
 
@@ -270,8 +275,8 @@ async def get_genre_details(
 
 @mcp.tool()
 async def get_style_details(
+    ctx: Context[AppContext, Any],
     style_name: str,
-    ctx: Context = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Get detailed information about a music style (sub-genre).
 
@@ -291,12 +296,12 @@ async def get_style_details(
 
 @mcp.tool()
 async def find_path(
+    ctx: Context[AppContext, Any],
     from_name: str,
     from_type: str,
     to_name: str,
     to_type: str,
     max_depth: int = 10,
-    ctx: Context = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Find the shortest path between two entities in the knowledge graph.
 
@@ -338,9 +343,9 @@ async def find_path(
 
 @mcp.tool()
 async def get_trends(
+    ctx: Context[AppContext, Any],
     name: str,
     entity_type: str = "artist",
-    ctx: Context = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Get the release timeline for an entity (releases per year).
 
@@ -372,7 +377,7 @@ async def get_trends(
 
 @mcp.tool()
 async def get_graph_stats(
-    ctx: Context = None,  # type: ignore[assignment]
+    ctx: Context[AppContext, Any],
 ) -> dict[str, Any]:
     """Get an overview of the knowledge graph — total counts for each entity type.
 
@@ -390,9 +395,9 @@ async def get_graph_stats(
 
 @mcp.tool()
 async def get_collaborators(
+    ctx: Context[AppContext, Any],
     artist_id: str,
     limit: int = 20,
-    ctx: Context = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Find artists who collaborate with a given artist through shared releases.
 
@@ -420,7 +425,7 @@ async def get_collaborators(
 
 @mcp.tool()
 async def get_genre_tree(
-    ctx: Context = None,  # type: ignore[assignment]
+    ctx: Context[AppContext, Any],
 ) -> dict[str, Any]:
     """Get the full genre/style hierarchy from the knowledge graph.
 
@@ -439,8 +444,8 @@ async def get_genre_tree(
 
 @mcp.tool()
 async def nlq_query(
+    ctx: Context[AppContext, Any],
     query: str,
-    ctx: Context = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Ask a natural language question about the music knowledge graph.
 
@@ -479,7 +484,13 @@ def main() -> None:
     if transport not in _VALID_TRANSPORTS:
         transport = "stdio"
 
-    mcp.run(transport=transport)  # type: ignore[arg-type]
+    # v2 overloads `run` per transport, each with its own keyword set, so a `str`
+    # matches no variant. Branch on the validated value instead of casting — this
+    # keeps the call type-checked rather than silencing it.
+    if transport == "streamable-http":
+        mcp.run(transport="streamable-http")
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

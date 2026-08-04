@@ -113,7 +113,7 @@ schema-init = [
     "structlog>=26.1.0",
 ]
 mcp-server = [
-    "mcp[cli]>=1.28.1,<2",
+    "mcp[cli]>=2.0.0",
     "structlog>=26.1.0",
 ]
 all = [
