@@ -34,7 +34,6 @@ dependencies = [
 [project.optional-dependencies]
 api = [
     "anthropic>=0.120.2",
-    "brevo-python>=4.0.10,<5",
     "cryptography>=50.0.0",
     "defusedxml>=0.7.1",
     "fastapi>=0.141.1",

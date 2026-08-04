@@ -14,8 +14,8 @@ secrets:
   encryption_master_key:
     file: ./secrets/encryption_master_key.txt
   # Required for email delivery — create with: scripts/create-secrets.sh or manually
-  brevo_api_key:
-    file: ./secrets/brevo_api_key.txt
+  resend_api_key:
+    file: ./secrets/resend_api_key.txt
   nlq_api_key:
     file: ./secrets/nlq_api_key.txt
   postgres_password:
@@ -189,10 +189,10 @@ services:
       JWT_SECRET_KEY_FILE: /run/secrets/jwt_secret_key
       NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
       ENCRYPTION_MASTER_KEY_FILE: /run/secrets/encryption_master_key
-      # Optional — Brevo email (when not set, password reset links are logged)
-      BREVO_API_KEY_FILE: /run/secrets/brevo_api_key
-      BREVO_SENDER_EMAIL: "${BREVO_SENDER_EMAIL:-noreply@discogsography.com}"
-      BREVO_SENDER_NAME: "${BREVO_SENDER_NAME:-Discogsography}"
+      # Optional — Resend email (when not set, password reset links are logged)
+      RESEND_API_KEY_FILE: /run/secrets/resend_api_key
+      RESEND_SENDER_EMAIL: "${RESEND_SENDER_EMAIL:-noreply@discogsography.com}"
+      RESEND_SENDER_NAME: "${RESEND_SENDER_NAME:-Discogsography}"
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
       NLQ_API_KEY_FILE: /run/secrets/nlq_api_key
@@ -202,7 +202,7 @@ services:
       - jwt_secret_key
       - neo4j_password
       - encryption_master_key
-      - brevo_api_key
+      - resend_api_key
       - nlq_api_key
       - postgres_username
       - postgres_password

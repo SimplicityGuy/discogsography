@@ -620,7 +620,7 @@ See [Insights README](../insights/README.md) for details.
 - Self-service password reset (Redis tokens, 15min TTL, anti-enumeration)
 - Optional TOTP 2FA with pyotp (QR code setup, recovery codes, brute-force lockout)
 - HKDF-SHA256 key derivation for per-purpose encryption (OAuth tokens, TOTP secrets)
-- Brevo transactional email integration (optional — falls back to log output)
+- Resend transactional email integration (optional — falls back to log output)
 
 **Configuration**:
 

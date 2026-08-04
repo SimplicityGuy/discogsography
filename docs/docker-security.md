@@ -108,7 +108,7 @@ These secrets are **never passed as plain environment variables in production**.
 | Neo4j password         | (via entrypoint wrapper)            | `NEO4J_AUTH`                   |
 | JWT secret key         | `JWT_SECRET_KEY_FILE`               | `JWT_SECRET_KEY`               |
 | Encryption master key  | `ENCRYPTION_MASTER_KEY_FILE`        | `ENCRYPTION_MASTER_KEY`        |
-| Brevo API key          | `BREVO_API_KEY_FILE`                | `BREVO_API_KEY`                |
+| Resend API key         | `RESEND_API_KEY_FILE`               | `RESEND_API_KEY`               |
 
 The Dashboard's RabbitMQ management-API access reuses the same `RABBITMQ_USERNAME`/`RABBITMQ_PASSWORD` (or `_FILE`) credentials above — there is no separate management-only credential pair.
 
@@ -141,7 +141,7 @@ This creates `secrets/` (mode `700`) with one file per secret (mode `600`):
 secrets/
 ├── jwt_secret_key.txt          # openssl rand -hex 32
 ├── encryption_master_key.txt   # base64-urlsafe 32-byte HKDF master key
-├── brevo_api_key.txt           # Brevo API key (empty disables email delivery)
+├── resend_api_key.txt          # Resend API key (empty disables email delivery)
 ├── postgres_username.txt       # discogsography
 ├── postgres_password.txt       # openssl rand -base64 24
 ├── rabbitmq_username.txt       # discogsography

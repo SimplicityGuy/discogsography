@@ -699,10 +699,10 @@ class ApiConfig:
     # reachable via the public explore proxy.
     insights_internal_secret: str | None = None
 
-    # Brevo email notifications
-    brevo_api_key: str | None = None
-    brevo_sender_email: str = "noreply@discogsography.com"
-    brevo_sender_name: str = "Discogsography"
+    # Resend email notifications
+    resend_api_key: str | None = None
+    resend_sender_email: str = "noreply@discogsography.com"
+    resend_sender_name: str = "Discogsography"
 
     # Admin dashboard — extractor connection.
     # No service named bare "extractor" exists (extractor runs as the two split
@@ -789,9 +789,9 @@ class ApiConfig:
 
         encryption_master_key = get_secret("ENCRYPTION_MASTER_KEY") or None
         insights_internal_secret = get_secret("INSIGHTS_INTERNAL_SECRET") or None
-        brevo_api_key = get_secret("BREVO_API_KEY") or None
-        brevo_sender_email = getenv("BREVO_SENDER_EMAIL", "noreply@discogsography.com")
-        brevo_sender_name = getenv("BREVO_SENDER_NAME", "Discogsography")
+        resend_api_key = get_secret("RESEND_API_KEY") or None
+        resend_sender_email = getenv("RESEND_SENDER_EMAIL", "noreply@discogsography.com")
+        resend_sender_name = getenv("RESEND_SENDER_NAME", "Discogsography")
 
         metrics_retention_days_str = getenv("METRICS_RETENTION_DAYS", "366")
         try:
@@ -826,9 +826,9 @@ class ApiConfig:
             snapshot_max_nodes=snapshot_max_nodes,
             encryption_master_key=encryption_master_key,
             insights_internal_secret=insights_internal_secret,
-            brevo_api_key=brevo_api_key,
-            brevo_sender_email=brevo_sender_email,
-            brevo_sender_name=brevo_sender_name,
+            resend_api_key=resend_api_key,
+            resend_sender_email=resend_sender_email,
+            resend_sender_name=resend_sender_name,
             extractor_host=getenv("EXTRACTOR_HOST", "extractor-discogs"),
             extractor_health_port=int(getenv("EXTRACTOR_HEALTH_PORT", "8000")),
             rabbitmq_management_host=getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),

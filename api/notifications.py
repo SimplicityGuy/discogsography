@@ -1,18 +1,15 @@
 """Notification channel abstraction for user-facing messages."""
 
-import asyncio
 import html
 from typing import Protocol, runtime_checkable
 
-from brevo import Brevo
-from brevo.transactional_emails import (
-    SendTransacEmailRequestSender,
-    SendTransacEmailRequestToItem,
-)
+import httpx
 import structlog
 
 
 logger = structlog.get_logger(__name__)
+
+_RESEND_API_URL = "https://api.resend.com/emails"
 
 
 @runtime_checkable
@@ -32,16 +29,21 @@ class LogNotificationChannel:
         logger.info("🔑 Password reset link generated", email=email)
 
 
-class BrevoNotificationChannel:
-    """Notification channel that sends emails via Brevo transactional API."""
+class ResendNotificationChannel:
+    """Notification channel that sends emails via the Resend REST API.
+
+    Plain `httpx` POST — no vendor SDK. Resend has click/open tracking off by
+    default for every domain (no per-message field to disable), so the request
+    body carries no tracking parameter and outbound links are never rewritten.
+    """
 
     def __init__(self, api_key: str, sender_email: str, sender_name: str) -> None:
-        self._client = Brevo(api_key=api_key)
+        self._api_key = api_key
         self._sender_email = sender_email
         self._sender_name = sender_name
 
     async def send_password_reset(self, email: str, reset_url: str) -> None:
-        """Send a password reset email via Brevo."""
+        """Send a password reset email via Resend."""
         safe_url = html.escape(reset_url, quote=True)
         html_content = (
             "<html><body>"
@@ -57,23 +59,19 @@ class BrevoNotificationChannel:
         )
 
         logger.debug("🔑 Sending password reset email", email=email)
-        # Click tracking cannot be disabled per-message via the v3 transactional
-        # API — the SDK's `headers` field rejects standard email headers, and
-        # `X-Mailin-Track*` are SMTP-relay only. To prevent password reset URLs
-        # from being wrapped in a sendibt2.com redirect, click tracking must be
-        # turned off in the Brevo dashboard (Senders, Domains & IPs → your
-        # sending domain → Tracking, or Account Settings → Tracking).
         try:
-            await asyncio.to_thread(
-                self._client.transactional_emails.send_transac_email,
-                subject="Reset your Discogsography password",
-                html_content=html_content,
-                sender=SendTransacEmailRequestSender(
-                    name=self._sender_name,
-                    email=self._sender_email,
-                ),
-                to=[SendTransacEmailRequestToItem(email=email)],
-            )
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    _RESEND_API_URL,
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                    json={
+                        "from": f"{self._sender_name} <{self._sender_email}>",
+                        "to": [email],
+                        "subject": "Reset your Discogsography password",
+                        "html": html_content,
+                    },
+                )
+                response.raise_for_status()
             logger.info("📧 Password reset email sent", email=email)
         except Exception:
             logger.exception("❌ Failed to send password reset email", email=email)

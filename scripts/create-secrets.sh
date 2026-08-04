@@ -34,9 +34,9 @@ write_secret "jwt_secret_key.txt" "$(openssl rand -hex 32)"
 # HKDF master encryption key (derives OAuth + TOTP keys)
 write_secret "encryption_master_key.txt" "$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode(), end="")')"
 
-# Brevo API key — required for prod email delivery; get from https://app.brevo.com/settings/keys/api
+# Resend API key — required for prod email delivery; get from https://resend.com/api-keys
 # When empty, password reset links are logged instead of emailed.
-write_secret "brevo_api_key.txt" "${BREVO_API_KEY:-}"
+write_secret "resend_api_key.txt" "${RESEND_API_KEY:-}"
 
 # PostgreSQL credentials
 write_secret "postgres_username.txt" "discogsography"
