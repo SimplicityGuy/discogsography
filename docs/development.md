@@ -158,10 +158,26 @@ brew install just  # macOS
 # or: cargo install just
 # or: https://just.systems/install.sh
 
+# Install Node 26 (only needed for the Explore frontend tests)
+nvm use          # reads .nvmrc
+# or: nvm install 26 && nvm use 26
+# or: fnm use    # also reads .nvmrc
+
 # Verify installations
 uv --version
 just --version
+node --version   # must be >= 26.0.0
 ```
+
+**Node version**: the repo standardizes on **Node 26**, declared in three places that
+must stay in agreement — `.nvmrc`, `engines.node` in `explore/package.json`, and
+`NODE_VERSION` in `.github/workflows/test.yml` and `e2e-test.yml`. The `node:26-slim`
+CSS-builder stages in `explore/Dockerfile` and `dashboard/Dockerfile` are the same line,
+so the toolchain that builds shipped assets matches the one the tests run on.
+
+Node 26 is the Current release line; it becomes LTS in October 2026. Node 24 is the
+active LTS today, so moving back is a supported option — it just has to move at all
+five sites at once, which is the point of declaring it.
 
 ### 2. Clone and Install Dependencies
 

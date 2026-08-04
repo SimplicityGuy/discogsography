@@ -17,7 +17,7 @@ on:
 env:
   CI: true
   PYTHON_VERSION: "3.13"
-  NODE_VERSION: "24"
+  NODE_VERSION: "26"
 
 permissions:
   contents: read

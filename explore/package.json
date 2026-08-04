@@ -11,6 +11,9 @@
     "monocart-coverage-reports": "^2.12.12",
     "vitest": "^4.1.0"
   },
+  "engines": {
+    "node": ">=26.0.0"
+  },
   "name": "discogsography-explore-tests",
   "private": true,
   "scripts": {
