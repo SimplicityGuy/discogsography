@@ -71,7 +71,10 @@ def check_rabbitmq_queues() -> None:
         print("2. Management plugin is enabled")
         print("3. Port 15672 is accessible")
     except requests.HTTPError as e:
-        print(f"Error: HTTP {e.response.status_code} from RabbitMQ management API")
+        # requests types `HTTPError.response` as optional — it is unset when the error
+        # is raised without a response attached.
+        status = e.response.status_code if e.response is not None else "unknown"
+        print(f"Error: HTTP {status} from RabbitMQ management API")
     except Exception as e:
         print(f"Unexpected error: {e}")
 

@@ -9,8 +9,6 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/Los_Angeles"
-    cooldown:
-      default-days: 7
     commit-message:
       prefix: "ci"
       include: "scope"
@@ -40,8 +38,6 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/Los_Angeles"
-    cooldown:
-      default-days: 7
     commit-message:
       prefix: "docker"
       include: "scope"
@@ -63,8 +59,6 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/Los_Angeles"
-    cooldown:
-      default-days: 7
     commit-message:
       prefix: "deps"
       include: "scope"
@@ -82,8 +76,6 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/Los_Angeles"
-    cooldown:
-      default-days: 7
     commit-message:
       prefix: "deps"
       include: "scope"
@@ -115,8 +107,6 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/Los_Angeles"
-    cooldown:
-      default-days: 7
     commit-message:
       prefix: "deps"
       prefix-development: "deps-dev"
