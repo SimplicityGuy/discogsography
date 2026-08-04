@@ -186,6 +186,10 @@ services:
   api:
     restart: always
     environment:
+      # REQUIRED in production: the public origin of the Explore frontend.
+      # Password reset emails embed this as an absolute link, so the localhost
+      # default would mail every recipient a link to their own machine.
+      APP_BASE_URL: "${APP_BASE_URL:?APP_BASE_URL must be set to the public frontend origin}"
       JWT_SECRET_KEY_FILE: /run/secrets/jwt_secret_key
       NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
       ENCRYPTION_MASTER_KEY_FILE: /run/secrets/encryption_master_key

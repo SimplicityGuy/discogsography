@@ -352,8 +352,16 @@ REDIS_PASSWORD_FILE="/run/secrets/redis_password"
 | `JWT_EXPIRE_MINUTES`           | Token lifetime in minutes                                         | `30`    | No        |
 | `DISCOGS_USER_AGENT`           | User-Agent for Discogs API requests                               | (none)  | Yes (API) |
 | `DISCOGS_OAUTH_CALLBACK_URL`   | Public callback URL Discogs redirects to after the user authorizes the app. When unset, the OAuth flow falls back to the out-of-band (OOB) mode where the user copy/pastes a verifier code into the app. When set, the value must exactly match the **Callback URL** field on your Discogs developer app settings page and point at `oauth-discogs-callback.html` on the Explore frontend (e.g. `https://your-host/oauth-discogs-callback.html`). | (none)  | No        |
+| `APP_BASE_URL`                 | Public origin of the user-facing Explore frontend, used to build absolute links in outbound email (currently the password reset link). Must be reachable from a recipient's mail client — a relative or internal-only URL produces an unclickable link. Any trailing slash is stripped. | `http://localhost:8006` | Yes in production |
 
 **Used By**: API
+
+**`APP_BASE_URL` vs `API_BASE_URL`**: these are different addresses and are easy to confuse.
+`API_BASE_URL` is the internal service-to-service address of the API (e.g. `http://api:8004`),
+used by Explore, Insights, and the MCP server. `APP_BASE_URL` is the **public** origin a real
+user's browser reaches — the one that must appear in email. In production, leaving
+`APP_BASE_URL` at its localhost default means every password reset link mails out pointing at
+the recipient's own machine.
 
 **JWT Details**:
 

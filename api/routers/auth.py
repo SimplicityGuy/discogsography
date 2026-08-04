@@ -277,7 +277,7 @@ async def get_me(
 @limiter.limit("3/minute")
 async def reset_request(request: Request, body: ResetRequestModel) -> JSONResponse:  # noqa: ARG001
     """Request a password reset. Same response whether email exists or not."""
-    if _pool is None or _redis is None:
+    if _pool is None or _redis is None or _config is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
 
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
@@ -291,7 +291,9 @@ async def reset_request(request: Request, body: ResetRequestModel) -> JSONRespon
             900,  # 15 min TTL
             json.dumps({"user_id": str(user["id"]), "email": user["email"]}),
         )
-        reset_url = f"/?reset_token={token}"
+        # Must be absolute: this link is emailed, and a mail client has no base
+        # URL to resolve a relative href against.
+        reset_url = f"{_config.app_base_url}/?reset_token={token}"
         if _notification_channel:
             await _notification_channel.send_password_reset(user["email"], reset_url)
 

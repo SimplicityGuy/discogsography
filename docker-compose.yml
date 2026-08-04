@@ -228,6 +228,9 @@ services:
     hostname: api
     user: "${UID:-1000}:${GID:-1000}"
     environment:
+      # Public origin of the Explore frontend — used to build absolute links in
+      # outbound email. Must be reachable from the recipient's mail client.
+      APP_BASE_URL: "${APP_BASE_URL:-http://localhost:8006}"
       JWT_ALGORITHM: HS256
       JWT_EXPIRE_MINUTES: "60"
       # IMPORTANT: Override JWT_SECRET_KEY with a random 256-bit key in production!

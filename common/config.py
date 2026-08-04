@@ -689,6 +689,11 @@ class ApiConfig:
     # When unset, the OAuth 1.0a "out-of-band" flow is used and the user has to
     # paste a verifier code shown by Discogs back into the app.
     discogs_oauth_callback_url: str | None = None
+    # Public origin of the user-facing frontend (explore), used to build absolute
+    # links in outbound email. Distinct from API_BASE_URL, which is the internal
+    # service-to-service address of the API itself and is not reachable from a
+    # user's mail client. Any trailing slash is stripped on load.
+    app_base_url: str = "http://localhost:8006"
     cors_origins: list[str] | None = None
     snapshot_ttl_days: int = 28
     snapshot_max_nodes: int = 100
@@ -787,6 +792,8 @@ class ApiConfig:
 
         pool_min, pool_max = resolve_postgres_pool_sizes(default_min=2, default_max=8)
 
+        app_base_url = getenv("APP_BASE_URL", "http://localhost:8006").rstrip("/")
+
         encryption_master_key = get_secret("ENCRYPTION_MASTER_KEY") or None
         insights_internal_secret = get_secret("INSIGHTS_INTERNAL_SECRET") or None
         resend_api_key = get_secret("RESEND_API_KEY") or None
@@ -821,6 +828,7 @@ class ApiConfig:
             neo4j_password=cast("str", neo4j_password),
             postgres_pool_min_size=pool_min,
             postgres_pool_max_size=pool_max,
+            app_base_url=app_base_url,
             cors_origins=cors_origins,
             snapshot_ttl_days=snapshot_ttl_days,
             snapshot_max_nodes=snapshot_max_nodes,
