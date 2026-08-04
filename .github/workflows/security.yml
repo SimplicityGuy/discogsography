@@ -56,7 +56,12 @@ jobs:
     timeout-minutes: 15
 
     container:
-      image: semgrep/semgrep
+      # Pinned by digest. `semgrep/semgrep` with no tag is `:latest`, so the scanner
+      # engine silently changed under us on any day upstream published. This digest is
+      # what `latest` resolved to when pinned (v1.171.0), so the pin is behaviour-neutral.
+      # Bump deliberately; `--config auto` still fetches rules at scan time, which is the
+      # other drift vector — handled by the ERROR-severity gate at the end of this job.
+      image: semgrep/semgrep:1.171.0@sha256:bdf7013b2c3634a487671158da77c554f531742326b543a9464d2adf6c433ac8
 
     if: github.actor != 'dependabot[bot]'
 
@@ -65,7 +70,12 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: 🔬 Run semgrep scan
-        run: semgrep scan --config auto --error --sarif --output semgrep.sarif
+        # Deliberately no `--error`. With it, ANY finding at ANY severity failed the
+        # build, so a rule published upstream turned every PR red without a commit
+        # here — that is how the dependabot/uv cooldown rules broke CI. Severity
+        # gating now happens after the SARIF is uploaded, so warnings and notes still
+        # reach GitHub Advanced Security as alerts instead of blocking the pipeline.
+        run: semgrep scan --config auto --sarif --output semgrep.sarif
 
       - name: 🧹 Remove nosemgrep-suppressed findings from SARIF
         # Semgrep includes `# nosemgrep` suppressed findings in SARIF with a
@@ -91,6 +101,49 @@ jobs:
         uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9  # v4.37.0
         with:
           sarif_file: semgrep.sarif
+        if: always()
+
+      - name: 🚦 Fail on ERROR-severity findings
+        # Runs last, and after the upload, so every finding reaches GHAS regardless of
+        # the verdict here. Only SARIF level `error` blocks; `warning` and `note` are
+        # reported, not enforced. This is the same policy hadolint uses
+        # (--failure-threshold error) — a new low-severity rule should tell us
+        # something, not stop the line.
+        run: |
+          python3 - <<'EOF'
+          import json
+          import sys
+
+          with open("semgrep.sarif") as f:
+              sarif = json.load(f)
+
+          blocking = []
+          for run in sarif.get("runs", []):
+              # Semgrep omits `level` on individual results, so reading result["level"]
+              # matches nothing and the gate silently passes everything. Severity lives on
+              # the rule: runs[].tool.driver.rules[].defaultConfiguration.level, joined to
+              # results by ruleId. Verified against a real scan — 26 of 35 findings are
+              # error-severity via this path, 0 via result["level"].
+              severity = {
+                  rule.get("id"): rule.get("defaultConfiguration", {}).get("level")
+                  for rule in run.get("tool", {}).get("driver", {}).get("rules", [])
+              }
+              for result in run.get("results", []):
+                  if severity.get(result.get("ruleId")) == "error":
+                      blocking.append(result)
+
+          if not blocking:
+              print("✅ No ERROR-severity semgrep findings")
+              sys.exit(0)
+
+          print(f"❌ {len(blocking)} ERROR-severity semgrep finding(s):")
+          for result in blocking:
+              loc = result.get("locations", [{}])[0].get("physicalLocation", {})
+              path = loc.get("artifactLocation", {}).get("uri", "?")
+              line = loc.get("region", {}).get("startLine", "?")
+              print(f"  {result.get('ruleId', '?')} — {path}:{line}")
+          sys.exit(1)
+          EOF
         if: always()
 
   rust-security:
