@@ -26,7 +26,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: 🔧 Setup Python and UV
         uses: ./.github/actions/setup-python-uv
@@ -67,7 +67,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: 🔬 Run semgrep scan
         # Deliberately no `--error`. With it, ANY finding at ANY severity failed the
@@ -98,7 +98,7 @@ jobs:
         if: always()
 
       - name: 📤 Upload SARIF to GitHub Advanced Security
-        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9  # v4.37.0
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38  # v4.37.4
         with:
           sarif_file: semgrep.sarif
         if: always()
@@ -153,7 +153,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: 🦀 Setup Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
@@ -175,7 +175,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: 📦 Install cargo-audit and cargo-deny
-        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853  # v2.83.2
+        uses: taiki-e/install-action@1beb33eee6d086258184383af9a538940be190ed  # v2.85.6
         with:
           tool: cargo-audit,cargo-deny
 
@@ -197,12 +197,12 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0 # Full history required for comprehensive secret scanning
 
       - name: 🔑 Run TruffleHog (secret detection)
-        uses: trufflesecurity/trufflehog@27b0417c16317ca9a472a9a8092acce143b49c55  # v3.95.9
+        uses: trufflesecurity/trufflehog@6f3c981e7b77f235fd2702dd74af25fc4b72bf11  # v3.96.0
         with:
           path: ./
           extra_args: --only-verified
@@ -214,7 +214,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: 🛡️ Run trivy (filesystem vulnerability scan)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
@@ -226,7 +226,7 @@ jobs:
           severity: HIGH,CRITICAL
 
       - name: 📤 Upload trivy SARIF results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9  # v4.37.0
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38  # v4.37.4
         if: always()
         with:
           sarif_file: trivy-results.sarif
