@@ -29,6 +29,14 @@ jobs:
           docker-compose: ${{ env.COMPOSE_VERSION }}
 
       - name: 📋 Validate docker-compose syntax
+        env:
+          # The prod overlay declares APP_BASE_URL with `:?`, so an unset value is a
+          # hard error — that is deliberate, to stop a production stack booting with
+          # a localhost default and mailing every user a link to their own machine.
+          # `config` evaluates interpolation, so this job has to supply a value. The
+          # value is irrelevant; only that it is set. Do not "fix" this by weakening
+          # the `:?` in docker-compose.prod.yml to a default.
+          APP_BASE_URL: "https://ci.invalid"
         run: |
           docker-compose config --quiet
           echo "✅ docker-compose.yml is valid"
