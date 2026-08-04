@@ -1,7 +1,20 @@
 ---
+# Dependency cooldowns are deliberately NOT set here, and the semgrep rule asking
+# for them is suppressed per-ecosystem below.
+#
+# Rationale: a cooldown delays every update, including security fixes. Combined with
+# uv's own `exclude-newer` quarantine in pyproject.toml, a 7-day cooldown meant
+# CVE-2026-69247's published fix was unreachable while pip-audit and osv-scanner —
+# both reachability-blind — failed every PR over it. The pipeline was blocked by the
+# very control meant to protect it. We take updates promptly and rely on review,
+# pinned CI tooling, and the scanners themselves rather than on a waiting period.
+#
+# Revisit if the repo ever ingests a compromised release that a cooldown would have
+# caught; that is the trade being made.
 version: 2
 updates:
   # GitHub Actions dependencies
+  # nosemgrep: package_managers.dependabot.dependabot-missing-cooldown.dependabot-missing-cooldown
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -9,8 +22,6 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/Los_Angeles"
-    cooldown:
-      default-days: 7
     commit-message:
       prefix: "ci"
       include: "scope"
@@ -25,6 +36,7 @@ updates:
           - "*"
 
   # Docker base images for all services
+  # nosemgrep: package_managers.dependabot.dependabot-missing-cooldown.dependabot-missing-cooldown
   - package-ecosystem: "docker"
     directories:
       - "/api"
@@ -40,8 +52,6 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/Los_Angeles"
-    cooldown:
-      default-days: 7
     commit-message:
       prefix: "docker"
       include: "scope"
@@ -56,6 +66,7 @@ updates:
           - "*"
 
   # Rust dependencies for the extractor
+  # nosemgrep: package_managers.dependabot.dependabot-missing-cooldown.dependabot-missing-cooldown
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
@@ -63,8 +74,6 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/Los_Angeles"
-    cooldown:
-      default-days: 7
     commit-message:
       prefix: "deps"
       include: "scope"
@@ -75,6 +84,7 @@ updates:
       - "SimplicityGuy"
 
   # Node.js dependencies for Explore frontend tests
+  # nosemgrep: package_managers.dependabot.dependabot-missing-cooldown.dependabot-missing-cooldown
   - package-ecosystem: "npm"
     directory: "/explore"
     schedule:
@@ -82,8 +92,6 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/Los_Angeles"
-    cooldown:
-      default-days: 7
     commit-message:
       prefix: "deps"
       include: "scope"
@@ -99,6 +107,7 @@ updates:
 
   # Python dependencies for all services
   # Using pip ecosystem as uv is not directly supported yet
+  # nosemgrep: package_managers.dependabot.dependabot-missing-cooldown.dependabot-missing-cooldown
   - package-ecosystem: "pip"
     directories:
       - "/"  # Root project
@@ -115,8 +124,6 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/Los_Angeles"
-    cooldown:
-      default-days: 7
     commit-message:
       prefix: "deps"
       prefix-development: "deps-dev"

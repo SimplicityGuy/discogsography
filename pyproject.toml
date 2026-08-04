@@ -24,20 +24,20 @@ dependencies = [
     "multidict>=6.7.1",
     "neo4j-rust-ext>=6.2.0.0",
     "orjson>=3.11.9",
-    "pika>=1.4.1",
+    "pika>=1.4.2",
     "psycopg[binary]>=3.3.4",
-    "redis[hiredis]>=8.0.1",
+    "redis[hiredis]>=8.1.0",
     "structlog>=26.1.0",
-    "tqdm>=4.69.0",
+    "tqdm>=4.70.0",
 ]
 
 [project.optional-dependencies]
 api = [
-    "anthropic>=0.117.0",
+    "anthropic>=0.120.2",
     "brevo-python>=4.0.10,<5",
-    "cryptography>=49.0.0",
+    "cryptography>=50.0.0",
     "defusedxml>=0.7.1",
-    "fastapi>=0.139.2",
+    "fastapi>=0.141.1",
     "httpx>=0.28.1",
     "neo4j-rust-ext>=6.2.0.0",
     "orjson>=3.11.9",
@@ -45,22 +45,22 @@ api = [
     "pydantic>=2.13.4",
     "pyotp>=2.10.0",
     "pyyaml>=6.0.3",
-    "redis[hiredis]>=8.0.1",
+    "redis[hiredis]>=8.1.0",
     "slowapi>=0.1.10",
-    "sse-starlette>=3.4.5",
+    "sse-starlette>=3.4.6",
     "structlog>=26.1.0",
-    "uvicorn[standard]>=0.51.0",
+    "uvicorn[standard]>=0.52.1",
 ]
 dashboard = [
-    "fastapi>=0.139.2",
+    "fastapi>=0.141.1",
     "httpx>=0.28.1",
     "neo4j-rust-ext>=6.2.0.0",
-    "prometheus-client>=0.25.0",
+    "prometheus-client>=0.26.0",
     "psycopg[binary]>=3.3.4",
     "pydantic>=2.13.4",
     "python-multipart>=0.0.32",
-    "uvicorn[standard]>=0.51.0",
-    "websockets>=16.1.1",
+    "uvicorn[standard]>=0.52.1",
+    "websockets>=17.0.1",
 ]
 brainzgraphinator = [
     "neo4j-rust-ext>=6.2.0.0",
@@ -69,9 +69,9 @@ graphinator = [
     "neo4j-rust-ext>=6.2.0.0",
 ]
 insights = [
-    "fastapi>=0.139.2",
+    "fastapi>=0.141.1",
     "httpx>=0.28.1",
-    "uvicorn[standard]>=0.51.0",
+    "uvicorn[standard]>=0.52.1",
 ]
 tableinator = [
     "psycopg[binary]>=3.3.4",
@@ -82,31 +82,31 @@ brainztableinator = [
 dev = [
     "bandit>=1.9.4",
     "mypy>=2.3.0",
-    "playwright>=1.61.0",
+    "playwright>=1.62.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
     "pytest-playwright>=0.8.0",
     "pytest-timeout>=2.4.0",
-    "pre-commit>=4.6.0",
-    "ruff>=0.15.22",
+    "pre-commit>=4.6.1",
+    "ruff>=0.16.1",
     "types-defusedxml>=0.7.0.20260504",
     "types-psutil>=7.2.2.20260518",
-    "types-pyyaml>=6.0.12.20260518",
-    "types-tqdm>=4.68.0.20260608",
+    "types-pyyaml>=6.0.12.20260724",
+    "types-tqdm>=4.70.0.20260731",
 ]
 utilities = [
     "psutil>=7.2.2",
     "requests>=2.34.2",
 ]
 explore = [
-    "fastapi>=0.139.2",
+    "fastapi>=0.141.1",
     "httpx>=0.28.1",
     "orjson>=3.11.9",
     "pydantic>=2.13.4",
     "python-multipart>=0.0.32",
     "structlog>=26.1.0",
-    "uvicorn[standard]>=0.51.0",
+    "uvicorn[standard]>=0.52.1",
 ]
 schema-init = [
     "neo4j-rust-ext>=6.2.0.0",
@@ -114,7 +114,7 @@ schema-init = [
     "structlog>=26.1.0",
 ]
 mcp-server = [
-    "mcp[cli]>=1.28.1",
+    "mcp[cli]>=1.28.1,<2",
     "structlog>=26.1.0",
 ]
 all = [
@@ -256,12 +256,12 @@ dev = [
     "bandit>=1.9.4",
     "mypy>=2.3.0",
     "pip-audit>=2.10.1",                   # Python dependency vulnerability scanning
-    "pre-commit>=4.6.0",
+    "pre-commit>=4.6.1",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
-    "ruff>=0.15.22",
-    "types-tqdm>=4.68.0.20260608",
+    "ruff>=0.16.1",
+    "types-tqdm>=4.70.0.20260731",
     "types-xmltodict>=1.0.1.20260518",
     "types-psutil>=7.2.2.20260518",
     "pytest-timeout>=2.4.0",
@@ -269,8 +269,8 @@ dev = [
     "mdformat-gfm>=1.0.0",
     # "mdformat-tables>=1.0.0",  # Disabled: requires mdformat<0.8.0
     "pytest-xdist>=3.8.0",
-    "fakeredis>=2.36.2",
-    "hypothesis>=6.156.6",
+    "fakeredis>=2.37.0",
+    "hypothesis>=6.164.0",
     "pillow>=12.3.0",
     "respx>=0.23.1",
 ]
@@ -290,9 +290,16 @@ members = ["api", "brainzgraphinator", "brainztableinator", "common", "dashboard
 
 # Environment restrictions for uv to avoid iOS and other incompatible platforms
 [tool.uv]
-# Wait 7 days before resolving newly published package versions, to reduce exposure
-# to malicious or unstable releases (supply-chain hardening).
-exclude-newer = "7 days"
+# Wait 2 days before resolving newly published package versions, to reduce exposure
+# to malicious or unstable releases (supply-chain hardening). Kept short enough that
+# a published security fix can be taken without carving per-package holes in the
+# policy — a 7-day window blocked CVE-2026-69247's fix and stalled the pipeline.
+#
+# The semgrep rule above wants exactly "7 days" and flags anything shorter as missing.
+# We keep a cooldown, just a shorter one — the rule cannot express that, so it is
+# suppressed rather than satisfied. Do not read the suppression as "no cooldown".
+# nosemgrep: package_managers.uv.uv-missing-dependency-cooldown.uv-missing-dependency-cooldown
+exclude-newer = "2 days"
 environments = [
     # Only support Linux platforms that we build for in CI/CD
     "sys_platform == 'linux' and platform_machine == 'x86_64'",   # linux/amd64

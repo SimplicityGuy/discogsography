@@ -39,7 +39,7 @@ repos:
   #       files: '^(README\.md|CLAUDE\.md|docs/.*\.md|[^/]+/README\.md|[^/]+/.*\.md)$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: cb8c523fd4835aba42af70f4cad5568db4df0b6c  # frozen: v0.16.0
+    rev: 39d9ac5938dadb73df0564a45f163e25ff9fa6e2  # frozen: v0.16.1
     hooks:
       - id: ruff
         args: [--fix]
@@ -54,6 +54,9 @@ repos:
         args: [-x, "tests", -s, "B608"]  # B608 skipped: all user input uses parameterized %s queries
 
   - repo: https://github.com/hadolint/hadolint
+    # HELD at v2.14.0 — do not let `just update-deps` bump this alone. v2.15.1 adds
+    # DL3025/DL3064/DL3066, which fire across every Dockerfile here; taking it means
+    # fixing those findings and bumping the CI pin in the same change (discogsography-kaeu).
     rev: 4e697ba704fd23b2409b947a319c19c3ee54d24f  # frozen: v2.14.0
     hooks:
       # `language: system` — lints with the hadolint binary on PATH, not this rev.
