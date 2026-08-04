@@ -54,15 +54,18 @@ repos:
         args: [-x, "tests", -s, "B608"]  # B608 skipped: all user input uses parameterized %s queries
 
   - repo: https://github.com/hadolint/hadolint
-    # HELD at v2.14.0 — do not let `just update-deps` bump this alone. v2.15.1 adds
-    # DL3025/DL3064/DL3066, which fire across every Dockerfile here; taking it means
-    # fixing those findings and bumping the CI pin in the same change (discogsography-kaeu).
-    rev: 4e697ba704fd23b2409b947a319c19c3ee54d24f  # frozen: v2.14.0
+    rev: 2eece55955ced00200be9729e9728cb7dacca505  # frozen: v2.15.1
     hooks:
       # `language: system` — lints with the hadolint binary on PATH, not this rev.
       # CI installs that binary in .github/workflows/code-quality.yml; keep the two
       # versions in lockstep or CI and local will enforce different rule sets.
       - id: hadolint
+        # Match docker-validate.yml, which has always used `failure-threshold: error`.
+        # Without this the hook runs at hadolint's default of `info`, so the two paths
+        # enforced different policies and any upstream rule added at info/warning level
+        # became a CI outage instead of a warning. That is exactly how v2.15.1's
+        # DL3025/DL3064/DL3066 took main red on a docs-only commit.
+        args: ["--failure-threshold", "error"]
 
   - repo: https://github.com/IamTheFij/docker-pre-commit
     rev: f626253b23de45412865c07fd076ff95d4cd77a7  # frozen: v3.0.1
