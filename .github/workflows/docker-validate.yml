@@ -30,13 +30,13 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
 
       - name: 🔍 Validate Dockerfile with hadolint
-        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5  # v3.3.0
+        uses: hadolint/hadolint-action@2a66e89f53d0771bb131a7fa31f3136336094aa6  # v3.4.0
         with:
           dockerfile: ${{ matrix.sub-project }}/Dockerfile
           failure-threshold: error
