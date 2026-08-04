@@ -57,9 +57,10 @@ jobs:
           # `language: system`, so it lints with whatever binary is on PATH. Leaving this
           # as `latest` meant CI silently linted with newer rules than any developer had,
           # and a new hadolint release turned every PR red on untouched Dockerfiles.
-          # Bump both sites together.
+          # Bump both sites together; the hook also pins --failure-threshold error, which
+          # is what makes a rule addition a warning rather than an outage.
           # Tag form (v-prefixed) — arkade resolves this against hadolint's release tags.
-          hadolint: v2.14.0
+          hadolint: v2.15.1
 
       - name: 🦀 Setup Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable

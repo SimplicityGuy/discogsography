@@ -269,7 +269,7 @@ dev = [
     # "mdformat-tables>=1.0.0",  # Disabled: requires mdformat<0.8.0
     "pytest-xdist>=3.8.0",
     "fakeredis>=2.37.0",
-    "hypothesis>=6.164.0",
+    "hypothesis>=6.165.0",
     "pillow>=12.3.0",
     "respx>=0.23.1",
 ]
