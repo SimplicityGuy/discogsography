@@ -899,14 +899,18 @@ class Neo4jBatchProcessor:
                         styles=style_data,
                     )
 
-                # Connect styles to genres
+                # Connect styles to genres. PART_OF asserts a style belongs to a genre,
+                # which is only unambiguous when the record carries a single genre — a
+                # multi-genre record cartesian-linking every style to every genre would
+                # create false Style-[:PART_OF]->Genre edges (discogsography-sy5k).
                 genre_style_data = []
                 for master in masters_to_process:
                     genres = master.get("genres", [])
                     styles = master.get("styles", [])
-                    for genre in genres:
+                    if len(genres) == 1 and genres[0]:
+                        genre = genres[0]
                         for style in styles:
-                            if genre and style:
+                            if style:
                                 genre_style_data.append(
                                     {
                                         "genre": genre,
@@ -1136,14 +1140,18 @@ class Neo4jBatchProcessor:
                         styles=style_data,
                     )
 
-                # Connect styles to genres
+                # Connect styles to genres. PART_OF asserts a style belongs to a genre,
+                # which is only unambiguous when the record carries a single genre — a
+                # multi-genre record cartesian-linking every style to every genre would
+                # create false Style-[:PART_OF]->Genre edges (discogsography-sy5k).
                 genre_style_data = []
                 for release in releases_to_process:
                     genres = release.get("genres", [])
                     styles = release.get("styles", [])
-                    for genre in genres:
+                    if len(genres) == 1 and genres[0]:
+                        genre = genres[0]
                         for style in styles:
-                            if genre and style:
+                            if style:
                                 genre_style_data.append(
                                     {
                                         "genre": genre,
@@ -1192,7 +1200,8 @@ class Neo4jBatchProcessor:
                         UNWIND $credits AS credit
                         MATCH (r:Release {id: credit.release_id})
                         MERGE (p:Person {name: credit.name})
-                        MERGE (p)-[:CREDITED_ON {role: credit.role, category: credit.category}]->(r)
+                        MERGE (p)-[c:CREDITED_ON {role: credit.role}]->(r)
+                        SET c.category = credit.category
                         """,
                         credits=credit_data,
                     )

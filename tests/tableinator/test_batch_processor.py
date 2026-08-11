@@ -194,6 +194,9 @@ class TestPostgreSQLBatchProcessor:
         # Should log error and nack
         mock_logger.error.assert_called_once()
         nack_callback.assert_called_once()
+        # discogsography-x763: a missing-id nack must flag the data_type so
+        # purge_stale_rows is skipped for it.
+        assert processor.had_dlq_nacks("artists") is True
 
     @pytest.mark.asyncio
     async def test_add_message_normalization_error(self) -> None:
@@ -223,6 +226,9 @@ class TestPostgreSQLBatchProcessor:
         # Should log error and nack
         mock_logger.error.assert_called_once()
         nack_callback.assert_called_once()
+        # discogsography-x763: a normalize-failure nack must flag the data_type so
+        # purge_stale_rows is skipped for it.
+        assert processor.had_dlq_nacks("artists") is True
 
     @pytest.mark.asyncio
     async def test_add_message_triggers_flush_on_batch_size(self) -> None:
@@ -533,6 +539,10 @@ class TestPostgreSQLBatchProcessor:
         assert not processor.queues["artists"], "poison batch permanently wedged the queue"
         assert len(nacks) == 2, "both poison messages must be nacked to the DLQ"
         assert acks == [], "poison messages must never be acked"
+        # discogsography-x763: a poison-batch DLQ nack must flag the data_type so
+        # the caller skips purge_stale_rows — those rows' updated_at was never
+        # refreshed and would otherwise look stale and get deleted.
+        assert processor.had_dlq_nacks("artists") is True
 
     @pytest.mark.asyncio
     async def test_poison_batch_nack_failure_is_logged_and_swallowed(self) -> None:
@@ -1058,6 +1068,20 @@ class TestPostgreSQLBatchProcessor:
         assert stats["batches"]["labels"] == 5
         assert stats["pending"]["artists"] == 1
         assert stats["pending"]["labels"] == 0
+
+    def test_had_dlq_nacks_default_false_and_reset(self) -> None:
+        """discogsography-x763: had_dlq_nacks() defaults to False, and
+        reset_dlq_nacks() clears a set flag so purging can resume next run."""
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
+
+        assert processor.had_dlq_nacks("artists") is False
+
+        processor._had_dlq_nacks["artists"] = True
+        assert processor.had_dlq_nacks("artists") is True
+
+        processor.reset_dlq_nacks("artists")
+        assert processor.had_dlq_nacks("artists") is False
 
     @pytest.mark.asyncio
     async def test_batch_respects_max_size(self) -> None:

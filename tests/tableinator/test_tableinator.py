@@ -765,6 +765,7 @@ class TestOnDataMessageExtended:
         """Test extraction_complete flushes batch processor."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_batch = AsyncMock()
+        mock_batch.had_dlq_nacks = MagicMock(return_value=False)
         completion_data = {
             "type": "extraction_complete",
             "version": "20260101",
@@ -780,6 +781,8 @@ class TestOnDataMessageExtended:
             await on_data_message(mock_message, "artists")
 
         mock_batch.flush_queue.assert_called_once_with("artists")
+        mock_batch.had_dlq_nacks.assert_called_once_with("artists")
+        mock_batch.reset_dlq_nacks.assert_not_called()
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
@@ -804,6 +807,39 @@ class TestOnDataMessageExtended:
 
         # No record_counts in the message → third positional arg is None.
         mock_purge.assert_called_once_with("artists", "2026-01-01T00:00:00Z", None)
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_extraction_complete_skips_purge_after_dlq_nacks(self) -> None:
+        """discogsography-x763: if a message for this data_type was nacked to the
+        DLQ this run (poison batch, missing id, normalize failure), purge_stale_rows
+        must NOT run — those rows' updated_at was never refreshed, so purging would
+        delete dump-present records beyond the DLQ. The extraction_complete message
+        should still be acked (a real dump shrink is not detectable this run), and
+        the DLQ-nack flag must be reset so future runs can purge again."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_batch = AsyncMock()
+        mock_batch.had_dlq_nacks = MagicMock(return_value=True)
+        mock_batch.reset_dlq_nacks = MagicMock()
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+            "started_at": "2026-01-01T00:00:00Z",
+        }
+        mock_message.body = json.dumps(completion_data).encode()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", mock_batch),
+            patch("tableinator.tableinator.purge_stale_rows", new_callable=AsyncMock) as mock_purge,
+            patch("tableinator.tableinator.connection_pool", MagicMock()),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_purge.assert_not_called()
+        mock_batch.had_dlq_nacks.assert_called_once_with("artists")
+        mock_batch.reset_dlq_nacks.assert_called_once_with("artists")
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio

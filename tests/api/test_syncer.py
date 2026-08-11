@@ -1319,6 +1319,56 @@ class TestCatalogNumberCapture:
         assert batch_params[0][11] is None
 
     @pytest.mark.asyncio
+    async def test_collection_upsert_never_overwrites_metadata_or_formats_with_null(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """discogsography-z7d3: a run with no catalog_number (or no formats) must not
+        wipe a previously-synced value. The PostgreSQL upsert's DO UPDATE SET must use
+        COALESCE(EXCLUDED.x, user_collections.x) for metadata AND formats — a bare
+        `metadata = EXCLUDED.metadata` full-column replace would overwrite a prior
+        value with NULL when EXCLUDED.metadata is NULL, diverging from the Neo4j side
+        (`SET r += rel.metadata`), which never wipes."""
+        release = _make_release_item(123)
+        release["basic_information"]["labels"] = []
+        release["basic_information"]["formats"] = []
+        resp = _make_collection_response([release])
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = resp
+
+        with patch("api.syncer.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            await sync_collection(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        call_args = mock_pg_pool._mock_cur.executemany.await_args
+        upsert_sql = call_args[0][0]
+        batch_params = call_args[0][1]
+
+        # This run genuinely has no catalog_number/formats to report.
+        assert batch_params[0][7] is None  # formats_json (tuple position 7)
+        assert batch_params[0][11] is None  # metadata_json (tuple position 11)
+
+        # But the upsert must be told to preserve any prior value rather than
+        # blindly assigning the column to EXCLUDED (which would be NULL here).
+        assert "metadata = COALESCE(EXCLUDED.metadata, user_collections.metadata)" in upsert_sql
+        assert "formats = COALESCE(EXCLUDED.formats, user_collections.formats)" in upsert_sql
+        assert "metadata = EXCLUDED.metadata," not in upsert_sql
+        assert "formats = EXCLUDED.formats," not in upsert_sql
+
+    @pytest.mark.asyncio
     async def test_wantlist_persists_metadata_to_neo4j_params(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
         """labels[0].catno from basic_information is propagated to the WANTS cypher payload's metadata bag."""
         want = _make_want_item(456)

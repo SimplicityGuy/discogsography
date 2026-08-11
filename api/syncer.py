@@ -167,6 +167,12 @@ async def sync_collection(
                 # reused for both `user_collections.metadata` JSONB and the
                 # cypher `SET r += rel.metadata` write. Future fields just add
                 # a key here.
+                #
+                # When this run's fetch has no catalog_number (or no formats),
+                # metadata_json/formats_json is None — the PostgreSQL upsert below
+                # uses COALESCE(EXCLUDED.x, user_collections.x) so a NULL from this
+                # run can never overwrite a previously-synced value; Neo4j's `+=`
+                # merge already had that property (discogsography-z7d3).
                 release_metadata: dict[str, Any] = {}
                 if labels and labels[0].get("catno"):
                     release_metadata["catalog_number"] = labels[0]["catno"]
@@ -210,11 +216,11 @@ async def sync_collection(
                                 title = EXCLUDED.title,
                                 artist = EXCLUDED.artist,
                                 year = EXCLUDED.year,
-                                formats = EXCLUDED.formats,
+                                formats = COALESCE(EXCLUDED.formats, user_collections.formats),
                                 label = EXCLUDED.label,
                                 rating = EXCLUDED.rating,
                                 date_added = EXCLUDED.date_added,
-                                metadata = EXCLUDED.metadata,
+                                metadata = COALESCE(EXCLUDED.metadata, user_collections.metadata),
                                 updated_at = NOW()
                         """,
                         batch_params,

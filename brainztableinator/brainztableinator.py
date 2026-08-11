@@ -555,9 +555,16 @@ async def _insert_relationships(
             "INSERT INTO musicbrainz.relationships "
             "(source_mbid, source_entity_type, target_mbid, target_entity_type, relationship_type, attributes, begin_date, end_date, ended) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
-            "ON CONFLICT (source_mbid, target_mbid, source_entity_type, target_entity_type, relationship_type) "
-            "DO UPDATE SET attributes = EXCLUDED.attributes, begin_date = EXCLUDED.begin_date, "
-            "end_date = EXCLUDED.end_date, ended = EXCLUDED.ended",
+            # The conflict target must match relationships_natural_key (schema-init/postgres_schema.py),
+            # which includes begin_date/end_date/attributes so that two distinct relationship
+            # instances (e.g. a re-joined band membership with different date ranges, or a
+            # multi-instrument performer credit) coexist as separate rows instead of one
+            # silently overwriting the other (discogsography-dgtg). begin_date/end_date/
+            # attributes are now part of the conflict key so a genuine re-ingest conflict only
+            # occurs when they already match; only `ended` (a mutable flag, not part of the
+            # relationship's identity) needs refreshing on conflict.
+            "ON CONFLICT (source_mbid, target_mbid, source_entity_type, target_entity_type, relationship_type, begin_date, end_date, attributes) "
+            "DO UPDATE SET ended = EXCLUDED.ended",
             params,
         )
 
