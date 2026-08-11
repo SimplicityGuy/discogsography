@@ -170,6 +170,49 @@ class TestHealthServerStop:
         finally:
             server.server_close()
 
+    def test_stop_releases_the_listening_socket(self) -> None:
+        """discogsography-c4ag: stop() must call server_close(), not just
+        shutdown() — socketserver.BaseServer.shutdown() only stops the
+        serve_forever() accept loop; it does NOT close the bound listening
+        socket. Only server_close() releases that file descriptor."""
+        health_func = Mock(return_value={"status": "healthy"})
+
+        server = HealthServer(0, health_func)
+        server.start_background()
+
+        server.stop()
+
+        # The socket is closed — fileno() returns -1 once the underlying
+        # socket object has been closed.
+        assert server.socket.fileno() == -1
+
+    def test_stop_calls_server_close_even_when_thread_is_none(self) -> None:
+        """The finally-guard must still release the socket on the
+        skip-the-join path (no thread was ever started)."""
+        health_func = Mock(return_value={"status": "healthy"})
+
+        server = HealthServer(0, health_func)
+        with patch.object(server, "shutdown"):
+            server.stop()
+
+        assert server.socket.fileno() == -1
+
+    def test_stop_calls_server_close_even_when_join_raises(self) -> None:
+        """server_close() must still run (via finally) if shutdown()/join()
+        itself raises — a failure mid-stop must not leak the socket FD."""
+        health_func = Mock(return_value={"status": "healthy"})
+
+        server = HealthServer(0, health_func)
+        server.start_background()
+
+        with (
+            patch.object(server, "shutdown", side_effect=RuntimeError("boom")),
+            pytest.raises(RuntimeError, match="boom"),
+        ):
+            server.stop()
+
+        assert server.socket.fileno() == -1
+
 
 class TestHealthHandlerHTTP:
     """Integration tests for the HTTP request handler."""
