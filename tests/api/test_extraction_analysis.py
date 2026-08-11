@@ -1395,6 +1395,88 @@ class TestClassifyViolationBothPresent:
         assert result["json_value"] == "1990"
 
 
+class TestFindJsonFieldValue:
+    """Regression tests for discogsography-bfcm."""
+
+    def test_finds_top_level_key(self) -> None:
+        import api.routers.extraction_analysis as ea
+
+        assert ea._find_json_field_value({"name": "Rock"}, "name") == "Rock"
+
+    def test_finds_nested_key_under_container(self) -> None:
+        """The pre-normalization JSON shape nests dot-notation leaves under
+        a container key — e.g. {"genres": {"genre": [...]}} for a
+        "genres.genre" rule field — which a top-level-only lookup misses.
+        """
+        import api.routers.extraction_analysis as ea
+
+        parsed = {"genres": {"genre": ["Rock", "Pop"]}}
+        assert ea._find_json_field_value(parsed, "genre") == ["Rock", "Pop"]
+
+    def test_finds_key_nested_under_a_sibling_container(self) -> None:
+        """Mirrors the real Discogs artist shape: <aliases><name>X</name></aliases>
+        unwraps to {"aliases": {"name": [...]}} — "name" nested one level
+        under the "aliases" container, not at the record's top level.
+        """
+        import api.routers.extraction_analysis as ea
+
+        parsed = {"aliases": {"name": ["Alias A", "Alias B"]}}
+        assert ea._find_json_field_value(parsed, "name") == ["Alias A", "Alias B"]
+
+    def test_finds_key_nested_inside_a_list_of_dicts(self) -> None:
+        import api.routers.extraction_analysis as ea
+
+        parsed = {"items": [{"other": 1}, {"name": "Found Me"}]}
+        assert ea._find_json_field_value(parsed, "name") == "Found Me"
+
+    def test_returns_none_when_key_absent_anywhere(self) -> None:
+        import api.routers.extraction_analysis as ea
+
+        assert ea._find_json_field_value({"genres": {"style": ["Punk"]}}, "genre") is None
+
+
+class TestClassifyViolationNestedJsonField:
+    """Regression tests for discogsography-bfcm.
+
+    A rule on a nested dot-notation field (e.g. "genres.genre") must not be
+    falsely classified as parsing_error just because the JSON value lives
+    under a container key that a top-level-only lookup would miss.
+    """
+
+    def test_nested_field_present_in_both_is_source_issue_not_parsing_error(self, tmp_path: Path) -> None:
+        import api.routers.extraction_analysis as ea
+
+        entity_dir = tmp_path / "releases"
+        entity_dir.mkdir(parents=True)
+        (entity_dir / "1.xml").write_text("<release><genres><genre>Rock</genre></genres></release>")
+        # Pre-normalization JSON shape: the parser handled this correctly,
+        # but the value lives under the "genres" container, not top-level.
+        (entity_dir / "1.json").write_text(json.dumps({"genres": {"genre": "Rock"}}))
+
+        violation = {"record_id": "1", "rule": "genre-not-recognized", "severity": "warning", "field": "genres.genre"}
+        result = ea._classify_violation(violation, tmp_path, "releases")
+
+        assert result["classification"] != "parsing_error"
+        assert result["classification"] == "source_issue"
+        assert result["xml_value"] == "Rock"
+        assert result["json_value"] == "Rock"
+
+    def test_nested_field_missing_from_both_is_source_issue(self, tmp_path: Path) -> None:
+        import api.routers.extraction_analysis as ea
+
+        entity_dir = tmp_path / "releases"
+        entity_dir.mkdir(parents=True)
+        (entity_dir / "2.xml").write_text("<release><genres></genres></release>")
+        (entity_dir / "2.json").write_text(json.dumps({"genres": {}}))
+
+        violation = {"record_id": "2", "rule": "genre-not-recognized", "severity": "warning", "field": "genres.genre"}
+        result = ea._classify_violation(violation, tmp_path, "releases")
+
+        assert result["classification"] == "source_issue"
+        assert result["xml_value"] is None
+        assert result["json_value"] is None
+
+
 class TestCompareVersionsEdgeCases:
     def test_removed_rule_in_version_b(self, test_client: TestClient, tmp_path: Path) -> None:
         """Rule present in A but absent in B is counted as improved/removed_rules (lines 540-542)."""
