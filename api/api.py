@@ -715,7 +715,21 @@ def main() -> None:  # pragma: no cover
     print("╚═╝  ╚═╝╚═╝     ╚═╝")
     print()
     # fmt: on
-    uvicorn.run(app, host="0.0.0.0", port=API_PORT, log_level=os.getenv("LOG_LEVEL", "INFO").lower())  # noqa: S104  # nosec B104
+    uvicorn.run(
+        app,
+        host="0.0.0.0",  # noqa: S104  # nosec B104
+        port=API_PORT,
+        log_level=os.getenv("LOG_LEVEL", "INFO").lower(),
+        # In production/dev, all real user traffic transits the explore reverse
+        # proxy (and internal callers like dashboard's admin proxy) over the
+        # discogsography docker network. Trust X-Forwarded-For/-Proto only from
+        # that internal subnet so slowapi's IP-keyed rate limits (api/limiter.py)
+        # resolve the true client instead of collapsing every request behind the
+        # proxy into a single global bucket — see discogsography-quq5. The
+        # subnet must match docker-compose.yml's `networks.discogsography.ipam`.
+        proxy_headers=True,
+        forwarded_allow_ips=os.getenv("FORWARDED_ALLOW_IPS", "172.20.0.0/16"),
+    )
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 import httpx as httpx_mod
 import pytest
 
-from dashboard.admin_proxy import _validate_path_segment, _validated_json_body, configure, router
+from dashboard.admin_proxy import _auth_headers, _validate_path_segment, _validated_json_body, configure, router
 
 
 def _mock_httpx(method: str = "post", status: int = 200, content: bytes = b"{}") -> tuple[AsyncMock, AsyncMock]:
@@ -96,6 +96,50 @@ class TestValidatePathSegment:
 
     def test_rejects_single_dot_segment(self) -> None:
         assert _validate_path_segment(".") is False
+
+
+class TestAuthHeaders:
+    """discogsography-quq5: _auth_headers must set trustworthy X-Forwarded-For/-Proto
+    from what this service observed, never copy a client-supplied value — otherwise
+    an attacker could spoof their apparent IP to the API and defeat the admin
+    login rate limiter (api/routers/admin.py 5/minute)."""
+
+    def test_sets_x_forwarded_for_from_the_real_peer(self) -> None:
+        from starlette.requests import Request
+
+        scope = {
+            "type": "http",
+            "headers": [(b"x-forwarded-for", b"1.2.3.4"), (b"authorization", b"Bearer tok")],
+            "client": ("10.0.0.9", 12345),
+            "scheme": "http",
+            "method": "GET",
+            "path": "/",
+            "query_string": b"",
+        }
+        request = Request(scope)
+        headers = _auth_headers(request)
+
+        assert headers["X-Forwarded-For"] == "10.0.0.9"
+        assert headers["X-Forwarded-For"] != "1.2.3.4"
+        assert headers["Authorization"] == "Bearer tok"
+
+    def test_sets_x_forwarded_proto(self) -> None:
+        from starlette.requests import Request
+
+        scope = {
+            "type": "http",
+            "headers": [],
+            "client": ("10.0.0.9", 12345),
+            "scheme": "https",
+            "method": "GET",
+            "path": "/",
+            "query_string": b"",
+            "server": ("testserver", 443),
+        }
+        request = Request(scope)
+        headers = _auth_headers(request)
+
+        assert headers["X-Forwarded-Proto"] == "https"
 
 
 # ---------------------------------------------------------------------------
