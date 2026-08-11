@@ -1499,7 +1499,8 @@ async def process_release(tx: Any, record: dict[str, Any]) -> bool:
                 "UNWIND $credits AS credit "
                 "MATCH (r:Release {id: credit.release_id}) "
                 "MERGE (p:Person {name: credit.name}) "
-                "MERGE (p)-[:CREDITED_ON {role: credit.role, category: credit.category}]->(r)",
+                "MERGE (p)-[c:CREDITED_ON {role: credit.role}]->(r) "
+                "SET c.category = credit.category",
                 credits=credit_data,
             )
             # Create SAME_AS relationships for credited people who are also performing artists

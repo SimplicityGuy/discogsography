@@ -1652,6 +1652,57 @@ class TestBatchTransactionLogic:
         same_as_queries = [q for q in executed_queries if "SAME_AS" in q]
         assert len(same_as_queries) == 0
 
+    @pytest.mark.asyncio
+    async def test_credited_on_merge_key_excludes_derived_category(self) -> None:
+        """discogsography-9k6i: CREDITED_ON must MERGE on {role} only and SET category,
+        so a later categorize_role() taxonomy change updates the existing edge in place
+        instead of forking a parallel duplicate edge."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        executed_queries: list[str] = []
+
+        async def track_query(query: str, **_params: Any) -> None:
+            executed_queries.append(query)
+
+        mock_tx = AsyncMock()
+        mock_tx.run.side_effect = track_query
+
+        async def execute_write_mock(tx_func: Any) -> None:
+            await tx_func(mock_tx)
+
+        mock_session.execute_write = AsyncMock(side_effect=execute_write_mock)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage(
+                "releases",
+                {
+                    "id": "1",
+                    "title": "Release With Credits",
+                    "year": 1995,
+                    "sha256": "hash_credits",
+                    "extraartists": [{"name": "Bob Ludwig", "role": "Mastered By"}],
+                },
+                AsyncMock(),
+                AsyncMock(),
+            )
+        ]
+
+        await processor._process_releases_batch(messages)
+
+        credited_queries = [q for q in executed_queries if "CREDITED_ON" in q]
+        assert len(credited_queries) == 1
+        query = credited_queries[0]
+        # The MERGE match key must be {role} only — category must not appear inside it.
+        assert "MERGE (p)-[c:CREDITED_ON {role: credit.role}]->(r)" in query
+        assert "category" not in query.split("MERGE (p)-[c:CREDITED_ON")[1].split("]->(r)")[0]
+        # category is applied as a SET after the MERGE so re-ingest updates in place.
+        assert "SET c.category = credit.category" in query
+
 
 class TestBackoffPeriodSkip:
     """Test that _flush_queue returns early when in backoff period."""

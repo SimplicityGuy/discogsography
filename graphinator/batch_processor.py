@@ -1200,7 +1200,8 @@ class Neo4jBatchProcessor:
                         UNWIND $credits AS credit
                         MATCH (r:Release {id: credit.release_id})
                         MERGE (p:Person {name: credit.name})
-                        MERGE (p)-[:CREDITED_ON {role: credit.role, category: credit.category}]->(r)
+                        MERGE (p)-[c:CREDITED_ON {role: credit.role}]->(r)
+                        SET c.category = credit.category
                         """,
                         credits=credit_data,
                     )
