@@ -150,12 +150,18 @@ class TestOnDataMessage:
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", True)
     async def test_reject_on_shutdown(self) -> None:
-        """Test message rejection during shutdown."""
+        """During shutdown a message is left UNSETTLED, not nacked.
+
+        discogsography-lnn4: a still-subscribed consumer would be redelivered a
+        nacked message within milliseconds, burning one quorum x-delivery-count
+        per cycle until x-delivery-limit=20 dead-letters a perfectly valid record.
+        Leaving it unsettled defers redelivery to connection close.
+        """
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
 
         await on_data_message(mock_message, "artists")
 
-        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.nack.assert_not_called()
         mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
@@ -960,7 +966,7 @@ class TestOnDataMessageExtended:
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", True)
     async def test_rejects_message_when_shutdown_requested(self) -> None:
-        """Test that messages are rejected when shutdown is requested."""
+        """Messages received during shutdown are left unsettled (discogsography-lnn4)."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps({"id": "1", "name": "Test"}).encode()
         mock_message.routing_key = "artists"
@@ -968,8 +974,9 @@ class TestOnDataMessageExtended:
         with patch("tableinator.tableinator.logger"):
             await on_data_message(mock_message, "artists")
 
-        # Should nack with requeue=True
-        mock_message.nack.assert_called_once_with(requeue=True)
+        # Neither settled nor processed — the connection close requeues it once.
+        mock_message.nack.assert_not_called()
+        mock_message.ack.assert_not_called()
 
 
 class TestPeriodicQueueChecker:

@@ -156,12 +156,19 @@ class TestOnArtistMessage:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", True)
     async def test_reject_on_shutdown(self) -> None:
-        """Test message rejection during shutdown."""
+        """During shutdown a message is left UNSETTLED, not nacked.
+
+        discogsography-lnn4: nack(requeue=True) against a still-subscribed
+        consumer is redelivered in milliseconds and burns a quorum
+        x-delivery-count per cycle, dead-lettering valid records at
+        x-delivery-limit=20. Leaving it unacked defers redelivery to the
+        connection close, which costs exactly one delivery-count.
+        """
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
 
         await on_artist_message(mock_message)
 
-        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.nack.assert_not_called()
         mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
@@ -338,12 +345,12 @@ class TestOnLabelMessage:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", True)
     async def test_reject_on_shutdown(self) -> None:
-        """Test label message rejection during shutdown."""
+        """discogsography-lnn4: shutdown leaves the message unsettled, not nacked."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
 
         await on_label_message(mock_message)
 
-        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.nack.assert_not_called()
         mock_message.ack.assert_not_called()
 
 
