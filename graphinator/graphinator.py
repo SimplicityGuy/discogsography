@@ -1136,12 +1136,16 @@ async def cleanup_all_stub_nodes() -> bool:
 
 
 async def cleanup_stub_nodes(data_type: str) -> bool:
-    """Delete stub nodes that have no sha256 property.
+    """Delete ISOLATED stub nodes that have no sha256 property.
 
     During extraction, MERGE operations in relationship queries create
     skeleton nodes for cross-referenced entities (e.g., a release referencing
     an artist that hasn't been processed yet). Primary records always set
     sha256, so nodes without it are stubs that were never filled.
+
+    A stub that still has relationships is NOT collected: its edges belong to
+    fully-imported records and deleting them is unrecoverable under the
+    content-hash write-skip (discogsography-64aw).
 
     Returns:
         True if cleanup succeeded (or there is nothing to do), False if the
@@ -1176,10 +1180,21 @@ async def cleanup_stub_nodes(data_type: str) -> bool:
     # query: under transaction-memory pressure _run_maintenance_query re-runs
     # this with progressively smaller chunks. IN TRANSACTIONS commits per chunk,
     # so a retry only has to delete what the failed attempt did not.
+    # Only ISOLATED stubs are deleted. A stub that still carries relationships is a
+    # genuine dangling reference: a fully-imported release/artist MERGEd it plus a
+    # BY/ON/DERIVED_FROM/MEMBER_OF edge because the referenced entity was absent from
+    # this dump. DETACH DELETE destroyed those edges along with the stub — and the
+    # damage was permanent, because sha256 is purely content-derived: when the entity
+    # appears in a later dump the referencing record is byte-identical, the hash-skip
+    # in process_release/process_artist (and both batch processors) returns before the
+    # relationship blocks, and the edge is never rebuilt. Keeping the stub preserves
+    # both the edge and the id, and a later dump upgrades it in place — the fill-in
+    # path MERGEs on id, so the stub simply gains its properties and sha256
+    # (discogsography-64aw). Truly orphaned stubs still get collected here.
     def _build_cleanup_cypher(batch_size: int | None) -> str:
         return f"""
     MATCH (n:{label})
-    WHERE n.sha256 IS NULL
+    WHERE n.sha256 IS NULL AND NOT (n)--()
     CALL {{
         WITH n
         DETACH DELETE n

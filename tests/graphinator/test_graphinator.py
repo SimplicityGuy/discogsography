@@ -4556,6 +4556,30 @@ class TestStubCleanupBatchAndOrdering:
         assert "n.sha256 IS NULL" in cypher
 
     @pytest.mark.asyncio
+    async def test_cleanup_only_deletes_stubs_with_no_relationships(self) -> None:
+        """discogsography-64aw: a stub that still has relationships must survive.
+
+        Its edges (BY/ON/DERIVED_FROM/MEMBER_OF) were written by fully-imported records
+        that referenced an entity missing from this dump. DETACH DELETE destroyed those
+        edges with the stub, and the loss was permanent: sha256 is purely
+        content-derived, so when the entity appears in a later dump the referencing
+        record is byte-identical, the hash-skip returns before the relationship blocks,
+        and the edge is never rebuilt.
+        """
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._make_graph_mock()
+        with patch.object(g, "graph", graph_mock):
+            ok = await g.cleanup_stub_nodes("artists")
+
+        assert ok is True
+        cypher = run_calls[0]
+        assert "NOT (n)--()" in cypher, "connected stubs must be excluded from the sweep"
+        # ...while genuinely orphaned stubs are still collected.
+        assert "n.sha256 IS NULL" in cypher
+        assert "DETACH DELETE" in cypher
+
+    @pytest.mark.asyncio
     async def test_cleanup_failure_returns_false_for_retry(self) -> None:
         """cu2.68: a failed delete must return False so the caller nacks/retries."""
         import graphinator.graphinator as g
