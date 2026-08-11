@@ -586,70 +586,94 @@ async def twofa_verify(request: Request, body: TwoFactorVerifyModel) -> JSONResp
     user_id = payload["sub"]
     email = payload.get("email", "")
 
-    # Fetch user TOTP data
-    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await execute_sql(
-            cur,
-            "SELECT totp_secret, totp_failed_attempts, totp_locked_until FROM users WHERE id = %s::uuid",
-            (user_id,),
-        )
-        user = await cur.fetchone()
+    # The lockout GATE and the failed-attempt INCREMENT must be atomic with
+    # each other — not just internally consistent. Previously the lockout
+    # check read a plain SELECT (no lock held past that statement, per this
+    # repo's autocommit=True pool contract), so N concurrent requests could
+    # all read "not locked" before any of them committed the lock, each
+    # getting a free TOTP guess (discogsography-vjod). `SELECT ... FOR UPDATE`
+    # inside an explicit transaction takes a row lock that concurrent verify
+    # attempts for the SAME user serialize on: the second request's SELECT
+    # blocks until the first request's transaction (lock check + increment)
+    # commits, so it always observes the POST-increment state.
+    configured = False
+    locked = False
+    encryption_missing = False
+    code_ok = False
+    failed_attempts: int | None = None
+    async with _pool.connection() as conn:
+        await conn.set_autocommit(False)
+        async with conn.transaction(), conn.cursor(row_factory=dict_row) as cur:
+            await execute_sql(
+                cur,
+                "SELECT totp_secret, totp_failed_attempts, totp_locked_until FROM users WHERE id = %s::uuid FOR UPDATE",
+                (user_id,),
+            )
+            user = await cur.fetchone()
 
-    if not user or not user.get("totp_secret"):
+            if user and user.get("totp_secret"):
+                configured = True
+                locked_until = user.get("totp_locked_until")
+                if locked_until and locked_until.tzinfo is None:
+                    locked_until = locked_until.replace(tzinfo=UTC)
+                locked = bool(locked_until and locked_until > datetime.now(UTC))
+
+            totp_key = get_totp_encryption_key(_config.encryption_master_key) if configured and not locked else None
+            if configured and not locked and not totp_key:
+                encryption_missing = True
+
+            if totp_key:
+                secret = decrypt_totp_secret(user["totp_secret"], totp_key)
+                # NOTE: the challenge is intentionally NOT consumed until AFTER a
+                # successful verification (see success branch below). Consuming it
+                # here would burn the challenge on a single mistyped digit, forcing
+                # a full re-login for every typo.
+                code_ok = verify_totp_code(secret, body.code)
+                if not code_ok:
+                    # Derive the lock from the freshly-computed value in the SAME
+                    # statement, still holding the row lock taken above. When a
+                    # previous lock window has already elapsed (totp_locked_until
+                    # is set but in the past — the gate above let us through), the
+                    # counter resets so each post-expiry window starts fresh
+                    # instead of instantly re-locking at 5+1.
+                    lock_sql = """
+                        UPDATE users
+                        SET totp_failed_attempts = CASE
+                                WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW() THEN 1
+                                ELSE COALESCE(totp_failed_attempts, 0) + 1
+                            END,
+                            totp_locked_until = CASE
+                                WHEN (CASE
+                                        WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW() THEN 1
+                                        ELSE COALESCE(totp_failed_attempts, 0) + 1
+                                      END) >= 5
+                                    THEN NOW() + INTERVAL '15 minutes'
+                                WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW()
+                                    THEN NULL
+                                ELSE totp_locked_until
+                            END,
+                            updated_at = NOW()
+                        WHERE id = %s::uuid
+                        RETURNING totp_failed_attempts
+                    """
+                    await execute_sql(cur, lock_sql, (user_id,))
+                    updated = await cur.fetchone()
+                    failed_attempts = updated["totp_failed_attempts"] if updated else None
+        # Transaction commits here (releasing the row lock) before we raise —
+        # a locked-out or failed attempt must still be durably recorded even
+        # though the HTTP response is an error.
+
+    if not configured:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="2FA not configured")
 
-    # Check lockout BEFORE consuming the challenge — locked-out users keep their token
-    locked_until = user.get("totp_locked_until")
-    if locked_until and locked_until.tzinfo is None:
-        locked_until = locked_until.replace(tzinfo=UTC)
-    if locked_until and locked_until > datetime.now(UTC):
+    if locked:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Account temporarily locked due to failed 2FA attempts")
 
-    totp_key = get_totp_encryption_key(_config.encryption_master_key)
-    if not totp_key:
+    if encryption_missing:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Encryption not configured")
 
-    secret = decrypt_totp_secret(user["totp_secret"], totp_key)
-
-    # NOTE: the challenge is intentionally NOT consumed until AFTER a successful
-    # verification (see success branch below). Consuming it here would burn the
-    # challenge on a single mistyped digit, forcing a full re-login for every typo.
-    if not verify_totp_code(secret, body.code):
-        # Increment the failed-attempt counter ATOMICALLY in SQL and derive the
-        # lock from the freshly-computed value. Parallel wrong-code submissions
-        # must each advance the counter — a Python read-then-blind-write lets K
-        # concurrent requests all write value+1, defeating the 5-strike lock.
-        #
-        # When a previous lock window has already elapsed (totp_locked_until is
-        # set but in the past — the gate above let us through), the counter is
-        # reset so each post-expiry window starts fresh instead of instantly
-        # re-locking at 5+1.
-        lock_sql = """
-            UPDATE users
-            SET totp_failed_attempts = CASE
-                    WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW() THEN 1
-                    ELSE COALESCE(totp_failed_attempts, 0) + 1
-                END,
-                totp_locked_until = CASE
-                    WHEN (CASE
-                            WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW() THEN 1
-                            ELSE COALESCE(totp_failed_attempts, 0) + 1
-                          END) >= 5
-                        THEN NOW() + INTERVAL '15 minutes'
-                    WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW()
-                        THEN NULL
-                    ELSE totp_locked_until
-                END,
-                updated_at = NOW()
-            WHERE id = %s::uuid
-            RETURNING totp_failed_attempts
-        """
-        async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-            await execute_sql(cur, lock_sql, (user_id,))
-            updated = await cur.fetchone()
-
-        failed = updated["totp_failed_attempts"] if updated else None
-        logger.warning("⚠️ Failed 2FA attempt", user_id=user_id, attempts=failed)
+    if not code_ok:
+        logger.warning("⚠️ Failed 2FA attempt", user_id=user_id, attempts=failed_attempts)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
 
     # Success — consume the challenge NOW (only after a correct code) to prevent

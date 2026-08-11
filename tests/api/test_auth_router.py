@@ -1426,6 +1426,40 @@ class TestTwoFactorStateMachineRegressions:
         assert "COALESCE(totp_failed_attempts, 0) + 1" in executed
         assert "RETURNING totp_failed_attempts" in executed
 
+    def test_verify_lockout_gate_is_atomic_with_increment(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+        mock_conn: AsyncMock,
+    ) -> None:
+        """discogsography-vjod: the lockout SELECT must take a row lock (FOR
+        UPDATE) inside an explicit transaction, so concurrent verify attempts
+        for the same user serialize instead of all reading a stale
+        pre-increment snapshot."""
+        _secret, encrypted_secret = _make_encrypted_totp_secret()
+        challenge_token = _make_challenge_token()
+
+        mock_redis.get = _challenge_only_get()
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
+        mock_cur.fetchone = AsyncMock(return_value={"totp_secret": encrypted_secret, "totp_failed_attempts": 0, "totp_locked_until": None})
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/verify",
+                json={"challenge_token": challenge_token, "code": "000000"},
+            )
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 401
+        executed = " ".join(self._executed_sql(mock_cur))
+        assert "FOR UPDATE" in executed
+        mock_conn.set_autocommit.assert_any_call(False)
+        mock_conn.transaction.assert_called()
+
     def test_verify_failure_resets_counter_after_lock_expiry(
         self,
         test_client: TestClient,
