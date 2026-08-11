@@ -20,28 +20,31 @@ _APP_USER_ID = "99999999-9999-9999-9999-999999999999"
 _APP_TOKEN_ID = "11111111-1111-1111-1111-111111111111"
 
 
-def _make_active_row(scopes: list[str] | None = None, token_id: str = _APP_TOKEN_ID) -> dict[str, Any]:
+def _make_active_row(scopes: list[str] | None = None, token_id: str = _APP_TOKEN_ID, token_hash: str | None = None) -> dict[str, Any]:
     """A typical active `app_tokens` row as returned by `_lookup_active_token`."""
     return {
         "id": UUID(token_id),
         "user_id": UUID(_APP_USER_ID),
         "name": "GRUVAX kiosk",
         "scope": scopes if scopes is not None else ["collection:read"],
+        "token_hash": token_hash,
     }
 
 
 @pytest.fixture
 def app_token_headers(mock_cur: AsyncMock) -> dict[str, str]:
     """Authorization header whose lookup yields a valid active app token row."""
-    mock_cur.fetchone = AsyncMock(return_value=_make_active_row())
-    return {"Authorization": f"Bearer {generate_plaintext_token()}"}
+    plaintext = generate_plaintext_token()
+    mock_cur.fetchone = AsyncMock(return_value=_make_active_row(token_hash=hash_token(plaintext)))
+    return {"Authorization": f"Bearer {plaintext}"}
 
 
 @pytest.fixture
 def app_token_headers_wrong_scope(mock_cur: AsyncMock) -> dict[str, str]:
     """Active token but lacks `collection:read`."""
-    mock_cur.fetchone = AsyncMock(return_value=_make_active_row(scopes=["other:scope"]))
-    return {"Authorization": f"Bearer {generate_plaintext_token()}"}
+    plaintext = generate_plaintext_token()
+    mock_cur.fetchone = AsyncMock(return_value=_make_active_row(scopes=["other:scope"], token_hash=hash_token(plaintext)))
+    return {"Authorization": f"Bearer {plaintext}"}
 
 
 @pytest.fixture
@@ -211,8 +214,9 @@ class TestRateLimits:
         monkeypatch.setattr(user_router, "get_user_collection", AsyncMock(return_value=([], 0)))
 
         # Token A → drive to 429
-        mock_cur.fetchone = AsyncMock(return_value=_make_active_row())
-        headers_a = {"Authorization": f"Bearer {generate_plaintext_token()}"}
+        plaintext_a = generate_plaintext_token()
+        mock_cur.fetchone = AsyncMock(return_value=_make_active_row(token_hash=hash_token(plaintext_a)))
+        headers_a = {"Authorization": f"Bearer {plaintext_a}"}
         seen_429 = False
         for _ in range(65):
             r = test_client.get("/api/user/collection", headers=headers_a)
@@ -222,8 +226,14 @@ class TestRateLimits:
         assert seen_429, "Test setup failed: did not reach 429 on token A"
 
         # Token B → brand-new plaintext → different hash → fresh bucket
-        mock_cur.fetchone = AsyncMock(return_value=_make_active_row(token_id="22222222-2222-2222-2222-222222222222"))  # noqa: S106
-        headers_b = {"Authorization": f"Bearer {generate_plaintext_token()}"}
+        plaintext_b = generate_plaintext_token()
+        mock_cur.fetchone = AsyncMock(
+            return_value=_make_active_row(
+                token_id="22222222-2222-2222-2222-222222222222",  # noqa: S106
+                token_hash=hash_token(plaintext_b),
+            )
+        )
+        headers_b = {"Authorization": f"Bearer {plaintext_b}"}
         r_b = test_client.get("/api/user/collection", headers=headers_b)
         assert r_b.status_code == 200
 

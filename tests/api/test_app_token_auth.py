@@ -30,13 +30,34 @@ from api.app_tokens import (
 
 
 def _make_pool_with_row(row: dict[str, Any] | None) -> MagicMock:
-    """Build a mock pool whose cursor.fetchone() returns `row`."""
+    """Build a mock pool whose cursor.fetchone() returns `row`.
+
+    If `row` doesn't set its own "token_hash", it's auto-filled with whatever
+    token_hash the query was actually invoked with, so the defense-in-depth
+    `hmac.compare_digest(row["token_hash"], token_hash)` check
+    (discogsography-osoc) naturally passes for tests that aren't specifically
+    exercising a hash mismatch.
+    """
     pool = MagicMock()
     cur = AsyncMock()
     cur.__aenter__ = AsyncMock(return_value=cur)
     cur.__aexit__ = AsyncMock(return_value=False)
-    cur.execute = AsyncMock()
-    cur.fetchone = AsyncMock(return_value=row)
+    captured_params: dict[str, Any] = {}
+
+    async def _execute(_query: str, params: tuple[Any, ...] = ()) -> None:
+        if params:
+            captured_params["token_hash"] = params[0]
+
+    cur.execute = AsyncMock(side_effect=_execute)
+
+    async def _fetchone() -> dict[str, Any] | None:
+        if row is None:
+            return None
+        if "token_hash" not in row and "token_hash" in captured_params:
+            return {**row, "token_hash": captured_params["token_hash"]}
+        return row
+
+    cur.fetchone = AsyncMock(side_effect=_fetchone)
     cur.fetchall = AsyncMock(return_value=[])
     cur.rowcount = 1 if row is not None else 0
     conn = AsyncMock()
@@ -100,6 +121,37 @@ class TestHashToken:
 
     def test_different_inputs_different_hashes(self) -> None:
         assert hash_token("dscg_a") != hash_token("dscg_b")
+
+
+class TestLookupActiveTokenQuery:
+    """discogsography-ci4a: a deactivated user's app tokens must stop authenticating.
+
+    _lookup_active_token now joins `users` and filters `is_active = TRUE`
+    instead of a bare token_hash/revoked_at lookup on app_tokens alone.
+    """
+
+    @pytest.mark.asyncio
+    async def test_query_joins_users_and_filters_is_active(self) -> None:
+        pool = _make_pool_with_row(None)
+        configure(pool)
+        await app_tokens._lookup_active_token("deadbeef")
+
+        query = pool._cur.execute.call_args.args[0]
+        assert "JOIN users" in query
+        assert "is_active = TRUE" in query
+        assert "revoked_at IS NULL" in query
+
+    @pytest.mark.asyncio
+    async def test_selects_token_hash_for_defense_in_depth(self) -> None:
+        """The row must project its own token_hash so callers can do a real
+        compare_digest check instead of comparing a value to itself
+        (discogsography-osoc)."""
+        pool = _make_pool_with_row(None)
+        configure(pool)
+        await app_tokens._lookup_active_token("deadbeef")
+
+        query = pool._cur.execute.call_args.args[0]
+        assert "token_hash" in query
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -170,6 +222,26 @@ class TestRequireAppTokenFailureModes:
         This test asserts the contract — the partial-index predicate is verified in P2 schema tests.
         """
         configure(_make_pool_with_row(None))  # None simulates "WHERE revoked_at IS NULL" filtering
+        dep = require_app_token(["collection:read"])
+        with pytest.raises(HTTPException) as exc:
+            await dep(credentials=_make_credentials(generate_plaintext_token()))  # type: ignore[arg-type]
+        assert exc.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_defense_in_depth_rejects_row_hash_mismatch(self) -> None:
+        """discogsography-osoc: the compare_digest guard must be a REAL check
+        against the row's own persisted token_hash, not a self-comparison of
+        hash_token(plaintext) against itself. Forcing the row's token_hash to
+        diverge from the lookup hash must make the guard fire (401) — the
+        pre-fix code could never reach this branch."""
+        row = {
+            "id": UUID("00000000-0000-0000-0000-000000000001"),
+            "user_id": UUID("00000000-0000-0000-0000-000000000002"),
+            "name": "GRUVAX kiosk",
+            "scope": ["collection:read"],
+            "token_hash": "0" * 64,  # deliberately wrong — never matches the real lookup hash
+        }
+        configure(_make_pool_with_row(row))
         dep = require_app_token(["collection:read"])
         with pytest.raises(HTTPException) as exc:
             await dep(credentials=_make_credentials(generate_plaintext_token()))  # type: ignore[arg-type]
