@@ -913,6 +913,25 @@ EXPLORE_DISPATCH: dict[str, Any] = {
     "style": explore_style,
 }
 
+_VALID_PATH_TYPES = frozenset(EXPLORE_DISPATCH.keys())
+
+
+def node_label_to_type(labels: list[str]) -> str:
+    """Convert a Neo4j label list to a lowercase entity type string.
+
+    Single source of truth for normalizing raw Neo4j labels (e.g. "Artist",
+    "Release") into the lowercase entity-type vocabulary the rest of the API
+    uses. Both api/routers/explore.py's /api/path endpoint and the NLQ
+    find_path tool (api/nlq/tools.py) build entities from the same
+    find_shortest_path node shape and must not diverge (discogsography-apt8).
+    """
+    for label in labels:
+        lower = label.lower()
+        if lower in _VALID_PATH_TYPES:
+            return lower
+    return labels[0].lower() if labels else "unknown"
+
+
 AUTOCOMPLETE_DISPATCH: dict[str, Any] = {
     "artist": autocomplete_artist,
     "genre": autocomplete_genre,
