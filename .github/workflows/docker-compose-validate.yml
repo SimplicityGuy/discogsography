@@ -63,74 +63,87 @@ jobs:
 
       - name: 🔒 Validate service dependencies
         run: |
-          # Check that services have correct dependencies
-          deps=$(docker-compose config | yq eval '.services.dashboard.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "api neo4j postgres rabbitmq redis schema-init" ]; then
-            echo "❌ Dashboard should depend on api, neo4j, postgres, rabbitmq, redis, and schema-init"
-            exit 1
-          fi
+          # Check that services have correct dependencies. Each assertion checks BOTH
+          # the set of dependency names AND the condition: each is gated on — a
+          # keys-only check would stay green if a PR silently downgraded
+          # service_completed_successfully (schema-init must finish before consumers
+          # start) or service_healthy (DBs/broker must be ready) to service_started,
+          # defeating the startup-ordering guarantee those conditions exist to enforce
+          # (discogsography-pjd5).
+          check_deps() {
+            local service="$1" expected_keys="$2" expected_conditions="$3" description="$4"
+            local config; config=$(docker-compose config)
 
-          deps=$(docker-compose config | yq eval '.services.extractor-discogs.depends_on | keys | .[]' -)
-          if [ "$deps" != "rabbitmq" ]; then
-            echo "❌ Extractor-discogs should only depend on rabbitmq"
-            exit 1
-          fi
+            local keys; keys=$(echo "$config" | yq eval ".services.$service.depends_on | keys | sort | join(\" \")" -)
+            if [ "$keys" != "$expected_keys" ]; then
+              echo "❌ $description (dependency set): expected [$expected_keys], got [$keys]"
+              exit 1
+            fi
 
-          deps=$(docker-compose config | yq eval '.services.extractor-musicbrainz.depends_on | keys | .[]' -)
-          if [ "$deps" != "rabbitmq" ]; then
-            echo "❌ Extractor-musicbrainz should only depend on rabbitmq"
-            exit 1
-          fi
+            local conditions
+            conditions=$(echo "$config" | yq eval ".services.$service.depends_on | to_entries | sort_by(.key) | map(.key + \"=\" + .value.condition) | join(\" \")" -)
+            if [ "$conditions" != "$expected_conditions" ]; then
+              echo "❌ $description (condition): expected [$expected_conditions], got [$conditions]"
+              exit 1
+            fi
+          }
 
-          deps=$(docker-compose config | yq eval '.services.brainzgraphinator.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j rabbitmq schema-init" ]; then
-            echo "❌ Brainzgraphinator should depend on neo4j, rabbitmq, and schema-init"
-            exit 1
-          fi
+          check_deps dashboard \
+            "api neo4j postgres rabbitmq redis schema-init" \
+            "api=service_healthy neo4j=service_healthy postgres=service_healthy rabbitmq=service_healthy redis=service_healthy schema-init=service_completed_successfully" \
+            "Dashboard should depend on api, neo4j, postgres, rabbitmq, redis, and schema-init"
 
-          deps=$(docker-compose config | yq eval '.services.graphinator.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j rabbitmq schema-init" ]; then
-            echo "❌ Graphinator should depend on neo4j, rabbitmq, and schema-init"
-            exit 1
-          fi
+          check_deps extractor-discogs \
+            "rabbitmq" \
+            "rabbitmq=service_healthy" \
+            "Extractor-discogs should only depend on rabbitmq"
 
-          deps=$(docker-compose config | yq eval '.services.explore.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "api schema-init" ]; then
-            echo "❌ Explore should depend on api and schema-init"
-            exit 1
-          fi
+          check_deps extractor-musicbrainz \
+            "rabbitmq" \
+            "rabbitmq=service_healthy" \
+            "Extractor-musicbrainz should only depend on rabbitmq"
 
-          deps=$(docker-compose config | yq eval '.services.tableinator.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "postgres rabbitmq schema-init" ]; then
-            echo "❌ Tableinator should depend on postgres, rabbitmq, and schema-init"
-            exit 1
-          fi
+          check_deps brainzgraphinator \
+            "neo4j rabbitmq schema-init" \
+            "neo4j=service_healthy rabbitmq=service_healthy schema-init=service_completed_successfully" \
+            "Brainzgraphinator should depend on neo4j, rabbitmq, and schema-init"
 
-          deps=$(docker-compose config | yq eval '.services.brainztableinator.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "postgres rabbitmq schema-init" ]; then
-            echo "❌ Brainztableinator should depend on postgres, rabbitmq, and schema-init"
-            exit 1
-          fi
+          check_deps graphinator \
+            "neo4j rabbitmq schema-init" \
+            "neo4j=service_healthy rabbitmq=service_healthy schema-init=service_completed_successfully" \
+            "Graphinator should depend on neo4j, rabbitmq, and schema-init"
 
-          deps=$(docker-compose config | yq eval '.services.schema-init.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j postgres" ]; then
-            echo "❌ Schema-init should depend on neo4j and postgres"
-            exit 1
-          fi
+          check_deps explore \
+            "api schema-init" \
+            "api=service_healthy schema-init=service_completed_successfully" \
+            "Explore should depend on api and schema-init"
 
-          deps=$(docker-compose config | yq eval '.services.insights.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "api postgres redis schema-init" ]; then
-            echo "❌ Insights should depend on api, postgres, redis, and schema-init"
-            exit 1
-          fi
+          check_deps tableinator \
+            "postgres rabbitmq schema-init" \
+            "postgres=service_healthy rabbitmq=service_healthy schema-init=service_completed_successfully" \
+            "Tableinator should depend on postgres, rabbitmq, and schema-init"
 
-          deps=$(docker-compose config | yq eval '.services.api.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j postgres redis schema-init" ]; then
-            echo "❌ API should depend on neo4j, postgres, redis, and schema-init"
-            exit 1
-          fi
+          check_deps brainztableinator \
+            "postgres rabbitmq schema-init" \
+            "postgres=service_healthy rabbitmq=service_healthy schema-init=service_completed_successfully" \
+            "Brainztableinator should depend on postgres, rabbitmq, and schema-init"
 
-          echo "✅ Service dependencies are correct"
+          check_deps schema-init \
+            "neo4j postgres" \
+            "neo4j=service_healthy postgres=service_healthy" \
+            "Schema-init should depend on neo4j and postgres"
+
+          check_deps insights \
+            "api postgres redis schema-init" \
+            "api=service_healthy postgres=service_healthy redis=service_healthy schema-init=service_completed_successfully" \
+            "Insights should depend on api, postgres, redis, and schema-init"
+
+          check_deps api \
+            "neo4j postgres redis schema-init" \
+            "neo4j=service_healthy postgres=service_healthy redis=service_healthy schema-init=service_completed_successfully" \
+            "API should depend on neo4j, postgres, redis, and schema-init"
+
+          echo "✅ Service dependencies (and their startup-ordering conditions) are correct"
 
       - name: 🛡️ Check for security best practices
         run: |

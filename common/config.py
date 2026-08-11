@@ -87,6 +87,23 @@ def _coerce_port(value: str | None, default_port: int) -> int:
         return default_port
 
 
+# Single boolean-parsing vocabulary for the whole module (matches the historical
+# CACHE_WARMING_ENABLED convention) so every "enable this feature" flag agrees on
+# what counts as truthy/falsey.
+_TRUTHY_TOKENS = ("true", "1", "yes")
+_FALSEY_TOKENS = ("false", "0", "no")
+
+
+def _is_truthy(value: str | None) -> bool:
+    """Return True when value is an explicit truthy token (permissive enable-flag parsing)."""
+    return (value or "").strip().lower() in _TRUTHY_TOKENS
+
+
+def _is_falsey(value: str | None) -> bool:
+    """Return True when value is an explicit falsey token (default-secure disable-flag parsing)."""
+    return (value or "").strip().lower() in _FALSEY_TOKENS
+
+
 def parse_postgres_host_port(value: str | None, default_port: int = 5432) -> tuple[str, int]:
     """Split a POSTGRES_HOST value into a (host, port) pair.
 
@@ -198,12 +215,19 @@ def neo4j_security_kwargs() -> dict[str, Any]:
     - enabled, verify (default)   -> encrypted=True + TrustSystemCAs() (verify cert vs system CAs)
     - enabled, verify disabled    -> encrypted=True + TrustAll() (encrypted, identity unverified)
 
-    Only a case-insensitive "true" enables each flag (project boolean convention).
+    NEO4J_TLS_ENABLED uses permissive truthy parsing ("true"/"1"/"yes", matching the
+    CACHE_WARMING_ENABLED convention elsewhere in this module) so an operator who spells
+    "enable" any of the usual ways actually enables TLS instead of silently staying plaintext.
+
+    NEO4J_TLS_VERIFY is security-critical and default-secure: verification stays ON unless
+    the value is an explicit falsey token ("false"/"0"/"no"). This avoids the fail-open bug
+    where an operator typing "1"/"yes"/"on" to mean "verify" would otherwise land on
+    TrustAll() (encrypted but MITM-able) instead of TrustSystemCAs().
     """
-    if getenv("NEO4J_TLS_ENABLED", "false").strip().lower() != "true":
+    if not _is_truthy(getenv("NEO4J_TLS_ENABLED", "false")):
         return {}
 
-    if getenv("NEO4J_TLS_VERIFY", "true").strip().lower() == "true":
+    if not _is_falsey(getenv("NEO4J_TLS_VERIFY", "true")):
         logger.info("🛡️ Neo4j Bolt TLS enabled (encrypted, verifying server certificate)")
         return {"encrypted": True, "trusted_certificates": TrustSystemCAs()}
 
@@ -640,7 +664,7 @@ class DashboardConfig:
             cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
 
         # Cache warming configuration
-        cache_warming_enabled = getenv("CACHE_WARMING_ENABLED", "true").lower() in ("true", "1", "yes")
+        cache_warming_enabled = _is_truthy(getenv("CACHE_WARMING_ENABLED", "true"))
 
         # Cache invalidation webhook configuration
         cache_webhook_secret = get_secret("CACHE_WEBHOOK_SECRET")
@@ -658,7 +682,7 @@ class DashboardConfig:
             rabbitmq_username=rabbitmq_username,
             rabbitmq_password=rabbitmq_password,
             rabbitmq_management_host=getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),
-            rabbitmq_management_port=int(getenv("RABBITMQ_MANAGEMENT_PORT", "15672")),
+            rabbitmq_management_port=_coerce_port(getenv("RABBITMQ_MANAGEMENT_PORT", "15672"), 15672),
             cors_origins=cors_origins,
             cache_warming_enabled=cache_warming_enabled,
             cache_webhook_secret=cache_webhook_secret,
@@ -838,9 +862,9 @@ class ApiConfig:
             resend_sender_email=resend_sender_email,
             resend_sender_name=resend_sender_name,
             extractor_host=getenv("EXTRACTOR_HOST", "extractor-discogs"),
-            extractor_health_port=int(getenv("EXTRACTOR_HEALTH_PORT", "8000")),
+            extractor_health_port=_coerce_port(getenv("EXTRACTOR_HEALTH_PORT", "8000"), 8000),
             rabbitmq_management_host=getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),
-            rabbitmq_management_port=int(getenv("RABBITMQ_MANAGEMENT_PORT", "15672")),
+            rabbitmq_management_port=_coerce_port(getenv("RABBITMQ_MANAGEMENT_PORT", "15672"), 15672),
             rabbitmq_username=get_secret("RABBITMQ_USERNAME", "discogsography"),
             rabbitmq_password=get_secret("RABBITMQ_PASSWORD", "discogsography"),
             metrics_retention_days=metrics_retention_days,

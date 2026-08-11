@@ -521,6 +521,20 @@ class TestDashboardConfig:
         assert config.rabbitmq_management_host == "rabbitmq-mgmt"
         assert config.rabbitmq_management_port == 25672
 
+    def test_rabbitmq_management_port_malformed_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A malformed RABBITMQ_MANAGEMENT_PORT must not crash from_env() (discogsography-p4sn).
+
+        Regression: a bare int() previously raised ValueError and aborted Dashboard startup;
+        it must now fail-to-default like every other numeric env in this module.
+        """
+        from common import DashboardConfig
+
+        monkeypatch.setenv("RABBITMQ_MANAGEMENT_PORT", "15672/tcp")
+
+        config = DashboardConfig.from_env()
+
+        assert config.rabbitmq_management_port == 15672
+
 
 class TestExploreConfig:
     """Test ExploreConfig from_env."""
@@ -911,6 +925,29 @@ class TestApiConfigFromEnv:
 
         with pytest.raises(ValueError, match="JWT_SECRET_KEY"):
             ApiConfig.from_env()
+
+    def test_malformed_ports_fall_back_to_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Malformed EXTRACTOR_HEALTH_PORT/RABBITMQ_MANAGEMENT_PORT must not crash
+        from_env() (discogsography-p4sn). Regression: a bare int() previously raised
+        ValueError and crash-looped the API service on startup; it must now
+        fail-to-default like every other numeric env in this module.
+        """
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
+        monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
+        monkeypatch.setenv("EXTRACTOR_HEALTH_PORT", "8000/tcp")
+        monkeypatch.setenv("RABBITMQ_MANAGEMENT_PORT", "# 15672")
+
+        from common.config import ApiConfig
+
+        config = ApiConfig.from_env()
+        assert config.extractor_health_port == 8000
+        assert config.rabbitmq_management_port == 15672
 
     def test_rabbitmq_management_credentials_default_to_discogsography(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """RABBITMQ_USERNAME/PASSWORD unset must default to 'discogsography' — matching
@@ -1455,10 +1492,45 @@ class TestNeo4jSecurityKwargs:
             monkeypatch.setenv("NEO4J_TLS_ENABLED", value)
             assert neo4j_security_kwargs() != {}
 
-    def test_non_true_values_stay_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        for value in ["1", "yes", "on", ""]:
+    def test_enabled_accepts_permissive_truthy_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """NEO4J_TLS_ENABLED uses the same permissive vocabulary as CACHE_WARMING_ENABLED.
+
+        Regression for discogsography-d9tu: an operator spelling "enable" as "1" or "yes"
+        must actually turn TLS on instead of silently staying plaintext.
+        """
+        for value in ["1", "yes", "YES", " 1 "]:
+            monkeypatch.setenv("NEO4J_TLS_ENABLED", value)
+            assert neo4j_security_kwargs() != {}
+
+    def test_unrecognized_values_stay_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for value in ["on", ""]:
             monkeypatch.setenv("NEO4J_TLS_ENABLED", value)
             assert neo4j_security_kwargs() == {}
+
+    def test_verify_default_secure_on_unrecognized_truthy_spellings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """NEO4J_TLS_VERIFY fails CLOSED (verification stays on) for any non-falsey spelling.
+
+        Regression for discogsography-d9tu: an operator who types "1"/"yes"/"on" meaning
+        "yes, verify" must get TrustSystemCAs(), not silently land on TrustAll().
+        """
+        from neo4j import TrustSystemCAs
+
+        monkeypatch.setenv("NEO4J_TLS_ENABLED", "true")
+        for value in ["1", "yes", "on", "True ", "TRUE"]:
+            monkeypatch.setenv("NEO4J_TLS_VERIFY", value)
+            kwargs = neo4j_security_kwargs()
+            assert kwargs["encrypted"] is True
+            assert isinstance(kwargs["trusted_certificates"], TrustSystemCAs)
+
+    def test_verify_explicit_falsey_tokens_disable_verification(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from neo4j import TrustAll
+
+        monkeypatch.setenv("NEO4J_TLS_ENABLED", "true")
+        for value in ["false", "FALSE", "0", "no", " false "]:
+            monkeypatch.setenv("NEO4J_TLS_VERIFY", value)
+            kwargs = neo4j_security_kwargs()
+            assert kwargs["encrypted"] is True
+            assert isinstance(kwargs["trusted_certificates"], TrustAll)
 
 
 class TestParsePostgresHostPort:

@@ -163,6 +163,25 @@ def test_monitor_system_all_unavailable(capsys) -> None:
     assert "graphinator:" in out  # error section rendered
 
 
+def test_monitor_system_empty_queue_list_is_not_a_fetch_failure(capsys) -> None:
+    """Regression for discogsography-gpai: get_queue_stats() returning [] (a
+    successful HTTP 200 with no queues declared yet) must not print the same
+    "Unable to fetch queue data" message as a genuine RequestException (None).
+    """
+    with (
+        patch.object(system_monitor, "get_docker_stats", return_value=[]),
+        patch.object(system_monitor, "get_queue_stats", return_value=[]),
+        patch.object(system_monitor, "check_neo4j_status", return_value="Error: no neo4j"),
+        patch.object(system_monitor, "check_postgres_status", return_value="Error: no pg"),
+        patch.object(system_monitor, "get_service_logs", return_value=""),
+    ):
+        system_monitor.monitor_system()
+
+    out = capsys.readouterr().out
+    assert "Unable to fetch queue data" not in out
+    assert "No queues declared yet" in out
+
+
 def test_monitor_system_scans_split_extractor_services() -> None:
     """CLAUDE.md contract: the error scan uses both split extractor services."""
     seen: list[str] = []

@@ -57,7 +57,7 @@ init:
 
 # Configure Discogs app credentials (run against the API container)
 [group('setup')]
-configure-discogs consumer-key consumer-secret container="discogsography-api-1":
+configure-discogs consumer-key consumer-secret container="discogsography-api":
     docker exec {{ container }} discogs-setup \
         --consumer-key {{ consumer-key }} \
         --consumer-secret {{ consumer-secret }}
