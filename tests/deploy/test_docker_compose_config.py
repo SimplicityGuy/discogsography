@@ -12,6 +12,8 @@ Covers:
   process forwarding signals, a stop/restart landing in that window is silently
   ignored until Docker's SIGKILL grace period. ``init: true`` (tini as PID 1) fixes
   this uniformly for every affected service.
+- discogsography-wa1x: ``just configure-discogs``'s default container name must match
+  the compose ``container_name:`` the api service actually runs under.
 
 These tests parse the compose YAML directly (no ``docker`` binary required), mirroring
 the pattern in test_docker_compose_prod.py.
@@ -100,3 +102,17 @@ class TestPythonServicesForwardSignalsDuringStartupDelay:
         assert compose["services"]["schema-init"].get("init") is not True
         dockerfile = (REPO_ROOT / "schema-init" / "Dockerfile").read_text()
         assert "start.sh" not in dockerfile
+
+
+class TestConfigureDiscogsContainerDefault:
+    """discogsography-wa1x: the recipe's default container must exist."""
+
+    def test_justfile_default_matches_compose_container_name(self) -> None:
+        justfile_text = (REPO_ROOT / "justfile").read_text()
+        compose = _base_compose()
+        api_container_name = compose["services"]["api"]["container_name"]
+
+        assert f'container="{api_container_name}"' in justfile_text
+        # Regression guard: the old default had a Compose-auto-naming "-1" suffix
+        # that never matched the pinned container_name.
+        assert f'container="{api_container_name}-1"' not in justfile_text
