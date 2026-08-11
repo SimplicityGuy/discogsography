@@ -51,6 +51,7 @@ from common.neo4j_resilient import (
     with_neo4j_retry,
 )
 from common.oauth import _build_oauth_header, _hmac_sha1_signature, _oauth_escape
+from common.outage_backoff import OutageBackoff
 from common.postgres_resilient import (
     AsyncPostgreSQLPool,
     AsyncResilientPostgreSQL,
@@ -114,6 +115,7 @@ __all__ = [
     "GraphinatorConfig",
     "HealthServer",
     "InsightsConfig",
+    "OutageBackoff",
     "PhaseStatus",
     "ProcessingDecision",
     "ProcessingPhase",

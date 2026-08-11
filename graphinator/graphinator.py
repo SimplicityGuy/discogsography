@@ -19,11 +19,13 @@ from common import (
     AsyncResilientRabbitMQ,
     GraphinatorConfig,
     HealthServer,
+    OutageBackoff,
     neo4j_security_kwargs,
     normalize_record,
     setup_logging,
 )
 from common.credit_roles import categorize_role
+from common.db_resilience import DatabaseUnavailableError
 from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
 from orjson import loads
 
@@ -39,6 +41,12 @@ message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
 last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
 completed_files: set[str] = set()  # Track which files have completed processing
+
+# Non-batch mode only: throttles requeues while Neo4j is unavailable, so an
+# outage cannot burn the quorum queue's x-delivery-limit budget and dead-letter
+# valid records. Batch mode gets the same protection from _flush_queue's
+# re-enqueue+backoff, which never nacks (discogsography-rb05).
+outage_backoff = OutageBackoff("graphinator")
 # Track which data types have delivered an extraction_complete signal. Stub
 # cleanup and aggregate stats are deferred until EVERY type has signalled, so
 # cross-type stub creation (release batches MERGE Artist/Label/Master stubs)
@@ -1492,6 +1500,9 @@ def make_message_handler(
             # if ack raises (exception handler would attempt nack on already-acked msg)
             await message.ack()
 
+            # Neo4j answered — clear the outage backoff.
+            outage_backoff.reset()
+
             message_counts[data_type] += 1
             last_message_time[data_type] = time.time()
             if message_counts[data_type] % progress_interval == 0:
@@ -1510,11 +1521,15 @@ def make_message_handler(
                     f"🔄 Skipped {data_type[:-1]} (no changes needed)",
                     record_id=record_id,
                 )
-        except (ServiceUnavailable, SessionExpired) as e:
+        except (ServiceUnavailable, SessionExpired, DatabaseUnavailableError) as e:
             logger.warning(
                 f"⚠️ Neo4j unavailable, will retry {data_type[:-1]} message",
                 error=str(e),
             )
+            # Pause before requeueing — x-delivery-limit=20 is a budget with no
+            # time dimension, so unthrottled requeues dead-letter valid records
+            # within minutes of a Neo4j outage (discogsography-rb05).
+            await outage_backoff.wait()
             try:
                 await message.nack(requeue=True)
             except Exception as nack_error:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver

@@ -7,6 +7,11 @@ from unittest.mock import Mock
 import pytest
 
 from common.db_resilience import CircuitBreaker, CircuitBreakerConfig, CircuitState, ExponentialBackoff
+from common.outage_backoff import OutageBackoff as _OutageBackoff
+
+
+# Captured before the suite-wide fast_outage_backoff fixture replaces it.
+_REAL_OUTAGE_WAIT = _OutageBackoff.wait
 
 
 class TestCircuitBreaker:
@@ -1468,3 +1473,46 @@ class TestReconnectDoesNotHoldLock:
 
         assert await manager.get_connection() is conn
         assert factory.call_count == 2
+
+
+class TestOutageBackoff:
+    """Tests for the per-message consumer outage throttle (discogsography-rb05)."""
+
+    def test_delay_grows_and_is_capped(self) -> None:
+        from common.outage_backoff import OutageBackoff
+
+        backoff = OutageBackoff("test", initial_delay=1.0, max_delay=8.0, multiplier=2.0)
+
+        assert [backoff.next_delay() for _ in range(6)] == [1.0, 2.0, 4.0, 8.0, 8.0, 8.0]
+        assert backoff.consecutive_failures == 6
+
+    def test_success_resets_the_run(self) -> None:
+        from common.outage_backoff import OutageBackoff
+
+        backoff = OutageBackoff("test", initial_delay=1.0, max_delay=8.0)
+
+        backoff.next_delay()
+        backoff.next_delay()
+        backoff.reset()
+
+        assert backoff.consecutive_failures == 0
+        assert backoff.next_delay() == 1.0
+
+    @pytest.mark.asyncio
+    async def test_wait_sleeps_for_the_delay(self) -> None:
+        """The throttle really sleeps — that wall-clock cost IS the fix.
+
+        Calls the implementation captured at import time, since the suite-wide
+        `fast_outage_backoff` fixture replaces `wait` to keep other tests quick.
+        """
+        from unittest.mock import AsyncMock as _AsyncMock, patch as _patch
+
+        from common.outage_backoff import OutageBackoff
+
+        backoff = OutageBackoff("test", initial_delay=2.5, max_delay=30.0)
+
+        with _patch("asyncio.sleep", new_callable=_AsyncMock) as sleep:
+            delay = await _REAL_OUTAGE_WAIT(backoff)
+
+        assert delay == 2.5
+        sleep.assert_awaited_once_with(2.5)

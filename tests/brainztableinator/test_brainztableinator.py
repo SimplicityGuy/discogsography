@@ -3102,3 +3102,104 @@ class TestRecoverConsumersClearsTagsBrainztableinator:
 
         bt.consumer_tags = {}
         bt.queues = {}
+
+
+class TestOutageRequeueBackoff:
+    """Regression tests for discogsography-rb05 (outage → mass dead-lettering)."""
+
+    @staticmethod
+    def _pool_raising(error: Exception) -> MagicMock:
+        mock_pool = MagicMock()
+        mock_conn_cm = AsyncMock()
+        mock_conn_cm.__aenter__ = AsyncMock(side_effect=error)
+        mock_conn_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.connection = MagicMock(return_value=mock_conn_cm)
+        return mock_pool
+
+    @pytest.mark.asyncio
+    async def test_db_outage_waits_before_requeue(self):
+        """A transient DB failure must engage the throttle before requeueing.
+
+        The main queues are quorum queues with x-delivery-limit=20 — a budget
+        with no time dimension. Before the fix each redelivery cycle cost ~10s,
+        so a message hit 20 deliveries in ~3 minutes and RabbitMQ dead-lettered
+        a perfectly valid record part-way through a routine maintenance window.
+        """
+        from psycopg.errors import OperationalError
+
+        from common.outage_backoff import OutageBackoff
+
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test"}'
+        backoff = OutageBackoff("test", initial_delay=7.0, max_delay=7.0)
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch(
+                "brainztableinator.brainztableinator.connection_pool",
+                self._pool_raising(OperationalError("server closed")),
+            ),
+            patch("brainztableinator.brainztableinator.outage_backoff", backoff),
+            patch.dict("brainztableinator.brainztableinator.PROCESSORS", {"artists": AsyncMock()}),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        assert backoff.consecutive_failures == 1, "the requeue must be throttled during an outage"
+        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_pool_unavailable_is_transient(self):
+        """DatabaseUnavailableError from the pool is an outage, not a poison record."""
+        from common.db_resilience import DatabaseUnavailableError
+        from common.outage_backoff import OutageBackoff
+
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test"}'
+        backoff = OutageBackoff("test", initial_delay=3.0, max_delay=3.0)
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch(
+                "brainztableinator.brainztableinator.connection_pool",
+                self._pool_raising(DatabaseUnavailableError("pool exhausted")),
+            ),
+            patch("brainztableinator.brainztableinator.outage_backoff", backoff),
+            patch.dict("brainztableinator.brainztableinator.PROCESSORS", {"artists": AsyncMock()}),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        assert backoff.consecutive_failures == 1
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    async def test_success_resets_the_throttle(self):
+        """A successful write clears the outage counter."""
+        from common.outage_backoff import OutageBackoff
+
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test"}'
+        backoff = OutageBackoff("test")
+        backoff.next_delay()
+
+        mock_pool = MagicMock()
+        mock_conn = AsyncMock()
+        mock_conn.transaction = MagicMock(return_value=AsyncMock())
+        mock_conn_cm = AsyncMock()
+        mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.connection = MagicMock(return_value=mock_conn_cm)
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
+            patch("brainztableinator.brainztableinator.outage_backoff", backoff),
+            patch.dict("brainztableinator.brainztableinator.PROCESSORS", {"artists": AsyncMock()}),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_message.ack.assert_called_once()
+        assert backoff.consecutive_failures == 0

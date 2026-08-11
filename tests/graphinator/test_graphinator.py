@@ -4718,3 +4718,54 @@ class TestMaintenanceUnderMemoryPressure:
         assert len(run_calls) == 4
         # One settle between each pair of labels — not before the first.
         assert sleeps == [7.5, 7.5, 7.5]
+
+
+class TestOutageRequeueBackoff:
+    """Regression tests for discogsography-rb05 (mirror of the brainz consumers)."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_neo4j_outage_engages_throttle(self, sample_artist_data: dict[str, Any]) -> None:
+        """Non-batch mode must throttle requeues during a Neo4j outage.
+
+        x-delivery-limit=20 is a budget with no time dimension: unthrottled
+        requeues dead-letter perfectly valid records within minutes.
+        """
+        from neo4j.exceptions import ServiceUnavailable
+
+        from common.outage_backoff import OutageBackoff
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        backoff = OutageBackoff("test")
+
+        with (
+            patch("graphinator.graphinator.graph") as mock_graph,
+            patch("graphinator.graphinator.outage_backoff", backoff),
+        ):
+            mock_graph.session.side_effect = ServiceUnavailable("Connection lost")
+            await on_artist_message(mock_message)
+
+        assert backoff.consecutive_failures == 1
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_driver_unavailable_is_transient(self, sample_artist_data: dict[str, Any]) -> None:
+        """DatabaseUnavailableError from the resilience layer is an outage too."""
+        from common.db_resilience import DatabaseUnavailableError
+        from common.outage_backoff import OutageBackoff
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        backoff = OutageBackoff("test")
+
+        with (
+            patch("graphinator.graphinator.graph") as mock_graph,
+            patch("graphinator.graphinator.outage_backoff", backoff),
+        ):
+            mock_graph.session.side_effect = DatabaseUnavailableError("circuit open")
+            await on_artist_message(mock_message)
+
+        assert backoff.consecutive_failures == 1
+        mock_message.nack.assert_called_once_with(requeue=True)

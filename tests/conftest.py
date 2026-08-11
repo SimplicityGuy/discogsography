@@ -423,3 +423,21 @@ def reset_global_state() -> Iterator[None]:
         extractor.extractor.shutdown_requested = False
     except (ImportError, AttributeError):
         pass
+
+
+@pytest.fixture(autouse=True)
+def fast_outage_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the consumer requeue throttle from adding real delay to tests.
+
+    Per-message consumers pause before nack(requeue=True) so a backend outage
+    cannot burn the quorum queue's x-delivery-limit budget
+    (discogsography-rb05). The delay is real seconds in production; tests keep
+    the accounting (consecutive_failures) but skip the sleep. The sleep itself
+    is covered directly in tests/common/test_db_resilience.py.
+    """
+    from common.outage_backoff import OutageBackoff
+
+    async def _wait(self: OutageBackoff) -> float:
+        return self.next_delay()
+
+    monkeypatch.setattr(OutageBackoff, "wait", _wait)
