@@ -148,7 +148,8 @@ secrets/
 ├── rabbitmq_username.txt       # discogsography
 ├── rabbitmq_password.txt       # openssl rand -base64 24
 ├── neo4j_password.txt          # openssl rand -base64 24
-└── redis_password.txt          # openssl rand -base64 24
+├── redis_password.txt          # openssl rand -base64 24
+└── insights_internal_secret.txt # openssl rand -hex 32 (shared by api + insights)
 ```
 
 Use `secrets.example/` as a reference for each file's format and generation command.

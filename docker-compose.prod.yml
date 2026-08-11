@@ -28,6 +28,11 @@ secrets:
     file: ./secrets/rabbitmq_username.txt
   redis_password:
     file: ./secrets/redis_password.txt
+  # Shared secret gating /api/internal/insights/* (api/routers/insights_compute.py).
+  # Base docker-compose.yml falls back to a repo-published dev default when this
+  # isn't set — see discogsography-q31w.
+  insights_internal_secret:
+    file: ./secrets/insights_internal_secret.txt
 
 services:
   rabbitmq:
@@ -242,6 +247,7 @@ services:
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
       RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
       REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      INSIGHTS_INTERNAL_SECRET_FILE: /run/secrets/insights_internal_secret
     secrets:
       - jwt_secret_key
       - neo4j_password
@@ -253,6 +259,7 @@ services:
       - rabbitmq_username
       - rabbitmq_password
       - redis_password
+      - insights_internal_secret
     volumes:
       - api_logs:/logs
       - discogs_data:/discogs-data:ro
@@ -397,10 +404,12 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
       REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      INSIGHTS_INTERNAL_SECRET_FILE: /run/secrets/insights_internal_secret
     secrets:
       - postgres_username
       - postgres_password
       - redis_password
+      - insights_internal_secret
     deploy:
       restart_policy:
         condition: any
