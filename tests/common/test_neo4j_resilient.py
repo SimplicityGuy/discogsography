@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 import pytest
 
-from common.db_resilience import ExponentialBackoff
+from common.db_resilience import CircuitState, ConnectionEstablishmentError, ExponentialBackoff
 from common.neo4j_resilient import (
     AsyncResilientNeo4jDriver,
     ResilientNeo4jDriver,
@@ -128,6 +128,27 @@ class TestResilientNeo4jDriver:
 
         assert resilient_driver._connection is None
 
+    @patch("common.neo4j_resilient.GraphDatabase")
+    def test_repeated_connection_test_failures_open_the_breaker(self, mock_graph_db: Mock, mock_driver: Mock) -> None:
+        """discogsography-4utz: a failed health-test must count as a circuit-
+        breaker failure. _test_driver swallows real exceptions to a bare
+        `False`, and the connection-establishment wrapper turns that into a
+        typed `ConnectionEstablishmentError` (a `DatabaseUnavailableError`),
+        which IS in this breaker's `expected_exception` tuple — so 3
+        consecutive failed health checks must open the circuit, not leave it
+        stuck CLOSED forever."""
+        # Real driver.session() raises — the ORIGINAL (unpatched) _test_driver
+        # swallows it and returns False, exactly like a live outage would.
+        mock_driver.session = Mock(side_effect=ServiceUnavailable("Neo4j is down"))
+        mock_graph_db.driver = Mock(return_value=mock_driver)
+        resilient_driver = ResilientNeo4jDriver("neo4j://localhost:7687", ("neo4j", "password"), max_retries=5)
+
+        with pytest.raises(ConnectionEstablishmentError):
+            resilient_driver.get_connection()
+
+        assert resilient_driver.circuit_breaker.state == CircuitState.OPEN
+        assert resilient_driver.circuit_breaker.failure_count >= resilient_driver.circuit_breaker.config.failure_threshold
+
 
 class TestAsyncResilientNeo4jDriver:
     """Tests for AsyncResilientNeo4jDriver class."""
@@ -234,6 +255,23 @@ class TestAsyncResilientNeo4jDriver:
         await resilient_driver.close()
 
         assert resilient_driver._connection is None
+
+    @pytest.mark.asyncio
+    @patch("common.neo4j_resilient.AsyncGraphDatabase")
+    async def test_repeated_connection_test_failures_open_the_breaker(self, mock_async_graph_db: Mock, mock_async_driver: AsyncMock) -> None:
+        """discogsography-4utz (async twin): same guarantee as the sync driver —
+        repeated failed health checks must open the circuit."""
+        # Real driver.session() raises — the ORIGINAL (unpatched) _test_driver
+        # swallows it and returns False, exactly like a live outage would.
+        mock_async_driver.session = Mock(side_effect=ServiceUnavailable("Neo4j is down"))
+        mock_async_graph_db.driver = Mock(return_value=mock_async_driver)
+        resilient_driver = AsyncResilientNeo4jDriver("neo4j://localhost:7687", ("neo4j", "password"), max_retries=5)
+
+        with pytest.raises(ConnectionEstablishmentError):
+            await resilient_driver.get_connection()
+
+        assert resilient_driver.circuit_breaker.state == CircuitState.OPEN
+        assert resilient_driver.circuit_breaker.failure_count >= resilient_driver.circuit_breaker.config.failure_threshold
 
 
 class TestNeo4jRetryDecorator:

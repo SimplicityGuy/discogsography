@@ -970,6 +970,27 @@ class TestPostgreSQLBatchProcessor:
         assert [m.data_id for m in processor.queues["artists"]] == ["0", "1"]
 
     @pytest.mark.asyncio
+    async def test_flush_cancelled_while_acquiring_semaphore_re_enqueues(self) -> None:
+        """discogsography-r8hr: cancellation delivered WHILE BLOCKED on the
+        concurrency-limiter semaphore acquire — BEFORE the inner try block
+        that handles cancellation during _process_batch is ever entered —
+        must still re-enqueue the popped messages instead of losing them."""
+        processor = PostgreSQLBatchProcessor(MagicMock())
+        processor._flush_semaphore = asyncio.Semaphore(1)
+        processor._flush_semaphore.acquire = AsyncMock(side_effect=asyncio.CancelledError())
+        processor._process_batch = AsyncMock()  # type: ignore[method-assign]
+
+        for i in range(2):
+            processor.queues["artists"].append(PendingMessage("artists", str(i), {"id": str(i)}, "h", AsyncMock(), AsyncMock()))
+
+        with pytest.raises(asyncio.CancelledError):
+            await processor._flush_queue("artists")
+
+        assert len(processor.queues["artists"]) == 2
+        assert [m.data_id for m in processor.queues["artists"]] == ["0", "1"]
+        processor._process_batch.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_periodic_flush(self) -> None:
         """Test periodic flush background task."""
         mock_connection_pool = MagicMock()

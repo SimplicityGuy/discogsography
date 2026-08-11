@@ -154,6 +154,109 @@ class TestMetricsBuffer:
         assert result == {}
 
 
+class TestMetricsBufferDrainRestore:
+    """discogsography-qtts: drain()/restore() must be safe to pair across an
+    await, unlike flush()/clear() which race with concurrent record()."""
+
+    def test_drain_removes_entries_and_returns_stats_and_samples(self) -> None:
+        from api.metrics_collector import MetricsBuffer
+
+        buf = MetricsBuffer(max_size=100)
+        buf.record("/api/search", 200, 10.0)
+        buf.record("/api/search", 200, 20.0)
+
+        stats, samples = buf.drain()
+
+        assert stats["/api/search"]["count"] == 2
+        assert len(samples) == 2
+        # Unlike flush(), drain() actually empties the live buffer.
+        assert buf.flush() == {}
+
+    def test_entries_recorded_after_drain_are_not_in_the_snapshot(self) -> None:
+        """The whole point of the atomic swap: anything record()ed AFTER
+        drain() returns must land in the fresh buffer, never in the
+        snapshot drain() already computed stats from."""
+        from api.metrics_collector import MetricsBuffer
+
+        buf = MetricsBuffer(max_size=100)
+        buf.record("/api/before", 200, 5.0)
+
+        stats, samples = buf.drain()
+        buf.record("/api/after", 200, 7.0)
+
+        assert "/api/before" in stats
+        assert "/api/after" not in stats
+        assert all(s.path == "/api/before" for s in samples)
+        # The post-drain record must be visible in a fresh flush.
+        assert buf.flush() == {"/api/after": {"count": 1, "p50": 7.0, "p95": 7.0, "p99": 7.0, "error_count": 0}}
+
+    def test_restore_puts_samples_back_ahead_of_newer_entries(self) -> None:
+        """restore() must re-prepend the failed batch AHEAD of (i.e. older
+        than) anything recorded since the matching drain() — samples arrived
+        first in wall-clock terms and eviction order must reflect that."""
+        from api.metrics_collector import MetricsBuffer
+
+        buf = MetricsBuffer(max_size=100)
+        buf.record("/api/before", 200, 5.0)
+        _stats, samples = buf.drain()
+        buf.record("/api/after", 200, 7.0)
+
+        buf.restore(samples)
+
+        result = buf.flush()
+        assert result["/api/before"]["count"] == 1
+        assert result["/api/after"]["count"] == 1
+        # "before" was recorded first and restored ahead of "after" — it must
+        # be the entry evicted first once the buffer fills.
+        buf2 = MetricsBuffer(max_size=1)
+        buf2.restore(samples)
+        buf2.record("/api/after", 200, 7.0)
+        assert buf2.flush() == {"/api/after": {"count": 1, "p50": 7.0, "p95": 7.0, "p99": 7.0, "error_count": 0}}
+
+    def test_restore_trims_to_max_size_from_the_left(self) -> None:
+        """A restore that would push the buffer over max_size must evict the
+        OLDEST entries first — the same order record()'s own eviction uses."""
+        from api.metrics_collector import MetricsBuffer
+
+        buf = MetricsBuffer(max_size=3)
+        buf.record("/a", 200, 1.0)
+        buf.record("/b", 200, 2.0)
+        _stats, samples = buf.drain()  # samples = [/a, /b]
+        buf.record("/c", 200, 3.0)
+        buf.record("/d", 200, 4.0)
+
+        buf.restore(samples)  # would be [/a, /b, /c, /d] — over max_size=3
+
+        result = buf.flush()
+        assert len(buf._entries) == 3
+        assert "/a" not in result  # oldest, evicted first
+        assert "/b" in result
+        assert "/c" in result
+        assert "/d" in result
+
+    def test_restore_with_empty_samples_is_a_no_op(self) -> None:
+        from api.metrics_collector import MetricsBuffer
+
+        buf = MetricsBuffer(max_size=100)
+        buf.record("/api/x", 200, 1.0)
+        buf.drain()  # empties the buffer
+        _stats, empty_samples = buf.drain()  # nothing left to drain this time
+        assert len(empty_samples) == 0
+
+        buf.restore(empty_samples)  # nothing to restore
+
+        assert buf.flush() == {}
+
+    def test_drain_on_empty_buffer_returns_empty_stats_and_samples(self) -> None:
+        from api.metrics_collector import MetricsBuffer
+
+        buf = MetricsBuffer(max_size=100)
+        stats, samples = buf.drain()
+
+        assert stats == {}
+        assert len(samples) == 0
+
+
 # ---------------------------------------------------------------------------
 # Task 3: _percentile_index helper
 # ---------------------------------------------------------------------------
@@ -717,6 +820,84 @@ class TestRunCollector:
         assert buf.flush() == {}
 
     @pytest.mark.anyio
+    async def test_collector_persist_success_does_not_drop_entries_recorded_during_await(self) -> None:
+        """discogsography-qtts: a successful persist must only discard the
+        exact batch it persisted — not entries record()ed WHILE
+        persist_metrics is awaiting. The old flush()-then-clear() design
+        clear()ed the whole live buffer, silently dropping anything that
+        arrived during the await; drain()/restore() only ever remove the
+        atomically-swapped-out snapshot."""
+        from api.metrics_collector import MetricsBuffer, run_collector
+
+        mock_pool = MagicMock()
+        config = MagicMock()
+        config.rabbitmq_management_host = "localhost"
+        config.rabbitmq_management_port = 15672
+        config.rabbitmq_username = "guest"
+        config.rabbitmq_password = "guest"
+        config.metrics_retention_days = 30
+        config.metrics_collection_interval = 1
+
+        buf = MetricsBuffer(max_size=100)
+        buf.record("/api/before", 200, 5.0)
+
+        async def persist_and_record_concurrently(_pool: Any, _q: Any, _h: list[dict[str, Any]]) -> None:
+            # Simulate a request landing in the SAME buffer while this
+            # persist call is in flight.
+            buf.record("/api/during-persist", 200, 7.0)
+
+        with (
+            patch("api.metrics_collector.collect_queue_metrics", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.collect_service_health", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.persist_metrics", side_effect=persist_and_record_concurrently),
+            patch("api.metrics_collector.prune_old_metrics", new_callable=AsyncMock),
+            patch("asyncio.sleep", side_effect=asyncio.CancelledError),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_collector(mock_pool, config, buf)
+
+        result = buf.flush()
+        assert "/api/before" not in result  # the persisted batch is gone
+        assert result["/api/during-persist"]["count"] == 1  # survives, not dropped
+
+    @pytest.mark.anyio
+    async def test_collector_persist_failure_preserves_entries_recorded_during_await(self) -> None:
+        """discogsography-qtts: entries record()ed WHILE persist_metrics is
+        awaiting must survive a FAILED persist too — restore() must put the
+        failed batch back ahead of them rather than discarding either set."""
+        from api.metrics_collector import MetricsBuffer, run_collector
+
+        mock_pool = MagicMock()
+        config = MagicMock()
+        config.rabbitmq_management_host = "localhost"
+        config.rabbitmq_management_port = 15672
+        config.rabbitmq_username = "guest"
+        config.rabbitmq_password = "guest"
+        config.metrics_retention_days = 30
+        config.metrics_collection_interval = 1
+
+        buf = MetricsBuffer(max_size=100)
+        buf.record("/api/before", 200, 5.0)
+
+        async def persist_and_record_concurrently(_pool: Any, _q: Any, _h: list[dict[str, Any]]) -> None:
+            buf.record("/api/during-persist", 200, 7.0)
+            raise RuntimeError("db error")
+
+        with (
+            patch("api.metrics_collector.collect_queue_metrics", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.collect_service_health", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.persist_metrics", side_effect=persist_and_record_concurrently),
+            patch("api.metrics_collector.prune_old_metrics", new_callable=AsyncMock),
+            patch("asyncio.sleep", side_effect=asyncio.CancelledError),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_collector(mock_pool, config, buf)
+
+        result = buf.flush()
+        assert result["/api/before"]["count"] == 1
+        assert result["/api/during-persist"]["count"] == 1
+
+    @pytest.mark.anyio
     async def test_collector_handles_prune_error(self) -> None:
         """run_collector continues when prune_old_metrics raises."""
         from api.metrics_collector import MetricsBuffer, run_collector
@@ -744,7 +925,7 @@ class TestRunCollector:
 
     @pytest.mark.anyio
     async def test_collector_handles_flush_error(self) -> None:
-        """run_collector continues when metrics_buffer.flush() raises."""
+        """run_collector continues when metrics_buffer.drain() raises."""
         from api.metrics_collector import MetricsBuffer, run_collector
 
         mock_pool = MagicMock()
@@ -762,7 +943,7 @@ class TestRunCollector:
         with (
             patch("api.metrics_collector.collect_queue_metrics", new_callable=AsyncMock, return_value=[]),
             patch("api.metrics_collector.collect_service_health", new_callable=AsyncMock, return_value=[]),
-            patch.object(buf, "flush", side_effect=RuntimeError("flush error")),
+            patch.object(buf, "drain", side_effect=RuntimeError("drain error")),
             patch("api.metrics_collector.persist_metrics", new_callable=AsyncMock),
             patch("api.metrics_collector.prune_old_metrics", new_callable=AsyncMock),
             patch("asyncio.sleep", side_effect=asyncio.CancelledError),

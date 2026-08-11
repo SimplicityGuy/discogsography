@@ -100,7 +100,19 @@ class HealthServer(ThreadingHTTPServer):
         self.thread.start()
 
     def stop(self) -> None:
-        """Stop the health server."""
-        self.shutdown()
-        if self.thread:
-            self.thread.join(timeout=5)
+        """Stop the health server and release its listening socket.
+
+        socketserver.BaseServer.shutdown() only signals serve_forever() to
+        exit and blocks until it does — it does NOT close the bound
+        listening socket. Only server_close() releases that file
+        descriptor. Without it, stop()'s 'Stop the health server' contract
+        is only half kept: the accept loop stops, but the socket FD stays
+        open for the rest of the process (discogsography-c4ag). Guarded in
+        a finally so a join() timeout still lets the socket close.
+        """
+        try:
+            self.shutdown()
+            if self.thread:
+                self.thread.join(timeout=5)
+        finally:
+            self.server_close()

@@ -8,7 +8,7 @@ import logging
 from queue import Empty, Full, Queue
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 from psycopg.errors import DatabaseError, InterfaceError, OperationalError
@@ -90,10 +90,20 @@ class ResilientPostgreSQLPool:
 
         def create() -> psycopg.Connection[Any]:
             conn = psycopg.connect(**self.connection_params)
-            conn.autocommit = True  # Enable autocommit by default
-            # Test the connection
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT 1")
+            # Once connect() returns, a real backend is live. If setting
+            # autocommit or the SELECT 1 probe below raises, close it before
+            # re-raising — otherwise the connection is orphaned and only
+            # reclaimed by unreliable/delayed __del__ GC, pinning a backend
+            # against the shared PgBouncer session-mode cap (discogsography-n1s8).
+            try:
+                conn.autocommit = True  # Enable autocommit by default
+                # Test the connection
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+            except BaseException:
+                with contextlib.suppress(Exception):
+                    conn.close()
+                raise
             return conn
 
         return self.circuit_breaker.call(create)
@@ -331,7 +341,15 @@ class AsyncResilientPostgreSQL(AsyncResilientConnection[Any]):
         """Create a new async PostgreSQL connection."""
         logger.info("🐘 Creating new async PostgreSQL connection")
         conn = await psycopg.AsyncConnection.connect(**self.connection_params)
-        await conn.set_autocommit(True)
+        # connect() returning means a real backend is live. If set_autocommit
+        # raises, close it before re-raising rather than orphaning it to
+        # unreliable/delayed GC (discogsography-n1s8).
+        try:
+            await conn.set_autocommit(True)
+        except BaseException:
+            with contextlib.suppress(Exception):
+                await conn.close()
+            raise
         return conn
 
     async def _test_connection(self, conn: Any) -> bool:
@@ -441,13 +459,39 @@ class AsyncPostgreSQLPool:
         self._initialized = True
 
     async def _create_connection(self) -> psycopg.AsyncConnection[Any]:
-        """Create a new async PostgreSQL connection with retry logic."""
+        """Create a new async PostgreSQL connection, routed through the circuit breaker.
+
+        Every checkout path (initialize, the checkout retry loop, and the
+        health-loop replenish) calls this method directly, so routing it
+        through ``circuit_breaker.call_async`` here — instead of each caller
+        wrapping its own call — makes the breaker actually participate in
+        every connection attempt. Previously the breaker was constructed but
+        never invoked: during a sustained outage every caller independently
+        walked the full 5-attempt retry ladder instead of fast-failing after
+        3 failures (discogsography-4q2s).
+        """
+        return cast("psycopg.AsyncConnection[Any]", await self.circuit_breaker.call_async(self._raw_create_connection))
+
+    async def _raw_create_connection(self) -> psycopg.AsyncConnection[Any]:
+        """Open and validate a new async PostgreSQL connection (no breaker wrapping)."""
         logger.info("🐘 Creating new async PostgreSQL connection")
         conn = await psycopg.AsyncConnection.connect(**self.connection_params)
-        await conn.set_autocommit(True)
-        # Test the connection
-        async with conn.cursor() as cursor:
-            await cursor.execute("SELECT 1")
+        # connect() returning means a real backend is live. If set_autocommit
+        # or the SELECT 1 probe raises, close it before re-raising — otherwise
+        # the connection is orphaned and only reclaimed by unreliable/delayed
+        # __del__ GC, pinning a backend against the shared PgBouncer
+        # session-mode cap for the GC-delay window (discogsography-n1s8).
+        # active_connections itself is already rolled back by every caller of
+        # this method on failure; this closes the underlying OS resource too.
+        try:
+            await conn.set_autocommit(True)
+            # Test the connection
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT 1")
+        except BaseException:
+            with contextlib.suppress(Exception):
+                await conn.close()
+            raise
         return conn
 
     async def _test_connection(self, conn: psycopg.AsyncConnection[Any]) -> bool:

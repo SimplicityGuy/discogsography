@@ -1,6 +1,7 @@
 """Extraction Analysis router — versions, summary, violations, and parsing errors for flagged records."""
 
 import asyncio
+from collections.abc import Callable, Coroutine
 import json
 import math
 from pathlib import Path
@@ -31,9 +32,64 @@ _anthropic_model: str = "claude-sonnet-4-20250514"
 _SAFE_VERSION = re.compile(r"^[a-zA-Z0-9._-]+$")
 _SAFE_RECORD_ID = re.compile(r"^[a-zA-Z0-9._-]+$")
 
-# Parsing-error classification cache: version → (expiry_timestamp, result_dict)
-_parsing_error_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+class _SingleFlightTTLCache[T]:
+    """A read-through TTL memo that collapses concurrent misses for the same key.
+
+    A plain ``dict``-backed TTL cache is a check-then-act race: the miss
+    check and the cache store are separated by an ``await`` (the scan
+    itself), so every request arriving during that window also misses and
+    launches its own duplicate scan. For this router that means N concurrent
+    admin requests for the same cold version each run their own full-corpus
+    JSONL scan (or classification pass) in parallel, each holding its own
+    near-cap parsed corpus in memory simultaneously — multiplying exactly the
+    peak-memory bound the size caps exist to enforce (discogsography-jrm3).
+
+    The in-flight ``asyncio.Task`` registry is a plain ``dict``; the `Task`
+    objects it holds are only ever created inside the running event loop
+    (never at import time), so this is safe to instantiate at module scope
+    per the repo's asyncio-primitive rule.
+    """
+
+    def __init__(self, ttl_seconds: float) -> None:
+        self._ttl_seconds = ttl_seconds
+        self._cache: dict[str, tuple[float, T]] = {}
+        self._inflight: dict[str, asyncio.Task[T]] = {}
+
+    async def get_or_compute(self, key: str, compute: Callable[[], Coroutine[Any, Any, T]]) -> T:
+        """Return the cached value for *key*, computing it at most once per TTL window."""
+        now = time.monotonic()
+        cached = self._cache.get(key)
+        if cached is not None and now < cached[0]:
+            return cached[1]
+
+        # Join an in-flight computation for this key instead of starting a
+        # second one — the single-flight collapse.
+        task = self._inflight.get(key)
+        if task is not None:
+            return await task
+
+        task = asyncio.create_task(compute())
+        self._inflight[key] = task
+        try:
+            result = await task
+        finally:
+            # Always drop the in-flight entry, success or failure, so a
+            # failed scan doesn't wedge every subsequent caller behind a
+            # dead task forever.
+            self._inflight.pop(key, None)
+        self._cache[key] = (time.monotonic() + self._ttl_seconds, result)
+        return result
+
+    def clear(self) -> None:
+        """Drop every cached and in-flight entry (test/ops reset hook)."""
+        self._cache.clear()
+        self._inflight.clear()
+
+
+# Parsing-error classification cache: version → result_dict
 _PARSING_ERROR_CACHE_TTL: float = 300.0  # 5 minutes
+_parsing_error_cache: _SingleFlightTTLCache[dict[str, Any]] = _SingleFlightTTLCache(_PARSING_ERROR_CACHE_TTL)
 
 
 # ---------------------------------------------------------------------------
@@ -227,12 +283,13 @@ def _read_skipped(flagged_version_dir: Path) -> list[dict[str, Any]]:
     return skipped
 
 
-# version-dir path → (expiry_timestamp, cached result). Shared by every endpoint
+# version-dir path → cached violation/skipped set. Shared by every endpoint
 # that needs a version's full violation/skipped set, so the aggregate JSONL scan
-# runs at most once per version per TTL window instead of once per request.
-_violations_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
-_skipped_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+# runs at most once per version per TTL window instead of once per request —
+# AND at most once per cold miss even under concurrent requests.
 _JSONL_CACHE_TTL: float = 300.0  # 5 minutes — matches _PARSING_ERROR_CACHE_TTL
+_violations_cache: _SingleFlightTTLCache[list[dict[str, Any]]] = _SingleFlightTTLCache(_JSONL_CACHE_TTL)
+_skipped_cache: _SingleFlightTTLCache[list[dict[str, Any]]] = _SingleFlightTTLCache(_JSONL_CACHE_TTL)
 
 
 async def _get_violations(flagged_version_dir: Path) -> list[dict[str, Any]]:
@@ -244,25 +301,13 @@ async def _get_violations(flagged_version_dir: Path) -> list[dict[str, Any]]:
     requests for the cache TTL instead of re-scanning the corpus each time.
     """
     cache_key = str(flagged_version_dir)
-    now = time.monotonic()
-    cached = _violations_cache.get(cache_key)
-    if cached is not None and now < cached[0]:
-        return cached[1]
-    violations = await asyncio.to_thread(_read_violations, flagged_version_dir)
-    _violations_cache[cache_key] = (now + _JSONL_CACHE_TTL, violations)
-    return violations
+    return await _violations_cache.get_or_compute(cache_key, lambda: asyncio.to_thread(_read_violations, flagged_version_dir))
 
 
 async def _get_skipped(flagged_version_dir: Path) -> list[dict[str, Any]]:
     """Cached, off-event-loop accessor for a version's full skipped-record set. See `_get_violations`."""
     cache_key = str(flagged_version_dir)
-    now = time.monotonic()
-    cached = _skipped_cache.get(cache_key)
-    if cached is not None and now < cached[0]:
-        return cached[1]
-    skipped = await asyncio.to_thread(_read_skipped, flagged_version_dir)
-    _skipped_cache[cache_key] = (now + _JSONL_CACHE_TTL, skipped)
-    return skipped
+    return await _skipped_cache.get_or_compute(cache_key, lambda: asyncio.to_thread(_read_skipped, flagged_version_dir))
 
 
 def _load_state_marker(data_root: Path, version: str, source: str) -> dict[str, Any] | None:
@@ -744,32 +789,25 @@ async def get_parsing_errors(
     if location is None:
         raise HTTPException(status_code=404, detail=f"Version not found: {version!r}")
 
-    cache_key = version
-    now = time.monotonic()
-    if cache_key in _parsing_error_cache:
-        expiry, cached_result = _parsing_error_cache[cache_key]
-        if now < expiry:
-            return JSONResponse(content=cached_result)
-
     data_root, _source = location
     flagged_version_dir = data_root / "flagged" / version
 
-    violations = await _get_violations(flagged_version_dir)
-    parsing_errors, source_issues, indeterminate = await asyncio.to_thread(_classify_all_violations, violations, flagged_version_dir)
+    async def _compute() -> dict[str, Any]:
+        violations = await _get_violations(flagged_version_dir)
+        parsing_errors, source_issues, indeterminate = await asyncio.to_thread(_classify_all_violations, violations, flagged_version_dir)
+        return {
+            "parsing_errors": parsing_errors,
+            "source_issues": source_issues,
+            "indeterminate": indeterminate,
+            "stats": {
+                "total_analyzed": len(violations),
+                "parsing_errors": len(parsing_errors),
+                "source_issues": len(source_issues),
+                "indeterminate": len(indeterminate),
+            },
+        }
 
-    result: dict[str, Any] = {
-        "parsing_errors": parsing_errors,
-        "source_issues": source_issues,
-        "indeterminate": indeterminate,
-        "stats": {
-            "total_analyzed": len(violations),
-            "parsing_errors": len(parsing_errors),
-            "source_issues": len(source_issues),
-            "indeterminate": len(indeterminate),
-        },
-    }
-
-    _parsing_error_cache[cache_key] = (now + _PARSING_ERROR_CACHE_TTL, result)
+    result = await _parsing_error_cache.get_or_compute(version, _compute)
     return JSONResponse(content=result)
 
 

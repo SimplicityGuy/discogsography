@@ -39,6 +39,7 @@ class TestPostgresConnectionParams:
             "dbname": "testdb",
             "user": "testuser",
             "password": "testpass",
+            "connect_timeout": 10,
         }
 
     def test_host_only_defaults_to_port_5432(self) -> None:
@@ -72,6 +73,24 @@ class TestPostgresConnectionParams:
             result = _postgres_connection_params()
         assert isinstance(result["port"], int)
         assert result["port"] == 9999
+
+    def test_connect_timeout_is_bounded(self) -> None:
+        """discogsography-4vnh: libpq's own connect_timeout default is 0
+        (infinite). Without an explicit bound here, a pooler that accepts the
+        TCP connection but never completes the startup handshake blocks
+        psycopg.connect() forever — this is the first thing main() does,
+        synchronously, before any other service can start, so an infinite
+        block here wedges the entire stack with no error, only a hang."""
+        with (
+            patch("schema_init.POSTGRES_HOST", "localhost:5432"),
+            patch("schema_init.POSTGRES_DATABASE", "db"),
+            patch("schema_init.POSTGRES_USERNAME", "u"),
+            patch("schema_init.POSTGRES_PASSWORD", "p"),
+        ):
+            result = _postgres_connection_params()
+        assert "connect_timeout" in result
+        assert isinstance(result["connect_timeout"], int)
+        assert 0 < result["connect_timeout"] <= 30
 
 
 class TestEnsurePostgresDatabase:
@@ -125,6 +144,20 @@ class TestEnsurePostgresDatabase:
         # Must connect to "postgres" admin db, not the target db
         call_kwargs = mock_connect.call_args[1]
         assert call_kwargs.get("dbname") == "postgres"
+
+    def test_propagates_connect_timeout_to_admin_connect(self) -> None:
+        """discogsography-4vnh: whatever connect_timeout is present in the
+        params dict built by _postgres_connection_params() must reach the
+        admin psycopg.connect() call unchanged — _ensure_postgres_database
+        must not drop it while building admin_params."""
+        mock_conn = self._make_mock_conn(fetchone_result=(1,))
+        params = {"host": "myhost", "port": 5432, "dbname": "target_db", "user": "u", "password": "p", "connect_timeout": 10}
+
+        with patch("schema_init.psycopg.connect", return_value=mock_conn) as mock_connect, patch("schema_init.POSTGRES_DATABASE", "target_db"):
+            _ensure_postgres_database(params)
+
+        call_kwargs = mock_connect.call_args[1]
+        assert call_kwargs.get("connect_timeout") == 10
 
     def test_sets_autocommit(self) -> None:
         mock_conn = self._make_mock_conn(fetchone_result=(1,))

@@ -1,11 +1,12 @@
 """Tests for the API service (api/api.py)."""
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 import pytest
 
+from common.config import ApiConfig
 from tests.api.conftest import (
     TEST_USER_EMAIL,
     TEST_USER_ID,
@@ -1379,3 +1380,115 @@ class TestVerifyDiscogsOAuthStateBinding:
         assert response.status_code == 200
         data = response.json()
         assert data["connected"] is True
+
+
+class TestLifespanShutdownClosesAnthropicClient:
+    """discogsography-8nle: the lifespan-created AsyncAnthropic client must be
+    closed on shutdown, mirroring the existing _neo4j/_pool/_redis cleanup."""
+
+    @staticmethod
+    def _make_config() -> ApiConfig:
+        return ApiConfig(
+            postgres_host="localhost:5432",
+            postgres_username="u",
+            postgres_password="p",  # nosec B106  # noqa: S106  # test fixture value, not a real credential
+            postgres_database="db",
+            jwt_secret_key="x" * 32,
+            neo4j_host="bolt://localhost:7687",
+            neo4j_username="neo4j",
+            neo4j_password="pw",  # nosec B106  # noqa: S106  # test fixture value, not a real credential
+            resend_api_key=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_shutdown_closes_anthropic_client_when_nlq_enabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import api.api as api_module
+        from api.api import lifespan
+
+        monkeypatch.setenv("NLQ_ENABLED", "true")
+        monkeypatch.setenv("NLQ_API_KEY", "test-anthropic-key")
+
+        mock_health = MagicMock()
+        mock_health.start_background = MagicMock()
+        mock_health.stop = MagicMock()
+
+        mock_pool = MagicMock()
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        mock_redis = AsyncMock()
+        mock_redis.aclose = AsyncMock()
+
+        mock_neo4j = MagicMock()
+        mock_neo4j.close = AsyncMock()
+
+        mock_anthropic_client = AsyncMock()
+        mock_anthropic_client.close = AsyncMock()
+
+        with (
+            patch("api.api.ApiConfig.from_env", return_value=self._make_config()),
+            patch("api.api.HealthServer", return_value=mock_health),
+            patch("api.api.AsyncPostgreSQLPool", return_value=mock_pool),
+            patch("api.api.reconcile_stale_sync_history", new_callable=AsyncMock),
+            patch("api.api.aioredis.from_url", new_callable=AsyncMock, return_value=mock_redis),
+            patch("api.api.AsyncResilientNeo4jDriver", return_value=mock_neo4j),
+            patch("anthropic.AsyncAnthropic", return_value=mock_anthropic_client),
+            patch("api.api.run_collector", new_callable=AsyncMock),
+            patch("api.api._prewarm_search_cache", new_callable=AsyncMock),
+        ):
+            async with lifespan(MagicMock()):
+                pass  # trigger shutdown on exit
+
+        mock_anthropic_client.close.assert_awaited_once()
+        # The other lifespan-owned clients must still be closed too.
+        mock_neo4j.close.assert_awaited_once()
+        mock_pool.close.assert_awaited_once()
+        mock_redis.aclose.assert_awaited_once()
+
+        # Restore module globals lifespan mutated, so later tests in this
+        # file see the fixture-provisioned state again.
+        api_module._pool = None
+        api_module._config = None
+        api_module._redis = None
+        api_module._neo4j = None
+
+    @pytest.mark.asyncio
+    async def test_shutdown_skips_anthropic_close_when_nlq_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """No client was ever created — shutdown must not error trying to close one."""
+        import api.api as api_module
+        from api.api import lifespan
+
+        monkeypatch.setenv("NLQ_ENABLED", "false")
+        monkeypatch.delenv("NLQ_API_KEY", raising=False)
+
+        mock_health = MagicMock()
+        mock_health.start_background = MagicMock()
+        mock_health.stop = MagicMock()
+
+        mock_pool = MagicMock()
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        mock_redis = AsyncMock()
+        mock_redis.aclose = AsyncMock()
+
+        mock_neo4j = MagicMock()
+        mock_neo4j.close = AsyncMock()
+
+        with (
+            patch("api.api.ApiConfig.from_env", return_value=self._make_config()),
+            patch("api.api.HealthServer", return_value=mock_health),
+            patch("api.api.AsyncPostgreSQLPool", return_value=mock_pool),
+            patch("api.api.reconcile_stale_sync_history", new_callable=AsyncMock),
+            patch("api.api.aioredis.from_url", new_callable=AsyncMock, return_value=mock_redis),
+            patch("api.api.AsyncResilientNeo4jDriver", return_value=mock_neo4j),
+            patch("api.api.run_collector", new_callable=AsyncMock),
+            patch("api.api._prewarm_search_cache", new_callable=AsyncMock),
+        ):
+            async with lifespan(MagicMock()):
+                pass  # Should not raise
+
+        api_module._pool = None
+        api_module._config = None
+        api_module._redis = None
+        api_module._neo4j = None

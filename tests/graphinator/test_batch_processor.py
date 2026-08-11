@@ -557,6 +557,34 @@ class TestFlushQueue:
         nack.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_flush_cancelled_while_acquiring_semaphore_re_enqueues(self) -> None:
+        """discogsography-r8hr: cancellation delivered WHILE BLOCKED on the
+        concurrency-limiter semaphore acquire — BEFORE the inner try block
+        that handles cancellation during the Neo4j write is ever entered —
+        must still re-enqueue the popped messages instead of losing them."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        processor = Neo4jBatchProcessor(mock_driver)
+        processor._flush_semaphore = asyncio.Semaphore(1)
+        processor._flush_semaphore.acquire = AsyncMock(side_effect=asyncio.CancelledError())
+
+        ack = AsyncMock()
+        nack = AsyncMock()
+        msg1 = PendingMessage("artists", {"id": "1", "name": "Artist 1", "sha256": "hash1"}, ack, nack)
+        msg2 = PendingMessage("artists", {"id": "2", "name": "Artist 2", "sha256": "hash2"}, AsyncMock(), AsyncMock())
+        processor.queues["artists"].append(msg1)
+        processor.queues["artists"].append(msg2)
+
+        with pytest.raises(asyncio.CancelledError):
+            await processor._flush_queue("artists")
+
+        # Messages should be re-enqueued, not lost
+        assert len(processor.queues["artists"]) == 2
+        ack.assert_not_called()
+        nack.assert_not_called()
+        mock_session.execute_write.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_flush_respects_batch_size_limit(self) -> None:
         """Test that flush respects batch size limit."""
         mock_driver, _mock_session = create_async_session_mock()

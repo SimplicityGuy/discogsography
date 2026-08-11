@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from psycopg.errors import InterfaceError, OperationalError
 import pytest
 
+from common.db_resilience import CircuitState
 from common.postgres_resilient import AsyncPostgreSQLPool, AsyncResilientPostgreSQL, ResilientPostgreSQLPool
 
 
@@ -78,6 +79,25 @@ class TestResilientPostgreSQLPool:
         assert conn == mock_connection
         mock_connect.assert_called()
         assert conn.autocommit is True
+
+    @patch("common.postgres_resilient.psycopg.connect")
+    @patch("common.postgres_resilient.threading.Thread")
+    def test_create_connection_closes_conn_when_validation_fails(
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+    ) -> None:
+        """discogsography-n1s8: once psycopg.connect() returns, a real backend
+        is live. If the SELECT 1 probe raises, the just-opened connection must
+        be closed before the exception propagates — otherwise it is orphaned
+        and only reclaimed by unreliable/delayed __del__ GC, pinning a
+        backend against the shared PgBouncer session-mode cap."""
+        mock_connection.cursor.return_value.execute.side_effect = OperationalError("probe failed")
+        mock_connect.return_value = mock_connection
+
+        pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=0)
+        with pytest.raises(Exception):  # noqa: B017  # circuit_breaker.call re-raises the probe error
+            pool._create_connection()
+
+        mock_connection.close.assert_called_once()
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
@@ -577,6 +597,23 @@ class TestAsyncResilientPostgreSQL:
 
     @pytest.mark.asyncio
     @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
+    async def test_create_connection_closes_conn_when_set_autocommit_fails(
+        self, mock_connect: Mock, connection_params: dict, mock_async_connection: AsyncMock
+    ) -> None:
+        """discogsography-n1s8: connect() returning means a real backend is
+        live. If set_autocommit raises, the connection must be closed before
+        the exception propagates rather than orphaned to GC."""
+        mock_async_connection.set_autocommit.side_effect = OperationalError("autocommit failed")
+        mock_connect.return_value = mock_async_connection
+
+        async_conn = AsyncResilientPostgreSQL(connection_params=connection_params)
+        with pytest.raises(OperationalError):
+            await async_conn._create_connection()
+
+        mock_async_connection.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
     async def test_test_connection_healthy(self, _mock_connect: Mock, connection_params: dict, mock_async_connection: AsyncMock) -> None:
         """Test async connection health check on healthy connection."""
         async_conn = AsyncResilientPostgreSQL(connection_params=connection_params)
@@ -790,6 +827,35 @@ class TestAsyncPostgreSQLPool:
 
     @pytest.mark.asyncio
     @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
+    async def test_create_connection_routes_through_circuit_breaker(self, mock_connect: Mock, connection_params: dict) -> None:
+        """discogsography-4q2s: _create_connection must actually invoke the
+        breaker constructed in __init__, not bypass it. 3 consecutive
+        connect() failures must open the circuit so subsequent callers
+        fast-fail (CircuitOpenError) instead of each walking the full
+        connect+backoff ladder during a sustained outage."""
+        mock_connect.side_effect = OperationalError("Postgres is down")
+
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, max_retries=1)
+        assert pool.circuit_breaker.state == CircuitState.CLOSED
+
+        for _ in range(pool.circuit_breaker.config.failure_threshold):
+            with pytest.raises(OperationalError):
+                await pool._create_connection()
+
+        assert pool.circuit_breaker.state == CircuitState.OPEN
+
+        # The breaker itself now rejects the call BEFORE a new connect()
+        # attempt is even made — the fast-fail this bead is about.
+        mock_connect.reset_mock()
+        with pytest.raises(Exception, match="Circuit breaker is OPEN"):
+            await pool._create_connection()
+        mock_connect.assert_not_called()
+
+        # Cleanup
+        await pool.close()
+
+    @pytest.mark.asyncio
+    @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
     async def test_create_connection_with_health_check(self, mock_connect: Mock, connection_params: dict, mock_async_connection: AsyncMock) -> None:
         """Test connection creation includes health check."""
 
@@ -802,6 +868,29 @@ class TestAsyncPostgreSQLPool:
         # Verify health check query was executed
         cursor = mock_async_connection.cursor.return_value
         cursor.execute.assert_called_with("SELECT 1")
+
+        # Cleanup
+        await pool.close()
+
+    @pytest.mark.asyncio
+    @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
+    async def test_create_connection_closes_conn_when_validation_fails(
+        self, mock_connect: Mock, connection_params: dict, mock_async_connection: AsyncMock
+    ) -> None:
+        """discogsography-n1s8: psycopg.AsyncConnection.connect() returning
+        means a real backend is live. If the post-connect SELECT 1 probe
+        raises, the just-opened connection must be closed before the
+        exception propagates — otherwise it is orphaned and only reclaimed by
+        unreliable/delayed __del__ GC, pinning a backend against the shared
+        PgBouncer session-mode cap under DB instability."""
+        mock_async_connection.cursor.return_value.execute.side_effect = OperationalError("probe failed")
+        mock_connect.return_value = mock_async_connection
+
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, max_retries=1)
+        with pytest.raises(OperationalError):
+            await pool._create_connection()
+
+        mock_async_connection.close.assert_called_once()
 
         # Cleanup
         await pool.close()

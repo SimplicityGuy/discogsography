@@ -55,6 +55,18 @@ def _postgres_connection_params() -> dict[str, Any]:
         "dbname": POSTGRES_DATABASE,
         "user": POSTGRES_USERNAME,
         "password": POSTGRES_PASSWORD,
+        # Bound the TCP+startup-packet+auth handshake. libpq's own default is
+        # 0 (infinite) — a pooler (POSTGRES_HOST "may embed a port, e.g. a
+        # pooler") that accepts the TCP connection but never completes the
+        # handshake would otherwise block psycopg.connect() forever. This is
+        # the FIRST thing main() does, synchronously, before any other
+        # service can start (module docstring) — an infinite block here never
+        # raises, so it bypasses the top-level exit(1) guard entirely and
+        # wedges every dependent service's `depends_on:
+        # service_completed_successfully` (discogsography-4vnh). Shared by
+        # both the admin CREATE DATABASE connect and the async pool built
+        # from this same dict.
+        "connect_timeout": 10,
     }
 
 

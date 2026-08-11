@@ -231,13 +231,15 @@ class TestOnDataMessage:
 def _make_purge_connection(total_count: int, stale_count: int) -> tuple[MagicMock, AsyncMock]:
     """Build a mock connection wired for purge_stale_rows.
 
-    fetchone yields the total-row count then the would-be-deleted count; fetchall
-    (only reached if the purge is not vetoed) returns stale_count data_id rows.
+    fetchone yields the total-row count then the would-be-deleted count;
+    rowcount (only meaningful once the DELETE itself runs) reports the actual
+    affected-row count purge_stale_rows now reads directly — no RETURNING/
+    fetchall (discogsography-6u1o).
     """
     mock_cursor = AsyncMock()
     mock_cursor.execute = AsyncMock()
     mock_cursor.fetchone = AsyncMock(side_effect=[(total_count,), (stale_count,)])
-    mock_cursor.fetchall = AsyncMock(return_value=[(f"id-{i}",) for i in range(stale_count)])
+    mock_cursor.rowcount = stale_count
 
     cursor_cm = AsyncMock()
     cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
@@ -274,7 +276,10 @@ class TestPurgeStaleRowsGuards:
 
         # 2 count queries + 1 DELETE = 3 executes; the DELETE actually ran.
         assert mock_cursor.execute.call_count == 3
-        mock_cursor.fetchall.assert_awaited_once()
+        delete_sql = mock_cursor.execute.call_args_list[-1].args[0]
+        assert "DELETE FROM" in str(delete_sql)
+        assert "RETURNING" not in str(delete_sql)
+        mock_cursor.fetchall.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_vetoes_full_table_wipe(self, mock_async_pool: Any) -> None:
@@ -315,7 +320,9 @@ class TestPurgeStaleRowsGuards:
             await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=11)
 
         assert mock_cursor.execute.call_count == 3
-        mock_cursor.fetchall.assert_awaited_once()
+        delete_sql = mock_cursor.execute.call_args_list[-1].args[0]
+        assert "DELETE FROM" in str(delete_sql)
+        mock_cursor.fetchall.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_skips_when_zero_records_this_session(self, mock_async_pool: Any) -> None:
@@ -367,6 +374,58 @@ class TestPurgeStaleRowsGuards:
         # Both count queries ran, but the stale count was 0 so no DELETE followed.
         assert mock_cursor.execute.call_count == 2
         mock_cursor.fetchall.assert_not_awaited()
+
+
+class TestPurgeStaleRowsDeleteIsO1Memory:
+    """discogsography-6u1o: the DELETE must never stream every deleted data_id
+    back over the wire and buffer it into a Python list purely to len() a
+    count already known — that is an O(n) allocation (potentially multi-GB
+    on a large purge) where O(1) suffices via cursor.rowcount."""
+
+    @pytest.mark.asyncio
+    async def test_delete_statement_has_no_returning_clause(self, mock_async_pool: Any) -> None:
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=5)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=95)
+
+        delete_sql = str(mock_cursor.execute.call_args_list[-1].args[0])
+        assert "DELETE FROM" in delete_sql
+        assert "RETURNING" not in delete_sql
+
+    @pytest.mark.asyncio
+    async def test_delete_never_calls_fetchall(self, mock_async_pool: Any) -> None:
+        """Even on a real (non-vetoed) delete, fetchall must never be awaited —
+        the deleted-row count comes from cursor.rowcount alone."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=5)
+        pool = mock_async_pool(mock_conn)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=95)
+
+        mock_cursor.fetchall.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_deleted_count_uses_rowcount(self, mock_async_pool: Any) -> None:
+        """The logged deleted count must reflect cursor.rowcount, not a
+        materialized row list — proven by rowcount and the (unused) stale
+        count diverging and the log using rowcount's value."""
+        mock_conn, mock_cursor = _make_purge_connection(total_count=100, stale_count=5)
+        # Simulate the DELETE's actual affected-row count differing from the
+        # pre-count (e.g. a row deleted by a concurrent process in between) —
+        # rowcount is the authority, not the earlier SELECT count(*).
+        mock_cursor.rowcount = 3
+
+        pool = mock_async_pool(mock_conn)
+        with (
+            patch("tableinator.tableinator.connection_pool", pool),
+            patch("tableinator.tableinator.logger") as mock_logger,
+        ):
+            await purge_stale_rows("artists", "2026-07-20T00:00:00+00:00", record_count=95)
+
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("Purged 3 stale" in call for call in info_calls)
 
 
 class TestMain:

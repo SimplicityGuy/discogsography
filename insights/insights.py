@@ -151,6 +151,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         logger.info("✅ Redis cache initialized", ttl_hours=_config.schedule_hours)
     except Exception:
         logger.warning("⚠️ Redis unavailable — caching disabled, falling back to PostgreSQL")
+        # from_url() is lazy — ping() is what actually opens the socket, so a
+        # failure here (e.g. requirepass with a missing/wrong REDIS_PASSWORD)
+        # still leaves a live client + pooled connection to close. Without
+        # this, the reference is dropped with no deterministic cleanup and
+        # the module's own shutdown convention (line 179: `if _redis: await
+        # _redis.aclose()`) becomes a no-op here since _redis is already None
+        # (discogsography-v1g8).
+        if _redis is not None:
+            with contextlib.suppress(Exception):
+                await _redis.aclose()
         _redis = None
         _cache = None
 

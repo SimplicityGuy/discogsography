@@ -585,6 +585,7 @@ async def run_full_sync(
     error_message = None
     collection_count = 0
     wantlist_count = 0
+    cancelled = False
 
     try:
         # Fetch OAuth tokens for the user
@@ -646,6 +647,17 @@ async def run_full_sync(
             neo4j_driver=neo4j_driver,
         )
 
+    except asyncio.CancelledError:
+        # CancelledError is a BaseException, not an Exception — the `except
+        # Exception` below never sees it. Shutdown/restart cancels this task
+        # via api/api.py's lifespan (task.cancel() + gather(...,
+        # return_exceptions=True)), so this path is routinely reachable, not
+        # exceptional. Record a terminal status in `finally` below and
+        # re-raise so cancellation still propagates normally
+        # (discogsography-pxqw).
+        cancelled = True
+        error_message = "Sync cancelled (service shutdown or restart)"
+        raise
     except Exception as exc:
         error_message = str(exc)
         logger.error("❌ Sync failed", user_id=str(user_uuid), error=error_message)
@@ -664,24 +676,28 @@ async def run_full_sync(
             await rec_cache.invalidate_user(str(user_uuid))
             logger.info("🔄 Recommendation cache invalidated", user_id=str(user_uuid))
 
-    # Update sync_history record
-    final_status = "failed" if error_message else "completed"
-    try:
-        async with pg_pool.connection() as conn, conn.cursor() as cur:
-            await execute_sql(
-                cur,
-                """
-                    UPDATE sync_history
-                    SET status = %s,
-                        items_synced = %s,
-                        error_message = %s,
-                        completed_at = NOW()
-                    WHERE id = %s::uuid
-                    """,
-                (final_status, collection_count + wantlist_count, error_message, sync_id),
-            )
-    except Exception as update_exc:
-        logger.error("❌ Failed to update sync_history", sync_id=sync_id, error=str(update_exc))
+        # Update sync_history record — moved INTO `finally` so it runs even
+        # when CancelledError is propagating (the previous plain-code
+        # placement after the try/except/finally never executed on
+        # cancellation, leaving the row stuck at status='running' forever —
+        # discogsography-pxqw).
+        final_status = "cancelled" if cancelled else ("failed" if error_message else "completed")
+        try:
+            async with pg_pool.connection() as conn, conn.cursor() as cur:
+                await execute_sql(
+                    cur,
+                    """
+                        UPDATE sync_history
+                        SET status = %s,
+                            items_synced = %s,
+                            error_message = %s,
+                            completed_at = NOW()
+                        WHERE id = %s::uuid
+                        """,
+                    (final_status, collection_count + wantlist_count, error_message, sync_id),
+                )
+        except Exception as update_exc:
+            logger.error("❌ Failed to update sync_history", sync_id=sync_id, error=str(update_exc))
 
     return {
         "sync_id": sync_id,
@@ -690,3 +706,29 @@ async def run_full_sync(
         "wantlist_count": wantlist_count,
         "error": error_message,
     }
+
+
+async def reconcile_stale_sync_history(pg_pool: AsyncPostgreSQLPool) -> None:
+    """Flip any sync_history row stuck at status='running' to 'failed' at startup.
+
+    run_full_sync's own CancelledError/Exception handling (see above) covers
+    an in-process cancellation or crash, but it can do nothing about a hard
+    process death (SIGKILL/OOM) between the INSERT in
+    api/routers/sync.py:trigger_sync and run_full_sync's terminal UPDATE —
+    the row is simply abandoned with no in-process handler left to run.
+    Call this once at service startup, before traffic is accepted, so a
+    restart after a crash mid-sync doesn't leave GET /api/sync/status
+    reporting a phantom running sync forever (discogsography-pxqw).
+    """
+    async with pg_pool.connection() as conn, conn.cursor() as cur:
+        await execute_sql(
+            cur,
+            """
+                UPDATE sync_history
+                SET status = 'failed', error_message = 'Interrupted by service restart', completed_at = NOW()
+                WHERE status = 'running'
+                """,
+        )
+        reconciled = cur.rowcount
+    if reconciled:
+        logger.warning("⚠️ Reconciled stale sync_history rows stuck at 'running'", count=reconciled)

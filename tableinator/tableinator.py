@@ -626,14 +626,21 @@ async def purge_stale_rows(
                     )
                     return
 
+                # No RETURNING/fetchall here — the only past use of the
+                # deleted rows was len(), a count already known exactly from
+                # cursor.rowcount (the DELETE's own affected-row count,
+                # available with O(1) memory regardless of table size).
+                # RETURNING data_id would stream every deleted id back over
+                # the wire and buffer it into one Python list purely to
+                # discard it after counting — a multi-GB allocation on a
+                # large purge (discogsography-6u1o).
                 await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
-                    sql.SQL(
-                        "DELETE FROM {table} WHERE updated_at < %s RETURNING data_id"
-                    ).format(table=sql.Identifier(data_type)),
+                    sql.SQL("DELETE FROM {table} WHERE updated_at < %s").format(
+                        table=sql.Identifier(data_type)
+                    ),
                     (started_at_dt,),
                 )
-                deleted_rows = await cursor.fetchall()
-                deleted_count = len(deleted_rows)
+                deleted_count = cursor.rowcount
 
                 logger.info(
                     f"🧹 Purged {deleted_count} stale {data_type} rows "
