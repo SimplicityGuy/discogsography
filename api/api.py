@@ -341,6 +341,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         await _pool.close()
     if _redis:
         await _redis.aclose()
+    if anthropic_client is not None:
+        # AsyncAnthropic owns an internal httpx.AsyncClient whose connection
+        # pool/keep-alive sockets are never drained unless explicitly
+        # closed — it has no context-manager/finalizer wired up here, so
+        # without this the client just leaks on shutdown (discogsography-8nle).
+        await anthropic_client.close()
     health_srv.stop()
     logger.info("✅ API service stopped")
 
