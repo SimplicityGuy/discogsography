@@ -233,6 +233,37 @@ class TestResetConfirm:
         )
         assert response.status_code == 422  # Pydantic validation
 
+    def test_reset_confirm_revokes_app_tokens(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """discogsography-ci4a: a password reset must bulk-revoke the user's
+        app tokens — the password_changed Redis marker alone never covers
+        them (it only gates JWTs and it TTLs out; app tokens carry no
+        expiry)."""
+        mock_redis.getdel = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "user_id": TEST_USER_ID,
+                    "email": TEST_USER_EMAIL,
+                }
+            )
+        )
+        response = test_client.post(
+            "/api/auth/reset-confirm",
+            json={"token": "valid-token", "new_password": "newpassword123"},
+        )
+        assert response.status_code == 200
+
+        revoke_calls = [call for call in mock_cur.execute.call_args_list if "UPDATE app_tokens" in call.args[0]]
+        assert len(revoke_calls) == 1
+        query, params = revoke_calls[0].args
+        assert "revoked_at = NOW()" in query
+        assert "revoked_at IS NULL" in query
+        assert params == (TEST_USER_ID,)
+
 
 class TestTwoFactorSetup:
     """Tests for POST /api/auth/2fa/setup."""
@@ -1476,6 +1507,29 @@ class TestChangePassword:
         mock_redis.setex.assert_called()
         redis_call_args = mock_redis.setex.call_args
         assert redis_call_args[0][0].startswith("password_changed:")
+
+    def test_change_password_revokes_app_tokens(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,  # noqa: ARG002  # required so setex is stubbed
+        auth_headers: dict[str, str],
+    ) -> None:
+        """discogsography-ci4a: same bulk-revoke contract as reset-confirm."""
+        mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
+        response = test_client.post(
+            "/api/auth/change-password",
+            json={"current_password": "testpassword", "new_password": "newpassword123"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+        revoke_calls = [call for call in mock_cur.execute.call_args_list if "UPDATE app_tokens" in call.args[0]]
+        assert len(revoke_calls) == 1
+        query, params = revoke_calls[0].args
+        assert "revoked_at = NOW()" in query
+        assert "revoked_at IS NULL" in query
+        assert params == (TEST_USER_ID,)
 
     def test_change_password_wrong_current(
         self,

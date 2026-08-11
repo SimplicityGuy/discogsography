@@ -366,6 +366,16 @@ async def reset_confirm(request: Request, body: ResetConfirmModel) -> JSONRespon
             "UPDATE users SET hashed_password = %s, password_changed_at = NOW(), updated_at = NOW() WHERE id = %s::uuid",
             (hashed_password, user_id),
         )
+        # Bulk-revoke third-party app tokens too. password_changed:{user_id} only
+        # gates JWT validation and TTLs out after jwt_expire_minutes, so it can
+        # never durably revoke app tokens (which carry no expiry by design) —
+        # revoking the rows themselves is the only correct fix
+        # (discogsography-ci4a).
+        await execute_sql(
+            cur,
+            "UPDATE app_tokens SET revoked_at = NOW() WHERE user_id = %s::uuid AND revoked_at IS NULL",
+            (user_id,),
+        )
 
     # Invalidate all existing sessions
     await _redis.setex(f"password_changed:{user_id}", _config.jwt_expire_minutes * 60, str(now_ts))
@@ -409,6 +419,14 @@ async def change_password(
             cur,
             "UPDATE users SET hashed_password = %s, password_changed_at = NOW(), updated_at = NOW() WHERE id = %s::uuid",
             (hashed_password, user_id),
+        )
+        # Bulk-revoke third-party app tokens too (same pattern as reset-confirm;
+        # see discogsography-ci4a for why the Redis password_changed marker
+        # alone cannot cover app tokens).
+        await execute_sql(
+            cur,
+            "UPDATE app_tokens SET revoked_at = NOW() WHERE user_id = %s::uuid AND revoked_at IS NULL",
+            (user_id,),
         )
 
     # Invalidate all existing sessions (same pattern as reset-confirm)
