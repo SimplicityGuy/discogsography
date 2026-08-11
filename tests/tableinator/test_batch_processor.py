@@ -1752,3 +1752,80 @@ class TestSameTypeFlushSerialization:
 
         assert nacked == ["poison"], "poison batch must reach the DLQ nack path"
         assert "poison" not in acked
+
+
+class TestDrainWaitsForInFlight:
+    """Regression tests for discogsography-uo8g (drain blind to popped batches)."""
+
+    @staticmethod
+    def _msg(data_id: str) -> PendingMessage:
+        return PendingMessage(
+            data_type="artists",
+            data_id=data_id,
+            data={"id": data_id},
+            sha256="h",
+            ack_callback=AsyncMock(),
+            nack_callback=AsyncMock(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_in_flight_tracked_while_writing(self) -> None:
+        """A popped-but-unwritten batch is counted, not invisible."""
+        config = BatchConfig(batch_size=1, min_batch_size=1, backoff_initial=0.0)
+        processor = PostgreSQLBatchProcessor(MagicMock(), config=config)
+
+        writing = asyncio.Event()
+        release = asyncio.Event()
+
+        async def process(_data_type: str, _messages: list[PendingMessage]) -> None:
+            writing.set()
+            await release.wait()
+
+        processor._process_batch = AsyncMock(side_effect=process)  # type: ignore[method-assign]
+        processor.queues["artists"].append(self._msg("1"))
+
+        flush = asyncio.create_task(processor._flush_queue("artists"))
+        await asyncio.wait_for(writing.wait(), timeout=1.0)
+
+        assert not processor.queues["artists"]
+        assert processor._in_flight["artists"] == 1
+        assert processor.get_stats()["in_flight"]["artists"] == 1
+
+        release.set()
+        await asyncio.wait_for(flush, timeout=1.0)
+        assert processor._in_flight["artists"] == 0
+
+    @pytest.mark.asyncio
+    async def test_drain_blocks_on_in_flight_batch(self) -> None:
+        """flush_queue must not report drained while a write is still landing.
+
+        tableinator's `file_complete` handler treats a True return as "every
+        row for this file is committed" (discogsography-uo8g).
+        """
+        config = BatchConfig(batch_size=1, min_batch_size=1, backoff_initial=0.0)
+        processor = PostgreSQLBatchProcessor(MagicMock(), config=config)
+
+        writing = asyncio.Event()
+        release = asyncio.Event()
+        completed: list[str] = []
+
+        async def process(_data_type: str, _messages: list[PendingMessage]) -> None:
+            writing.set()
+            await release.wait()
+            completed.append("write")
+
+        processor._process_batch = AsyncMock(side_effect=process)  # type: ignore[method-assign]
+        processor.queues["artists"].append(self._msg("1"))
+
+        in_flight_flush = asyncio.create_task(processor._flush_queue("artists"))
+        await asyncio.wait_for(writing.wait(), timeout=1.0)
+
+        drain = asyncio.create_task(processor.flush_queue("artists"))
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert not drain.done(), "drain returned while a batch was still in flight"
+
+        release.set()
+        assert await asyncio.wait_for(drain, timeout=1.0) is True
+        await asyncio.wait_for(in_flight_flush, timeout=1.0)
+        assert completed == ["write"], "the write must complete before the drain returns"

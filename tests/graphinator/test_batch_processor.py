@@ -2074,3 +2074,75 @@ class TestSameTypeFlushSerialization:
 
         assert nacked == ["poison"], "poison batch must reach the DLQ nack path"
         assert "poison" not in acked
+
+
+class TestDrainWaitsForInFlight:
+    """Regression tests for discogsography-uo8g (drain blind to popped batches)."""
+
+    @pytest.mark.asyncio
+    async def test_in_flight_tracked_while_writing(self) -> None:
+        """A popped-but-unwritten batch is counted, not invisible."""
+        config = BatchConfig(batch_size=1, min_batch_size=1, backoff_initial=0.0)
+        processor = Neo4jBatchProcessor(MagicMock(), config)
+
+        writing = asyncio.Event()
+        release = asyncio.Event()
+
+        async def process(_messages: list[PendingMessage]) -> set[int]:
+            writing.set()
+            await release.wait()
+            return set()
+
+        processor._process_artists_batch = AsyncMock(side_effect=process)  # type: ignore[method-assign]
+        processor.queues["artists"].append(PendingMessage("artists", {"id": "1", "name": "x", "sha256": "h"}, AsyncMock(), AsyncMock()))
+
+        flush = asyncio.create_task(processor._flush_queue("artists"))
+        await asyncio.wait_for(writing.wait(), timeout=1.0)
+
+        # The deque is empty — the batch lives in a task-local list.
+        assert not processor.queues["artists"]
+        assert processor._in_flight["artists"] == 1
+        assert processor.get_stats()["in_flight"]["artists"] == 1
+
+        release.set()
+        await asyncio.wait_for(flush, timeout=1.0)
+        assert processor._in_flight["artists"] == 0
+
+    @pytest.mark.asyncio
+    async def test_drain_blocks_on_in_flight_batch(self) -> None:
+        """flush_queue must not report drained while a write is still landing.
+
+        Before the fix the drain condition was `while self.queues.get(data_type)`,
+        so with the deque momentarily empty it returned True while a concurrent
+        release batch was still MERGE-ing stub nodes. graphinator then started
+        cleanup_all_stub_nodes(), whose DETACH DELETE raced those very writes —
+        the exact race the all-signals deferral exists to prevent.
+        """
+        config = BatchConfig(batch_size=1, min_batch_size=1, backoff_initial=0.0)
+        processor = Neo4jBatchProcessor(MagicMock(), config)
+
+        writing = asyncio.Event()
+        release = asyncio.Event()
+        completed: list[str] = []
+
+        async def process(_messages: list[PendingMessage]) -> set[int]:
+            writing.set()
+            await release.wait()
+            completed.append("write")
+            return set()
+
+        processor._process_artists_batch = AsyncMock(side_effect=process)  # type: ignore[method-assign]
+        processor.queues["artists"].append(PendingMessage("artists", {"id": "1", "name": "x", "sha256": "h"}, AsyncMock(), AsyncMock()))
+
+        in_flight_flush = asyncio.create_task(processor._flush_queue("artists"))
+        await asyncio.wait_for(writing.wait(), timeout=1.0)
+
+        drain = asyncio.create_task(processor.flush_queue("artists"))
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert not drain.done(), "drain returned while a batch was still in flight"
+
+        release.set()
+        assert await asyncio.wait_for(drain, timeout=1.0) is True
+        await asyncio.wait_for(in_flight_flush, timeout=1.0)
+        assert completed == ["write"], "the write must complete before the drain returns"
