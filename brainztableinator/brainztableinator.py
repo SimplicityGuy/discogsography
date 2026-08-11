@@ -502,6 +502,24 @@ async def _recover_consumers() -> None:
         consumer_tags.clear()
 
 
+# MusicBrainz's ws/2 JSON serializer spells multi-word entity types with an
+# underscore ("release_group") while this project — queue names, PROCESSORS keys,
+# and the hardcoded literals at every _insert_relationships call site — uses the
+# hyphenated form. The extractor now canonicalizes on the way out
+# (extractor/src/jsonl_parser.rs::canonical_entity_type), but messages published by
+# an older extractor may still be in flight or parked in a DLQ, so normalize
+# defensively at the write boundary too. Without this, the forward row written from
+# endpoint A and the swapped backward row written from endpoint B carry different
+# target_entity_type spellings, so the natural-key ON CONFLICT never fires and the
+# same logical relationship is stored twice under two vocabularies.
+_ENTITY_TYPE_ALIASES = {"release_group": "release-group"}
+
+
+def _canonical_entity_type(entity_type: str) -> str:
+    """Map a MusicBrainz entity-type spelling onto the project's canonical vocabulary."""
+    return _ENTITY_TYPE_ALIASES.get(entity_type, entity_type)
+
+
 async def _insert_relationships(
     conn: Any, source_mbid: str, source_type: str, rels: list[dict[str, Any]]
 ) -> None:
@@ -528,12 +546,15 @@ async def _insert_relationships(
         if not (rel.get("target_mbid") and rel.get("target_type") and rel.get("type")):
             continue
 
+        rel_target_type = _canonical_entity_type(rel["target_type"])
+        canonical_source_type = _canonical_entity_type(source_type)
+
         if rel.get("direction") == "backward":
-            row_source_mbid, row_source_type = rel["target_mbid"], rel["target_type"]
-            row_target_mbid, row_target_type = source_mbid, source_type
+            row_source_mbid, row_source_type = rel["target_mbid"], rel_target_type
+            row_target_mbid, row_target_type = source_mbid, canonical_source_type
         else:
-            row_source_mbid, row_source_type = source_mbid, source_type
-            row_target_mbid, row_target_type = rel["target_mbid"], rel["target_type"]
+            row_source_mbid, row_source_type = source_mbid, canonical_source_type
+            row_target_mbid, row_target_type = rel["target_mbid"], rel_target_type
 
         params.append(
             (

@@ -436,6 +436,80 @@ class TestInsertRelationships:
         assert row[2] == "source-mbid-1"
         assert row[3] == "artist"
 
+    @pytest.mark.asyncio
+    async def test_insert_relationships_canonicalizes_release_group_entity_type(self):
+        """discogsography-06gd: MusicBrainz spells release groups 'release_group'
+        while every call site here hardcodes 'release-group'. Passing the raw
+        spelling through wrote two vocabularies into the same table, so the
+        forward row and the mirrored backward row no longer collided on the
+        natural key and the same logical relationship was stored twice."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        rels = [
+            {
+                "target_mbid": "rg-mbid-1",
+                "target_type": "release_group",
+                "type": "tribute",
+            }
+        ]
+
+        await _insert_relationships(mock_conn, "source-mbid-1", "artist", rels)
+
+        row = mock_cursor.executemany.call_args[0][1][0]
+        assert row[3] == "release-group"
+
+    @pytest.mark.asyncio
+    async def test_insert_relationships_mirrored_rows_agree_on_entity_type(self):
+        """discogsography-06gd: the row written while processing endpoint A and the
+        swapped row written while processing endpoint B must be byte-identical in
+        their type columns, otherwise ON CONFLICT never fires."""
+        mock_conn_a, mock_cursor_a = _make_mock_conn()
+        # Endpoint A (the artist) sees the release group as a forward target,
+        # spelled with MusicBrainz's underscore.
+        await _insert_relationships(
+            mock_conn_a,
+            "artist-mbid-1",
+            "artist",
+            [{"target_mbid": "rg-mbid-1", "target_type": "release_group", "type": "tribute"}],
+        )
+        forward_row = mock_cursor_a.executemany.call_args[0][1][0]
+
+        mock_conn_b, mock_cursor_b = _make_mock_conn()
+        # Endpoint B (the release group) sees the mirror as a backward relation and
+        # is processed under the project's hyphenated literal.
+        await _insert_relationships(
+            mock_conn_b,
+            "rg-mbid-1",
+            "release-group",
+            [
+                {
+                    "target_mbid": "artist-mbid-1",
+                    "target_type": "artist",
+                    "type": "tribute",
+                    "direction": "backward",
+                }
+            ],
+        )
+        backward_row = mock_cursor_b.executemany.call_args[0][1][0]
+
+        # source_mbid, source_entity_type, target_mbid, target_entity_type, relationship_type
+        assert forward_row[:5] == backward_row[:5]
+
+    @pytest.mark.asyncio
+    async def test_insert_relationships_canonicalizes_the_processed_entity_type(self):
+        """discogsography-06gd: normalization must also cover source_type, so a caller
+        passing the underscore spelling cannot reintroduce the split vocabulary."""
+        mock_conn, mock_cursor = _make_mock_conn()
+
+        await _insert_relationships(
+            mock_conn,
+            "rg-mbid-1",
+            "release_group",
+            [{"target_mbid": "artist-mbid-1", "target_type": "artist", "type": "tribute"}],
+        )
+
+        row = mock_cursor.executemany.call_args[0][1][0]
+        assert row[1] == "release-group"
+
 
 class TestInsertExternalLinks:
     """Tests for _insert_external_links (batched executemany)."""
