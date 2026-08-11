@@ -880,6 +880,80 @@ class TestOnDataMessageExtended:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_extraction_complete_marks_the_type_complete(self) -> None:
+        """discogsography-ewvh: extraction_complete is the type's terminal signal.
+
+        completed_files was written only by file_complete and erased by
+        _recover_consumers for any type whose queue still holds messages — and when the
+        only pending message IS this signal, nothing restored the flag. The service then
+        logged "Stalled consumers detected" at ERROR every 30s forever and
+        check_all_consumers_idle() could never return True, holding the connection and
+        four idle consumers open until restart.
+        """
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"type": "extraction_complete", "version": "20260101", "started_at": "2026-01-01T00:00:00Z"}).encode()
+        completed: set[str] = set()  # as left by _recover_consumers' discard
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", None),
+            patch("tableinator.tableinator.connection_pool", None),
+            patch("tableinator.tableinator.completed_files", completed),
+            patch("tableinator.tableinator.queues", {}),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        assert completed == {"artists"}
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_extraction_complete_rearms_consumer_cancellation(self) -> None:
+        """The file_complete that originally scheduled cancellation was consumed in an
+        earlier session, so the terminal signal has to re-arm it or the consumer is
+        never released."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"type": "extraction_complete", "version": "20260101", "started_at": "2026-01-01T00:00:00Z"}).encode()
+        mock_queue = MagicMock()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", None),
+            patch("tableinator.tableinator.connection_pool", None),
+            patch("tableinator.tableinator.completed_files", set()),
+            patch("tableinator.tableinator.queues", {"artists": mock_queue}),
+            patch("tableinator.tableinator.CONSUMER_CANCEL_DELAY", 300),
+            patch("tableinator.tableinator.schedule_consumer_cancellation", new=AsyncMock()) as mock_schedule,
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_schedule.assert_awaited_once_with("artists", mock_queue)
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_extraction_complete_does_not_mark_complete_on_failed_purge(self) -> None:
+        """A requeued signal must not leave the type marked complete — the purge still
+        owes a retry."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"type": "extraction_complete", "version": "20260101", "started_at": "2026-01-01T00:00:00Z"}).encode()
+        completed: set[str] = set()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", None),
+            patch("tableinator.tableinator.connection_pool", MagicMock()),
+            patch("tableinator.tableinator.completed_files", completed),
+            patch("tableinator.tableinator.queues", {}),
+            patch("tableinator.tableinator.purge_stale_rows", side_effect=Exception("purge boom")),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        assert completed == set()
+        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_extraction_complete_flushes_batches(self) -> None:
         """Test extraction_complete flushes batch processor."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)

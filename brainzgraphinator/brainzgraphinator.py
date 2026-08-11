@@ -312,6 +312,20 @@ async def check_file_completion(
             data_type=data_type,
             version=data.get("version"),
         )
+
+        # extraction_complete is this type's terminal signal, so it must also
+        # (re-)mark the type complete. completed_files is otherwise written only by
+        # file_complete and ERASED by _recover_consumers for any type whose queue
+        # still holds messages — and when the only pending message IS this signal,
+        # nothing ever restored the flag: the stall check then logged at ERROR
+        # every 30s forever and check_all_consumers_idle() could never return True,
+        # so the connection and idle consumers were held open until restart. A
+        # plain restart between the file_complete ack and this delivery reaches the
+        # same terminal state (discogsography-ewvh).
+        completed_files.add(data_type)
+        if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
+            await schedule_consumer_cancellation(data_type, queues[data_type])
+
         await message.ack()
         return True
 

@@ -951,6 +951,40 @@ class TestCheckFileCompletion:
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.batch_processor", None)
+    @patch("graphinator.graphinator.graph", None)
+    async def test_extraction_complete_marks_the_type_complete(self) -> None:
+        """discogsography-ewvh: extraction_complete is the type's terminal signal.
+
+        completed_files was written only by file_complete and erased by the recovery
+        path for any type whose queue still holds messages — and when the only pending
+        message IS this signal, nothing restored the flag, so the stall check logged at
+        ERROR every 30s forever and check_all_consumers_idle() could never return True.
+        """
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {"type": "extraction_complete", "version": "20260101"}
+        completed: set[str] = set()
+        mock_queue = MagicMock()
+
+        from graphinator.graphinator import check_file_completion
+
+        with (
+            patch("graphinator.graphinator.completed_files", completed),
+            patch("graphinator.graphinator.queues", {"artists": mock_queue}),
+            patch("graphinator.graphinator.CONSUMER_CANCEL_DELAY", 300),
+            patch("graphinator.graphinator.schedule_consumer_cancellation", new=AsyncMock()) as mock_schedule,
+            patch("graphinator.graphinator._sync_extraction_signals", new=AsyncMock()),
+            patch("graphinator.graphinator._persist_extraction_signals", new=AsyncMock()),
+            patch("graphinator.graphinator.extraction_complete_signals", set()),
+        ):
+            result = await check_file_completion(completion_data, "artists", mock_message)
+
+        assert result is True
+        assert completed == {"artists"}
+        mock_schedule.assert_awaited_once_with("artists", mock_queue)
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_extraction_complete_flushes_batches(self) -> None:
         """Test extraction_complete flushes batch processor before cleanup."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)

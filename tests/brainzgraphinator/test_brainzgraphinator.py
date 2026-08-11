@@ -561,15 +561,21 @@ class TestMessageHandling:
         """extraction_complete control message is handled and acked."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = dumps({"type": "extraction_complete", "version": "2026-01"})
+        completed: set[str] = set()
 
         with (
             patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
-            patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
+            patch("brainzgraphinator.brainzgraphinator.completed_files", completed),
             patch("brainzgraphinator.brainzgraphinator.queues", {}),
         ):
             await on_artist_message(mock_message)
 
         mock_message.ack.assert_called_once()
+        # discogsography-ewvh: the terminal signal must also (re-)mark the type
+        # complete — completed_files is otherwise erased by the recovery path for any
+        # type whose queue still holds messages, and this signal is often the only one
+        # left, so nothing ever restored the flag.
+        assert completed == {"artists"}
 
     @pytest.mark.asyncio
     @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)

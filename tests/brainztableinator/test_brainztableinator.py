@@ -759,15 +759,20 @@ class TestOnDataMessage:
         """extraction_complete message should be acked."""
         mock_message = AsyncMock()
         mock_message.body = b'{"type": "extraction_complete", "version": "2026-01-01"}'
+        completed: set[str] = set()
 
         with (
             patch("brainztableinator.brainztableinator.shutdown_requested", False),
-            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.completed_files", completed),
             patch("brainztableinator.brainztableinator.connection_pool", MagicMock()),
         ):
             await on_data_message(mock_message, "artists")
 
             mock_message.ack.assert_called_once()
+            # discogsography-ewvh: the terminal signal must also (re-)mark the type
+            # complete — _recover_consumers discards it for any type whose queue still
+            # holds messages, and this signal is often the only one left.
+            assert completed == {"artists"}
 
     @pytest.mark.asyncio
     async def test_valid_data_message_calls_processor(self):

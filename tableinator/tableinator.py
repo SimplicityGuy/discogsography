@@ -812,6 +812,23 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                     purge_ok = False
 
             if purge_ok:
+                # extraction_complete is this type's terminal signal, so it must also
+                # (re-)mark the type complete. completed_files is otherwise written
+                # only by file_complete and ERASED by _recover_consumers for any type
+                # whose queue still holds messages — and when the only pending message
+                # IS this signal, nothing ever restored the flag. The service then
+                # logged "Stalled consumers detected" at ERROR every 30s forever,
+                # check_all_consumers_idle() could never return True, and the
+                # connection plus four idle consumers were held open until restart.
+                # A plain restart between the file_complete ack and this delivery
+                # reaches the same terminal state (discogsography-ewvh).
+                completed_files.add(data_type)
+
+                # Re-arm cancellation: the file_complete that originally scheduled it
+                # was consumed in an earlier session or before recovery.
+                if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
+                    await schedule_consumer_cancellation(data_type, queues[data_type])
+
                 await message.ack()
             else:
                 await message.nack(requeue=True)
