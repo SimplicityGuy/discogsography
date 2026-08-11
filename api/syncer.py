@@ -32,7 +32,7 @@ from common.query_debug import execute_sql, log_cypher_query
 logger = structlog.get_logger(__name__)
 
 DISCOGS_API_BASE = "https://api.discogs.com"
-SYNC_DELAY_SECONDS = 0.5  # 0.5s between requests to stay under 60 req/min
+SYNC_DELAY_SECONDS = 1.0  # 1 req/sec to stay under 60 req/min (discogsography-fnhk)
 PAGE_SIZE = 100
 MAX_RATE_LIMIT_RETRIES = 5
 

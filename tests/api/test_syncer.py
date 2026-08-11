@@ -126,6 +126,30 @@ def mock_neo4j() -> MagicMock:
     return driver
 
 
+class TestSyncDelaySeconds:
+    """Regression discogsography-fnhk: SYNC_DELAY_SECONDS must actually respect
+    the Discogs 60 req/min rate limit its comment claims to honor, and must not
+    fork out of sync with its rate-limit sibling in insights_compute.py."""
+
+    def test_sync_delay_seconds_respects_60_req_per_minute(self) -> None:
+        from api.syncer import SYNC_DELAY_SECONDS
+
+        # 0.5s spacing is 2 req/s == 120 req/min — double the Discogs budget.
+        # The pacing interval must keep requests at or under 60/min.
+        assert SYNC_DELAY_SECONDS >= 1.0
+        assert 60 / SYNC_DELAY_SECONDS <= 60
+
+    def test_insights_compute_enrichment_delay_matches_syncer_constant(self) -> None:
+        """insights_compute._ENRICHMENT_DELAY_SECONDS must be the same constant as
+        api.syncer.SYNC_DELAY_SECONDS — not an independently-declared fork that can
+        silently drift (both share MAX_RATE_LIMIT_RETRIES against one Discogs
+        rate-limit budget)."""
+        from api.routers.insights_compute import _ENRICHMENT_DELAY_SECONDS
+        from api.syncer import SYNC_DELAY_SECONDS
+
+        assert _ENRICHMENT_DELAY_SECONDS == SYNC_DELAY_SECONDS
+
+
 class TestAuthHeader:
     """Tests for _auth_header."""
 
