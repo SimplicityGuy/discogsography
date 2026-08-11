@@ -1092,3 +1092,104 @@ async fn test_download_metadata_persisted_incrementally_on_mid_batch_failure() {
     let completed = S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: "fake artists data".len() as u64 };
     assert!(!reloaded.should_download(&completed).await.unwrap(), "a completed, persisted file must not be re-downloaded");
 }
+
+/// Collects formatted log output so a test can assert that a failure was actually reported.
+#[derive(Clone, Default)]
+struct LogCapture(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl LogCapture {
+    fn contents(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock().unwrap()).to_string()
+    }
+}
+
+impl std::io::Write for LogCapture {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogCapture {
+    type Writer = LogCapture;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+#[tokio::test]
+async fn test_year_body_read_failure_is_logged() {
+    // discogsography-xgyb regression: the year-page body read was the one traceless failure
+    // arm in scrape_file_list_from_discogs — `if let Ok(year_html)` with no else. A body that
+    // fails post-headers (proxy reset / truncation) dropped the whole year's listing, so the
+    // newest dump became invisible while the run still reported success with nothing logged.
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    let capture = LogCapture::default();
+    let subscriber = tracing_subscriber::fmt().with_max_level(tracing::Level::WARN).with_writer(capture.clone()).finish();
+    let _log_guard = tracing::subscriber::set_default(subscriber);
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let _server = tokio::spawn(async move {
+        loop {
+            let Ok((mut sock, _)) = listener.accept().await else {
+                return;
+            };
+            tokio::spawn(async move {
+                loop {
+                    let mut buf = vec![0u8; 4096];
+                    let n = match sock.read(&mut buf).await {
+                        Ok(0) | Err(_) => return,
+                        Ok(n) => n,
+                    };
+                    let request = String::from_utf8_lossy(&buf[..n]).to_string();
+
+                    if request.contains("prefix=data%2F2026%2F") {
+                        // Headers promise a full body; send a fragment and close the socket —
+                        // reqwest surfaces this as an Err from .text(), not from .get().
+                        let _ = sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4096\r\n\r\n<html><body>").await;
+                        let _ = sock.flush().await;
+                        return;
+                    }
+
+                    let body = if request.contains("prefix=data%2F2025%2F") {
+                        r#"<html><body>
+                        <a href="?download=data%2F2025%2Fdiscogs_20251201_artists.xml.gz">a</a>
+                        <a href="?download=data%2F2025%2Fdiscogs_20251201_labels.xml.gz">l</a>
+                        <a href="?download=data%2F2025%2Fdiscogs_20251201_masters.xml.gz">m</a>
+                        <a href="?download=data%2F2025%2Fdiscogs_20251201_releases.xml.gz">r</a>
+                        </body></html>"#
+                    } else {
+                        r#"<html><body>
+                        <a href="?prefix=data%2F2026%2F">2026/</a>
+                        <a href="?prefix=data%2F2025%2F">2025/</a>
+                        </body></html>"#
+                    };
+                    let response = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+                    if sock.write_all(response.as_bytes()).await.is_err() {
+                        return;
+                    }
+                    let _ = sock.flush().await;
+                }
+            });
+        }
+    });
+
+    let temp_dir = TempDir::new().unwrap();
+    let base_url = format!("http://{}/", addr);
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
+
+    let files = downloader.list_s3_files().await.expect("a lost year must not fail the whole listing");
+    assert!(files.iter().all(|f| f.name.contains("2025")), "only the readable year can contribute files; got {:?}", files);
+
+    let logs = capture.contents();
+    assert!(logs.contains("Failed to read year 2026 directory body"), "the lost year must be logged, not silently dropped; logs were:\n{logs}");
+}

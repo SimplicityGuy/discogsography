@@ -284,12 +284,31 @@ impl Downloader {
         // Pattern matches: ?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz
         let file_pattern = Regex::new(r#"\?download=data%2F\d{4}%2F(discogs_(\d{8})_[^"]+)"#).context("Failed to compile file regex")?;
 
+        // Per-year outcome accounting. Without it there is no baseline against which the
+        // final version count can be judged, so a year silently contributing nothing is
+        // indistinguishable from a year that genuinely has nothing.
+        let mut years_checked = 0usize;
+        let mut years_contributing = 0usize;
+
         for year in years.iter().take(2) {
             let year_url = format!("{}?prefix=data%2F{}%2F", self.base_url, year);
+            years_checked += 1;
 
             match self.client.get(&year_url).await {
                 Ok(year_response) if year_response.status().is_success() => {
-                    if let Ok(year_html) = year_response.text().await {
+                    // A body read can fail independently of the response (connection reset or
+                    // truncation after headers), and PoliteClient never retries body reads.
+                    // Dropping the year silently here was the one traceless failure arm in this
+                    // function — the newest dump would vanish with nothing in the logs.
+                    let year_html = match year_response.text().await {
+                        Ok(html) => html,
+                        Err(e) => {
+                            warn!("⚠️ Failed to read year {} directory body: {}", year, e);
+                            continue;
+                        }
+                    };
+
+                    {
                         let mut file_count = 0;
                         for cap in file_pattern.captures_iter(&year_html) {
                             if let (Some(filename_match), Some(version_match)) = (cap.get(1), cap.get(2)) {
@@ -310,6 +329,16 @@ impl Downloader {
 
                         if file_count > 0 {
                             info!("📋 Found {} files in year {} directory", file_count, year);
+                            years_contributing += 1;
+                        } else {
+                            // A readable page that matches nothing is the other silent path:
+                            // a Discogs markup change would drop years just as invisibly, and
+                            // unlike a transport error it would not self-heal on the next check.
+                            warn!(
+                                "⚠️ No dump files matched in the year {} directory ({} bytes of HTML) — the Discogs listing markup may have changed",
+                                year,
+                                year_html.len()
+                            );
                         }
                     }
                 }
@@ -325,10 +354,17 @@ impl Downloader {
         }
 
         if ids.is_empty() {
-            return Err(anyhow::anyhow!("No files found on Discogs website"));
+            return Err(anyhow::anyhow!(
+                "No files found on Discogs website (none of the {} recent year directories contributed files)",
+                years_checked
+            ));
         }
 
-        info!("📊 Found {} unique versions from website", ids.len());
+        if years_contributing < years_checked {
+            warn!("⚠️ Only {}/{} recent year directories contributed files — the newest dump may be missing", years_contributing, years_checked);
+        }
+
+        info!("📊 Found {} unique versions from website ({}/{} year directories contributed)", ids.len(), years_contributing, years_checked);
 
         Ok(ids)
     }
