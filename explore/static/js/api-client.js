@@ -612,15 +612,38 @@ class ApiClient {
 
     /**
      * Send a natural language query with SSE streaming.
+     *
+     * The server emits four frame types: `status`, `actions`, `result`, `error`.
+     * Every one of them must be dispatched — an unhandled frame is not merely
+     * ignored, it strands the caller: dropping `actions` silently no-ops the
+     * agent's graph actions, and dropping `error` leaves the pill spinning
+     * forever because the stream closes with HTTP 200. See discogsography-ebgz.
+     *
+     * The stream is settled exactly once: the first of result / error / a close
+     * with no result frame wins, so a caller can never be called back twice nor
+     * left hanging.
+     *
      * @param {string} query - Natural language question
      * @param {Object|null} context - Optional context
      * @param {Function} onStatus - Called with status events
      * @param {Function} onResult - Called with the final result
-     * @param {Function} onError - Called on error
+     * @param {Function} onError - Called on transport, HTTP, or server-signalled error
+     * @param {Function} [onActions] - Called with the actions array from the `actions` frame
      */
-    askNlqStream(query, context = null, onStatus, onResult, onError) {
+    askNlqStream(query, context = null, onStatus, onResult, onError, onActions) {
         const body = { query };
         if (context) body.context = context;
+        let settled = false;
+        const settleResult = (data) => {
+            if (settled) return;
+            settled = true;
+            if (onResult) onResult(data);
+        };
+        const settleError = (err) => {
+            if (settled) return;
+            settled = true;
+            if (onError) onError(err);
+        };
         fetch('/api/nlq/query', {
             method: 'POST',
             headers: {
@@ -630,7 +653,7 @@ class ApiClient {
             body: JSON.stringify(body),
         }).then(response => {
             if (!response.ok) {
-                if (onError) onError(response.status);
+                settleError(response.status);
                 return;
             }
             const reader = response.body.getReader();
@@ -645,7 +668,12 @@ class ApiClient {
                         try {
                             const data = JSON.parse(line.slice(6));
                             if (eventType === 'status' && onStatus) onStatus(data);
-                            if (eventType === 'result' && onResult) onResult(data);
+                            if (eventType === 'actions' && onActions) onActions(data.actions || []);
+                            if (eventType === 'result') settleResult(data);
+                            // The server reports engine failures as an application-level
+                            // frame on an otherwise-200 stream, so this is the ONLY
+                            // signal the caller gets — there is no transport error.
+                            if (eventType === 'error') settleError(new Error(data.error || 'stream error'));
                         } catch { /* ignore parse errors */ }
                         eventType = null;
                     }
@@ -658,6 +686,9 @@ class ApiClient {
                             const lines = buffer.split('\n');
                             processLines(lines);
                         }
+                        // A stream that ends without a result frame (truncated
+                        // response, proxy cut) must still resolve the caller.
+                        settleError(new Error('stream closed without a result'));
                         return;
                     }
                     buffer += decoder.decode(value, { stream: true });
@@ -666,12 +697,12 @@ class ApiClient {
                     processLines(lines);
                     processChunk();
                 }).catch(err => {
-                    if (onError) onError(err);
+                    settleError(err);
                 });
             }
             processChunk();
         }).catch(err => {
-            if (onError) onError(err);
+            settleError(err);
         });
     }
 }

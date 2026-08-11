@@ -88,6 +88,8 @@ describe('initNlq orchestrator', () => {
             expect.any(Function),
             expect.any(Function),
             expect.any(Function),
+            // onActions — actions arrive on their own SSE frame (discogsography-ebgz)
+            expect.any(Function),
         );
         expect(app._switchPane).toHaveBeenCalledWith('trends');
     });
