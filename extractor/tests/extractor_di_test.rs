@@ -1794,19 +1794,23 @@ async fn test_process_discogs_data_shutdown_before_files_does_not_finalize() {
     let state = Arc::new(RwLock::new(ExtractorState::default()));
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
-    // Shutdown already requested by the time processing reaches the file loop.
+    // Shutdown already requested when the run is entered.
     let shutdown_flag = Arc::new(AtomicBool::new(true));
 
+    // Since discogsography-l114 the run bails out before touching the downloader at all:
+    // starting a multi-GB download under shutdown guarantees a SIGKILL mid-transfer.
     let mut mock_dl = MockDataSource::new();
     mock_dl
         .expect_list_s3_files()
+        .times(0)
         .returning(|| Ok(vec![S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
     mock_dl
         .expect_get_latest_monthly_files()
+        .times(0)
         .returning(|_| Ok(vec![S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 }]));
-    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
-    mock_dl.expect_download_discogs_data().times(1).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
-    mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
+    mock_dl.expect_set_state_marker().times(0).returning(|_, _| ());
+    mock_dl.expect_download_discogs_data().times(0).returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
+    mock_dl.expect_take_state_marker().times(0).returning(|| Some(StateMarker::new("20260101".to_string())));
 
     let mut mock_mq = MockMessagePublisher::new();
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
@@ -1824,8 +1828,9 @@ async fn test_process_discogs_data_shutdown_before_files_does_not_finalize() {
     assert!(!result.unwrap(), "a shutdown-interrupted run must return false (not complete)");
 
     let s = state.read().await;
-    // The pending file was skipped, so nothing completed and the run is not marked Completed.
+    // Nothing completed, and the run never even flipped the status to Running.
     assert_ne!(s.extraction_status, ExtractionStatus::Completed, "an interrupted run must not report Completed");
+    assert_ne!(s.extraction_status, ExtractionStatus::Running, "a run entered under shutdown must not announce itself as Running");
     assert!(!s.completed_files.contains("discogs_20260101_artists.xml.gz"), "skipped file must not be marked completed");
 }
 
@@ -2374,4 +2379,38 @@ async fn test_process_musicbrainz_data_send_file_complete_failure_preserves_xz()
 
     // .jsonl.xz files should still be present
     assert!(versioned.join("artist.jsonl.xz").exists(), "artist.jsonl.xz should remain");
+}
+
+/// Regression for discogsography-l114: SIGTERM during the wait-for-Discogs-idle window
+/// used to fall through into a brand-new MusicBrainz run — a multi-GB download plus a
+/// full artist.jsonl.xz scan, none of which checks the shutdown flag — so the container
+/// never exited within the stop grace period and was SIGKILLed mid-download. A run
+/// entered under shutdown must bail out before doing any of that work.
+#[tokio::test]
+async fn test_musicbrainz_run_bails_under_shutdown() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut config = test_config(temp_dir.path());
+    config.musicbrainz_root = temp_dir.path().to_path_buf();
+    // Deliberately unroutable: reaching the network at all would be a bug here.
+    config.musicbrainz_dump_url = "http://127.0.0.1:19999/json-dumps/".to_string();
+    let config = Arc::new(config);
+
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown_flag = Arc::new(AtomicBool::new(true));
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().times(0).returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().times(0).returning(|_, _| Ok(()));
+    mock_mq.expect_close().times(0).returning(|| Ok(()));
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let started = std::time::Instant::now();
+    let result = extractor::extractor::process_musicbrainz_data(config, state.clone(), shutdown_flag, false, factory, None).await;
+
+    assert!(result.is_ok(), "shutdown must not surface as Err: {result:?}");
+    assert!(!result.unwrap(), "a run that never started must not report success");
+    assert!(started.elapsed() < std::time::Duration::from_secs(5), "must bail immediately, not attempt a download");
+
+    let s = state.read().await;
+    assert_ne!(s.extraction_status, ExtractionStatus::Running, "a run entered under shutdown must not announce itself as Running");
 }
