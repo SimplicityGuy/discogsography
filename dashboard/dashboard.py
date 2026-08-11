@@ -212,9 +212,27 @@ class DashboardApp:
             if self.postgres_conn:
                 await self.postgres_conn.close()
 
-            # Close all websocket connections
-            for ws in self.websocket_connections:
-                await ws.close()
+            # Close all websocket connections. Every OTHER access to
+            # websocket_connections (add in websocket_endpoint, discard() on
+            # disconnect, broadcast_metrics' snapshot) holds `_ws_lock` per
+            # the repo's lock-scope-discipline rule — this loop is the one
+            # site that used to iterate the live set directly. `await
+            # ws.close()` yields on every iteration, and a still-alive
+            # websocket_endpoint coroutine that wakes with a
+            # WebSocketDisconnect during that window runs `discard()` under
+            # the lock concurrently, mutating the set mid-iteration
+            # (`RuntimeError: Set changed size during iteration`), which the
+            # broad `except Exception` below swallows — leaving the
+            # remaining sockets never closed (discogsography-ip9y).
+            if self._ws_lock is None:
+                self._ws_lock = asyncio.Lock()
+            async with self._ws_lock:
+                targets = list(self.websocket_connections)
+                self.websocket_connections.clear()
+                WEBSOCKET_CONNECTIONS.set(0)
+            for ws in targets:
+                with contextlib.suppress(Exception):
+                    await ws.close()
 
             logger.info("✅ Shutdown complete")
 

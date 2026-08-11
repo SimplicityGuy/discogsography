@@ -199,6 +199,48 @@ class TestDashboardAppShutdown:
             # Verify error was logged
             mock_logger.error.assert_called()
 
+    @pytest.mark.asyncio
+    async def test_shutdown_survives_concurrent_disconnect_mutating_the_set(self) -> None:
+        """discogsography-ip9y: shutdown() must snapshot websocket_connections
+        under _ws_lock before iterating — not iterate the live set directly.
+        Simulates the exact race: another coroutine's disconnect handler
+        (discard() under the lock) mutates the set WHILE shutdown is closing
+        sockets. Previously this could raise 'RuntimeError: Set changed size
+        during iteration', silently caught by the broad except and leaving
+        the remaining sockets never closed."""
+        mock_config = Mock()
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+
+            mock_ws1 = AsyncMock()
+            mock_ws2 = AsyncMock()
+            mock_ws3 = AsyncMock()
+            app.websocket_connections.add(mock_ws1)
+            app.websocket_connections.add(mock_ws2)
+            app.websocket_connections.add(mock_ws3)
+
+            async def close_and_mutate() -> None:
+                # Simulate a concurrent websocket_endpoint coroutine's
+                # disconnect handler discarding a DIFFERENT socket from the
+                # live set while shutdown's own loop is mid-iteration.
+                async with app._ws_lock:  # type: ignore[union-attr]
+                    app.websocket_connections.discard(mock_ws3)
+
+            mock_ws1.close = AsyncMock(side_effect=close_and_mutate)
+
+            with patch("dashboard.dashboard.logger") as mock_logger:
+                await app.shutdown()
+
+            # All three sockets must still have been closed — the snapshot
+            # was taken before the live set was mutated out from under it.
+            mock_ws1.close.assert_called_once()
+            mock_ws2.close.assert_called_once()
+            mock_ws3.close.assert_called_once()
+            # No "Set changed size during iteration" (or any other) error
+            # swallowed by shutdown()'s broad except.
+            mock_logger.error.assert_not_called()
+
 
 class TestDashboardAppMetrics:
     """Test DashboardApp metrics collection."""
