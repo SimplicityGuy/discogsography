@@ -571,6 +571,121 @@ class TestLifespan:
 
             mock_health_srv.stop.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_lifespan_closes_redis_client_when_ping_fails(self) -> None:
+        """discogsography-v1g8: from_url() is lazy — ping() is what actually
+        opens the socket. If ping() raises (e.g. requirepass with a missing/
+        wrong REDIS_PASSWORD), the client built by from_url() must still be
+        closed before the reference is dropped — otherwise the connection
+        pool and the socket ping() opened are never released."""
+        from fastapi import FastAPI
+
+        import insights.insights as _module
+
+        mock_pool = AsyncMock()
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        mock_http_client = AsyncMock()
+        mock_http_client.aclose = AsyncMock()
+
+        mock_health_srv = MagicMock()
+        mock_health_srv.start_background = MagicMock()
+        mock_health_srv.stop = MagicMock()
+
+        mock_config = MagicMock()
+        mock_config.postgres_host = "localhost:5432"
+        mock_config.postgres_database = "test"
+        mock_config.postgres_username = "user"
+        mock_config.postgres_password = "pass"
+        mock_config.api_base_url = "http://localhost:8004"
+        mock_config.redis_host = "redis://localhost"
+        mock_config.schedule_hours = 24
+        mock_config.milestone_years = [25, 50]
+
+        # from_url() succeeds (lazy) but the socket-opening ping() fails —
+        # the exact AUTH-failure-under-requirepass scenario.
+        mock_redis = AsyncMock()
+        mock_redis.ping = AsyncMock(side_effect=ConnectionError("NOAUTH Authentication required"))
+        mock_redis.aclose = AsyncMock()
+
+        async def fake_scheduler(*_args: object, **_kwargs: object) -> None:
+            await asyncio.sleep(100)
+
+        fake_app = FastAPI()
+
+        with (
+            patch.object(_module, "setup_logging"),
+            patch.object(_module.InsightsConfig, "from_env", return_value=mock_config),
+            patch.object(_module, "HealthServer", return_value=mock_health_srv),
+            patch.object(_module, "AsyncPostgreSQLPool", return_value=mock_pool),
+            patch("httpx.AsyncClient", return_value=mock_http_client),
+            patch("redis.asyncio.from_url", new_callable=AsyncMock, return_value=mock_redis),
+            patch.object(_module, "_scheduler_loop", side_effect=fake_scheduler),
+        ):
+            async with _module.lifespan(fake_app):
+                # Falls back to no caching, exactly like the from_url()-raises case.
+                assert _module._redis is None
+                assert _module._cache is None
+
+            mock_health_srv.stop.assert_called_once()
+
+        # The orphaned client (from the successful from_url()) must have
+        # been closed before _redis was set to None.
+        mock_redis.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_lifespan_redis_close_failure_on_ping_error_is_swallowed(self) -> None:
+        """A failure while cleaning up the orphaned client (aclose() itself
+        raising) must not prevent the graceful PostgreSQL-fallback path."""
+        from fastapi import FastAPI
+
+        import insights.insights as _module
+
+        mock_pool = AsyncMock()
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        mock_http_client = AsyncMock()
+        mock_http_client.aclose = AsyncMock()
+
+        mock_health_srv = MagicMock()
+        mock_health_srv.start_background = MagicMock()
+        mock_health_srv.stop = MagicMock()
+
+        mock_config = MagicMock()
+        mock_config.postgres_host = "localhost:5432"
+        mock_config.postgres_database = "test"
+        mock_config.postgres_username = "user"
+        mock_config.postgres_password = "pass"
+        mock_config.api_base_url = "http://localhost:8004"
+        mock_config.redis_host = "redis://localhost"
+        mock_config.schedule_hours = 24
+        mock_config.milestone_years = [25, 50]
+
+        mock_redis = AsyncMock()
+        mock_redis.ping = AsyncMock(side_effect=ConnectionError("Redis down"))
+        mock_redis.aclose = AsyncMock(side_effect=RuntimeError("close also failed"))
+
+        async def fake_scheduler(*_args: object, **_kwargs: object) -> None:
+            await asyncio.sleep(100)
+
+        fake_app = FastAPI()
+
+        with (
+            patch.object(_module, "setup_logging"),
+            patch.object(_module.InsightsConfig, "from_env", return_value=mock_config),
+            patch.object(_module, "HealthServer", return_value=mock_health_srv),
+            patch.object(_module, "AsyncPostgreSQLPool", return_value=mock_pool),
+            patch("httpx.AsyncClient", return_value=mock_http_client),
+            patch("redis.asyncio.from_url", new_callable=AsyncMock, return_value=mock_redis),
+            patch.object(_module, "_scheduler_loop", side_effect=fake_scheduler),
+        ):
+            async with _module.lifespan(fake_app):
+                # Must not raise — the service still falls back cleanly.
+                assert _module._redis is None
+                assert _module._cache is None
+
 
 # ============================================================
 # 503 "not ready" responses when _pool is None
