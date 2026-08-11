@@ -320,7 +320,6 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PASSWORD: discogsography
       RABBITMQ_USERNAME: discogsography
-      STARTUP_DELAY: "30"
       DATA_QUALITY_RULES: /discogs-data/extraction-rules.yaml
     volumes:
       - discogs_data:/discogs-data
@@ -365,7 +364,6 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PASSWORD: discogsography
       RABBITMQ_USERNAME: discogsography
-      STARTUP_DELAY: "30"
     volumes:
       - musicbrainz_data:/musicbrainz-data
       - extractor_musicbrainz_logs:/logs
