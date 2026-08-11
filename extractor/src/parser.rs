@@ -12,6 +12,14 @@ use tracing::{debug, error, warn};
 
 use crate::types::{DataMessage, DataType};
 
+/// Maximum number of malformed XML records tolerated (skipped) per dump file.
+///
+/// A handful of poison records in a multi-GB monthly dump must not abort the whole
+/// file — that would leave the file permanently un-completable and re-published from
+/// record 0 on every restart. A large number of errors, on the other hand, means the
+/// file is genuinely unusable (wrong file, truncated download), so parsing aborts.
+const MAX_MALFORMED_RECORDS_PER_FILE: u64 = 100;
+
 /// Represents an element being parsed with its attributes and children
 #[derive(Debug)]
 struct ElementContext {
@@ -133,6 +141,13 @@ impl XmlParser {
 
         let mut reader = Reader::from_reader(buf_reader);
 
+        // Discogs dumps are known to ship records containing a bare `&` that does not
+        // start an entity reference (e.g. `<title>Tom & Jerry</title>`). quick-xml < 0.39
+        // emitted those bytes as text; 0.39+ returns `IllFormed(UnclosedReference)` unless
+        // `allow_dangling_amp` is set. Restore the tolerant behaviour so a single legacy
+        // escaping defect does not abort a multi-GB dump.
+        reader.config_mut().allow_dangling_amp = true;
+
         let mut buf = Vec::new();
         let mut record_count = 0u64;
         let mut in_target_element = false;
@@ -141,6 +156,12 @@ impl XmlParser {
         let mut element_stack: Vec<ElementContext> = Vec::new();
         // Track depth in the overall document
         let mut depth = 0usize;
+
+        // Per-record fault isolation state: a malformed record is dropped and the parser
+        // resynchronizes on the next `<target_element>` start instead of aborting the file.
+        let mut malformed_records = 0u64;
+        let mut resyncing = false;
+        let mut last_error_position = u64::MAX;
 
         // Determine the target element based on data type
         let target_element = match self.data_type {
@@ -152,8 +173,61 @@ impl XmlParser {
         };
 
         loop {
-            match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(e)) => {
+            let event = match reader.read_event_into(&mut buf) {
+                Ok(event) => event,
+                Err(e) => {
+                    let position = reader.buffer_position();
+                    malformed_records += 1;
+
+                    // A repeated error at the same byte offset means the reader made no
+                    // forward progress and cannot recover — abort rather than spin forever.
+                    if position == last_error_position {
+                        error!("❌ Unrecoverable XML error at position {} (no forward progress): {}", position, e);
+                        return Err(e).context(format!("Unrecoverable XML parse error at position {position}"));
+                    }
+                    if malformed_records > MAX_MALFORMED_RECORDS_PER_FILE {
+                        error!(
+                            "❌ Aborting {:?}: more than {} malformed XML records (last at position {}): {}",
+                            file_path, MAX_MALFORMED_RECORDS_PER_FILE, position, e
+                        );
+                        return Err(e).context(format!("Exceeded malformed-record budget of {MAX_MALFORMED_RECORDS_PER_FILE} in {file_path:?}"));
+                    }
+
+                    warn!(
+                        "⚠️ Skipping malformed XML record at position {} ({}/{} tolerated), resyncing on next <{}>: {}",
+                        position, malformed_records, MAX_MALFORMED_RECORDS_PER_FILE, target_element, e
+                    );
+                    last_error_position = position;
+
+                    // Discard the partially-built record and resynchronize.
+                    element_stack.clear();
+                    in_target_element = false;
+                    resyncing = true;
+
+                    buf.clear();
+                    continue;
+                }
+            };
+
+            // While resyncing, ignore everything until the next record start; document
+            // depth is unreliable after an error, so it is re-anchored here.
+            if resyncing {
+                match &event {
+                    Event::Start(e) | Event::Empty(e) if e.name().as_ref() == target_element.as_bytes() => {
+                        debug!("🔄 Resynchronized on <{}> at position {}", target_element, reader.buffer_position());
+                        resyncing = false;
+                        depth = 1;
+                    }
+                    Event::Eof => break,
+                    _ => {
+                        buf.clear();
+                        continue;
+                    }
+                }
+            }
+
+            match event {
+                Event::Start(e) => {
                     let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
                     depth += 1;
 
@@ -168,7 +242,7 @@ impl XmlParser {
                     }
                 }
 
-                Ok(Event::Empty(e)) => {
+                Event::Empty(e) => {
                     // Self-closing element like <artist id="123" />
                     let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
                     depth += 1;
@@ -209,7 +283,7 @@ impl XmlParser {
                     depth = depth.saturating_sub(1);
                 }
 
-                Ok(Event::End(e)) => {
+                Event::End(e) => {
                     let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
 
                     if in_target_element && let Some(context) = element_stack.pop() {
@@ -263,7 +337,7 @@ impl XmlParser {
                     depth = depth.saturating_sub(1);
                 }
 
-                Ok(Event::Text(e)) => {
+                Event::Text(e) => {
                     if in_target_element
                         && let Some(context) = element_stack.last_mut()
                         && let Ok(text) = e.decode()
@@ -274,7 +348,7 @@ impl XmlParser {
 
                 // In quick-xml 0.39+, entity references (&amp; &lt; etc.) are emitted as
                 // separate GeneralRef events rather than being included in Event::Text bytes.
-                Ok(Event::GeneralRef(e)) => {
+                Event::GeneralRef(e) => {
                     if in_target_element && let Some(context) = element_stack.last_mut() {
                         if e.is_char_ref() {
                             match e.resolve_char_ref() {
@@ -301,23 +375,22 @@ impl XmlParser {
                     }
                 }
 
-                Ok(Event::CData(e)) => {
+                Event::CData(e) => {
                     if in_target_element && let Some(context) = element_stack.last_mut() {
                         context.text_content.push_str(&String::from_utf8_lossy(&e));
                     }
                 }
 
-                Ok(Event::Eof) => break,
-
-                Err(e) => {
-                    error!("❌ Error parsing XML at position {}: {}", reader.buffer_position(), e);
-                    return Err(e.into());
-                }
+                Event::Eof => break,
 
                 _ => {} // Ignore other events (comments, declarations, etc.)
             }
 
             buf.clear();
+        }
+
+        if malformed_records > 0 {
+            warn!("⚠️ Skipped {} malformed XML record(s) while parsing {:?} ({} records parsed)", malformed_records, file_path, record_count);
         }
 
         debug!("✅ Finished parsing {} records from {:?}", record_count, file_path);
