@@ -880,3 +880,63 @@ async fn test_reconstruct_xml_id_without_at_id_is_kept() {
     assert!(raw.contains("<id>"), "reconstructed XML should retain <id> child when no @id attribute");
     assert!(raw.contains("77"), "reconstructed XML should contain the id value");
 }
+
+/// Compress raw (possibly non-UTF-8) XML bytes into a temp gzip file.
+fn gzip_bytes_to_temp(raw: &[u8]) -> NamedTempFile {
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(raw).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+    temp_file
+}
+
+#[tokio::test]
+async fn test_invalid_utf8_text_kept_lossily() {
+    // A stray latin-1 byte (0xE9) inside a text node makes `e.decode()` fail.
+    // The chunk must degrade to a lossy decode, NOT vanish from the record — a silent
+    // drop would publish an empty field and lock the corrupted shape in via sha256.
+    let mut raw: Vec<u8> = Vec::new();
+    raw.extend_from_slice(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<artists>\n<artist id=\"1\">\n<name>Beyonc");
+    raw.push(0xE9);
+    raw.extend_from_slice(b"</name>\n<profile>Intact profile</profile>\n</artist>\n</artists>");
+
+    let temp_file = gzip_bytes_to_temp(&raw);
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1);
+    let message = receiver.recv().await.unwrap();
+    let name = message.data["name"].as_str().expect("name must be present");
+    assert!(!name.is_empty(), "undecodable text must not be dropped: {message:?}");
+    assert!(name.starts_with("Beyonc"), "decodable prefix must survive, got {name:?}");
+    assert!(name.contains('\u{FFFD}'), "the bad byte must surface as U+FFFD, got {name:?}");
+    assert_eq!(message.data["profile"], json!("Intact profile"));
+}
+
+#[tokio::test]
+async fn test_invalid_utf8_in_multiple_fields_all_preserved() {
+    // Simulates a whole dump that is not actually UTF-8: every affected chunk must be
+    // recovered lossily rather than the record being published with empty fields.
+    let mut raw: Vec<u8> = Vec::new();
+    raw.extend_from_slice(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<artists>\n<artist id=\"7\">\n<name>Caf");
+    raw.push(0xE9);
+    raw.extend_from_slice(b"</name>\n<profile>Se");
+    raw.push(0xF1);
+    raw.extend_from_slice(b"or</profile>\n</artist>\n</artists>");
+
+    let temp_file = gzip_bytes_to_temp(&raw);
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1);
+    let message = receiver.recv().await.unwrap();
+    for field in ["name", "profile"] {
+        let value = message.data[field].as_str().unwrap_or_default();
+        assert!(!value.is_empty(), "{field} must not be dropped: {message:?}");
+        assert!(value.contains('\u{FFFD}'), "{field} should carry U+FFFD, got {value:?}");
+    }
+}

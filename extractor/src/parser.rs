@@ -20,6 +20,14 @@ use crate::types::{DataMessage, DataType};
 /// file is genuinely unusable (wrong file, truncated download), so parsing aborts.
 const MAX_MALFORMED_RECORDS_PER_FILE: u64 = 100;
 
+/// Maximum number of per-chunk UTF-8 decode warnings emitted while parsing one file.
+///
+/// The crate is built without quick-xml's `encoding` feature, so `decode()` is exactly
+/// `str::from_utf8` and a dump that is not actually UTF-8 would fail on *every* text
+/// chunk. Warn about the first few (enough for an operator to notice and diagnose) and
+/// summarize the rest once at end-of-file instead of flooding the log.
+const MAX_DECODE_WARNINGS_PER_FILE: u64 = 10;
+
 /// Represents an element being parsed with its attributes and children
 #[derive(Debug)]
 struct ElementContext {
@@ -162,6 +170,10 @@ impl XmlParser {
         let mut malformed_records = 0u64;
         let mut resyncing = false;
         let mut last_error_position = u64::MAX;
+
+        // Count of text/entity chunks that failed a strict UTF-8 decode and were preserved
+        // lossily instead of being dropped.
+        let mut decode_failures = 0u64;
 
         // Determine the target element based on data type
         let target_element = match self.data_type {
@@ -338,11 +350,25 @@ impl XmlParser {
                 }
 
                 Event::Text(e) => {
-                    if in_target_element
-                        && let Some(context) = element_stack.last_mut()
-                        && let Ok(text) = e.decode()
-                    {
-                        context.text_content.push_str(&text);
+                    if in_target_element && let Some(context) = element_stack.last_mut() {
+                        match e.decode() {
+                            Ok(text) => context.text_content.push_str(&text),
+                            Err(err) => {
+                                // Degrade lossily rather than dropping the chunk: a silent drop
+                                // publishes the record with the field's text missing, and the
+                                // sha256 computed over that corrupted shape becomes the canonical
+                                // value downstream, so the loss is never re-detected.
+                                let position = reader.buffer_position();
+                                decode_failures += 1;
+                                if decode_failures <= MAX_DECODE_WARNINGS_PER_FILE {
+                                    warn!(
+                                        "⚠️ Failed to decode XML text at position {} ({}), preserving it lossily: {}",
+                                        position, self.data_type, err
+                                    );
+                                }
+                                context.text_content.push_str(&String::from_utf8_lossy(e.as_ref()));
+                            }
+                        }
                     }
                 }
 
@@ -362,8 +388,21 @@ impl XmlParser {
                                     context.text_content.push('\u{FFFD}');
                                 }
                             }
-                        } else if let Ok(name) = e.decode() {
-                            match name.as_ref() {
+                        } else {
+                            // Same lossy-degradation contract as Event::Text: an undecodable
+                            // entity name is preserved verbatim rather than dropped silently.
+                            let name = e.decode().map(|n| n.into_owned()).unwrap_or_else(|err| {
+                                let position = reader.buffer_position();
+                                decode_failures += 1;
+                                if decode_failures <= MAX_DECODE_WARNINGS_PER_FILE {
+                                    warn!(
+                                        "⚠️ Failed to decode XML entity reference at position {} ({}), preserving it lossily: {}",
+                                        position, self.data_type, err
+                                    );
+                                }
+                                String::from_utf8_lossy(e.as_ref()).into_owned()
+                            });
+                            match name.as_str() {
                                 "amp" => context.text_content.push('&'),
                                 "lt" => context.text_content.push('<'),
                                 "gt" => context.text_content.push('>'),
@@ -391,6 +430,13 @@ impl XmlParser {
 
         if malformed_records > 0 {
             warn!("⚠️ Skipped {} malformed XML record(s) while parsing {:?} ({} records parsed)", malformed_records, file_path, record_count);
+        }
+
+        if decode_failures > 0 {
+            warn!(
+                "⚠️ Recovered {} non-UTF-8 text chunk(s) lossily while parsing {:?} — the source dump is not valid UTF-8 and affected fields contain replacement characters",
+                decode_failures, file_path
+            );
         }
 
         debug!("✅ Finished parsing {} records from {:?}", record_count, file_path);
