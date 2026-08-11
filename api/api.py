@@ -67,6 +67,7 @@ from api.services.discogs import (
     fetch_discogs_identity,
     request_oauth_token,
 )
+from api.syncer import reconcile_stale_sync_history
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver, HealthServer, neo4j_security_kwargs, parse_postgres_host_port, setup_logging
 from common.config import ApiConfig
 from common.query_debug import execute_sql
@@ -225,6 +226,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     )
     await _pool.initialize()
     logger.info("💾 Database pool initialized")
+
+    # Reconcile sync_history rows abandoned by a hard process death (SIGKILL/
+    # OOM) between the INSERT and run_full_sync's terminal UPDATE — no
+    # in-process handler survives that to fix them itself (discogsography-pxqw).
+    await reconcile_stale_sync_history(_pool)
 
     # Initialize Redis for OAuth state storage and token blacklist
     _redis = await aioredis.from_url(_config.redis_host, decode_responses=True)

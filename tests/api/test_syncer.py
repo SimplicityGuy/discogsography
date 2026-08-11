@@ -1,5 +1,6 @@
 """Tests for api/syncer.py — collection and wantlist sync logic."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
@@ -9,6 +10,7 @@ from api.syncer import (
     MAX_RATE_LIMIT_RETRIES,
     DiscogsSyncError,
     _auth_header,
+    reconcile_stale_sync_history,
     run_full_sync,
     sync_collection,
     sync_wantlist,
@@ -1167,6 +1169,92 @@ class TestRunFullSync:
         )
 
         assert set(result.keys()) == {"sync_id", "status", "collection_count", "wantlist_count", "error"}
+
+    @pytest.mark.asyncio
+    async def test_cancelled_mid_sync_marks_row_cancelled_and_reraises(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """discogsography-pxqw: asyncio.CancelledError is a BaseException, not
+        an Exception — it must still result in a terminal sync_history write
+        (previously the UPDATE sat after the try/except/finally and never ran
+        on cancellation, leaving the row stuck at status='running' forever),
+        AND the cancellation must still propagate to the caller."""
+        mock_pg_pool._mock_cur.fetchone.return_value = {
+            "access_token": "at",
+            "access_secret": "as",
+            "provider_username": "user",
+        }
+        mock_pg_pool._mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ck"},
+            {"key": "discogs_consumer_secret", "value": "cs"},
+        ]
+
+        with (
+            patch("api.syncer.sync_collection", new_callable=AsyncMock, side_effect=asyncio.CancelledError),
+            patch("api.syncer.decrypt_oauth_token", side_effect=lambda val, _key: val),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_full_sync(
+                TEST_USER_UUID,
+                "sync-cancel",
+                mock_pg_pool,
+                mock_neo4j,
+                TEST_USER_AGENT,
+            )
+
+        update_calls = [c for c in mock_pg_pool._mock_cur.execute.call_args_list if "UPDATE sync_history" in c.args[0]]
+        assert len(update_calls) == 1
+        query, params = update_calls[0].args
+        assert "SET status = %s" in query
+        assert params[0] == "cancelled"
+        assert params[3] == "sync-cancel"
+
+    @pytest.mark.asyncio
+    async def test_cancelled_before_sync_still_invalidates_cache(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """The finally block's cache-invalidation step must still run on the
+        cancellation path, exactly as it does on the exception path."""
+        mock_pg_pool._mock_cur.fetchone.side_effect = asyncio.CancelledError
+        mock_redis = MagicMock()
+
+        with patch("api.syncer.RecommendCache") as mock_cache_cls:
+            mock_cache_cls.return_value.invalidate_user = AsyncMock()
+            with pytest.raises(asyncio.CancelledError):
+                await run_full_sync(
+                    TEST_USER_UUID,
+                    "sync-cancel-2",
+                    mock_pg_pool,
+                    mock_neo4j,
+                    TEST_USER_AGENT,
+                    redis_client=mock_redis,
+                )
+
+        mock_cache_cls.return_value.invalidate_user.assert_awaited_once_with(str(TEST_USER_UUID))
+
+
+class TestReconcileStaleSyncHistory:
+    """Tests for reconcile_stale_sync_history — the startup reconciliation
+    pass for discogsography-pxqw's case (b): a hard process crash (SIGKILL/
+    OOM) between the INSERT and run_full_sync's terminal UPDATE, which no
+    in-process handler can ever cover."""
+
+    @pytest.mark.asyncio
+    async def test_flips_running_rows_to_failed(self, mock_pg_pool: MagicMock) -> None:
+        mock_pg_pool._mock_cur.rowcount = 3
+
+        await reconcile_stale_sync_history(mock_pg_pool)
+
+        mock_pg_pool._mock_cur.execute.assert_awaited_once()
+        query = mock_pg_pool._mock_cur.execute.call_args.args[0]
+        assert "UPDATE sync_history" in query
+        assert "SET status = 'failed'" in query
+        assert "WHERE status = 'running'" in query
+
+    @pytest.mark.asyncio
+    async def test_no_stale_rows_is_a_no_op_beyond_the_update(self, mock_pg_pool: MagicMock) -> None:
+        mock_pg_pool._mock_cur.rowcount = 0
+
+        # Must not raise even when nothing needed reconciling.
+        await reconcile_stale_sync_history(mock_pg_pool)
+
+        mock_pg_pool._mock_cur.execute.assert_awaited_once()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
