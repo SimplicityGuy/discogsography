@@ -144,6 +144,63 @@ async fn test_process_single_file_close_failure_does_not_fail_the_run() {
 }
 
 #[tokio::test]
+async fn test_single_file_amqp_failure_clears_active_connection() {
+    // discogsography-b09b regression: every error exit of process_single_file must drop
+    // the active_connections entry and gracefully close the per-file AMQP connection.
+    // Previously both sat on the success tail only, so a failed file left a phantom
+    // connection in /metrics until the next run's state reset — periodic_check_days away.
+    let temp_dir = TempDir::new().unwrap();
+    let file_name = "discogs_20260101_artists.xml.gz";
+    write_empty_artists_gz(&temp_dir.path().join(file_name));
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let state_marker = Arc::new(Mutex::new(StateMarker::new("20260101".to_string())));
+    let marker_path = temp_dir.path().join("marker.json");
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().times(1).returning(|_, _, _| Err(anyhow::anyhow!("AMQP connection dropped")));
+    // close() must still be called exactly once on the failure path.
+    mock_mq.expect_close().times(1).returning(|| Ok(()));
+
+    let mq: Arc<dyn extractor::message_queue::MessagePublisher> = Arc::new(mock_mq);
+
+    let result = process_single_file(file_name, config, state.clone(), state_marker, marker_path, mq, None).await;
+    assert!(result.is_err(), "a send_file_complete failure must propagate as an error");
+
+    let s = state.read().await;
+    assert!(s.active_connections.is_empty(), "failed file must not leave a phantom active connection: {:?}", s.active_connections);
+    assert!(!s.completed_files.contains(file_name), "a failed file must not be recorded as completed");
+}
+
+#[tokio::test]
+async fn test_single_file_parse_failure_clears_active_connection() {
+    // Same contract for a failure raised inside the pipeline itself (missing dump file)
+    // rather than at the AMQP handoff.
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let state_marker = Arc::new(Mutex::new(StateMarker::new("20260101".to_string())));
+    let marker_path = temp_dir.path().join("marker.json");
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().times(0).returning(|_, _, _| Ok(()));
+    mock_mq.expect_close().times(1).returning(|| Ok(()));
+
+    let mq: Arc<dyn extractor::message_queue::MessagePublisher> = Arc::new(mock_mq);
+
+    let result = process_single_file("discogs_20260101_artists.xml.gz", config, state.clone(), state_marker, marker_path, mq, None).await;
+    assert!(result.is_err(), "a missing dump file must fail the pipeline");
+
+    let s = state.read().await;
+    assert!(s.active_connections.is_empty(), "failed file must not leave a phantom active connection: {:?}", s.active_connections);
+}
+
+#[tokio::test]
 async fn test_message_publisher_increments_error_count_on_failure() {
     let state = Arc::new(RwLock::new(ExtractorState::default()));
 

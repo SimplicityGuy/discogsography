@@ -480,149 +480,166 @@ pub async fn process_single_file(
         s.active_connections.insert(data_type, file_name.to_string());
     }
 
-    // Create channels for processing pipeline
-    let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
-    let (batch_sender, batch_receiver) = mpsc::channel::<Vec<DataMessage>>(100);
+    // The pipeline below is wrapped so that the two pieces of non-RAII state acquired above
+    // — the `active_connections` entry and the per-file AMQP connection — are released on
+    // EVERY exit path, not just the success tail. Straight-line `?` propagation used to skip
+    // both on any error, leaving a phantom active connection in /metrics until the next run's
+    // state reset (periodic_check_days away) and tearing the broker connection down abruptly.
+    // The MusicBrainz loop already removes its entry unconditionally; this matches it.
+    let pipeline_result: Result<u64> = async {
+        // Create channels for processing pipeline
+        let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
+        let (batch_sender, batch_receiver) = mpsc::channel::<Vec<DataMessage>>(100);
 
-    // Start workers — with optional validator stage between parser and batcher
-    let file_base_name = Path::new(file_name).file_name().and_then(|n| n.to_str()).unwrap_or(file_name); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-    let version = extract_version_from_filename(file_base_name).unwrap_or_else(|| "unknown".to_string());
+        // Start workers — with optional validator stage between parser and batcher
+        let file_base_name = Path::new(file_name).file_name().and_then(|n| n.to_str()).unwrap_or(file_name); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+        let version = extract_version_from_filename(file_base_name).unwrap_or_else(|| "unknown".to_string());
 
-    // Always-on normalization/hashing stage sits between the (optional) validator / parser and
-    // the batcher, so published records carry the normalized shape and a real sha256 in BOTH the
-    // rules and no-rules pipelines. (cu2.43)
-    let (normalized_sender, normalized_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
+        // Always-on normalization/hashing stage sits between the (optional) validator / parser and
+        // the batcher, so published records carry the normalized shape and a real sha256 in BOTH the
+        // rules and no-rules pipelines. (cu2.43)
+        let (normalized_sender, normalized_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
 
-    let validator_handle = if let Some(rules) = compiled_rules {
-        let (validated_sender, validated_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
-        let rules = rules.clone();
-        let discogs_root = config.discogs_root.clone();
-        let version_clone = version.clone();
-        let data_type_str = data_type.as_str().to_string();
+        let validator_handle = if let Some(rules) = compiled_rules {
+            let (validated_sender, validated_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
+            let rules = rules.clone();
+            let discogs_root = config.discogs_root.clone();
+            let version_clone = version.clone();
+            let data_type_str = data_type.as_str().to_string();
 
-        let handle =
-            tokio::spawn(
-                async move { message_validator(parse_receiver, validated_sender, rules, &data_type_str, &discogs_root, &version_clone).await },
-            );
+            let handle = tokio::spawn(async move {
+                message_validator(parse_receiver, validated_sender, rules, &data_type_str, &discogs_root, &version_clone).await
+            });
 
-        // parser -> validator (skip/filter/rules) -> normalizer (normalize + hash) -> batcher
-        let normalizer_handle = tokio::spawn(async move { message_normalizer(validated_receiver, normalized_sender, data_type).await });
+            // parser -> validator (skip/filter/rules) -> normalizer (normalize + hash) -> batcher
+            let normalizer_handle = tokio::spawn(async move { message_normalizer(validated_receiver, normalized_sender, data_type).await });
 
-        let batcher_config = BatcherConfig {
-            batch_size: config.batch_size,
-            data_type,
-            state: state.clone(),
-            state_marker: state_marker.clone(),
-            marker_path: marker_path.clone(),
-            file_name: file_name.to_string(),
-            state_save_interval: config.state_save_interval,
-        };
-        let batcher_handle = tokio::spawn(async move { message_batcher(normalized_receiver, batch_sender, batcher_config).await });
+            let batcher_config = BatcherConfig {
+                batch_size: config.batch_size,
+                data_type,
+                state: state.clone(),
+                state_marker: state_marker.clone(),
+                marker_path: marker_path.clone(),
+                file_name: file_name.to_string(),
+                state_save_interval: config.state_save_interval,
+            };
+            let batcher_handle = tokio::spawn(async move { message_batcher(normalized_receiver, batch_sender, batcher_config).await });
 
-        let parser_handle = tokio::spawn({
-            let file_path = config.discogs_root.join(file_name); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-            async move {
-                let parser = XmlParser::with_options(data_type, parse_sender, true);
-                parser.parse_file(&file_path).await
+            let parser_handle = tokio::spawn({
+                let file_path = config.discogs_root.join(file_name); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+                async move {
+                    let parser = XmlParser::with_options(data_type, parse_sender, true);
+                    parser.parse_file(&file_path).await
+                }
+            });
+
+            let publisher_handle = tokio::spawn({
+                let mq = mq.clone();
+                let state = state.clone();
+                async move { message_publisher(batch_receiver, mq, data_type, state).await }
+            });
+
+            let (parser_result, validator_result, normalizer_result, batcher_result, publisher_result) =
+                tokio::try_join!(parser_handle, handle, normalizer_handle, batcher_handle, publisher_handle)?;
+            let total_count = parser_result?;
+            let report: QualityReport = validator_result?;
+            normalizer_result?;
+            batcher_result?;
+            publisher_result?;
+
+            if report.has_violations() {
+                // file_name comes from S3 file listing (operator-controlled, not user input)
+                let version_for_report = extract_version_from_filename(
+                    Path::new(file_name).file_name().and_then(|n| n.to_str()).unwrap_or(""), // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+                )
+                .unwrap_or_default();
+                info!("{}", report.format_summary(&version_for_report));
             }
-        });
 
-        let publisher_handle = tokio::spawn({
-            let mq = mq.clone();
-            let state = state.clone();
-            async move { message_publisher(batch_receiver, mq, data_type, state).await }
-        });
+            Some(total_count)
+        } else {
+            // parser -> normalizer (normalize + hash) -> batcher — no validator, but normalization
+            // and hashing still happen so consumers receive the same shape as the rules path. (cu2.43)
+            let parser_handle = tokio::spawn({
+                let file_path = config.discogs_root.join(file_name);
+                async move {
+                    let parser = XmlParser::new(data_type, parse_sender);
+                    parser.parse_file(&file_path).await
+                }
+            });
 
-        let (parser_result, validator_result, normalizer_result, batcher_result, publisher_result) =
-            tokio::try_join!(parser_handle, handle, normalizer_handle, batcher_handle, publisher_handle)?;
-        let total_count = parser_result?;
-        let report: QualityReport = validator_result?;
-        normalizer_result?;
-        batcher_result?;
-        publisher_result?;
+            let normalizer_handle = tokio::spawn(async move { message_normalizer(parse_receiver, normalized_sender, data_type).await });
 
-        if report.has_violations() {
-            // file_name comes from S3 file listing (operator-controlled, not user input)
-            let version_for_report = extract_version_from_filename(
-                Path::new(file_name).file_name().and_then(|n| n.to_str()).unwrap_or(""), // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-            )
-            .unwrap_or_default();
-            info!("{}", report.format_summary(&version_for_report));
+            let batcher_config = BatcherConfig {
+                batch_size: config.batch_size,
+                data_type,
+                state: state.clone(),
+                state_marker: state_marker.clone(),
+                marker_path: marker_path.clone(),
+                file_name: file_name.to_string(),
+                state_save_interval: config.state_save_interval,
+            };
+            let batcher_handle = tokio::spawn(async move { message_batcher(normalized_receiver, batch_sender, batcher_config).await });
+
+            let publisher_handle = tokio::spawn({
+                let mq = mq.clone();
+                let state = state.clone();
+                async move { message_publisher(batch_receiver, mq, data_type, state).await }
+            });
+
+            let total_count = parser_handle.await??;
+            normalizer_handle.await??;
+            batcher_handle.await??;
+            publisher_handle.await??;
+
+            Some(total_count)
+        };
+
+        let total_count = validator_handle.unwrap_or(0);
+
+        // Send the file completion message BEFORE marking the file Completed in
+        // the state marker. If this AMQP send fails, the marker stays NOT
+        // Completed, so pending_files() on the next run still includes this file
+        // and send_file_complete is retried — instead of the signal being
+        // silently and permanently dropped (the previous "marker first" ordering
+        // let an AMQP failure land in the window after the marker was already
+        // durably Completed, so a retry would skip the file and never resend).
+        mq.send_file_complete(data_type, file_name, total_count).await?;
+
+        // Now that the completion signal has been durably handed off to the
+        // broker, mark the file as completed in the state marker.
+        {
+            let mut marker = state_marker.lock().await;
+            marker.complete_file_processing(file_name, total_count);
+            marker.save(&marker_path).await?;
+            info!("✅ Completed file processing in state marker: {} ({} records)", file_name, total_count);
         }
 
-        Some(total_count)
-    } else {
-        // parser -> normalizer (normalize + hash) -> batcher — no validator, but normalization
-        // and hashing still happen so consumers receive the same shape as the rules path. (cu2.43)
-        let parser_handle = tokio::spawn({
-            let file_path = config.discogs_root.join(file_name);
-            async move {
-                let parser = XmlParser::new(data_type, parse_sender);
-                parser.parse_file(&file_path).await
-            }
-        });
-
-        let normalizer_handle = tokio::spawn(async move { message_normalizer(parse_receiver, normalized_sender, data_type).await });
-
-        let batcher_config = BatcherConfig {
-            batch_size: config.batch_size,
-            data_type,
-            state: state.clone(),
-            state_marker: state_marker.clone(),
-            marker_path: marker_path.clone(),
-            file_name: file_name.to_string(),
-            state_save_interval: config.state_save_interval,
-        };
-        let batcher_handle = tokio::spawn(async move { message_batcher(normalized_receiver, batch_sender, batcher_config).await });
-
-        let publisher_handle = tokio::spawn({
-            let mq = mq.clone();
-            let state = state.clone();
-            async move { message_publisher(batch_receiver, mq, data_type, state).await }
-        });
-
-        let total_count = parser_handle.await??;
-        normalizer_handle.await??;
-        batcher_handle.await??;
-        publisher_handle.await??;
-
-        Some(total_count)
-    };
-
-    let total_count = validator_handle.unwrap_or(0);
-
-    // Send the file completion message BEFORE marking the file Completed in
-    // the state marker. If this AMQP send fails, the marker stays NOT
-    // Completed, so pending_files() on the next run still includes this file
-    // and send_file_complete is retried — instead of the signal being
-    // silently and permanently dropped (the previous "marker first" ordering
-    // let an AMQP failure land in the window after the marker was already
-    // durably Completed, so a retry would skip the file and never resend).
-    mq.send_file_complete(data_type, file_name, total_count).await?;
-
-    // Now that the completion signal has been durably handed off to the
-    // broker, mark the file as completed in the state marker.
-    {
-        let mut marker = state_marker.lock().await;
-        marker.complete_file_processing(file_name, total_count);
-        marker.save(&marker_path).await?;
-        info!("✅ Completed file processing in state marker: {} ({} records)", file_name, total_count);
+        Ok(total_count)
     }
+    .await;
 
-    // Update state
+    // Update state. Only `completed_files` is success-conditional; the active-connection
+    // entry must be dropped whether the pipeline succeeded or failed.
     {
         let mut s = state.write().await;
-        s.completed_files.insert(file_name.to_string());
+        if pipeline_result.is_ok() {
+            s.completed_files.insert(file_name.to_string());
+        }
         s.active_connections.remove(&data_type);
     }
 
-    // Clean up — best-effort. A cleanup failure here is purely cosmetic (the
-    // completion signal was already sent and the marker already committed
-    // above), so it must not flip an otherwise fully-successful file to
-    // Failed and trigger the failure cooldown.
+    // Clean up — best-effort, and unconditional. On the success path a cleanup failure is
+    // purely cosmetic (the completion signal was already sent and the marker already
+    // committed above), so it must not flip an otherwise fully-successful file to Failed
+    // and trigger the failure cooldown. On the failure path this replaces an abrupt
+    // connection drop (which RabbitMQ logs as 'client unexpectedly closed TCP connection')
+    // with a graceful close.
     if let Err(e) = mq.close().await {
         warn!("⚠️ Failed to cleanly close per-file MQ connection for {}: {}", file_name, e);
     }
+
+    let total_count = pipeline_result?;
 
     info!("✅ Completed processing {} with {} records", file_name, total_count);
     Ok(())
