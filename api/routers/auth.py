@@ -750,12 +750,22 @@ async def twofa_recovery(request: Request, body: TwoFactorRecoveryModel) -> JSON
     # row locking, concurrent redemptions serialize and the WHERE qual is
     # re-evaluated against the committed row, so only one redemption of a given
     # code can ever match (rowcount 1); the rest match nothing (rowcount 0).
+    # Recovery is an equally strong proof of account control as a correct TOTP
+    # code (password + a one-time recovery code), so its success path must
+    # reset the failed-attempt/lockout columns exactly like twofa_verify's
+    # success path does — folded into this same guarded UPDATE so it only
+    # fires when the code actually matched (discogsography-cflq). Without
+    # this, stale lockout state from before the recovery login survives it
+    # and can 429 a CORRECT TOTP code on the very next login.
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,
             """
             UPDATE users
-            SET totp_recovery_codes = totp_recovery_codes - %s, updated_at = NOW()
+            SET totp_recovery_codes = totp_recovery_codes - %s,
+                totp_failed_attempts = 0,
+                totp_locked_until = NULL,
+                updated_at = NOW()
             WHERE id = %s::uuid
               AND totp_recovery_codes IS NOT NULL
               AND totp_recovery_codes ? %s

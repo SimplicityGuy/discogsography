@@ -863,6 +863,34 @@ class TestTwoFactorRecoveryFull:
         assert "access_token" in data
         assert data["token_type"] == "bearer"
 
+    def test_recovery_success_resets_totp_lockout_state(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """discogsography-cflq: a successful recovery must reset
+        totp_failed_attempts/totp_locked_until in the same UPDATE that redeems
+        the code — otherwise stale lockout state survives the recovery login
+        and can 429 a subsequent CORRECT TOTP code."""
+        plaintext_codes, hashed_codes = self._make_recovery_setup()
+        challenge_token = _make_challenge_token()
+
+        mock_redis.get = _challenge_only_get()
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.delete = AsyncMock()
+        mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps(hashed_codes)})
+
+        response = test_client.post(
+            "/api/auth/2fa/recovery",
+            json={"challenge_token": challenge_token, "code": plaintext_codes[0]},
+        )
+        assert response.status_code == 200
+
+        executed = " ".join(str(call) for call in mock_cur.execute.call_args_list)
+        assert "totp_failed_attempts = 0" in executed
+        assert "totp_locked_until = NULL" in executed
+
     def test_recovery_invalid_code_returns_401(
         self,
         test_client: TestClient,
