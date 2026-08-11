@@ -1070,6 +1070,11 @@ pub async fn run_extraction_loop(
                     Ok(dl) => dl,
                     Err(e) => {
                         error!("❌ Failed to create downloader for periodic check: {}", e);
+                        // The run never starts, so nothing downstream would ever move the
+                        // status off Waiting. Record the failure so /health reports a
+                        // terminal, non-success state instead of a parked one that the
+                        // API's extraction tracker reads as success (discogsography-exnk).
+                        reset_status_after_failed_check(&state).await;
                         continue;
                     }
                 };
@@ -1096,6 +1101,12 @@ pub async fn run_extraction_loop(
                     Ok(dl) => dl,
                     Err(e) => {
                         error!("❌ Failed to create downloader for triggered extraction: {}", e);
+                        // wait_for_trigger already CONSUMED the trigger flag, so this run is
+                        // lost. Without a status write the extractor stays parked at Waiting
+                        // forever and the API's extraction tracker records the phantom run as
+                        // finished — with the PREVIOUS run's record counts, which makes the
+                        // false success look entirely convincing (discogsography-exnk).
+                        reset_status_after_failed_check(&state).await;
                         continue;
                     }
                 };
