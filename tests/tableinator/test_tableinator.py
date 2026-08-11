@@ -13,6 +13,7 @@ from aio_pika.abc import AbstractIncomingMessage
 import pytest
 
 from tableinator.tableinator import (
+    channel_prefetch,
     check_all_consumers_idle,
     close_rabbitmq_connection,
     get_connection,
@@ -48,6 +49,65 @@ class TestGetConnection:
             pytest.raises(RuntimeError, match="Connection pool not initialized"),
         ):
             get_connection()
+
+
+class TestChannelPrefetch:
+    """discogsography-4fio: QoS must be coupled to the PostgreSQL pool in non-batch mode.
+
+    In non-batch mode every in-flight handler holds a pooled connection for its upsert.
+    Per-consumer QoS of 200 across 4 consumers put 800 handlers in flight against a
+    12-connection pool; losers of that race raised out of the pool's bounded
+    exhausted-wait, were nacked with requeue=True, and burned the quorum queue's
+    x-delivery-limit until the message was silently dead-lettered.
+    """
+
+    def test_non_batch_prefetch_is_channel_global_and_matches_pool_max(self) -> None:
+        mock_config = MagicMock()
+        mock_config.postgres_pool_max_size = 12
+
+        with (
+            patch("tableinator.tableinator.BATCH_MODE", False),
+            patch("tableinator.tableinator.config", mock_config),
+        ):
+            prefetch, global_ = channel_prefetch()
+
+        assert prefetch == 12
+        # global_=True bounds the CHANNEL's total unacked deliveries, not each consumer's.
+        assert global_ is True
+
+    def test_non_batch_prefetch_falls_back_when_config_unset(self) -> None:
+        from tableinator.tableinator import _DEFAULT_POOL_MAX
+
+        with (
+            patch("tableinator.tableinator.BATCH_MODE", False),
+            patch("tableinator.tableinator.config", None),
+        ):
+            prefetch, global_ = channel_prefetch()
+
+        assert prefetch == _DEFAULT_POOL_MAX
+        assert global_ is True
+
+    def test_batch_prefetch_stays_per_consumer_and_scales_with_batch_size(self) -> None:
+        """Batch mode hands off to the batch processor rather than holding a connection
+        per message, and each queue needs BATCH_SIZE unacked deliveries of its OWN data
+        type for a batch to fill — so QoS deliberately stays per-consumer there."""
+        with (
+            patch("tableinator.tableinator.BATCH_MODE", True),
+            patch("tableinator.tableinator.BATCH_SIZE", 500),
+        ):
+            prefetch, global_ = channel_prefetch()
+
+        assert prefetch == 1000
+        assert global_ is False
+
+    def test_batch_prefetch_has_a_floor_of_200(self) -> None:
+        with (
+            patch("tableinator.tableinator.BATCH_MODE", True),
+            patch("tableinator.tableinator.BATCH_SIZE", 10),
+        ):
+            prefetch, _ = channel_prefetch()
+
+        assert prefetch == 200
 
 
 class TestMakeDataHandler:

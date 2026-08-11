@@ -1928,12 +1928,19 @@ async def main() -> None:
         active_channel = channel
 
         # Set QoS to allow concurrent batch processing for better throughput
-        # prefetch_count must be >= batch_size to allow batches to fill before flushing
+        # prefetch_count must be >= batch_size to allow batches to fill before flushing.
+        # QoS is deliberately per-consumer (aio-pika's global_=False default) so each
+        # data type can fill its own batch; the resulting channel-wide ceiling is
+        # prefetch_count x len(DATA_TYPES) and is logged so the multiplier is explicit
+        # rather than silent (discogsography-4fio). Unlike tableinator's non-batch mode,
+        # graphinator writes through the Neo4j driver's own pool, so there is no small
+        # fixed connection budget to couple the prefetch to.
         prefetch_count = max(200, BATCH_SIZE * 2) if BATCH_MODE else 200
         await channel.set_qos(prefetch_count=prefetch_count)
         logger.info(
             "🔧 QoS prefetch configured",
             prefetch_count=prefetch_count,
+            channel_wide_max=prefetch_count * len(DATA_TYPES),
             batch_size=BATCH_SIZE if BATCH_MODE else "N/A",
         )
 

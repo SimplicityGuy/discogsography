@@ -168,6 +168,42 @@ BATCH_MODE = os.environ.get("POSTGRES_BATCH_MODE", "true").lower() == "true"
 BATCH_SIZE = int(os.environ.get("POSTGRES_BATCH_SIZE", "100"))
 BATCH_FLUSH_INTERVAL = float(os.environ.get("POSTGRES_BATCH_FLUSH_INTERVAL", "5.0"))
 
+# Fallback pool max when config is not yet loaded (matches TableinatorConfig default).
+_DEFAULT_POOL_MAX = 12
+
+
+def channel_prefetch() -> tuple[int, bool]:
+    """Resolve ``(prefetch_count, global_)`` for this channel's QoS.
+
+    Two different shapes, because the two modes hold PostgreSQL connections very
+    differently:
+
+    * **Batch mode** — handlers hand the message to :class:`PostgreSQLBatchProcessor`
+      and return immediately; only the flush task holds a pooled connection, and its
+      concurrency is bounded by the batch processor's own semaphore. Each queue needs
+      at least ``BATCH_SIZE`` unacked deliveries of its OWN data type for a batch to
+      fill, so QoS stays per-consumer (``global_=False``). The channel-wide ceiling is
+      therefore ``prefetch_count * len(DATA_TYPES)`` — logged explicitly so the 4x
+      multiplier is not a surprise.
+    * **Non-batch mode** (``POSTGRES_BATCH_MODE=false``) — every in-flight handler
+      holds a pooled connection for the duration of its upsert, exactly the shape
+      brainztableinator couples in ``_channel_prefetch``. Bound the channel's TOTAL
+      unacked deliveries (``global_=True``) to the pool max so the broker, not the
+      pool's ~15.5s exhausted-wait retry loop, applies backpressure. Without this,
+      4 x 200 = 800 concurrent handlers raced for 12 connections; the losers raised,
+      were nacked with ``requeue=True``, and burned the quorum queue's
+      ``x-delivery-limit: 20`` until the message was silently dead-lettered
+      (discogsography-4fio).
+    """
+    if BATCH_MODE:
+        # prefetch_count must be >= batch_size to allow batches to fill before flushing
+        return max(200, BATCH_SIZE * 2), False
+    pool_max = (
+        config.postgres_pool_max_size if config is not None else _DEFAULT_POOL_MAX
+    )
+    return pool_max, True
+
+
 # Global shutdown flag
 shutdown_requested = False
 
@@ -419,9 +455,12 @@ async def _recover_consumers() -> None:
             active_connection = temp_connection
             active_channel = temp_channel
 
-            # Set QoS - scale with batch_size for efficient batch processing
-            prefetch_count = max(200, BATCH_SIZE * 2) if BATCH_MODE else 200
-            await active_channel.set_qos(prefetch_count=prefetch_count)
+            # Set QoS - scale with batch_size in batch mode, couple to the PostgreSQL
+            # pool capacity in non-batch mode (see channel_prefetch).
+            prefetch_count, prefetch_global = channel_prefetch()
+            await active_channel.set_qos(
+                prefetch_count=prefetch_count, global_=prefetch_global
+            )
 
             # Declare per-data-type fanout exchanges and consumer-owned queues
             queues = {}
@@ -1183,13 +1222,18 @@ async def main() -> None:
         channel = await amqp_connection.channel()
         active_channel = channel
 
-        # Set QoS to allow concurrent batch processing for better throughput
-        # prefetch_count must be >= batch_size to allow batches to fill before flushing
-        prefetch_count = max(200, BATCH_SIZE * 2) if BATCH_MODE else 200
-        await channel.set_qos(prefetch_count=prefetch_count)
+        # Set QoS to allow concurrent batch processing for better throughput, or to
+        # couple in-flight deliveries to the PostgreSQL pool in non-batch mode.
+        prefetch_count, prefetch_global = channel_prefetch()
+        await channel.set_qos(prefetch_count=prefetch_count, global_=prefetch_global)
         logger.info(
             "🔧 QoS prefetch configured",
             prefetch_count=prefetch_count,
+            channel_global=prefetch_global,
+            # Per-consumer QoS means the real channel-wide ceiling is prefetch x consumers.
+            channel_wide_max=prefetch_count
+            if prefetch_global
+            else prefetch_count * len(DATA_TYPES),
             batch_size=BATCH_SIZE if BATCH_MODE else "N/A",
         )
 
