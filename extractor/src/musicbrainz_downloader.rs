@@ -337,6 +337,12 @@ impl MbDownloader {
         // only after SHA256 passes. A hard crash (OOM/SIGKILL/power loss) mid-extraction then
         // leaves only a `{entity}.jsonl.xz.tmp` — which is_version_complete does NOT accept —
         // instead of a truncated `{entity}.jsonl.xz` that would be forever trusted as complete.
+        //
+        // Extending that guarantee from process kills to actual power loss needs two fsyncs,
+        // because ordering between the data blocks and the directory entry is otherwise not
+        // guaranteed: the `.tmp` file's data is fsynced before the rename (in
+        // `extract_entity_from_reader`), and the parent directory is fsynced after it
+        // (`sync_parent_dir`).
         let tmp_path = tmp_download_path(out_path);
         let mut last_error: Option<anyhow::Error> = None;
 
@@ -417,6 +423,12 @@ impl MbDownloader {
                         last_error = Some(anyhow::anyhow!(msg));
                         let _ = fs::remove_file(&tmp_path).await;
                         continue;
+                    }
+                    // Make the new directory entry itself durable; the file's own data was
+                    // fsynced before the rename inside extract_entity_from_reader.
+                    {
+                        let out_path_for_sync = out_path.to_path_buf();
+                        let _ = tokio::task::spawn_blocking(move || sync_parent_dir(&out_path_for_sync)).await;
                     }
                     let elapsed = attempt_start.elapsed().as_secs_f64();
                     let speed = if elapsed > 0.0 { (total_bytes as f64 / 1_048_576.0) / elapsed } else { 0.0 };
@@ -519,6 +531,32 @@ fn tmp_download_path(out_path: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// fsync the directory that contains `path` so a rename into it survives power loss.
+///
+/// `rename(2)` is atomic with respect to what a running system observes, but on journaling
+/// file systems the *new directory entry* only becomes durable once the parent directory is
+/// itself fsynced. Without this, the rename can be persisted while the renamed file's data
+/// blocks are not — the exact shape that leaves a truncated `{entity}.jsonl.xz` at a path
+/// `is_version_complete` trusts forever.
+///
+/// Best-effort: on platforms where a directory cannot be opened for sync this warns rather
+/// than failing an otherwise complete, checksum-verified download.
+pub(crate) fn sync_parent_dir(path: &Path) {
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    // `parent` is derived from operator-controlled config, not HTTP input.
+    match std::fs::File::open(parent) {
+        // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+        Ok(dir) => {
+            if let Err(e) = dir.sync_all() {
+                warn!("⚠️ Failed to fsync directory {:?}: {}", parent, e);
+            }
+        }
+        Err(e) => warn!("⚠️ Failed to open directory {:?} for fsync: {}", parent, e),
+    }
+}
+
 /// Extract `mbdump/<entity>` from a `.tar.xz` file on disk into a compressed `.jsonl.xz`
 /// output file. Thin wrapper around [`extract_entity_from_reader`] — kept as a stable public
 /// entry point so existing disk-based tests and any standalone callers keep working.
@@ -533,6 +571,7 @@ pub fn extract_entity_from_tarball(tar_path: &Path, entity: &str, out_path: &Pat
     let tmp_path = tmp_download_path(out_path);
     extract_entity_from_reader(file, entity, &tmp_path).map(|_| ())?;
     std::fs::rename(&tmp_path, out_path).with_context(|| format!("Failed to rename {:?} -> {:?}", tmp_path, out_path))?;
+    sync_parent_dir(out_path);
     Ok(())
 }
 
@@ -593,7 +632,13 @@ fn extract_entity_from_reader<R: Read>(reader: R, entity: &str, out_path: &Path)
                     last_progress_log = now;
                 }
             }
-            encoder.finish().context("Failed to finalize XZ compression")?;
+            // Flush the XZ footer, then force the data to stable storage BEFORE the caller
+            // renames this file into its final path. Without the fsync the rename can be
+            // journaled while the data blocks are not, and a power loss leaves a truncated
+            // `{entity}.jsonl.xz` at the final path — which `is_version_complete` trusts
+            // forever, wedging extraction until an operator deletes the file by hand.
+            let finished = encoder.finish().context("Failed to finalize XZ compression")?;
+            finished.sync_all().with_context(|| format!("Failed to fsync {:?}", out_path))?;
             Ok(())
         })();
 

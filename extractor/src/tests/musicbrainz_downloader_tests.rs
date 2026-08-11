@@ -1283,3 +1283,60 @@ async fn test_download_latest_resumes_per_entity() {
     assert_eq!(std::fs::read(version_dir.join("release-group.jsonl.xz")).unwrap(), b"previous-run-release-group");
     assert!(version_dir.join("release.jsonl.xz").exists(), "the missing entity must still be downloaded");
 }
+
+#[test]
+fn test_sync_parent_dir_on_existing_file() {
+    // The durability helper must succeed quietly for a normal file in a real directory.
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("artist.jsonl.xz");
+    std::fs::write(&file, b"payload").unwrap();
+
+    sync_parent_dir(&file);
+
+    assert_eq!(std::fs::read(&file).unwrap(), b"payload");
+}
+
+#[test]
+fn test_sync_parent_dir_missing_parent_is_best_effort() {
+    // A missing/unopenable parent must warn rather than panic — a durability nicety must
+    // never fail an otherwise complete, checksum-verified download.
+    sync_parent_dir(Path::new("/nonexistent/path/to/mb/dumps/artist.jsonl.xz"));
+    sync_parent_dir(Path::new("artist.jsonl.xz"));
+}
+
+#[test]
+fn test_extract_entity_from_tarball_output_is_durable() {
+    // discogsography-ug9f regression: the output must be fsynced before it is renamed into
+    // place, so a power loss cannot leave a truncated file at the final path that
+    // is_version_complete then trusts forever. The observable surface is that the published
+    // file is complete and decompresses fully.
+    let dir = TempDir::new().unwrap();
+    let tar_path = dir.path().join("artist.tar.xz");
+    let out_path = dir.path().join("artist.jsonl.xz");
+
+    let payload: String = (0..500).map(|i| format!("{{\"id\":\"artist-{i}\"}}\n")).collect();
+    let mut tar_data = Vec::new();
+    {
+        let mut builder = tar::Builder::new(&mut tar_data);
+        let bytes = payload.as_bytes();
+        let mut header = tar::Header::new_gnu();
+        header.set_path("artist/mbdump/artist").unwrap();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder.append(&header, bytes).unwrap();
+        builder.finish().unwrap();
+    }
+    let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
+    encoder.write_all(&tar_data).unwrap();
+    std::fs::write(&tar_path, encoder.finish().unwrap()).unwrap();
+
+    extract_entity_from_tarball(&tar_path, "artist", &out_path).unwrap();
+
+    assert!(out_path.exists());
+    assert!(!tmp_download_path(&out_path).exists(), "the .tmp staging file must be gone after the rename");
+
+    let mut round_tripped = String::new();
+    xz2::read::XzDecoder::new(std::fs::File::open(&out_path).unwrap()).read_to_string(&mut round_tripped).unwrap();
+    assert_eq!(round_tripped, payload, "the published file must contain the complete XZ stream");
+}
