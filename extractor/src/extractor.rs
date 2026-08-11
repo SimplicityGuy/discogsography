@@ -149,6 +149,9 @@ pub async fn process_discogs_data(
             return Ok(true);
         }
         ProcessingDecision::Reprocess => {
+            // Safe to discard the marker: should_process() only returns Reprocess when no
+            // file has finished processing (otherwise it returns Continue, so an
+            // interrupted download-verification pass cannot wipe processing progress).
             warn!("⚠️ Will re-download and re-process version {}", version);
             state_marker = StateMarker::new(version.clone());
         }

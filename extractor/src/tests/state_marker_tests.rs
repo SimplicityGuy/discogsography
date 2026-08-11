@@ -436,3 +436,67 @@ async fn test_all_files_complete_before_crash_keeps_original_start_time() {
     // extraction_complete on this branch must still use the original start time.
     assert_eq!(resumed.processing_phase.started_at, Some(original_started_at));
 }
+
+/// Regression for discogsography-21tg: a resumed run re-enters the download phase on
+/// every cycle (to re-verify already-present dumps). A crash inside that window left
+/// `download_phase = InProgress` on disk, which used to demote the whole marker to
+/// Reprocess and wipe every completed file. Completed processing progress must survive.
+#[test]
+fn test_interrupted_download_retains_progress() {
+    let mut marker = StateMarker::new("20260801".to_string());
+
+    // Run 1: artists + labels + masters processed, releases still pending.
+    marker.start_processing(4);
+    for file in ["discogs_20260801_artists.xml.gz", "discogs_20260801_labels.xml.gz", "discogs_20260801_masters.xml.gz"] {
+        marker.start_file_processing(file);
+        marker.complete_file_processing(file, 1000);
+    }
+    assert_eq!(marker.completed_file_count(), 3);
+
+    // Run 2: resumed run re-enters the download phase, then is killed mid-verification.
+    marker.start_download(4);
+    assert_eq!(marker.download_phase.status, PhaseStatus::InProgress);
+
+    // Run 3: must resume, not reprocess.
+    assert_eq!(marker.should_process(), ProcessingDecision::Continue);
+
+    let all_files = vec![
+        "discogs_20260801_artists.xml.gz".to_string(),
+        "discogs_20260801_labels.xml.gz".to_string(),
+        "discogs_20260801_masters.xml.gz".to_string(),
+        "discogs_20260801_releases.xml.gz".to_string(),
+    ];
+    assert_eq!(marker.pending_files(&all_files), vec!["discogs_20260801_releases.xml.gz".to_string()]);
+}
+
+/// Same protection for a download phase that recorded an outright failure: downloads
+/// are idempotent and self-heal via checksum verification, so they are never a reason
+/// to re-publish tens of millions of already-processed records.
+#[test]
+fn test_failed_download_keeps_progress() {
+    let mut marker = StateMarker::new("20260801".to_string());
+    marker.start_processing(2);
+    marker.start_file_processing("discogs_20260801_artists.xml.gz");
+    marker.complete_file_processing("discogs_20260801_artists.xml.gz", 500);
+
+    marker.download_phase.status = PhaseStatus::Failed;
+
+    assert_eq!(marker.should_process(), ProcessingDecision::Continue);
+    assert_eq!(marker.completed_file_count(), 1);
+}
+
+/// With nothing processed yet there is no progress worth protecting, so an interrupted
+/// download still means "start over".
+#[test]
+fn test_interrupted_download_no_progress() {
+    let mut marker = StateMarker::new("20260801".to_string());
+    marker.start_download(4);
+    assert_eq!(marker.completed_file_count(), 0);
+    assert_eq!(marker.should_process(), ProcessingDecision::Reprocess);
+
+    // An in-flight (not yet completed) file is not progress either.
+    marker.start_processing(4);
+    marker.start_file_processing("discogs_20260801_artists.xml.gz");
+    assert_eq!(marker.completed_file_count(), 0);
+    assert_eq!(marker.should_process(), ProcessingDecision::Reprocess);
+}

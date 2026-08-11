@@ -104,7 +104,7 @@ When the extractor restarts, it checks the state marker and makes one of three d
 
 **Triggered when:**
 
-- Download phase failed
+- Download phase failed or was interrupted **and** no file has finished processing yet
 - State marker is corrupted
 - Force reprocess flag is set
 
@@ -120,6 +120,9 @@ When the extractor restarts, it checks the state marker and makes one of three d
 
 - Processing phase is `in_progress`
 - Processing phase `failed` but can recover
+- Download phase failed or was interrupted but at least one file already finished
+  processing — downloads are idempotent and self-heal via checksum verification, so
+  completed processing progress is never discarded to recover a download
 
 **Action:**
 
