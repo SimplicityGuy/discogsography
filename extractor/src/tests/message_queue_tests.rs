@@ -317,10 +317,11 @@ async fn test_await_confirm_accepts_ack() {
 }
 
 #[tokio::test]
-async fn test_await_confirm_rejects_nack() {
-    let result = MessageQueue::await_confirm(async { Ok(Confirmation::Nack(None)) }).await;
-    let err = result.expect_err("a nacked publish must be an error");
-    assert!(err.to_string().contains("not acknowledged"), "unexpected error: {}", err);
+async fn test_await_confirm_passes_nack_through() {
+    // Nack rejection itself lives in check_confirmation (discogsography-i3h2);
+    // await_confirm's contract is to surface the confirmation for that check.
+    let confirm = MessageQueue::await_confirm(async { Ok(Confirmation::Nack(None)) }).await.expect("a resolved confirm must not error");
+    assert!(!confirm.is_ack(), "a nack must surface to the caller for check_confirmation");
 }
 
 #[tokio::test(start_paused = true)]
@@ -343,4 +344,43 @@ async fn test_await_confirm_times_out_on_stall() {
 fn test_publish_confirm_timeout_is_bounded() {
     assert!(PUBLISH_CONFIRM_TIMEOUT > Duration::ZERO);
     assert!(PUBLISH_CONFIRM_TIMEOUT <= Duration::from_secs(60));
+}
+
+/// Regression for discogsography-i3h2: publishes must be mandatory, otherwise the broker
+/// acks and silently drops messages that route to zero queues.
+#[test]
+fn test_publish_options_are_mandatory() {
+    let options = MessageQueue::publish_options();
+    assert!(options.mandatory, "publishes must be mandatory so unroutable messages are returned, not dropped");
+    assert!(!options.immediate, "immediate is deprecated by RabbitMQ and must stay off");
+}
+
+#[test]
+fn test_confirmation_ack_without_return() {
+    // The healthy case: acked and routed.
+    assert!(check_confirmation("discogsography-discogs-artists", true, None).is_ok());
+}
+
+#[test]
+fn test_confirmation_returned_is_failure() {
+    // RabbitMQ answers a mandatory publish that matched no queue with basic.return
+    // FOLLOWED BY basic.ack — the ack alone must not be read as delivery.
+    let err = check_confirmation("discogsography-discogs-artists", true, Some((312, "NO_ROUTE".to_string())))
+        .expect_err("an unroutable message must fail the publish");
+    let message = err.to_string();
+    assert!(message.contains("discogsography-discogs-artists"), "error should name the exchange: {message}");
+    assert!(message.contains("NO_ROUTE") && message.contains("312"), "error should carry the broker's reason: {message}");
+}
+
+#[test]
+fn test_confirmation_nack_is_failure() {
+    let err = check_confirmation("discogsography-discogs-artists", false, None).expect_err("a nack must fail the publish");
+    assert!(err.to_string().contains("not acknowledged"), "unexpected error: {err}");
+}
+
+#[test]
+fn test_confirmation_nack_with_return() {
+    // A nack that also carries a returned message reports the routing failure.
+    let err = check_confirmation("discogsography-discogs-releases", false, Some((312, "NO_ROUTE".to_string()))).expect_err("must fail");
+    assert!(err.to_string().contains("unroutable"), "unexpected error: {err}");
 }
