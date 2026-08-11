@@ -143,10 +143,11 @@ async def get_person_connections(
         WHERE hop2.name <> $name AND hop2.name <> hop1.name
         WITH hop1, direct_shared, hop2, count(DISTINCT r2) AS hop2_shared
         WITH hop1, direct_shared,
-             CASE WHEN hop2 IS NOT NULL
-                  THEN collect(DISTINCT {name: hop2.name, via: hop1.name, shared: hop2_shared})[..10]
-                  ELSE []
-             END AS second_hops
+             [x IN collect(DISTINCT
+                 CASE WHEN hop2 IS NOT NULL
+                      THEN {name: hop2.name, via: hop1.name, shared: hop2_shared}
+                 END
+             ) WHERE x IS NOT NULL][..10] AS second_hops
         RETURN hop1.name AS name, direct_shared AS shared_count, second_hops
         """
     return await run_query(driver, cypher, name=name, limit=limit)

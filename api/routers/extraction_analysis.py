@@ -611,6 +611,37 @@ def _extract_xml_field_value(xml_text: str, field: str) -> str | None:
     return text.strip() if text and text.strip() else None
 
 
+def _find_json_field_value(node: Any, leaf: str) -> Any:
+    """Recursively search a parsed JSON value for a key named *leaf*.
+
+    Mirrors ``_extract_xml_field_value``'s ``root.iter(leaf)`` recursive
+    search. The flagged .json file is the PRE-normalization, XML-shaped
+    record (dot-notation rule fields like "genres.genre" match the raw XML
+    structure, so the parsed JSON nests the leaf under a container key —
+    e.g. ``{"genres": {"genre": [...]}}``). A top-level-only lookup misses
+    fields the XML search finds, causing correctly-parsed records to be
+    falsely classified as ``parsing_error`` (discogsography-bfcm).
+
+    Returns the first matching value found via depth-first search (dict keys
+    checked before descending into nested containers, matching
+    ElementTree.iter's document-order semantics closely enough for this
+    purpose), or None if the key never appears anywhere in the structure.
+    """
+    if isinstance(node, dict):
+        if leaf in node:
+            return node[leaf]
+        for value in node.values():
+            found = _find_json_field_value(value, leaf)
+            if found is not None:
+                return found
+    elif isinstance(node, list):
+        for item in node:
+            found = _find_json_field_value(item, leaf)
+            if found is not None:
+                return found
+    return None
+
+
 def _classify_violation(
     violation: dict[str, Any],
     flagged_dir: Path,
@@ -637,9 +668,14 @@ def _classify_violation(
     else:
         xml_value = _extract_xml_field_value(raw_xml, field) if field else None
 
-        # Extract JSON value: support dot-notation — use the last segment as the key
+        # Extract JSON value: support dot-notation — search recursively for
+        # the leaf key, mirroring the XML side's root.iter(leaf) fallback.
+        # A top-level-only .get(leaf) misses nested container fields (e.g.
+        # "genres.genre" -> {"genres": {"genre": [...]}}) that the parser
+        # handled correctly, systematically miscounting them as parsing
+        # errors (discogsography-bfcm).
         leaf = field.rsplit(".", maxsplit=1)[-1] if field else field
-        raw_json_val = parsed_json.get(leaf)
+        raw_json_val = _find_json_field_value(parsed_json, leaf) if leaf else None
         json_value = str(raw_json_val).strip() if raw_json_val is not None and str(raw_json_val).strip() else None
 
         if xml_value and not json_value:

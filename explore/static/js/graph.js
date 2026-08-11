@@ -17,6 +17,13 @@ class GraphVisualization {
         this.expandedCategories = new Set();
         this._pendingExpands = 0;
         this._loadingCategories = new Set();
+        // Monotonically increasing generation token. Bumped by every method
+        // that starts a new load/session (setExploreData, restoreSnapshot,
+        // setBeforeYear, setCompareYears). In-flight async expand/fetch calls
+        // capture the generation at start and re-check it after every await,
+        // discarding stale work instead of mutating state that belongs to a
+        // newer session (discogsography-5fg0).
+        this._generation = 0;
 
         // Track per-category pagination state: categoryId → {offset, limit, total, parentName, parentType, category}
         this._categoryMeta = new Map();
@@ -174,6 +181,9 @@ class GraphVisualization {
      * Returns a promise that resolves when all expansions are complete.
      */
     setExploreData(data) {
+        // New session: invalidate any in-flight expansions from a prior call.
+        const gen = ++this._generation;
+
         // Stop any existing simulation
         if (this.simulation) {
             this.simulation.stop();
@@ -244,20 +254,25 @@ class GraphVisualization {
         // Expand all categories concurrently, render once when all are done
         this._pendingExpands = expandable.length;
         expandable.forEach(cat => {
-            this._expandCategory(cat.id, center.name, center.type, cat.category);
+            this._expandCategory(gen, cat.id, center.name, center.type, cat.category);
         });
     }
 
-    async _expandCategory(categoryId, parentName, parentType, category) {
+    async _expandCategory(gen, categoryId, parentName, parentType, category) {
         if (this.expandedCategories.has(categoryId)) {
-            this._pendingExpands--;
-            this._checkExpandsDone();
+            if (gen === this._generation) {
+                this._pendingExpands--;
+                this._checkExpandsDone();
+            }
             return;
         }
         this.expandedCategories.add(categoryId);
 
         try {
             const data = await window.apiClient.expand(parentName, parentType, category, 30, 0, this.beforeYear);
+            // Stale response: a newer setExploreData/setBeforeYear/etc. has
+            // superseded this session — discard rather than corrupt it.
+            if (gen !== this._generation) return;
             const { children, total, limit, has_more } = data;
 
             // Store pagination state for this category
@@ -289,8 +304,10 @@ class GraphVisualization {
                 this._addLoadMoreNode(categoryId, total - children.length);
             }
         } finally {
-            this._pendingExpands--;
-            this._checkExpandsDone();
+            if (gen === this._generation) {
+                this._pendingExpands--;
+                this._checkExpandsDone();
+            }
         }
     }
 
@@ -317,6 +334,7 @@ class GraphVisualization {
     }
 
     async _loadMoreCategory(d) {
+        const gen = this._generation;
         const meta = this._categoryMeta.get(d.categoryId);
         if (!meta) return;
         if (this._loadingCategories.has(d.categoryId)) return;
@@ -325,6 +343,8 @@ class GraphVisualization {
         try {
             const { parentName, parentType, category, offset, limit, total } = meta;
             const data = await window.apiClient.expand(parentName, parentType, category, limit, offset, this.beforeYear);
+            // Stale response: a newer session has superseded this one.
+            if (gen !== this._generation) return;
             const { children, has_more } = data;
 
             // Remove the load-more node and its link
@@ -609,6 +629,9 @@ class GraphVisualization {
      * @param {{id: string, type: string}} center
      */
     restoreSnapshot(snapshotNodes, center) {
+        // New session: invalidate any in-flight expansions from a prior call.
+        ++this._generation;
+
         if (this.simulation) {
             this.simulation.stop();
             this.simulation = null;
@@ -666,6 +689,8 @@ class GraphVisualization {
      * @param {number|null} year - Year to filter to, or null to clear
      */
     async setBeforeYear(year) {
+        // New session: invalidate any in-flight expansions from a prior call.
+        const gen = ++this._generation;
         this.beforeYear = year;
 
         // Re-expand all categories with the new year filter
@@ -706,14 +731,16 @@ class GraphVisualization {
         }
 
         for (const cat of categories) {
-            this._expandCategoryFiltered(cat.catId, cat.parentName, cat.parentType, cat.category);
+            this._expandCategoryFiltered(gen, cat.catId, cat.parentName, cat.parentType, cat.category);
         }
     }
 
-    async _expandCategoryFiltered(categoryId, parentName, parentType, category) {
+    async _expandCategoryFiltered(gen, categoryId, parentName, parentType, category) {
         this.expandedCategories.add(categoryId);
         try {
             const data = await window.apiClient.expand(parentName, parentType, category, 30, 0, this.beforeYear);
+            // Stale response: a newer session has superseded this one.
+            if (gen !== this._generation) return;
             const { children, total, limit, has_more } = data;
 
             this._categoryMeta.set(categoryId, {
@@ -747,8 +774,10 @@ class GraphVisualization {
                 this._addLoadMoreNode(categoryId, total - children.length);
             }
         } finally {
-            this._pendingExpands--;
-            this._checkExpandsDone();
+            if (gen === this._generation) {
+                this._pendingExpands--;
+                this._checkExpandsDone();
+            }
         }
     }
 
@@ -758,6 +787,8 @@ class GraphVisualization {
      * @param {number} yearB - Later year
      */
     async setCompareYears(yearA, yearB) {
+        // New session: invalidate any in-flight expansions from a prior call.
+        const gen = ++this._generation;
         this.compareMode = true;
         this.compareYearA = yearA;
         this.compareYearB = yearB;
@@ -800,14 +831,14 @@ class GraphVisualization {
         }
 
         for (const cat of categories) {
-            this._fetchComparisonData(cat.catId, cat.parentName, cat.parentType, cat.category);
+            this._fetchComparisonData(gen, cat.catId, cat.parentName, cat.parentType, cat.category);
         }
     }
 
     /**
      * Fetch data for both years and diff, then insert merged nodes.
      */
-    async _fetchComparisonData(categoryId, parentName, parentType, category) {
+    async _fetchComparisonData(gen, categoryId, parentName, parentType, category) {
         this.expandedCategories.add(categoryId);
         try {
             // Parallel fetch for both years
@@ -828,6 +859,9 @@ class GraphVisualization {
                 }
                 return;
             }
+
+            // Stale response: a newer session has superseded this one.
+            if (gen !== this._generation) return;
 
             // Build lookup maps keyed by composite type:id
             const mapA = new Map();
@@ -883,8 +917,10 @@ class GraphVisualization {
 
             // No load-more in comparison mode
         } finally {
-            this._pendingExpands--;
-            this._checkExpandsDone();
+            if (gen === this._generation) {
+                this._pendingExpands--;
+                this._checkExpandsDone();
+            }
         }
     }
 

@@ -385,6 +385,33 @@ describe('InsightsPanel', () => {
             expect(chip1.classList.contains('active')).toBe(true);
             expect(chip2.classList.contains('active')).toBe(false);
         });
+
+        it('should discard a stale response for a genre the user has since navigated away from (discogsography-5fg0)', async () => {
+            // A slower request for the previously-clicked genre ('Jazz')
+            // resolves AFTER a faster request for the newly-clicked genre
+            // ('Classical'). The stale response must not overwrite the chart.
+            let resolveJazz;
+            const jazzPromise = new Promise((resolve) => { resolveJazz = resolve; });
+            window.apiClient = {
+                getInsightsGenreTrends: vi.fn()
+                    .mockReturnValueOnce(jazzPromise)
+                    .mockResolvedValueOnce({ genre: 'Classical', trends: [{ decade: 1990, release_count: 5 }] }),
+            };
+            const renderSpy = vi.spyOn(window.insightsPanel, '_renderGenreTrends');
+
+            const jazzLoad = window.insightsPanel._loadGenreTrends('Jazz');
+            const classicalLoad = window.insightsPanel._loadGenreTrends('Classical');
+
+            await classicalLoad;
+            expect(renderSpy).toHaveBeenCalledWith({ genre: 'Classical', trends: [{ decade: 1990, release_count: 5 }] });
+            renderSpy.mockClear();
+
+            resolveJazz({ genre: 'Jazz', trends: [{ decade: 1980, release_count: 3 }] });
+            await jazzLoad;
+
+            expect(renderSpy).not.toHaveBeenCalled();
+            expect(window.insightsPanel._selectedGenre).toBe('Classical');
+        });
     });
 
     describe('_renderGenreTrends', () => {

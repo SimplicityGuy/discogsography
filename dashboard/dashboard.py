@@ -508,6 +508,21 @@ class DashboardApp:
                 self.websocket_connections -= disconnected
                 WEBSOCKET_CONNECTIONS.set(len(self.websocket_connections))
 
+            # A send failure here can mean either a genuinely dead socket OR
+            # a still-live one that merely stalled past _WS_SEND_TIMEOUT_SECONDS
+            # (asyncio.wait_for cancels send_text but never closes the
+            # connection). Eviction from websocket_connections alone leaves
+            # that second case as a zombie: the endpoint's keep-alive loop
+            # (`while True: await websocket.receive_text()`) blocks forever on
+            # a healthy connection, so it never notices and never closes, and
+            # the client's `ws.onclose` — its ONLY reconnect trigger — never
+            # fires. The dashboard then shows a live-looking, permanently
+            # frozen UI. Close each evicted socket best-effort, outside the
+            # lock (mirroring the send path), so the client always reconnects.
+            for websocket in disconnected:
+                with contextlib.suppress(Exception):
+                    await websocket.close(code=1011)
+
 
 # Create the dashboard app instance
 dashboard: DashboardApp | None = None

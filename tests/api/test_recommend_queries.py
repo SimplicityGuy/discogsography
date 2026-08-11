@@ -780,6 +780,43 @@ class TestGetExploreTraversal:
         # Should NOT have called Neo4j at all
         driver.session.return_value.__aenter__.return_value.run.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_cypher_dedupes_per_discovered_node_not_per_path(self) -> None:
+        """Regression for discogsography-6mvm.
+
+        `WITH DISTINCT discovered, path_names, rel_types, dist` dedupes the
+        whole PATH tuple, not the discovered node — an artist with N releases
+        on one label produced N duplicate rows for that label (one per
+        distinct path), crowding real discoveries out of the LIMIT 100 cut.
+        Verified directly against a live Neo4j 5 instance (docker): the
+        pre-fix query returned 5 duplicate rows for a single label reached via
+        5 releases, the fixed query returns exactly 1 (shortest path kept).
+
+        Pin the structural fix: dedup must aggregate per `discovered` (via
+        `collect(...)[0]` after an `ORDER BY dist`, which keeps the shortest
+        path), not just `DISTINCT` the raw per-path tuple.
+        """
+        from api.queries.recommend_queries import get_explore_traversal
+
+        driver = _make_driver(records=[])
+        await get_explore_traversal(driver, "artist", "a1", hops=2)
+        call_args = driver.session.return_value.__aenter__.return_value.run.call_args
+        cypher = call_args[0][0]
+
+        # The old buggy pattern must be gone.
+        assert "WITH DISTINCT discovered," not in cypher
+
+        # Discovered nodes must be collapsed via an aggregation keyed on
+        # `discovered` alone, ordered by distance so collect(...)[0] is the
+        # shortest path.
+        assert "ORDER BY dist" in cypher
+        assert "WITH discovered, collect(" in cypher
+        assert ")[0] AS best" in cypher
+        # And the final RETURN/ORDER BY/LIMIT must operate on the collapsed
+        # per-node aggregate, not the raw per-path rows.
+        assert "best.dist" in cypher
+        assert "LIMIT 100" in cypher
+
 
 # ---------------------------------------------------------------------------
 # score_discoveries

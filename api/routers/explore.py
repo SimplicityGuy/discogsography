@@ -27,6 +27,7 @@ from api.queries.neo4j_queries import (
     get_genre_emergence,
     get_graph_stats,
     get_year_range,
+    node_label_to_type,
 )
 
 
@@ -350,15 +351,10 @@ _VALID_PATH_TYPES = frozenset(EXPLORE_DISPATCH.keys())
 # _MAX_PATH_DEPTH / _DEFAULT_PATH_DEPTH are re-exported (aliased on import,
 # above) from neo4j_queries — the single source of truth for shortestPath
 # depth bounds, also used by the NLQ find_path tool handler.
-
-
-def _node_label_to_type(labels: list[str]) -> str:
-    """Convert a Neo4j label list to a lowercase entity type string."""
-    for label in labels:
-        lower = label.lower()
-        if lower in _VALID_PATH_TYPES:
-            return lower
-    return labels[0].lower() if labels else "unknown"
+# node_label_to_type is likewise re-exported from neo4j_queries — the single
+# source of truth for normalizing raw Neo4j labels, also used by the NLQ
+# find_path tool handler (api/nlq/tools.py) so the two mirror sites cannot
+# diverge again (discogsography-apt8).
 
 
 @router.get("/api/path")
@@ -433,7 +429,7 @@ async def find_path(
         PathNode(
             id=str(n["id"]),
             name=str(n["name"]),
-            type=_node_label_to_type(n["labels"]),
+            type=node_label_to_type(n["labels"]),
             rel=raw_rels[i - 1] if i > 0 else None,
         )
         for i, n in enumerate(raw_nodes)

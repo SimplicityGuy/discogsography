@@ -130,6 +130,11 @@ class InsightsPanel {
         });
 
         const data = await window.apiClient.getInsightsGenreTrends(genre);
+        // Guard against out-of-order responses (discogsography-5fg0): a
+        // slower request for a previously-selected genre can resolve after
+        // a faster one for the currently-selected genre. Bail if the
+        // response is no longer for the active chip.
+        if (this._selectedGenre !== genre) return;
         this._renderGenreTrends(data);
     }
 

@@ -13,6 +13,11 @@ class Autocomplete {
         this.activeIndex = -1;
         this.results = [];
         this.onSelect = null;
+        // Request counter guarding against out-of-order responses — mirrors
+        // search.js's searchRequestId (discogsography-5fg0): the 300ms
+        // debounce only cancels the pending timer, not an already-dispatched
+        // fetch, so two queries can be in flight and resolve out of order.
+        this._reqId = 0;
 
         this._bindEvents();
     }
@@ -45,8 +50,11 @@ class Autocomplete {
     }
 
     async _search(query) {
+        const requestId = ++this._reqId;
         const type = window.exploreApp ? window.exploreApp.searchType : 'artist';
-        this.results = await window.apiClient.autocomplete(query, type);
+        const results = await window.apiClient.autocomplete(query, type);
+        if (requestId !== this._reqId) return;
+        this.results = results;
         this.activeIndex = -1;
         this._render();
     }

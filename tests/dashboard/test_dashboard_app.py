@@ -409,6 +409,61 @@ class TestDashboardAppBroadcast:
             assert mock_ws_failing not in app.websocket_connections
 
     @pytest.mark.asyncio
+    async def test_broadcast_metrics_closes_evicted_sockets(self) -> None:
+        """Regression for discogsography-lk51.
+
+        A send failure (including a timeout on a still-live, merely stalled
+        socket) used to only evict the websocket from websocket_connections
+        without ever closing it. The endpoint's keep-alive loop
+        (`while True: await websocket.receive_text()`) blocks forever on a
+        healthy connection and never notices the eviction, so the socket is
+        never closed server-side either — and the client's `ws.onclose`
+        (its ONLY reconnect trigger) never fires, leaving the dashboard
+        permanently frozen with no error. Eviction must always be
+        accompanied by an actual close so the client reconnects.
+        """
+        mock_config = Mock()
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+
+            mock_ws_working = AsyncMock()
+            mock_ws_failing = AsyncMock()
+            mock_ws_failing.send_text.side_effect = Exception("Send failed")
+
+            app.websocket_connections.add(mock_ws_working)
+            app.websocket_connections.add(mock_ws_failing)
+
+            metrics = SystemMetrics(pipelines={}, databases=[], timestamp=datetime.now())
+            await app.broadcast_metrics(metrics)
+
+            mock_ws_failing.close.assert_awaited_once_with(code=1011)
+            mock_ws_working.close.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_broadcast_metrics_close_failure_does_not_raise(self) -> None:
+        """The best-effort close on an evicted socket must never propagate —
+        the socket may already be fully dead (e.g. TCP RST), in which case
+        close() itself can raise.
+        """
+        mock_config = Mock()
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+
+            mock_ws_failing = AsyncMock()
+            mock_ws_failing.send_text.side_effect = Exception("Send failed")
+            mock_ws_failing.close.side_effect = Exception("Already gone")
+
+            app.websocket_connections.add(mock_ws_failing)
+
+            metrics = SystemMetrics(pipelines={}, databases=[], timestamp=datetime.now())
+            # Must not raise despite close() itself failing.
+            await app.broadcast_metrics(metrics)
+
+            assert mock_ws_failing not in app.websocket_connections
+
+    @pytest.mark.asyncio
     async def test_broadcast_metrics_stalled_client_does_not_block_others(self) -> None:
         """discogsography-cu2.62: broadcast_metrics used to hold _ws_lock while awaiting
         send_text serially, so one stalled client (e.g. a sleeping laptop applying TCP

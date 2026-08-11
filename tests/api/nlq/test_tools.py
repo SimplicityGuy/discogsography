@@ -130,6 +130,10 @@ async def test_execute_autocomplete(runner: NLQToolRunner) -> None:
     ):
         result = await runner.execute("autocomplete", {"type": "artist", "query": "radio"})
     assert result["results"] == ac_items
+    # Regression for discogsography-apt8: the requested type must be
+    # propagated so extract_entities can tag results correctly instead of
+    # falling back to "unknown".
+    assert result["_entity_type"] == "artist"
 
 
 @pytest.mark.asyncio
@@ -493,6 +497,23 @@ def test_extract_entities_from_autocomplete(runner: NLQToolRunner) -> None:
     assert entities[0]["name"] == "Radiohead"
 
 
+def test_extract_entities_from_autocomplete_uses_propagated_entity_type(runner: NLQToolRunner) -> None:
+    """Regression for discogsography-apt8.
+
+    AUTOCOMPLETE_DISPATCH handlers never return a "type" key on their result
+    items, so extract_entities used to hardcode "unknown" for every
+    autocomplete-derived entity, unconditionally discarding the requested
+    type — even though _handle_autocomplete knows it and now propagates it
+    via the "_entity_type" key (mirroring the explore_entity convention).
+    """
+    result: dict[str, Any] = {
+        "results": [{"id": "45", "name": "Aphex Twin"}],
+        "_entity_type": "artist",
+    }
+    entities = runner.extract_entities("autocomplete", result)
+    assert entities == [{"id": "45", "name": "Aphex Twin", "type": "artist"}]
+
+
 def test_extract_entities_from_explore(runner: NLQToolRunner) -> None:
     """Extract entities from explore_entity results (flat dict from explore handlers)."""
     result: dict[str, Any] = {"id": "a1", "name": "Radiohead", "release_count": 42, "_entity_type": "artist"}
@@ -512,6 +533,30 @@ def test_extract_entities_from_path(runner: NLQToolRunner) -> None:
     }
     entities = runner.extract_entities("find_path", result)
     assert len(entities) == 2
+
+
+def test_extract_entities_from_path_normalizes_raw_neo4j_labels(runner: NLQToolRunner) -> None:
+    """Regression for discogsography-apt8.
+
+    find_shortest_path only ever returns raw Neo4j "labels" (never "type"),
+    so extract_entities used to fall back to the raw, mixed-case label
+    ("Artist", "Release") instead of normalizing it like /api/path's
+    node_label_to_type does — breaking (id, type) dedup against every other
+    NLQ entity producer, which always emits lowercase types, and shipping a
+    "Release" chip that /api/explore rejects (Release is not explorable).
+    """
+    result: dict[str, Any] = {
+        "nodes": [
+            {"id": "a1", "name": "Kraftwerk", "labels": ["Artist"]},
+            {"id": "r1", "name": "Autobahn", "labels": ["Release"]},
+        ],
+        "rels": ["BY"],
+    }
+    entities = runner.extract_entities("find_path", result)
+    assert entities == [
+        {"id": "a1", "name": "Kraftwerk", "type": "artist"},
+        {"id": "r1", "name": "Autobahn", "type": "release"},
+    ]
 
 
 def test_extract_entities_autocomplete_with_type_key(runner: NLQToolRunner) -> None:

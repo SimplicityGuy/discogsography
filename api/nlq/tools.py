@@ -557,13 +557,16 @@ class NLQToolRunner:
                 entities.append({"id": item.get("id", ""), "name": item.get("name", ""), "type": item.get("type", "")})
 
         elif tool_name == "autocomplete":
-            entity_type = "unknown"
+            # AUTOCOMPLETE_DISPATCH handlers never return a "type" key on
+            # their result items, so this branch used to hardcode "unknown"
+            # unconditionally — discarding the requested type even though
+            # _handle_autocomplete knows it. Mirror the explore_entity
+            # convention: read the propagated _entity_type from the tool
+            # result (discogsography-apt8).
+            etype = entity_type or result.get("_entity_type", "")
             for item in result.get("results", []):
                 entity: dict[str, str] = {"id": item.get("id", ""), "name": item.get("name", "")}
-                if "type" in item:
-                    entity["type"] = item["type"]
-                else:
-                    entity["type"] = entity_type
+                entity["type"] = item.get("type") or etype
                 entities.append(entity)
 
         elif tool_name == "explore_entity":
@@ -573,12 +576,21 @@ class NLQToolRunner:
                 entities.append({"id": result.get("id", ""), "name": result.get("name", ""), "type": etype})
 
         elif tool_name == "find_path":
+            from api.queries.neo4j_queries import node_label_to_type  # noqa: PLC0415
+
+            # find_shortest_path only ever returns raw Neo4j "labels"
+            # (never "type"). Normalize through the same lowercase
+            # vocabulary /api/path uses (node_label_to_type) so this mirror
+            # site cannot diverge from it again — the raw-label fallback
+            # this replaced shipped mixed-case types like "Artist" that
+            # broke (id, type) dedup against every other producer, which
+            # always emits lowercase (discogsography-apt8).
             for node in result.get("nodes", []):
                 entities.append(
                     {
                         "id": node.get("id", ""),
                         "name": node.get("name", ""),
-                        "type": node.get("type", node.get("labels", [""])[0] if node.get("labels") else ""),
+                        "type": node.get("type") or node_label_to_type(node.get("labels", [])),
                     }
                 )
 
@@ -613,7 +625,11 @@ class NLQToolRunner:
         if handler is None:
             return {"error": f"Unknown autocomplete type: {entity_type}"}
         results = await handler(self._driver, query, limit)
-        return {"results": results}
+        # Propagate the requested type for extract_entities to fall back to
+        # (mirrors the explore_entity "_entity_type" convention) — the
+        # autocomplete handlers never return a "type" key on their result
+        # items (discogsography-apt8).
+        return {"results": results, "_entity_type": entity_type}
 
     async def _handle_explore_entity(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import neo4j_queries  # noqa: PLC0415

@@ -164,6 +164,49 @@ class TestGetPersonConnections:
         result = await get_person_connections(driver, "Test", depth=5, limit=50)
         assert result == []
 
+    @pytest.mark.asyncio
+    async def test_depth_2_cypher_is_valid_grouping_not_just_mocked(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Regression for discogsography-4828.
+
+        The depth>=2 branch used to wrap `collect(DISTINCT {...})` in a CASE
+        that referenced `hop2` OUTSIDE the aggregation, which Neo4j rejects at
+        compile time ("Aggregation column contains implicit grouping
+        expressions: hop2") — a real ClientError the mocked driver in the
+        other tests here can never surface. Verified against a live Neo4j 5
+        instance (both that the pre-fix Cypher raises exactly that error and
+        that the fixed Cypher executes and returns the expected rows).
+
+        Pin the structural fix in source form: the CASE referencing `hop2`
+        must be nested INSIDE the collect(...) call's argument list, not
+        wrapped around it.
+        """
+        captured: dict[str, str] = {}
+
+        async def _fake_run_query(_driver: Any, cypher: str, **_params: Any) -> list[dict[str, Any]]:
+            captured["cypher"] = cypher
+            return []
+
+        monkeypatch.setattr("api.queries.credits_queries.run_query", _fake_run_query)
+
+        driver = _make_mock_driver(query_returns=[])
+        await get_person_connections(driver, "Test", depth=2, limit=50)
+
+        cypher = captured["cypher"]
+        collect_start = cypher.index("collect(DISTINCT")
+        collect_end = cypher.index(")", cypher.index("END", collect_start)) + 1
+        case_idx = cypher.index("CASE WHEN hop2 IS NOT NULL")
+
+        # The CASE referencing hop2 must be nested inside collect(...)'s
+        # argument list, not wrapped around it — otherwise hop2 is a bare
+        # grouping-key violation outside the aggregate.
+        assert collect_start < case_idx < collect_end, (
+            "The `CASE WHEN hop2 IS NOT NULL` branch must be INSIDE "
+            "collect(DISTINCT ...)'s arguments, not wrapped around the whole "
+            "collect(...) call — the latter is the exact pre-fix defect "
+            "(discogsography-4828) that Neo4j rejects as an implicit "
+            "grouping expression."
+        )
+
 
 class TestAutocompletePerson:
     """Tests for autocomplete_person."""
