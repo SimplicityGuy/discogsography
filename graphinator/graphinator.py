@@ -518,8 +518,21 @@ async def check_file_completion(
         )
 
         # Flush remaining batches for this data type before cancellation
-        if batch_processor is not None:
-            await batch_processor.flush_queue(data_type)
+        if batch_processor is not None and not await batch_processor.flush_queue(
+            data_type
+        ):
+            # The drain gave up with records still pending (typically a database
+            # outage). Marking the file complete here would cancel the consumer
+            # and let post-import maintenance run over an incomplete graph while
+            # the service reports success. Requeue the marker instead — the
+            # pending records stay queued and periodic_flush retries them.
+            # See discogsography-hh7r.
+            logger.error(
+                "❌ Flush incomplete — requeueing file_complete instead of marking the file done",
+                data_type=data_type,
+            )
+            await message.nack(requeue=True)
+            return True
 
         # Mark complete only after flush succeeds
         completed_files.add(data_type)
@@ -539,8 +552,18 @@ async def check_file_completion(
         )
 
         # Flush remaining batches for this data type before cleanup
-        if batch_processor is not None:
-            await batch_processor.flush_queue(data_type)
+        if batch_processor is not None and not await batch_processor.flush_queue(
+            data_type
+        ):
+            # Records are still pending, so this type is NOT complete. Recording
+            # the signal would let stub cleanup and stats run over a graph that is
+            # still missing rows. Requeue and retry (discogsography-hh7r).
+            logger.error(
+                "❌ Flush incomplete — requeueing extraction_complete instead of recording the signal",
+                data_type=data_type,
+            )
+            await message.nack(requeue=True)
+            return True
 
         # Record this type's completion signal (idempotent — safe under
         # nack/requeue redelivery).

@@ -676,8 +676,22 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
             )
 
             # Flush remaining batches for this data type before cancellation
-            if batch_processor is not None:
-                await batch_processor.flush_queue(data_type)
+            if batch_processor is not None and not await batch_processor.flush_queue(
+                data_type
+            ):
+                # The drain gave up with rows still pending (typically a database
+                # outage). Marking the file complete here would cancel the
+                # consumer and let purge_stale_rows delete the very rows those
+                # pending messages were about to refresh, while the service
+                # reports success. Requeue the marker instead — the pending
+                # records stay queued and periodic_flush retries them.
+                # See discogsography-hh7r.
+                logger.error(
+                    "❌ Flush incomplete — requeueing file_complete instead of marking the file done",
+                    data_type=data_type,
+                )
+                await message.nack(requeue=True)
+                return
 
             # Mark complete only after flush to prevent premature idle detection
             completed_files.add(data_type)
@@ -697,9 +711,20 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                 version=data.get("version"),
             )
 
-            # Flush remaining batches for this data type before cleanup
-            if batch_processor is not None:
-                await batch_processor.flush_queue(data_type)
+            # Flush remaining batches for this data type before cleanup. A purge
+            # on top of an incomplete drain is actively destructive: the pending
+            # messages' rows still carry an old updated_at, so purge_stale_rows
+            # would DELETE exactly the records that were about to be refreshed.
+            # See discogsography-hh7r.
+            if batch_processor is not None and not await batch_processor.flush_queue(
+                data_type
+            ):
+                logger.error(
+                    "❌ Flush incomplete — requeueing extraction_complete instead of purging stale rows",
+                    data_type=data_type,
+                )
+                await message.nack(requeue=True)
+                return
 
             # Purge stale rows from prior extractions
             purge_ok = True

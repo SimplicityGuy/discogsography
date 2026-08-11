@@ -516,20 +516,40 @@ class PostgreSQLBatchProcessor:
                     skipped=len(unchanged_ids),
                 )
 
-    async def flush_all(self) -> None:
-        """Flush all pending queues, draining each completely."""
-        for data_type in self.queues:
-            await self.flush_queue(data_type)
+    async def flush_all(self) -> bool:
+        """Flush all pending queues, draining each completely.
 
-    async def flush_queue(self, data_type: str) -> None:
+        Returns:
+            True only if EVERY queue drained; False if any hit its retry limit
+            with messages still pending.
+        """
+        drained = True
+        for data_type in self.queues:
+            if not await self.flush_queue(data_type):
+                drained = False
+        return drained
+
+    async def flush_queue(self, data_type: str) -> bool:
         """Fully drain a single data type queue.
 
-        Unlike _flush_queue which processes up to one batch, this loops
-        until the queue is completely empty. Yields to the event loop
-        during backoff periods instead of busy-spinning.
+        Unlike _flush_queue which processes up to one batch, this loops until the
+        queue is completely empty. Yields to the event loop during backoff periods
+        instead of busy-spinning.
 
-        Enforces a retry limit to prevent infinite loops when persistent
-        errors cause messages to be re-enqueued indefinitely.
+        Enforces a retry limit so a persistent error cannot loop forever. On
+        giving up it leaves the remaining messages ON THE QUEUE — it must NEVER
+        nack them. The nack callback is `nack(requeue=False)`, which dead-letters
+        immediately and bypasses the quorum queue's x-delivery-limit budget
+        entirely, so a 30-second database blip used to send every pending record
+        straight to a DLQ nothing replays. Pending messages stay in memory and are
+        retried by periodic_flush once the database recovers; genuinely poison
+        batches are still dead-lettered by _flush_queue's poison guard.
+        See discogsography-hh7r.
+
+        Returns:
+            True if the queue drained completely, False if the retry limit was
+            reached with messages still pending — callers MUST NOT treat a False
+            return as a completed file.
         """
         retries = 0
         while self.queues.get(data_type):
@@ -537,51 +557,21 @@ class PostgreSQLBatchProcessor:
             wait = self._backoff_until[data_type] - time.time()
             if wait > 0:
                 await asyncio.sleep(wait)
-                await self._flush_queue(data_type)
-                curr_len = len(self.queues.get(data_type, []))
-                if curr_len < prev_len:
-                    retries = 0
-                else:
-                    retries += 1
-                    if retries >= self.config.max_flush_retries:
-                        remaining = len(self.queues.get(data_type, []))
-                        logger.error(
-                            "❌ Flush retry limit reached — nacking remaining messages",
-                            data_type=data_type,
-                            remaining=remaining,
-                            max_retries=self.config.max_flush_retries,
-                        )
-                        queue = self.queues[data_type]
-                        while queue:
-                            msg = queue.popleft()
-                            try:
-                                await msg.nack_callback()
-                            except Exception as e:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
-                                logger.warning("⚠️ Failed to nack message", error=str(e))
-                        break
-                continue
             await self._flush_queue(data_type)
             curr_len = len(self.queues.get(data_type, []))
-            if curr_len >= prev_len:
-                retries += 1
-                if retries >= self.config.max_flush_retries:
-                    remaining = len(self.queues.get(data_type, []))
-                    logger.error(
-                        "❌ Flush retry limit reached — nacking remaining messages",
-                        data_type=data_type,
-                        remaining=remaining,
-                        max_retries=self.config.max_flush_retries,
-                    )
-                    queue = self.queues[data_type]
-                    while queue:
-                        msg = queue.popleft()
-                        try:
-                            await msg.nack_callback()
-                        except Exception as e:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
-                            logger.warning("⚠️ Failed to nack message", error=str(e))
-                    break
-            else:
+            if curr_len < prev_len:
                 retries = 0
+                continue
+            retries += 1
+            if retries >= self.config.max_flush_retries:
+                logger.error(
+                    "❌ Flush retry limit reached — messages kept for retry",
+                    data_type=data_type,
+                    remaining=curr_len,
+                    max_retries=self.config.max_flush_retries,
+                )
+                return False
+        return True
 
     async def periodic_flush(self) -> None:
         """Background task that periodically flushes queues.
