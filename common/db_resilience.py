@@ -316,6 +316,12 @@ class ResilientConnection[T]:
                 self._connection = None
 
 
+def _consume_task_exception(task: "asyncio.Task[Any]") -> None:
+    """Retrieve a finished task's exception so asyncio does not warn about it."""
+    if not task.cancelled():
+        task.exception()
+
+
 class AsyncResilientConnection[T]:
     """Async version of resilient database connection."""
 
@@ -330,6 +336,7 @@ class AsyncResilientConnection[T]:
         health_check_ttl: float = 30.0,
         unhealthy_threshold: int = 3,
         close_grace_period: float = 30.0,
+        reconnect_cooldown: float = 5.0,
     ):
         self.connection_factory = connection_factory
         self.connection_test = connection_test
@@ -343,10 +350,18 @@ class AsyncResilientConnection[T]:
         self.unhealthy_threshold = unhealthy_threshold
         # Seconds a replaced connection is left open so in-flight borrowers can drain.
         self.close_grace_period = close_grace_period
+        # Seconds after a fully failed reconnect cycle during which callers fail
+        # fast instead of each repeating the cycle (discogsography-y1qn).
+        self.reconnect_cooldown = reconnect_cooldown
         self._connection: T | None = None
         self._lock: asyncio.Lock | None = None
         self._last_healthy_at: float = 0.0
         self._failed_probes: int = 0
+        # The single in-flight reconnect cycle, shared by all waiters, plus the
+        # memo of the last failed one.
+        self._reconnect_task: asyncio.Task[T] | None = None
+        self._last_failure_at: float | None = None
+        self._last_failure_error: Exception | None = None
         # Connections detached from the manager but not yet closed, and the
         # tasks that will close them (discogsography-4ajv).
         self._draining: list[Any] = []
@@ -366,6 +381,12 @@ class AsyncResilientConnection[T]:
                     connection.close()
         except Exception as e:
             logger.warning(f"⚠️ {self.name}: Error closing connection: {e}")
+
+    def _get_lock(self) -> asyncio.Lock:
+        """Return the handle lock, creating it lazily on the running event loop."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def _probe_connection(self, connection: T) -> bool:
         """Run the health check, never letting it raise."""
@@ -439,6 +460,11 @@ class AsyncResilientConnection[T]:
 
     async def _drain_deferred_closes(self) -> None:
         """Close every detached connection immediately (explicit shutdown)."""
+        if self._reconnect_task is not None and not self._reconnect_task.done():
+            self._reconnect_task.cancel()
+        self._reconnect_task = None
+        self._last_failure_at = None
+        self._last_failure_error = None
         for task in list(self._close_tasks):
             task.cancel()
         self._close_tasks.clear()
@@ -447,9 +473,23 @@ class AsyncResilientConnection[T]:
             await self._aclose_connection(connection)
 
     async def get_connection(self) -> T:
-        """Get a healthy connection, creating or reconnecting if needed."""
+        """Get a healthy connection, creating or reconnecting if needed.
+
+        The manager's lock guards ONLY the connection handle. The reconnect
+        cycle — up to ``max_retries`` driver-creation attempts, each of which can
+        block for the driver's whole acquisition timeout, plus the backoff
+        sleeps between them — runs OUTSIDE the lock as a single shared task
+        (discogsography-y1qn). Before the fix, the first caller held the process
+        singleton lock for the entire failed cycle, every other coroutine in the
+        process queued behind it, and each waiter then re-ran the full cycle
+        itself, so the k-th caller failed only after roughly k cycles. Now
+        concurrent callers join the one in-flight reconnect, and callers arriving
+        inside ``reconnect_cooldown`` of a failed cycle fail fast instead of
+        repeating it.
+        """
         if self._lock is None:
             self._lock = asyncio.Lock()
+
         async with self._lock:
             connection = self._connection
             if connection is not None:
@@ -465,51 +505,80 @@ class AsyncResilientConnection[T]:
                 self._last_healthy_at = 0.0
                 self._schedule_deferred_close(connection)
 
-            # Connection is not healthy, try to create new one
-            retry_count = 0
-            last_error = None
+            # Fail fast if another coroutine just burned a full failed cycle:
+            # repeating it would only stack another multi-minute wait onto a
+            # caller that is going to fail anyway.
+            if self._last_failure_at is not None and time.monotonic() - self._last_failure_at < self.reconnect_cooldown:
+                raise ConnectionEstablishmentError(
+                    f"{self.name}: Connection unavailable — a reconnect cycle failed less than {self.reconnect_cooldown:.0f}s ago"
+                ) from self._last_failure_error
 
-            while retry_count < self.max_retries:
-                try:
-                    logger.info(f"🔄 {self.name}: Creating new connection (attempt {retry_count + 1}/{self.max_retries})")
+            if self._reconnect_task is None or self._reconnect_task.done():
+                self._reconnect_task = asyncio.create_task(self._reconnect())
+                # Mark the failure retrieved even if every waiter is cancelled,
+                # so a failed cycle cannot log "exception was never retrieved".
+                self._reconnect_task.add_done_callback(_consume_task_exception)
+            task = self._reconnect_task
 
-                    async def create_connection() -> T:
-                        if asyncio.iscoroutinefunction(self.connection_factory):
-                            conn = await self.connection_factory()
-                        else:
-                            conn = self.connection_factory()
-                        if asyncio.iscoroutinefunction(self.connection_test):
-                            test_ok = await self.connection_test(conn)
-                        else:
-                            test_ok = self.connection_test(conn)
-                        if not test_ok:
-                            # Close the just-built connection before discarding it, so a failed
-                            # health test does not leak a fresh pool/socket per attempt.
-                            await self._aclose_connection(conn)
-                            raise ConnectionEstablishmentError("Connection test failed")
-                        return cast("T", conn)
+        # Awaited WITHOUT the lock so borrowers of a still-healthy connection
+        # (and close()) are never blocked behind a reconnect, and so every
+        # concurrent caller joins the SAME cycle instead of running its own.
+        # Shielded so one cancelled waiter cannot cancel the shared cycle.
+        return await asyncio.shield(task)
 
-                    conn = await self.circuit_breaker.call_async(create_connection)
+    async def _reconnect(self) -> T:
+        """Run the retry/backoff cycle, publishing the result under the lock."""
+        retry_count = 0
+        last_error: Exception | None = None
+
+        while retry_count < self.max_retries:
+            try:
+                logger.info(f"🔄 {self.name}: Creating new connection (attempt {retry_count + 1}/{self.max_retries})")
+
+                async def create_connection() -> T:
+                    if asyncio.iscoroutinefunction(self.connection_factory):
+                        conn = await self.connection_factory()
+                    else:
+                        conn = self.connection_factory()
+                    if asyncio.iscoroutinefunction(self.connection_test):
+                        test_ok = await self.connection_test(conn)
+                    else:
+                        test_ok = self.connection_test(conn)
+                    if not test_ok:
+                        # Close the just-built connection before discarding it, so a failed
+                        # health test does not leak a fresh pool/socket per attempt.
+                        await self._aclose_connection(conn)
+                        raise ConnectionEstablishmentError("Connection test failed")
+                    return cast("T", conn)
+
+                conn = await self.circuit_breaker.call_async(create_connection)
+
+                # Publishing the handle is the only step that needs the lock.
+                async with self._get_lock():
                     self._connection = cast("T", conn)
                     # create_connection already health-checked it — don't re-probe
                     # borrowers for another health_check_ttl seconds.
                     self._last_healthy_at = time.monotonic()
                     self._failed_probes = 0
-                    logger.info(f"✅ {self.name}: Connection established successfully")
-                    return cast("T", conn)
+                    self._last_failure_at = None
+                    self._last_failure_error = None
+                logger.info(f"✅ {self.name}: Connection established successfully")
+                return cast("T", conn)
 
-                except Exception as e:
-                    last_error = e
-                    retry_count += 1
+            except Exception as e:
+                last_error = e
+                retry_count += 1
 
-                    if retry_count < self.max_retries:
-                        delay = self.backoff.get_delay(retry_count - 1)
-                        logger.warning(f"⚠️ {self.name}: Connection attempt {retry_count} failed: {e}. Retrying in {delay:.1f} seconds...")
-                        await asyncio.sleep(delay)
-                    else:
-                        logger.error(f"❌ {self.name}: All connection attempts failed")
+                if retry_count < self.max_retries:
+                    delay = self.backoff.get_delay(retry_count - 1)
+                    logger.warning(f"⚠️ {self.name}: Connection attempt {retry_count} failed: {e}. Retrying in {delay:.1f} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(f"❌ {self.name}: All connection attempts failed")
 
-            raise ConnectionEstablishmentError(f"{self.name}: Failed to establish connection after {self.max_retries} attempts") from last_error
+        self._last_failure_at = time.monotonic()
+        self._last_failure_error = last_error
+        raise ConnectionEstablishmentError(f"{self.name}: Failed to establish connection after {self.max_retries} attempts") from last_error
 
     async def _test_connection(self, connection: T) -> bool:
         """Test if connection is healthy."""

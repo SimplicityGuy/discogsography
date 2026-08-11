@@ -1346,3 +1346,125 @@ class TestConnectionTeardownHysteresis:
 
         # Exactly one call: the health test run while creating the connection.
         assert connection_test.call_count == 1
+
+
+class TestReconnectDoesNotHoldLock:
+    """Regression tests for discogsography-y1qn (lock held across retry/backoff)."""
+
+    @pytest.mark.asyncio
+    async def test_healthy_callers_not_blocked(self) -> None:
+        """A slow reconnect must not block callers of a healthy connection.
+
+        Before the fix the whole retry/backoff cycle ran under the process
+        singleton lock, so every Neo4j session acquisition in the process — API
+        requests, dashboard polls, batch flushes — queued behind one caller's
+        multi-minute outage cycle.
+        """
+        from common.db_resilience import AsyncResilientConnection
+
+        started = asyncio.Event()
+        release = asyncio.Event()
+        conn = _FakeAsyncConn()
+
+        async def slow_factory() -> _FakeAsyncConn:
+            started.set()
+            await release.wait()
+            return conn
+
+        manager: AsyncResilientConnection[_FakeAsyncConn] = AsyncResilientConnection(
+            slow_factory,
+            Mock(return_value=True),
+            health_check_ttl=60.0,
+        )
+        # Pretend a healthy connection is already published.
+        existing = _FakeAsyncConn()
+        manager._connection = existing
+        manager._last_healthy_at = time.monotonic()
+
+        # Force a reconnect by expiring the cached health and failing the probe
+        # threshold, using a second manager so the first stays healthy.
+        reconnecting: AsyncResilientConnection[_FakeAsyncConn] = AsyncResilientConnection(
+            slow_factory,
+            Mock(return_value=True),
+        )
+        waiter = asyncio.create_task(reconnecting.get_connection())
+        await asyncio.wait_for(started.wait(), timeout=1.0)
+
+        # While that cycle is parked mid-factory, the healthy manager must serve
+        # immediately, and the reconnecting manager's own lock must be free.
+        assert await asyncio.wait_for(manager.get_connection(), timeout=1.0) is existing
+        assert not reconnecting._get_lock().locked(), "reconnect must not hold the handle lock"
+
+        release.set()
+        assert await asyncio.wait_for(waiter, timeout=1.0) is conn
+
+    @pytest.mark.asyncio
+    async def test_waiters_share_one_reconnect_cycle(self) -> None:
+        """Concurrent callers join ONE cycle instead of each running their own.
+
+        Before the fix the k-th queued caller failed only after roughly k full
+        cycles (max_retries attempts plus backoff sleeps each).
+        """
+        from common.db_resilience import AsyncResilientConnection
+
+        attempts = 0
+        release = asyncio.Event()
+
+        async def slow_factory() -> _FakeAsyncConn:
+            nonlocal attempts
+            attempts += 1
+            await release.wait()
+            return _FakeAsyncConn()
+
+        manager: AsyncResilientConnection[_FakeAsyncConn] = AsyncResilientConnection(slow_factory, Mock(return_value=True))
+
+        waiters = [asyncio.create_task(manager.get_connection()) for _ in range(8)]
+        await asyncio.sleep(0)
+        release.set()
+        results = await asyncio.wait_for(asyncio.gather(*waiters), timeout=2.0)
+
+        assert attempts == 1, "one shared reconnect cycle, not one per caller"
+        assert len({id(conn) for conn in results}) == 1
+
+    @pytest.mark.asyncio
+    async def test_cooldown_fails_fast_after_cycle(self) -> None:
+        """A caller arriving right after a failed cycle fails fast."""
+        from common.db_resilience import AsyncResilientConnection, ConnectionEstablishmentError
+
+        factory = Mock(side_effect=RuntimeError("Neo4j is down"))
+        manager: AsyncResilientConnection[object] = AsyncResilientConnection(
+            factory,
+            Mock(return_value=True),
+            max_retries=1,
+            reconnect_cooldown=60.0,
+        )
+
+        with pytest.raises(ConnectionEstablishmentError):
+            await manager.get_connection()
+        assert factory.call_count == 1
+
+        with pytest.raises(ConnectionEstablishmentError, match="reconnect cycle failed"):
+            await manager.get_connection()
+
+        # No second cycle was run — the caller failed fast on the memo.
+        assert factory.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_cooldown_expiry_allows_retry(self) -> None:
+        """Once the cooldown lapses, a caller may run a fresh cycle."""
+        from common.db_resilience import AsyncResilientConnection, ConnectionEstablishmentError
+
+        conn = _FakeAsyncConn()
+        factory = Mock(side_effect=[RuntimeError("Neo4j is down"), conn])
+        manager: AsyncResilientConnection[_FakeAsyncConn] = AsyncResilientConnection(
+            factory,
+            Mock(return_value=True),
+            max_retries=1,
+            reconnect_cooldown=0.0,
+        )
+
+        with pytest.raises(ConnectionEstablishmentError):
+            await manager.get_connection()
+
+        assert await manager.get_connection() is conn
+        assert factory.call_count == 2
