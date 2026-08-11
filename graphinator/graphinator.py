@@ -51,7 +51,18 @@ outage_backoff = OutageBackoff("graphinator")
 # cleanup and aggregate stats are deferred until EVERY type has signalled, so
 # cross-type stub creation (release batches MERGE Artist/Label/Master stubs)
 # has fully stopped before we DETACH DELETE.
+#
+# This set is only a CACHE of the durable latch stored in Neo4j (see
+# _load_extraction_signals). Acking a signal destroys the only other copy — the
+# queued message — so a restart between the first and last signal used to lose
+# them all: the final signal then found 1-of-4, deferred forever, and post-import
+# maintenance silently never ran. The latch is also keyed by extraction VERSION,
+# so a long-lived process cannot carry a completed run's signals into the next
+# dump and fire maintenance while other queues are still importing
+# (discogsography-tk7v).
 extraction_complete_signals: set[str] = set()
+extraction_complete_version: str | None = None
+EXTRACTION_LATCH_UNKNOWN_VERSION = "unknown"
 # Post-import maintenance runs DETACHED from the AMQP delivery that triggers it
 # (see check_file_completion). Strong references are held here so the loop cannot
 # garbage-collect the task mid-flight.
@@ -514,6 +525,78 @@ async def _recover_consumers() -> None:
         consumer_tags.clear()
 
 
+async def _load_extraction_signals(version: str) -> set[str]:
+    """Read the durable extraction_complete latch for this version from Neo4j.
+
+    Returns the set of data types that have already signalled. Raises if Neo4j
+    cannot answer — the caller must requeue rather than assume "none signalled",
+    which would re-run maintenance state from scratch (discogsography-tk7v).
+    """
+    if graph is None:
+        return set()
+
+    async with graph.session(database="neo4j") as session:
+        result = await session.run(
+            "MATCH (m:ExtractionCompletion {version: $version}) RETURN m.signals AS signals",
+            version=version,
+        )
+        record = await result.single()
+
+    if record is None or record["signals"] is None:
+        return set()
+    return {str(signal) for signal in record["signals"]}
+
+
+async def _persist_extraction_signals(version: str, signals: set[str]) -> None:
+    """Write the extraction_complete latch for this version to Neo4j.
+
+    Called BEFORE the trigger message is acked, so the coordination state
+    outlives the delivery that carried it.
+    """
+    if graph is None:
+        return
+
+    async with graph.session(database="neo4j") as session:
+        await session.run(
+            """
+            MERGE (m:ExtractionCompletion {version: $version})
+            ON CREATE SET m.created_at = datetime()
+            SET m.signals = $signals, m.updated_at = datetime()
+            """,
+            version=version,
+            signals=sorted(signals),
+        )
+
+
+async def _sync_extraction_signals(version: str) -> None:
+    """Refresh the in-memory latch cache from Neo4j for this extraction version.
+
+    On a version change the cache is rebuilt from that version's durable latch
+    (usually empty), so signals from a previous dump can never satisfy the
+    all-four check for the new one.
+    """
+    global extraction_complete_signals, extraction_complete_version
+
+    if extraction_complete_version == version:
+        return
+
+    persisted = await _load_extraction_signals(version)
+    if extraction_complete_version is not None:
+        logger.info(
+            "🔄 New extraction version — resetting the completion latch",
+            previous_version=extraction_complete_version,
+            version=version,
+        )
+    extraction_complete_signals = persisted
+    extraction_complete_version = version
+    if persisted:
+        logger.info(
+            "📥 Restored extraction_complete signals",
+            version=version,
+            received=sorted(persisted),
+        )
+
+
 async def check_file_completion(
     data: dict[str, Any], data_type: str, message: AbstractIncomingMessage
 ) -> bool:
@@ -574,8 +657,24 @@ async def check_file_completion(
             return True
 
         # Record this type's completion signal (idempotent — safe under
-        # nack/requeue redelivery).
-        extraction_complete_signals.add(data_type)
+        # nack/requeue redelivery) in Neo4j BEFORE acking. The ack destroys the
+        # queued message, which was otherwise the only durable copy of this
+        # coordination state (discogsography-tk7v).
+        version = str(data.get("version") or EXTRACTION_LATCH_UNKNOWN_VERSION)
+        try:
+            await _sync_extraction_signals(version)
+            extraction_complete_signals.add(data_type)
+            await _persist_extraction_signals(version, extraction_complete_signals)
+        except Exception as e:  # noqa: BLE001 - a lost latch write must requeue, never ack
+            logger.error(
+                "❌ Failed to persist extraction_complete latch — requeueing the signal",
+                data_type=data_type,
+                version=version,
+                error=str(e),
+            )
+            extraction_complete_signals.discard(data_type)
+            await message.nack(requeue=True)
+            return True
 
         # Defer stub cleanup and stats until EVERY data type has signalled
         # extraction_complete. The four fanout queues drain at very different
