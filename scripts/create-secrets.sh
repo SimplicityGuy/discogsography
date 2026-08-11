@@ -55,6 +55,9 @@ write_secret "rabbitmq_password.txt" "$(openssl rand -base64 24)"
 # Neo4j password
 write_secret "neo4j_password.txt" "$(openssl rand -base64 24)"
 
+# Redis password (requirepass — see scripts/redis-entrypoint.sh)
+write_secret "redis_password.txt" "$(openssl rand -base64 24)"
+
 echo ""
 echo "✅ secrets/ is ready. Files are owner-read-only (chmod 600)."
 echo "   Never commit secrets/ to version control."

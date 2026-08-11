@@ -981,7 +981,8 @@ secrets/
 ├── postgres_password.txt     # openssl rand -base64 24
 ├── postgres_username.txt         # discogsography
 ├── rabbitmq_password.txt     # openssl rand -base64 24
-└── rabbitmq_username.txt         # discogsography
+├── rabbitmq_username.txt         # discogsography
+└── redis_password.txt        # openssl rand -base64 24
 ```
 
 See `secrets.example/` for reference placeholders and generation commands.

@@ -26,6 +26,8 @@ secrets:
     file: ./secrets/rabbitmq_password.txt
   rabbitmq_username:
     file: ./secrets/rabbitmq_username.txt
+  redis_password:
+    file: ./secrets/redis_password.txt
 
 services:
   rabbitmq:
@@ -184,6 +186,32 @@ services:
         limits:
           memory: ${NEO4J_MEMORY_LIMIT:-48G}
 
+  # Base docker-compose.yml runs redis with no --requirepass and publishes 6379 to
+  # 0.0.0.0 — unlike every other stateful service, prod gave it no hardening
+  # override, so anyone who can reach host:6379 could FLUSHALL / read the
+  # insights+dashboard cache with zero credentials. See discogsography-yhjn.
+  redis:
+    restart: always
+    entrypoint: ["/scripts/redis-entrypoint.sh"]
+    volumes:
+      - ./scripts/redis-entrypoint.sh:/scripts/redis-entrypoint.sh:ro
+    # Bind to loopback only — redis is meant to be reached over the internal
+    # discogsography network by api/dashboard/insights, not from the host's
+    # public interfaces. `!override` fully replaces (not merges) the base
+    # file's "6379:6379" (0.0.0.0) publish.
+    ports: !override
+      - "127.0.0.1:6379:6379"
+    secrets:
+      - redis_password
+    # Base healthcheck ("redis-cli ping" with no auth) would fail once
+    # --requirepass is set above — authenticate using the same secret file.
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$(cat /run/secrets/redis_password)\" --no-auth-warning ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   schema-init:
     environment:
       NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
@@ -213,6 +241,7 @@ services:
       NLQ_API_KEY_FILE: /run/secrets/nlq_api_key
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
       RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
     secrets:
       - jwt_secret_key
       - neo4j_password
@@ -223,6 +252,7 @@ services:
       - postgres_password
       - rabbitmq_username
       - rabbitmq_password
+      - redis_password
     volumes:
       - api_logs:/logs
       - discogs_data:/discogs-data:ro
@@ -339,12 +369,14 @@ services:
       POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
       RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
     secrets:
       - neo4j_password
       - postgres_username
       - postgres_password
       - rabbitmq_username
       - rabbitmq_password
+      - redis_password
     deploy:
       restart_policy:
         condition: any
@@ -364,9 +396,11 @@ services:
     environment:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
     secrets:
       - postgres_username
       - postgres_password
+      - redis_password
     deploy:
       restart_policy:
         condition: any

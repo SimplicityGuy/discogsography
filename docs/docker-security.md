@@ -147,7 +147,8 @@ secrets/
 ├── postgres_password.txt       # openssl rand -base64 24
 ├── rabbitmq_username.txt       # discogsography
 ├── rabbitmq_password.txt       # openssl rand -base64 24
-└── neo4j_password.txt          # openssl rand -base64 24
+├── neo4j_password.txt          # openssl rand -base64 24
+└── redis_password.txt          # openssl rand -base64 24
 ```
 
 Use `secrets.example/` as a reference for each file's format and generation command.
@@ -159,6 +160,8 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
 **Neo4j note**: Neo4j does not natively support the `_FILE` convention. The production overlay overrides Neo4j's entrypoint with `scripts/neo4j-entrypoint.sh`, which reads `/run/secrets/neo4j_password` and sets `NEO4J_AUTH=neo4j/<password>` before delegating to the official Neo4j entrypoint.
+
+**Redis note**: Redis does not natively support the `_FILE` convention either. The production overlay overrides Redis's entrypoint with `scripts/redis-entrypoint.sh`, which reads `/run/secrets/redis_password` and appends `--requirepass <password>` before delegating to the official Redis entrypoint. It also rebinds the published port to `127.0.0.1:6379` instead of the base file's `0.0.0.0:6379`, since Redis is meant to be reached over the internal `discogsography` docker network by api/dashboard/insights, not from the host's public interfaces.
 
 ### Running Securely
 
