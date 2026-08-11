@@ -1,6 +1,7 @@
 """Shared JWT authentication utilities."""
 
 import base64
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 import hashlib
 import hmac
@@ -43,6 +44,43 @@ def decode_token(token: str, secret: str) -> dict[str, Any]:
     if exp and datetime.fromtimestamp(int(exp), UTC) < datetime.now(UTC):
         raise ValueError("Token has expired")
     return payload
+
+
+REASON_REVOKED = "revoked"
+REASON_CREDENTIALS_CHANGED = "password_changed"
+
+
+async def token_revocation_reason(payload: Mapping[str, Any], redis: Any) -> str | None:
+    """Return why a decoded token is no longer valid, or None if it still stands.
+
+    ``decode_token`` only proves signature and ``exp`` — revocation lives entirely
+    in Redis, so EVERY site that turns a decoded token into an identity must
+    consult this. A site that skips it keeps accepting logged-out and
+    password-changed tokens until they expire (discogsography-aexv).
+
+    Returns ``REASON_REVOKED`` (logout blacklisted the jti),
+    ``REASON_CREDENTIALS_CHANGED`` (issued at or before a password change), or None.
+    Callers that authenticate optionally treat any reason as "no user"; callers
+    that require auth map the reason to their own 401 detail.
+    """
+    if not redis:
+        return None
+
+    jti = payload.get("jti")
+    if jti and await redis.get(f"revoked:jti:{jti}"):
+        return REASON_REVOKED
+
+    user_id = payload.get("sub")
+    if user_id:
+        pw_changed = await redis.get(f"password_changed:{user_id}")
+        if pw_changed:
+            issued_at = payload.get("iat", 0)
+            # Inclusive: a token issued in the same second as the password change
+            # MUST be invalidated (see CLAUDE.md timestamp comparison convention).
+            if issued_at <= int(pw_changed):
+                return REASON_CREDENTIALS_CHANGED
+
+    return None
 
 
 def _hash_password(password: str) -> str:
