@@ -375,13 +375,25 @@ async def security_headers(request: Request, call_next: Any) -> Any:
 
 @app.middleware("http")
 async def metrics_middleware(request: Request, call_next: Any) -> Any:
-    """Record per-request timing for endpoint performance metrics."""
+    """Record per-request timing for endpoint performance metrics.
+
+    Keys on the matched route's path TEMPLATE (e.g. ``/api/artists/{id}``),
+    not the raw request URL. Requests that never matched a route (unknown
+    paths — attacker-controlled cardinality, wrong HTTP method) collapse into
+    a single ``<unmatched>`` bucket instead of each becoming a distinct key.
+    Previously this keyed on ``normalize_path(request.url.path)``, a regex
+    reconstruction that only collapses pure-integer/UUID segments — an
+    unauthenticated flood of distinct junk paths (``/a1``, ``/a2``, ...) could
+    fill the whole 10k-entry MetricsBuffer and evict every real endpoint's
+    samples (discogsography-jlei).
+    """
     import time as _time  # noqa: PLC0415
 
-    path = normalize_path(request.url.path)
     start = _time.monotonic()
     response = await call_next(request)
     elapsed_ms = (_time.monotonic() - start) * 1000
+    route = request.scope.get("route")
+    path = normalize_path(route.path) if route is not None else "<unmatched>"
     if hasattr(app.state, "metrics_buffer"):
         app.state.metrics_buffer.record(path, response.status_code, elapsed_ms)
     return response

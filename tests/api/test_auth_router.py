@@ -86,6 +86,54 @@ class TestResetRequest:
         response = test_client.post("/api/auth/reset-request", json={"email": " Test@Example.COM "})
         assert response.status_code == 200
 
+    def test_reset_request_defers_redis_and_email_off_the_request_path(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """discogsography-0lof: the SELECT must be the only DB/network work done
+        BEFORE the response is built. `_process_reset_request` (Redis setex +
+        notification send) is scheduled as a FastAPI background task so its
+        cost never leaks into response timing and never diverges between the
+        known-email and unknown-email branches."""
+        mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
+        channel = AsyncMock()
+        original_channel = auth_router._notification_channel
+        auth_router._notification_channel = channel
+        try:
+            response = test_client.post("/api/auth/reset-request", json={"email": TEST_USER_EMAIL})
+        finally:
+            auth_router._notification_channel = original_channel
+
+        assert response.status_code == 200
+        # Background task must have actually run (TestClient awaits background
+        # tasks before returning) and performed the Redis + notification work.
+        mock_redis.setex.assert_called_once()
+        channel.send_password_reset.assert_called_once()
+
+    def test_reset_request_unknown_email_does_not_touch_redis_or_notify(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """The no-op branch for a nonexistent email must genuinely do nothing —
+        confirms the background task is a no-op rather than a disguised no-op
+        that still leaks timing via a dummy Redis round-trip."""
+        mock_cur.fetchone = AsyncMock(return_value=None)
+        channel = AsyncMock()
+        original_channel = auth_router._notification_channel
+        auth_router._notification_channel = channel
+        try:
+            response = test_client.post("/api/auth/reset-request", json={"email": "unknown@example.com"})
+        finally:
+            auth_router._notification_channel = original_channel
+
+        assert response.status_code == 200
+        mock_redis.setex.assert_not_called()
+        channel.send_password_reset.assert_not_called()
+
     def test_reset_link_is_absolute_and_uses_app_base_url(
         self,
         test_client: TestClient,
@@ -184,6 +232,37 @@ class TestResetConfirm:
             json={"token": "some-token", "new_password": "short"},
         )
         assert response.status_code == 422  # Pydantic validation
+
+    def test_reset_confirm_revokes_app_tokens(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """discogsography-ci4a: a password reset must bulk-revoke the user's
+        app tokens — the password_changed Redis marker alone never covers
+        them (it only gates JWTs and it TTLs out; app tokens carry no
+        expiry)."""
+        mock_redis.getdel = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "user_id": TEST_USER_ID,
+                    "email": TEST_USER_EMAIL,
+                }
+            )
+        )
+        response = test_client.post(
+            "/api/auth/reset-confirm",
+            json={"token": "valid-token", "new_password": "newpassword123"},
+        )
+        assert response.status_code == 200
+
+        revoke_calls = [call for call in mock_cur.execute.call_args_list if "UPDATE app_tokens" in call.args[0]]
+        assert len(revoke_calls) == 1
+        query, params = revoke_calls[0].args
+        assert "revoked_at = NOW()" in query
+        assert "revoked_at IS NULL" in query
+        assert params == (TEST_USER_ID,)
 
 
 class TestTwoFactorSetup:
@@ -561,6 +640,76 @@ class TestTwoFactorConfirm:
 
         assert response.status_code == 503
 
+    def test_confirm_refuses_on_concurrent_disable_race(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """discogsography-8vlp: if a concurrent twofa_disable commits between
+        confirm's SELECT and its enable UPDATE, the guarded
+        `AND totp_secret = %s` matches zero rows — confirm must reject with
+        409 rather than landing totp_enabled=TRUE against a NULLed secret
+        (which would permanently lock the account out: login demands 2FA but
+        neither twofa_verify nor twofa_recovery could ever satisfy it)."""
+        secret, encrypted_secret = _make_encrypted_totp_secret()
+        mock_cur.fetchone = AsyncMock(return_value={"totp_secret": encrypted_secret})
+        mock_redis.get = AsyncMock(return_value=None)
+        # The code is verified against the secret read above, but a concurrent
+        # disable clears totp_secret before the enable UPDATE runs, so the
+        # guarded WHERE matches no row.
+        mock_cur.rowcount = 0
+
+        valid_code = pyotp.TOTP(secret).now()
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/confirm",
+                headers=auth_headers,
+                json={"code": valid_code},
+            )
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 409
+
+    def test_confirm_enable_update_is_guarded_on_secret(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """The enable UPDATE must bind the exact secret read at the top of the
+        handler, not perform a blind write."""
+        secret, encrypted_secret = _make_encrypted_totp_secret()
+        mock_cur.fetchone = AsyncMock(return_value={"totp_secret": encrypted_secret})
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_cur.rowcount = 1
+
+        valid_code = pyotp.TOTP(secret).now()
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/confirm",
+                headers=auth_headers,
+                json={"code": valid_code},
+            )
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 200
+        enable_calls = [call for call in mock_cur.execute.call_args_list if "totp_enabled = TRUE" in call.args[0]]
+        assert len(enable_calls) == 1
+        query, params = enable_calls[0].args
+        assert "AND totp_secret = %s" in query
+        assert params == (TEST_USER_ID, encrypted_secret)
+
 
 # ---------------------------------------------------------------------------
 # 2FA Verify — TOTP login verification (lines 433-499)
@@ -783,6 +932,62 @@ class TestTwoFactorRecoveryFull:
         data = response.json()
         assert "access_token" in data
         assert data["token_type"] == "bearer"
+
+    def test_recovery_success_resets_totp_lockout_state(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """discogsography-cflq: a successful recovery must reset
+        totp_failed_attempts/totp_locked_until in the same UPDATE that redeems
+        the code — otherwise stale lockout state survives the recovery login
+        and can 429 a subsequent CORRECT TOTP code."""
+        plaintext_codes, hashed_codes = self._make_recovery_setup()
+        challenge_token = _make_challenge_token()
+
+        mock_redis.get = _challenge_only_get()
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.delete = AsyncMock()
+        mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps(hashed_codes)})
+
+        response = test_client.post(
+            "/api/auth/2fa/recovery",
+            json={"challenge_token": challenge_token, "code": plaintext_codes[0]},
+        )
+        assert response.status_code == 200
+
+        executed = " ".join(str(call) for call in mock_cur.execute.call_args_list)
+        assert "totp_failed_attempts = 0" in executed
+        assert "totp_locked_until = NULL" in executed
+
+    def test_recovery_getdel_race_returns_401(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """discogsography-kqw4: a concurrent request that already consumed the
+        challenge (getdel -> None) must reject this one with 401, mirroring
+        twofa_verify's identical check. Previously the getdel return value was
+        discarded entirely, so a single challenge token backed by two
+        recovery codes could mint two independent access tokens."""
+        plaintext_codes, hashed_codes = self._make_recovery_setup()
+        challenge_token = _make_challenge_token()
+
+        mock_redis.get = _challenge_only_get()
+        # getdel returns None — another concurrent request already consumed
+        # this challenge (e.g. via a parallel twofa_verify or twofa_recovery
+        # call) between the existence check and this consume.
+        mock_redis.getdel = AsyncMock(return_value=None)
+        mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps(hashed_codes)})
+
+        response = test_client.post(
+            "/api/auth/2fa/recovery",
+            json={"challenge_token": challenge_token, "code": plaintext_codes[0]},
+        )
+        assert response.status_code == 401
+        assert "Challenge expired or already used" in response.json()["detail"]
 
     def test_recovery_invalid_code_returns_401(
         self,
@@ -1347,6 +1552,40 @@ class TestTwoFactorStateMachineRegressions:
         assert "COALESCE(totp_failed_attempts, 0) + 1" in executed
         assert "RETURNING totp_failed_attempts" in executed
 
+    def test_verify_lockout_gate_is_atomic_with_increment(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+        mock_conn: AsyncMock,
+    ) -> None:
+        """discogsography-vjod: the lockout SELECT must take a row lock (FOR
+        UPDATE) inside an explicit transaction, so concurrent verify attempts
+        for the same user serialize instead of all reading a stale
+        pre-increment snapshot."""
+        _secret, encrypted_secret = _make_encrypted_totp_secret()
+        challenge_token = _make_challenge_token()
+
+        mock_redis.get = _challenge_only_get()
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
+        mock_cur.fetchone = AsyncMock(return_value={"totp_secret": encrypted_secret, "totp_failed_attempts": 0, "totp_locked_until": None})
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/verify",
+                json={"challenge_token": challenge_token, "code": "000000"},
+            )
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 401
+        executed = " ".join(self._executed_sql(mock_cur))
+        assert "FOR UPDATE" in executed
+        mock_conn.set_autocommit.assert_any_call(False)
+        mock_conn.transaction.assert_called()
+
     def test_verify_failure_resets_counter_after_lock_expiry(
         self,
         test_client: TestClient,
@@ -1428,6 +1667,29 @@ class TestChangePassword:
         mock_redis.setex.assert_called()
         redis_call_args = mock_redis.setex.call_args
         assert redis_call_args[0][0].startswith("password_changed:")
+
+    def test_change_password_revokes_app_tokens(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,  # noqa: ARG002  # required so setex is stubbed
+        auth_headers: dict[str, str],
+    ) -> None:
+        """discogsography-ci4a: same bulk-revoke contract as reset-confirm."""
+        mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
+        response = test_client.post(
+            "/api/auth/change-password",
+            json={"current_password": "testpassword", "new_password": "newpassword123"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+
+        revoke_calls = [call for call in mock_cur.execute.call_args_list if "UPDATE app_tokens" in call.args[0]]
+        assert len(revoke_calls) == 1
+        query, params = revoke_calls[0].args
+        assert "revoked_at = NOW()" in query
+        assert "revoked_at IS NULL" in query
+        assert params == (TEST_USER_ID,)
 
     def test_change_password_wrong_current(
         self,

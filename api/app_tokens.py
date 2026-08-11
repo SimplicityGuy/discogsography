@@ -172,7 +172,15 @@ def _parse_bearer(credentials: HTTPAuthorizationCredentials | None) -> str:
 
 
 async def _lookup_active_token(token_hash: str) -> dict[str, Any] | None:
-    """Fetch the active row for a token_hash, or None if missing/revoked."""
+    """Fetch the active row for a token_hash, or None if missing/revoked/for a deactivated user.
+
+    Joins `users` so a deactivated account's app tokens stop authenticating —
+    mirroring the `is_active` check every JWT-based admin/user path already
+    enforces (discogsography-ci4a). Also projects the row's own `token_hash`
+    so callers can do a real defense-in-depth comparison against it, instead
+    of recomputing the same value they already used for the WHERE clause and
+    comparing it to itself (discogsography-osoc).
+    """
     if _pool is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -181,9 +189,10 @@ async def _lookup_active_token(token_hash: str) -> dict[str, Any] | None:
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await cur.execute(
             """
-            SELECT id, user_id, name, scope
-            FROM app_tokens
-            WHERE token_hash = %s AND revoked_at IS NULL
+            SELECT t.id, t.user_id, t.name, t.scope, t.token_hash
+            FROM app_tokens t
+            JOIN users u ON u.id = t.user_id
+            WHERE t.token_hash = %s AND t.revoked_at IS NULL AND u.is_active = TRUE
             """,
             (token_hash,),
         )
@@ -222,11 +231,14 @@ def require_app_token(scopes: list[str]) -> Any:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Defense in depth: hmac.compare_digest on the canonical hash even though
-        # the WHERE clause already filtered. Guards against any future fast-path
-        # that bypasses the index (e.g. column rename, query restructure).
-        stored_hash = hash_token(plaintext)
-        if not hmac.compare_digest(stored_hash, token_hash):
+        # Defense in depth: compare the row's OWN persisted token_hash (now
+        # projected by _lookup_active_token) against the hash we looked up
+        # with. Previously this recomputed hash_token(plaintext) on both
+        # sides of compare_digest — comparing a value to itself, an
+        # unreachable guard (discogsography-osoc). Comparing against the
+        # stored column actually catches a future fast-path query that
+        # bypasses the WHERE clause (e.g. column rename, query restructure).
+        if not hmac.compare_digest(row["token_hash"], token_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid app token",

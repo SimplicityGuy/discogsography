@@ -2,6 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass
+import hmac
 from typing import Annotated, Any, Literal
 
 from fastapi import Depends, HTTPException, status
@@ -132,11 +133,22 @@ def require_user_or_app_token(scopes: list[str]) -> Any:
         # so the JWT path's 503/401 ordering and revocation checks are preserved
         # byte-for-byte for existing clients.
         if credentials is not None and credentials.credentials.startswith(_APP_TOKEN_PREFIX):
-            row = await _lookup_active_token(hash_token(credentials.credentials))
+            token_hash = hash_token(credentials.credentials)
+            row = await _lookup_active_token(token_hash)
             if row is None:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid or revoked app token",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            # Defense in depth: mirrors require_app_token's check against the
+            # row's own persisted token_hash, so the two app-token entry
+            # points stay in lockstep instead of silently diverging
+            # (discogsography-osoc).
+            if not hmac.compare_digest(row["token_hash"], token_hash):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid app token",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             granted = list(row.get("scope") or [])

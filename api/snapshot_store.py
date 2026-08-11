@@ -93,16 +93,34 @@ class SnapshotStore:
         if user_id:
             count_key = f"{self._USER_COUNT_KEY_PREFIX}{user_id}"
             count = await self._redis.incr(count_key)
-            if count == 1:
-                # First snapshot in this window starts the count's own TTL so
-                # it decays alongside the snapshots it's counting (approximate
-                # sliding window — bounded exactly by max_per_user regardless).
-                await self._redis.expire(count_key, self._ttl_seconds)
+            # Self-healing TTL: `nx=True` means "set the TTL only if the key
+            # doesn't already have one." Normally a no-op after the first
+            # save. Previously this was gated on `count == 1` — a ONE-SHOT
+            # opportunity per key generation — so if that single EXPIRE call
+            # failed or the process died between incr and expire, the counter
+            # was left permanent (no TTL, never re-armed by any later save),
+            # silently converting "live snapshots in a 28-day window" into
+            # "lifetime saves, forever" and eventually locking the user out
+            # permanently (discogsography-7639). `nx=True` makes every save a
+            # chance to arm a missing TTL, not just the first.
+            await self._redis.expire(count_key, self._ttl_seconds, nx=True)
             if count > self._max_per_user:
                 await self._redis.decr(count_key)
                 raise SnapshotQuotaExceededError(f"User already has {count - 1} snapshots, maximum is {self._max_per_user}")
 
-        await self._redis.set(f"{self._KEY_PREFIX}{token}", payload, ex=self._ttl_seconds)
+            try:
+                await self._redis.set(f"{self._KEY_PREFIX}{token}", payload, ex=self._ttl_seconds)
+            except Exception:
+                # Compensate: the save didn't happen, so the quota slot it
+                # reserved above must be freed — mirrors the decrement on the
+                # quota-exceeded path. Without this, a transient Redis/network
+                # failure on this specific call permanently burns the user's
+                # quota with zero live snapshots to show for it.
+                await self._redis.decr(count_key)
+                raise
+        else:
+            await self._redis.set(f"{self._KEY_PREFIX}{token}", payload, ex=self._ttl_seconds)
+
         return token, expires_at
 
     async def load(self, token: str) -> dict[str, Any] | None:

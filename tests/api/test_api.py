@@ -184,6 +184,37 @@ class TestHealthEndpoint:
         assert data["service"] == "api"
 
 
+class TestMetricsMiddlewareCardinality:
+    """discogsography-jlei: metrics_middleware must key on the matched route's
+    path TEMPLATE, so path cardinality is bounded by the number of registered
+    routes — not by attacker-controlled URL segments."""
+
+    def test_unmatched_paths_collapse_to_a_single_bucket(self, test_client: TestClient) -> None:
+        from api.api import app
+
+        test_client.get("/totally-made-up-path-one")
+        test_client.get("/another-made-up-path-two")
+        test_client.get("/yet-a-third-bogus-path")
+
+        stats = app.state.metrics_buffer.flush()
+        assert "<unmatched>" in stats
+        assert stats["<unmatched>"]["count"] >= 3
+        # None of the raw junk paths became their own distinct key.
+        assert "/totally-made-up-path-one" not in stats
+        assert "/another-made-up-path-two" not in stats
+
+    def test_matched_route_uses_its_path_template(self, test_client: TestClient) -> None:
+        from api.api import app
+
+        # Unauthenticated DELETE — rejected by the require_user dependency
+        # (401) before the handler body runs, so no backend I/O is needed.
+        test_client.delete("/api/user/app-tokens/some-token-id")
+
+        stats = app.state.metrics_buffer.flush()
+        assert "/api/user/app-tokens/{token_id}" in stats
+        assert "/api/user/app-tokens/some-token-id" not in stats
+
+
 class TestRegisterEndpoint:
     """Tests for POST /api/auth/register."""
 
@@ -282,6 +313,35 @@ class TestRegisterEndpoint:
         )
         assert response.status_code == 500
 
+    def test_register_success_avoids_logging_email(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+    ) -> None:
+        """discogsography-1385: the success log must carry user_id, never the
+        registrant's email (PII) — no ad-hoc emoji/log rule bypass."""
+        from structlog.testing import capture_logs
+
+        mock_cur.fetchone.return_value = {
+            "id": TEST_USER_ID,
+            "email": TEST_USER_EMAIL,
+            "is_active": True,
+            "created_at": datetime.now(UTC),
+        }
+
+        with capture_logs() as captured:
+            response = test_client.post(
+                "/api/auth/register",
+                json={"email": TEST_USER_EMAIL, "password": "Password123!"},
+            )
+        assert response.status_code == 201
+
+        success_events = [entry for entry in captured if "registered" in entry.get("event", "")]
+        assert success_events, "expected a registration-success log entry"
+        for entry in success_events:
+            assert entry.get("user_id") == TEST_USER_ID
+            assert TEST_USER_EMAIL not in str(entry.values())
+
 
 class TestLoginEndpoint:
     """Tests for POST /api/auth/login."""
@@ -364,6 +424,38 @@ class TestLoginEndpoint:
             json={"email": TEST_USER_EMAIL, "password": "password"},
         )
         assert response.status_code == 401
+
+    def test_login_success_does_not_log_email(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+    ) -> None:
+        """discogsography-1385: sibling of the registration leak — the
+        high-volume per-session login log must also carry user_id, not email."""
+        from structlog.testing import capture_logs
+
+        from api.auth import _hash_password
+
+        hashed = _hash_password("correctpassword")
+        mock_cur.fetchone.return_value = {
+            "id": TEST_USER_ID,
+            "email": TEST_USER_EMAIL,
+            "is_active": True,
+            "hashed_password": hashed,
+        }
+
+        with capture_logs() as captured:
+            response = test_client.post(
+                "/api/auth/login",
+                json={"email": TEST_USER_EMAIL, "password": "correctpassword"},
+            )
+        assert response.status_code == 200
+
+        success_events = [entry for entry in captured if "logged in" in entry.get("event", "")]
+        assert success_events, "expected a login-success log entry"
+        for entry in success_events:
+            assert entry.get("user_id") == TEST_USER_ID
+            assert TEST_USER_EMAIL not in str(entry.values())
 
 
 class TestMeEndpoint:

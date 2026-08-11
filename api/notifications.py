@@ -24,9 +24,9 @@ class NotificationChannel(Protocol):
 class LogNotificationChannel:
     """Notification channel that logs messages (development/MVP use)."""
 
-    async def send_password_reset(self, email: str, reset_url: str) -> None:  # noqa: ARG002  # reset_url unused in log channel
-        """Log a password reset link (URL intentionally not logged for security)."""
-        logger.info("🔑 Password reset link generated", email=email)
+    async def send_password_reset(self, email: str, reset_url: str) -> None:  # noqa: ARG002  # email/reset_url unused in log channel
+        """Log a password reset link (email and URL intentionally not logged — PII)."""
+        logger.info("🔑 Password reset link generated")
 
 
 class ResendNotificationChannel:
@@ -58,7 +58,7 @@ class ResendNotificationChannel:
             "</body></html>"
         )
 
-        logger.debug("🔑 Sending password reset email", email=email)
+        logger.debug("🔑 Sending password reset email")
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
@@ -72,6 +72,6 @@ class ResendNotificationChannel:
                     },
                 )
                 response.raise_for_status()
-            logger.info("📧 Password reset email sent", email=email)
+            logger.info("📧 Password reset email sent")
         except Exception:
-            logger.exception("❌ Failed to send password reset email", email=email)
+            logger.exception("❌ Failed to send password reset email")

@@ -76,6 +76,15 @@ def mock_conn(mock_cur: AsyncMock) -> AsyncMock:
     cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
     cur_ctx.__aexit__ = AsyncMock(return_value=False)
     conn.cursor = MagicMock(return_value=cur_ctx)
+    conn.set_autocommit = AsyncMock()
+    # `async with conn.transaction():` — a no-op async context manager so
+    # code that opens an explicit transaction (e.g. twofa_verify's atomic
+    # lockout check, discogsography-vjod) round-trips through the same
+    # mock_cur without a real Postgres transaction.
+    tx_ctx = AsyncMock()
+    tx_ctx.__aenter__ = AsyncMock(return_value=None)
+    tx_ctx.__aexit__ = AsyncMock(return_value=False)
+    conn.transaction = MagicMock(return_value=tx_ctx)
     return conn
 
 

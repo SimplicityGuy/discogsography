@@ -5,7 +5,7 @@ import json
 import secrets
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
@@ -156,7 +156,7 @@ async def register(request: Request, body: RegisterRequest) -> JSONResponse:  # 
             detail="Registration failed",
         )
 
-    logger.info("✅ User registered", email=body.email)
+    logger.info("✅ User registered", user_id=str(row["id"]))
     return JSONResponse(
         content={"message": "Registration processed"},
         status_code=status.HTTP_201_CREATED,
@@ -226,7 +226,7 @@ async def login(request: Request, body: LoginRequest) -> JSONResponse:  # noqa: 
         )
 
     access_token, expires_in = _create_access_token_fn(str(user["id"]), user["email"], issued_at=credential_issued_at)
-    logger.info("✅ User logged in", email=body.email)
+    logger.info("✅ User logged in", user_id=str(user["id"]))
 
     return JSONResponse(
         content={
@@ -300,9 +300,35 @@ async def get_me(
 # ---------------------------------------------------------------------------
 
 
+async def _process_reset_request(user: dict[str, Any] | None) -> None:
+    """Mint the reset token, write it to Redis, and send the email — OFF the request path.
+
+    Scheduled unconditionally by the caller (whether or not the account
+    exists) and only does real work when ``user`` is truthy. This means the
+    HTTP response for reset-request returns after nothing but the initial
+    SELECT on both branches, so response timing carries no signal about
+    account existence — the Redis `setex` and the outbound Resend HTTP call
+    (the actual timing oracle) both happen after the client already has the
+    response (discogsography-0lof).
+    """
+    if not user or _redis is None or _config is None:
+        return
+    token = secrets.token_urlsafe(32)
+    await _redis.setex(
+        f"reset:{token}",
+        900,  # 15 min TTL
+        json.dumps({"user_id": str(user["id"]), "email": user["email"]}),
+    )
+    # Must be absolute: this link is emailed, and a mail client has no base
+    # URL to resolve a relative href against.
+    reset_url = f"{_config.app_base_url}/?reset_token={token}"
+    if _notification_channel:
+        await _notification_channel.send_password_reset(user["email"], reset_url)
+
+
 @router.post("/api/auth/reset-request")
 @limiter.limit("3/minute")
-async def reset_request(request: Request, body: ResetRequestModel) -> JSONResponse:  # noqa: ARG001
+async def reset_request(request: Request, body: ResetRequestModel, background_tasks: BackgroundTasks) -> JSONResponse:  # noqa: ARG001
     """Request a password reset. Same response whether email exists or not."""
     if _pool is None or _redis is None or _config is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
@@ -311,18 +337,8 @@ async def reset_request(request: Request, body: ResetRequestModel) -> JSONRespon
         await execute_sql(cur, "SELECT id, email FROM users WHERE email = %s", (body.email,))
         user = await cur.fetchone()
 
-    if user:
-        token = secrets.token_urlsafe(32)
-        await _redis.setex(
-            f"reset:{token}",
-            900,  # 15 min TTL
-            json.dumps({"user_id": str(user["id"]), "email": user["email"]}),
-        )
-        # Must be absolute: this link is emailed, and a mail client has no base
-        # URL to resolve a relative href against.
-        reset_url = f"{_config.app_base_url}/?reset_token={token}"
-        if _notification_channel:
-            await _notification_channel.send_password_reset(user["email"], reset_url)
+    # Scheduled on BOTH branches — see _process_reset_request docstring.
+    background_tasks.add_task(_process_reset_request, user)
 
     return JSONResponse(content={"message": "If an account exists for that email, a reset link has been sent"})
 
@@ -349,6 +365,16 @@ async def reset_confirm(request: Request, body: ResetConfirmModel) -> JSONRespon
             cur,
             "UPDATE users SET hashed_password = %s, password_changed_at = NOW(), updated_at = NOW() WHERE id = %s::uuid",
             (hashed_password, user_id),
+        )
+        # Bulk-revoke third-party app tokens too. password_changed:{user_id} only
+        # gates JWT validation and TTLs out after jwt_expire_minutes, so it can
+        # never durably revoke app tokens (which carry no expiry by design) —
+        # revoking the rows themselves is the only correct fix
+        # (discogsography-ci4a).
+        await execute_sql(
+            cur,
+            "UPDATE app_tokens SET revoked_at = NOW() WHERE user_id = %s::uuid AND revoked_at IS NULL",
+            (user_id,),
         )
 
     # Invalidate all existing sessions
@@ -393,6 +419,14 @@ async def change_password(
             cur,
             "UPDATE users SET hashed_password = %s, password_changed_at = NOW(), updated_at = NOW() WHERE id = %s::uuid",
             (hashed_password, user_id),
+        )
+        # Bulk-revoke third-party app tokens too (same pattern as reset-confirm;
+        # see discogsography-ci4a for why the Redis password_changed marker
+        # alone cannot cover app tokens).
+        await execute_sql(
+            cur,
+            "UPDATE app_tokens SET revoked_at = NOW() WHERE user_id = %s::uuid AND revoked_at IS NULL",
+            (user_id,),
         )
 
     # Invalidate all existing sessions (same pattern as reset-confirm)
@@ -508,13 +542,26 @@ async def twofa_confirm(
     if not verify_totp_code(secret, body.code):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
 
-    # Enable TOTP
+    # Enable TOTP — guarded on the EXACT secret whose code was just verified
+    # (bound as `row["totp_secret"]`, read above), not a blind write. Without
+    # this guard, a concurrent twofa_disable committing between our SELECT and
+    # this UPDATE would land as totp_enabled=TRUE with totp_secret/
+    # totp_recovery_codes NULLed — login demands 2FA but neither twofa_verify
+    # nor twofa_recovery can ever satisfy it, a permanent lockout
+    # (discogsography-8vlp). rowcount 0 means the setup state changed
+    # underneath us (disabled, or re-setup with a new secret) — treat that as
+    # a conflict rather than silently reporting success.
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,
-            "UPDATE users SET totp_enabled = TRUE, updated_at = NOW() WHERE id = %s::uuid",
-            (user_id,),
+            "UPDATE users SET totp_enabled = TRUE, updated_at = NOW() WHERE id = %s::uuid AND totp_secret = %s",
+            (user_id, row["totp_secret"]),
         )
+        if cur.rowcount == 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="2FA setup state changed — restart 2FA setup",
+            )
 
     logger.info("✅ 2FA enabled", user_id=user_id)
     return JSONResponse(content={"message": "2FA has been enabled"})
@@ -552,70 +599,94 @@ async def twofa_verify(request: Request, body: TwoFactorVerifyModel) -> JSONResp
     user_id = payload["sub"]
     email = payload.get("email", "")
 
-    # Fetch user TOTP data
-    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await execute_sql(
-            cur,
-            "SELECT totp_secret, totp_failed_attempts, totp_locked_until FROM users WHERE id = %s::uuid",
-            (user_id,),
-        )
-        user = await cur.fetchone()
+    # The lockout GATE and the failed-attempt INCREMENT must be atomic with
+    # each other — not just internally consistent. Previously the lockout
+    # check read a plain SELECT (no lock held past that statement, per this
+    # repo's autocommit=True pool contract), so N concurrent requests could
+    # all read "not locked" before any of them committed the lock, each
+    # getting a free TOTP guess (discogsography-vjod). `SELECT ... FOR UPDATE`
+    # inside an explicit transaction takes a row lock that concurrent verify
+    # attempts for the SAME user serialize on: the second request's SELECT
+    # blocks until the first request's transaction (lock check + increment)
+    # commits, so it always observes the POST-increment state.
+    configured = False
+    locked = False
+    encryption_missing = False
+    code_ok = False
+    failed_attempts: int | None = None
+    async with _pool.connection() as conn:
+        await conn.set_autocommit(False)
+        async with conn.transaction(), conn.cursor(row_factory=dict_row) as cur:
+            await execute_sql(
+                cur,
+                "SELECT totp_secret, totp_failed_attempts, totp_locked_until FROM users WHERE id = %s::uuid FOR UPDATE",
+                (user_id,),
+            )
+            user = await cur.fetchone()
 
-    if not user or not user.get("totp_secret"):
+            if user and user.get("totp_secret"):
+                configured = True
+                locked_until = user.get("totp_locked_until")
+                if locked_until and locked_until.tzinfo is None:
+                    locked_until = locked_until.replace(tzinfo=UTC)
+                locked = bool(locked_until and locked_until > datetime.now(UTC))
+
+            totp_key = get_totp_encryption_key(_config.encryption_master_key) if configured and not locked else None
+            if configured and not locked and not totp_key:
+                encryption_missing = True
+
+            if totp_key:
+                secret = decrypt_totp_secret(user["totp_secret"], totp_key)
+                # NOTE: the challenge is intentionally NOT consumed until AFTER a
+                # successful verification (see success branch below). Consuming it
+                # here would burn the challenge on a single mistyped digit, forcing
+                # a full re-login for every typo.
+                code_ok = verify_totp_code(secret, body.code)
+                if not code_ok:
+                    # Derive the lock from the freshly-computed value in the SAME
+                    # statement, still holding the row lock taken above. When a
+                    # previous lock window has already elapsed (totp_locked_until
+                    # is set but in the past — the gate above let us through), the
+                    # counter resets so each post-expiry window starts fresh
+                    # instead of instantly re-locking at 5+1.
+                    lock_sql = """
+                        UPDATE users
+                        SET totp_failed_attempts = CASE
+                                WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW() THEN 1
+                                ELSE COALESCE(totp_failed_attempts, 0) + 1
+                            END,
+                            totp_locked_until = CASE
+                                WHEN (CASE
+                                        WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW() THEN 1
+                                        ELSE COALESCE(totp_failed_attempts, 0) + 1
+                                      END) >= 5
+                                    THEN NOW() + INTERVAL '15 minutes'
+                                WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW()
+                                    THEN NULL
+                                ELSE totp_locked_until
+                            END,
+                            updated_at = NOW()
+                        WHERE id = %s::uuid
+                        RETURNING totp_failed_attempts
+                    """
+                    await execute_sql(cur, lock_sql, (user_id,))
+                    updated = await cur.fetchone()
+                    failed_attempts = updated["totp_failed_attempts"] if updated else None
+        # Transaction commits here (releasing the row lock) before we raise —
+        # a locked-out or failed attempt must still be durably recorded even
+        # though the HTTP response is an error.
+
+    if not configured:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="2FA not configured")
 
-    # Check lockout BEFORE consuming the challenge — locked-out users keep their token
-    locked_until = user.get("totp_locked_until")
-    if locked_until and locked_until.tzinfo is None:
-        locked_until = locked_until.replace(tzinfo=UTC)
-    if locked_until and locked_until > datetime.now(UTC):
+    if locked:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Account temporarily locked due to failed 2FA attempts")
 
-    totp_key = get_totp_encryption_key(_config.encryption_master_key)
-    if not totp_key:
+    if encryption_missing:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Encryption not configured")
 
-    secret = decrypt_totp_secret(user["totp_secret"], totp_key)
-
-    # NOTE: the challenge is intentionally NOT consumed until AFTER a successful
-    # verification (see success branch below). Consuming it here would burn the
-    # challenge on a single mistyped digit, forcing a full re-login for every typo.
-    if not verify_totp_code(secret, body.code):
-        # Increment the failed-attempt counter ATOMICALLY in SQL and derive the
-        # lock from the freshly-computed value. Parallel wrong-code submissions
-        # must each advance the counter — a Python read-then-blind-write lets K
-        # concurrent requests all write value+1, defeating the 5-strike lock.
-        #
-        # When a previous lock window has already elapsed (totp_locked_until is
-        # set but in the past — the gate above let us through), the counter is
-        # reset so each post-expiry window starts fresh instead of instantly
-        # re-locking at 5+1.
-        lock_sql = """
-            UPDATE users
-            SET totp_failed_attempts = CASE
-                    WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW() THEN 1
-                    ELSE COALESCE(totp_failed_attempts, 0) + 1
-                END,
-                totp_locked_until = CASE
-                    WHEN (CASE
-                            WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW() THEN 1
-                            ELSE COALESCE(totp_failed_attempts, 0) + 1
-                          END) >= 5
-                        THEN NOW() + INTERVAL '15 minutes'
-                    WHEN totp_locked_until IS NOT NULL AND totp_locked_until <= NOW()
-                        THEN NULL
-                    ELSE totp_locked_until
-                END,
-                updated_at = NOW()
-            WHERE id = %s::uuid
-            RETURNING totp_failed_attempts
-        """
-        async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-            await execute_sql(cur, lock_sql, (user_id,))
-            updated = await cur.fetchone()
-
-        failed = updated["totp_failed_attempts"] if updated else None
-        logger.warning("⚠️ Failed 2FA attempt", user_id=user_id, attempts=failed)
+    if not code_ok:
+        logger.warning("⚠️ Failed 2FA attempt", user_id=user_id, attempts=failed_attempts)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
 
     # Success — consume the challenge NOW (only after a correct code) to prevent
@@ -692,12 +763,22 @@ async def twofa_recovery(request: Request, body: TwoFactorRecoveryModel) -> JSON
     # row locking, concurrent redemptions serialize and the WHERE qual is
     # re-evaluated against the committed row, so only one redemption of a given
     # code can ever match (rowcount 1); the rest match nothing (rowcount 0).
+    # Recovery is an equally strong proof of account control as a correct TOTP
+    # code (password + a one-time recovery code), so its success path must
+    # reset the failed-attempt/lockout columns exactly like twofa_verify's
+    # success path does — folded into this same guarded UPDATE so it only
+    # fires when the code actually matched (discogsography-cflq). Without
+    # this, stale lockout state from before the recovery login survives it
+    # and can 429 a CORRECT TOTP code on the very next login.
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,
             """
             UPDATE users
-            SET totp_recovery_codes = totp_recovery_codes - %s, updated_at = NOW()
+            SET totp_recovery_codes = totp_recovery_codes - %s,
+                totp_failed_attempts = 0,
+                totp_locked_until = NULL,
+                updated_at = NOW()
             WHERE id = %s::uuid
               AND totp_recovery_codes IS NOT NULL
               AND totp_recovery_codes ? %s
@@ -715,7 +796,15 @@ async def twofa_recovery(request: Request, body: TwoFactorRecoveryModel) -> JSON
     )
 
     # Recovery code redeemed — now consume the challenge so it cannot be replayed.
-    await _redis.getdel(challenge_key)
+    # getdel is atomic, so concurrent requests replaying the same challenge
+    # (with different recovery codes) race here and exactly one wins; the
+    # loser must be rejected — mirrors twofa_verify's identical check
+    # (discogsography-kqw4). The recovery code redeemed above is *not*
+    # un-spent on this path; that's an accepted, bounded trade (same one
+    # twofa_verify's loser already takes on its TOTP code).
+    consumed = await _redis.getdel(challenge_key)
+    if not consumed:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Challenge expired or already used")
 
     # Issue access token, stamped with the CHALLENGE's iat (see twofa_verify).
     access_token, expires_in = _create_access_token_fn(user_id, email, issued_at=payload.get("iat"))

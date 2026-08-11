@@ -5,9 +5,15 @@
 Admin accounts are created via the `admin-setup` CLI tool inside the API container:
 
 ```
-docker exec -it discogsography-api admin-setup \
-  --email admin@example.com --password <password>
+docker exec -it discogsography-api admin-setup --email admin@example.com
 ```
+
+`admin-setup` never accepts the password as a CLI argument (command-line
+arguments are world-readable via `/proc/*/cmdline` and land in shell
+history). The command above prompts interactively (input hidden, not
+echoed). For scripted/non-interactive use, set `ADMIN_PASSWORD` (or
+`ADMIN_PASSWORD_FILE`, pointing at a Docker secret) in the container's
+environment instead.
 
 Passwords must be at least 8 characters. If the email already exists, the password is updated.
 

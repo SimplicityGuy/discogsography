@@ -641,14 +641,17 @@ class TestUnifiedAuthTouchesLastUsedAt:
         from uuid import UUID
 
         from api import dependencies as deps
+        from api.app_tokens import hash_token
         from api.dependencies import require_user_or_app_token
 
         token_id = "11111111-1111-1111-1111-111111111111"
+        plaintext_token = "dscg_sometokenplaintext"
         row = {
             "id": UUID(token_id),
             "user_id": UUID("99999999-9999-9999-9999-999999999999"),
             "name": "GRUVAX kiosk",
             "scope": ["collection:read"],
+            "token_hash": hash_token(plaintext_token),
         }
         monkeypatch.setattr(deps, "_lookup_active_token", AsyncMock(return_value=row))
 
@@ -660,7 +663,7 @@ class TestUnifiedAuthTouchesLastUsedAt:
         monkeypatch.setattr(deps, "_touch_last_used_at", fake_touch)
 
         dependency = require_user_or_app_token(["collection:read"])
-        creds = _make_credentials("dscg_sometokenplaintext")
+        creds = _make_credentials(plaintext_token)
         auth = await dependency(creds)
 
         assert auth.via == "app_token"
@@ -668,3 +671,33 @@ class TestUnifiedAuthTouchesLastUsedAt:
         # Fire-and-forget task — let the loop run it, then assert bookkeeping fired.
         await asyncio.sleep(0)
         assert touched == [token_id]
+
+
+class TestUnifiedAuthDefenseInDepth:
+    """discogsography-osoc: require_user_or_app_token's app-token branch must
+    perform the same compare_digest defense-in-depth check as require_app_token,
+    against the row's own persisted token_hash — not a self-comparison."""
+
+    @pytest.mark.asyncio
+    async def test_rejects_row_hash_mismatch(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from uuid import UUID
+
+        from fastapi import HTTPException
+
+        from api import dependencies as deps
+        from api.dependencies import require_user_or_app_token
+
+        row = {
+            "id": UUID("11111111-1111-1111-1111-111111111111"),
+            "user_id": UUID("99999999-9999-9999-9999-999999999999"),
+            "name": "GRUVAX kiosk",
+            "scope": ["collection:read"],
+            "token_hash": "0" * 64,  # deliberately wrong
+        }
+        monkeypatch.setattr(deps, "_lookup_active_token", AsyncMock(return_value=row))
+
+        dependency = require_user_or_app_token(["collection:read"])
+        creds = _make_credentials("dscg_sometokenplaintext")
+        with pytest.raises(HTTPException) as exc:
+            await dependency(creds)
+        assert exc.value.status_code == 401
