@@ -293,6 +293,34 @@ describe('Autocomplete', () => {
 
             expect(instance.activeIndex).toBe(-1);
         });
+
+        it('should discard a stale response that resolves after a newer request (discogsography-5fg0)', async () => {
+            // Simulate a broad/slow query ('bea') that resolves AFTER a
+            // narrower/faster query ('beatles') fired right after it — the
+            // 300ms debounce only cancels the pending timer, not an
+            // already-dispatched fetch.
+            let resolveBea;
+            const beaPromise = new Promise((resolve) => { resolveBea = resolve; });
+            window.apiClient.autocomplete
+                .mockReturnValueOnce(beaPromise)
+                .mockResolvedValueOnce([{ name: 'The Beatles' }]);
+
+            const firstSearch = instance._search('bea');
+            const secondSearch = instance._search('beatles');
+
+            // 'beatles' (the newer, narrower request) resolves first.
+            await secondSearch;
+            expect(instance.results).toEqual([{ name: 'The Beatles' }]);
+
+            // The stale 'bea' response arrives late and must NOT overwrite
+            // the results or reset the keyboard-navigation index.
+            instance.activeIndex = 3;
+            resolveBea([{ name: 'Beach House' }, { name: 'Beach Boys' }]);
+            await firstSearch;
+
+            expect(instance.results).toEqual([{ name: 'The Beatles' }]);
+            expect(instance.activeIndex).toBe(3);
+        });
     });
 
     describe('outside click', () => {

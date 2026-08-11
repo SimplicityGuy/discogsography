@@ -240,6 +240,57 @@ describe('GraphVisualization', () => {
             // the previous session's year filter.
             expect(window.apiClient.expand).toHaveBeenCalledWith('Radiohead', 'artist', 'releases', 30, 0, null);
         });
+
+        it('should discard a stale category expansion from a superseded search (discogsography-5fg0)', async () => {
+            // Search #1 (Rock) starts expanding cat-releases; before that
+            // network call resolves, the user starts search #2 (Prince),
+            // which does NOT have a cat-releases category with the same id
+            // reused across entities in real usage. Simulate the stale
+            // response finally resolving after search #2 has already begun.
+            let resolveRockExpand;
+            const rockExpandPromise = new Promise((resolve) => { resolveRockExpand = resolve; });
+            window.apiClient.expand.mockReturnValueOnce(rockExpandPromise);
+
+            const rockData = {
+                center: { id: 'rock', name: 'Rock', type: 'genre' },
+                categories: [
+                    { id: 'cat-releases', name: 'Releases', category: 'releases', count: 5 },
+                ],
+            };
+            graph.setExploreData(rockData);
+            // Let the microtask queue turn so _expandCategory starts and awaits.
+            await Promise.resolve();
+
+            // User moves on before Rock's expand resolves.
+            const princeData = {
+                center: { id: 'prince', name: 'Prince', type: 'artist' },
+                categories: [
+                    { id: 'cat-labels', name: 'Labels', category: 'labels', count: 3 },
+                ],
+            };
+            window.apiClient.expand.mockResolvedValueOnce({
+                children: [{ id: 'wb', name: 'Warner Bros', type: 'label' }],
+                total: 1, limit: 30, has_more: false, offset: 0,
+            });
+            graph.setExploreData(princeData);
+            expect(graph.centerName).toBe('Prince');
+
+            const pendingBeforeStaleResolve = graph._pendingExpands;
+
+            // Rock's stale expand finally resolves.
+            resolveRockExpand({
+                children: [{ id: '1', name: 'Rock Album', type: 'release' }],
+                total: 1, limit: 30, has_more: false, offset: 0,
+            });
+            await new Promise(r => setTimeout(r, 10));
+
+            // The stale response must not have pushed a Rock release node
+            // under Prince's graph, nor mutated Prince's pending-expand
+            // counter or centerName.
+            expect(graph.nodes.find(n => n.id === 'child-release-1')).toBeUndefined();
+            expect(graph.centerName).toBe('Prince');
+            expect(graph._pendingExpands).toBeLessThanOrEqual(pendingBeforeStaleResolve);
+        });
     });
 
     describe('_addLoadMoreNode', () => {
@@ -677,7 +728,7 @@ describe('GraphVisualization', () => {
                 });
 
             graph._pendingExpands = 1;
-            await graph._fetchComparisonData('cat-releases', 'Radiohead', 'artist', 'releases');
+            await graph._fetchComparisonData(graph._generation, 'cat-releases', 'Radiohead', 'artist', 'releases');
 
             const aOnly = graph.nodes.find(n => n.id === 'child-release-1');
             const both = graph.nodes.find(n => n.id === 'child-release-2');
@@ -695,7 +746,7 @@ describe('GraphVisualization', () => {
             window.apiClient.expand.mockRejectedValue(new Error('fail'));
 
             graph._pendingExpands = 1;
-            await graph._fetchComparisonData('cat-releases', 'Radiohead', 'artist', 'releases');
+            await graph._fetchComparisonData(graph._generation, 'cat-releases', 'Radiohead', 'artist', 'releases');
 
             const toast = document.getElementById('shareToast');
             expect(toast.classList.contains('show')).toBe(true);
@@ -813,7 +864,7 @@ describe('GraphVisualization', () => {
             });
 
             graph._pendingExpands = 1;
-            await graph._expandCategoryFiltered('cat-releases', 'Radiohead', 'artist', 'releases');
+            await graph._expandCategoryFiltered(graph._generation, 'cat-releases', 'Radiohead', 'artist', 'releases');
 
             expect(window.apiClient.expand).toHaveBeenCalledWith('Radiohead', 'artist', 'releases', 30, 0, 1990);
             expect(graph.nodes.find(n => n.id === 'child-release-1')).toBeDefined();
@@ -1149,7 +1200,7 @@ describe('GraphVisualization', () => {
             graph._pendingExpands = 1;
 
             const checkSpy = vi.spyOn(graph, '_checkExpandsDone');
-            await graph._expandCategory('cat-releases', 'Radiohead', 'artist', 'releases');
+            await graph._expandCategory(graph._generation, 'cat-releases', 'Radiohead', 'artist', 'releases');
 
             expect(graph._pendingExpands).toBe(0);
             expect(checkSpy).toHaveBeenCalled();
@@ -1172,7 +1223,7 @@ describe('GraphVisualization', () => {
                 total: 2, limit: 30, has_more: false, offset: 0,
             });
 
-            await graph._expandCategory('cat-releases', 'Radiohead', 'artist', 'releases');
+            await graph._expandCategory(graph._generation, 'cat-releases', 'Radiohead', 'artist', 'releases');
 
             // Should have the pre-existing one plus the new one
             const childNodes = graph.nodes.filter(n => n.id.startsWith('child-'));
@@ -1187,7 +1238,7 @@ describe('GraphVisualization', () => {
                 total: 50, limit: 30, has_more: true, offset: 0,
             });
 
-            await graph._expandCategory('cat-releases', 'Radiohead', 'artist', 'releases');
+            await graph._expandCategory(graph._generation, 'cat-releases', 'Radiohead', 'artist', 'releases');
 
             const loadMore = graph.nodes.find(n => n.isLoadMore);
             expect(loadMore).toBeDefined();
@@ -1333,7 +1384,7 @@ describe('GraphVisualization', () => {
                 });
 
             graph._pendingExpands = 1;
-            await graph._fetchComparisonData('cat-releases', 'Radiohead', 'artist', 'releases');
+            await graph._fetchComparisonData(graph._generation, 'cat-releases', 'Radiohead', 'artist', 'releases');
 
             const catNode = graph.nodes.find(n => n.id === 'cat-releases');
             expect(catNode.name).toContain('1');
@@ -1360,7 +1411,7 @@ describe('GraphVisualization', () => {
                 });
 
             graph._pendingExpands = 1;
-            await graph._fetchComparisonData('cat-releases', 'Radiohead', 'artist', 'releases');
+            await graph._fetchComparisonData(graph._generation, 'cat-releases', 'Radiohead', 'artist', 'releases');
 
             // child-release-1 should NOT be duplicated
             const matching = graph.nodes.filter(n => n.id === 'child-release-1');

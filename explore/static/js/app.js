@@ -365,6 +365,10 @@ class ExploreApp {
 
         // Request counter for preventing stale node-click responses
         this._nodeClickRequestId = 0;
+        // Request counters for preventing stale explore/trends responses
+        // (mirrors _nodeClickRequestId — see discogsography-5fg0)
+        this._exploreRequestId = 0;
+        this._trendsRequestId = 0;
 
         // Initialize components
         this.autocomplete = new Autocomplete();
@@ -947,11 +951,16 @@ class ExploreApp {
     }
 
     async _loadExplore(name, type) {
+        // Guard against out-of-order responses: mirrors the _nodeClickRequestId
+        // pattern (discogsography-5fg0) so a slower earlier explore load can
+        // never clobber a faster, more recent one.
+        const requestId = ++this._exploreRequestId;
         const loading = document.getElementById('graphLoading');
         loading.classList.add('active');
         let loaded = false;
         try {
             const data = await window.apiClient.explore(name, type);
+            if (requestId !== this._exploreRequestId) return;
             if (data) {
                 await new Promise((resolve) => {
                     // Set callback BEFORE setExploreData to avoid race where
@@ -967,12 +976,16 @@ class ExploreApp {
                         resolve();
                     }
                 });
+                if (requestId !== this._exploreRequestId) return;
                 // Decorate release nodes with ownership badges if logged in
                 await this._decorateOwnership();
+                if (requestId !== this._exploreRequestId) return;
                 loaded = true;
             }
         } finally {
-            loading.classList.remove('active');
+            if (requestId === this._exploreRequestId) {
+                loading.classList.remove('active');
+            }
         }
         // Initialize timeline scrubber after spinner is dismissed (don't auto-show)
         if (loaded) {
@@ -1075,10 +1088,15 @@ class ExploreApp {
     }
 
     async _loadTrends(name, type) {
+        // Guard against out-of-order responses (discogsography-5fg0): mirrors
+        // _nodeClickRequestId — bail before touching the chart if a newer
+        // trends request has since been issued.
+        const requestId = ++this._trendsRequestId;
         const loading = document.getElementById('trendsLoading');
         loading.classList.add('active');
         try {
             const data = await window.apiClient.getTrends(name, type);
+            if (requestId !== this._trendsRequestId) return;
             if (data) {
                 if (this.compareMode && this.primaryTrendsData) {
                     this.trends.addComparison(data);
@@ -1096,7 +1114,9 @@ class ExploreApp {
                 }
             }
         } finally {
-            loading.classList.remove('active');
+            if (requestId === this._trendsRequestId) {
+                loading.classList.remove('active');
+            }
         }
     }
 

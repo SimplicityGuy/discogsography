@@ -1520,6 +1520,13 @@ describe('ExploreApp helper methods', () => {
     });
 
     describe('ExploreApp._loadTrends', () => {
+        beforeEach(() => {
+            // See the matching comment in the _loadExplore describe block:
+            // reset the URL so a prior test's pushState doesn't trigger an
+            // ambient _restoreFromUrl load that races the call under test.
+            history.replaceState(null, '', '/');
+        });
+
         it('should set primaryTrendsData when not in compare mode', async () => {
             window.apiClient.getTrends.mockResolvedValue({ name: 'Radiohead', years: [] });
             const app = new ExploreApp();
@@ -1539,6 +1546,32 @@ describe('ExploreApp helper methods', () => {
             await app._loadTrends('Unknown', 'artist');
 
             expect(app.primaryTrendsData).toBeNull();
+        });
+
+        it('should discard a stale trends response that resolves after a newer request (discogsography-5fg0)', async () => {
+            // User selects Miles Davis, then quickly Radiohead. If the Miles
+            // Davis response arrives after Radiohead's, it must not
+            // overwrite the chart.
+            let resolveMiles;
+            const milesPromise = new Promise((resolve) => { resolveMiles = resolve; });
+            window.apiClient.getTrends
+                .mockReturnValueOnce(milesPromise)
+                .mockResolvedValueOnce({ name: 'Radiohead', years: [] });
+
+            const app = new ExploreApp();
+            app.compareMode = false;
+            app.primaryTrendsData = null;
+
+            const milesLoad = app._loadTrends('Miles Davis', 'artist');
+            const radioheadLoad = app._loadTrends('Radiohead', 'artist');
+
+            await radioheadLoad;
+            expect(app.primaryTrendsData).toEqual({ name: 'Radiohead', years: [] });
+
+            resolveMiles({ name: 'Miles Davis', years: [] });
+            await milesLoad;
+
+            expect(app.primaryTrendsData).toEqual({ name: 'Radiohead', years: [] });
         });
     });
 
@@ -1896,6 +1929,16 @@ describe('ExploreApp helper methods', () => {
     });
 
     describe('ExploreApp._loadExplore', () => {
+        beforeEach(() => {
+            // A prior test's _pushState (called from _onSearch) leaves
+            // window.location.search populated with name/type params. The
+            // constructor's unawaited `_initAuth().then(_restoreFromUrl)`
+            // picks those up and fires a second, ambient _loadExplore call
+            // that races the one under test — reset the URL so each test
+            // constructs a clean ExploreApp with no ambient restore.
+            history.replaceState(null, '', '/');
+        });
+
         it('should call apiClient.explore and initialize timeline', async () => {
             const exploreData = { center: { id: 'Radiohead', type: 'artist' }, categories: [] };
             window.apiClient.explore.mockResolvedValue(exploreData);
@@ -1956,6 +1999,39 @@ describe('ExploreApp helper methods', () => {
             await app._loadExplore('Radiohead', 'artist');
 
             expect(window.apiClient.getUserStatus).toHaveBeenCalled();
+        });
+
+        it('should discard a stale explore response that resolves after a newer request (discogsography-5fg0)', async () => {
+            // User selects artist A, then quickly artist B. A's response
+            // arrives after B's — the graph must end up showing B, not A.
+            let resolveA;
+            const aPromise = new Promise((resolve) => { resolveA = resolve; });
+            const dataA = { center: { id: 'A', type: 'artist' }, categories: [] };
+            const dataB = { center: { id: 'B', type: 'artist' }, categories: [] };
+            window.apiClient.explore
+                .mockReturnValueOnce(aPromise)
+                .mockResolvedValueOnce(dataB);
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            window.apiClient.getYearRange.mockResolvedValue({ min_year: 1950, max_year: 2023 });
+            window.apiClient.getGenreEmergence.mockResolvedValue({ genres: [], styles: [] });
+
+            const app = new ExploreApp();
+            app.graph.setExploreData = vi.fn();
+            app.graph._pendingExpands = 0;
+            app.graph.onExpandsComplete = null;
+            app.graph.nodes = [];
+
+            const loadA = app._loadExplore('A', 'artist');
+            const loadB = app._loadExplore('B', 'artist');
+
+            await loadB;
+            expect(app.graph.setExploreData).toHaveBeenCalledWith(dataB);
+            app.graph.setExploreData.mockClear();
+
+            resolveA(dataA);
+            await loadA;
+
+            expect(app.graph.setExploreData).not.toHaveBeenCalled();
         });
     });
 
