@@ -99,6 +99,8 @@ class AdminDashboard {
         this._eaVdRule = '';
         this._eaVdEntityType = '';
         this._eaVdPage = 1;
+        this._toastHideTimer = null;
+        this._toastRemoveTimer = null;
         this.bindEvents();
         if (this.token) {
             this.showPanel();
@@ -884,6 +886,18 @@ class AdminDashboard {
         const toast = document.getElementById('toast');
         if (!toast) return;
 
+        // Clear any pending hide/remove timers from a still-visible prior toast
+        // so overlapping calls don't hide this one early (each new toast resets
+        // its own 3s + 300ms window).
+        if (this._toastHideTimer) {
+            clearTimeout(this._toastHideTimer);
+            this._toastHideTimer = null;
+        }
+        if (this._toastRemoveTimer) {
+            clearTimeout(this._toastRemoveTimer);
+            this._toastRemoveTimer = null;
+        }
+
         toast.textContent = message;
         toast.style.display = 'block';
 
@@ -902,12 +916,14 @@ class AdminDashboard {
         });
 
         // Animate out after 3 seconds
-        setTimeout(() => {
+        this._toastHideTimer = setTimeout(() => {
             toast.style.opacity = '0';
             toast.style.transform = 'translateY(0.5rem)';
-            setTimeout(() => {
+            this._toastRemoveTimer = setTimeout(() => {
                 toast.style.display = 'none';
+                this._toastRemoveTimer = null;
             }, 300);
+            this._toastHideTimer = null;
         }, 3000);
     }
 
