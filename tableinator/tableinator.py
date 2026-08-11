@@ -17,7 +17,9 @@ from common import (
     DISCOGS_EXCHANGE_PREFIX,
     AsyncPostgreSQLPool,
     AsyncResilientRabbitMQ,
+    DatabaseUnavailableError,
     HealthServer,
+    OutageBackoff,
     TableinatorConfig,
     normalize_record,
     parse_postgres_host_port,
@@ -40,6 +42,12 @@ message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
 last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
 completed_files: set[str] = set()  # Track which files have completed processing
+
+# Non-batch mode only: throttles requeues while PostgreSQL is unavailable, so an
+# outage cannot burn the quorum queue's x-delivery-limit budget and dead-letter
+# valid records. Batch mode gets the same protection from _flush_queue's
+# re-enqueue+backoff, which never nacks (discogsography-rb05).
+outage_backoff = OutageBackoff("tableinator")
 current_task = None
 current_progress = 0.0
 
@@ -848,6 +856,9 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
 
         await message.ack()
 
+        # PostgreSQL answered — clear the outage backoff.
+        outage_backoff.reset()
+
         # Increment counter and log progress only after successful DB write and ack
         if data_type in message_counts:
             message_counts[data_type] += 1
@@ -859,8 +870,12 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                     data_type=data_type,
                 )
 
-    except (InterfaceError, OperationalError) as e:
+    except (InterfaceError, OperationalError, DatabaseUnavailableError) as e:
         logger.warning("⚠️ Database connection issue, will retry", error=str(e))
+        # Pause before requeueing — x-delivery-limit=20 is a budget with no time
+        # dimension, so unthrottled requeues dead-letter valid records within
+        # minutes of a database outage (discogsography-rb05).
+        await outage_backoff.wait()
         await message.nack(requeue=True)
     except Exception as e:  # noqa: BLE001 - per-message fault must nack rather than kill the consumer
         logger.error("❌ Failed to process message", data_type=data_type, error=str(e))

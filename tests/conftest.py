@@ -423,3 +423,47 @@ def reset_global_state() -> Iterator[None]:
         extractor.extractor.shutdown_requested = False
     except (ImportError, AttributeError):
         pass
+
+
+@pytest.fixture(autouse=True)
+def fast_outage_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the consumer requeue throttle from adding real delay to tests.
+
+    Per-message consumers pause before nack(requeue=True) so a backend outage
+    cannot burn the quorum queue's x-delivery-limit budget
+    (discogsography-rb05). The delay is real seconds in production; tests keep
+    the accounting (consecutive_failures) but skip the sleep. The sleep itself
+    is covered directly in tests/common/test_db_resilience.py.
+    """
+    from common.outage_backoff import OutageBackoff
+
+    async def _wait(self: OutageBackoff) -> float:
+        return self.next_delay()
+
+    monkeypatch.setattr(OutageBackoff, "wait", _wait)
+
+
+@pytest.fixture(autouse=True)
+def in_memory_extraction_latch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep graphinator's extraction_complete latch in memory for most tests.
+
+    The latch is durable (a Neo4j :ExtractionCompletion node keyed by extraction
+    version) so acked signals survive a restart — discogsography-tk7v. Existing
+    tests drive the in-memory cache directly and mock the driver, so the load
+    helper mirrors that cache and the persist helper is a no-op here; the
+    durability itself is covered by tests that patch these helpers explicitly.
+    """
+    try:
+        import graphinator.graphinator as g
+    except ImportError:
+        return
+
+    async def _load(_version: str) -> set[str]:
+        return set(g.extraction_complete_signals)
+
+    async def _persist(_version: str, _signals: set[str]) -> None:
+        return None
+
+    monkeypatch.setattr(g, "_load_extraction_signals", _load)
+    monkeypatch.setattr(g, "_persist_extraction_signals", _persist)
+    monkeypatch.setattr(g, "extraction_complete_version", None)

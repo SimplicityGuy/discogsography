@@ -1,11 +1,17 @@
 """Tests for database resilience utilities."""
 
+import asyncio
 import time
 from unittest.mock import Mock
 
 import pytest
 
 from common.db_resilience import CircuitBreaker, CircuitBreakerConfig, CircuitState, ExponentialBackoff
+from common.outage_backoff import OutageBackoff as _OutageBackoff
+
+
+# Captured before the suite-wide fast_outage_backoff fixture replaces it.
+_REAL_OUTAGE_WAIT = _OutageBackoff.wait
 
 
 class TestCircuitBreaker:
@@ -1158,7 +1164,12 @@ class TestResilientConnectionCloseOnReplace:
 
     @pytest.mark.asyncio
     async def test_cu2_33_async_closes_old_connection_on_replace(self) -> None:
-        """Async: the old unhealthy connection must be closed before reconnecting."""
+        """Async: the old unhealthy connection must be closed before reconnecting.
+
+        Health caching and teardown hysteresis are disabled here so a single
+        failed probe replaces the connection; both are covered on their own by
+        TestConnectionTeardownHysteresis (discogsography-4ajv).
+        """
         from common.db_resilience import AsyncResilientConnection
 
         old_conn = _FakeAsyncConn()
@@ -1166,10 +1177,18 @@ class TestResilientConnectionCloseOnReplace:
         connection_factory = Mock(side_effect=[old_conn, new_conn])
         connection_test = Mock(side_effect=[True, False, True])
 
-        manager = AsyncResilientConnection(connection_factory, connection_test)
+        manager = AsyncResilientConnection(
+            connection_factory,
+            connection_test,
+            health_check_ttl=0.0,
+            unhealthy_threshold=1,
+            close_grace_period=0.0,
+        )
         assert await manager.get_connection() is old_conn
         assert await manager.get_connection() is new_conn
 
+        # The replaced connection is closed by a deferred task (zero grace here).
+        await asyncio.sleep(0)
         assert old_conn.closed_count == 1
         assert manager._connection is new_conn
 
@@ -1187,3 +1206,313 @@ class TestResilientConnectionCloseOnReplace:
         assert await manager.get_connection() is good_conn
 
         assert bad_conn.closed_count == 1
+
+
+class TestConnectionTeardownHysteresis:
+    """Regression tests for discogsography-4ajv (health-check TOCTOU teardown)."""
+
+    @pytest.mark.asyncio
+    async def test_single_failed_probe_keeps_connection(self) -> None:
+        """A lone failed probe must NOT close a connection with live borrowers.
+
+        Before the fix, one failed `RETURN 1` — which a saturated pool produces
+        purely from load, since session acquisition blocks up to
+        connection_acquisition_timeout and then raises — closed the shared
+        driver out from under every in-flight session.
+        """
+        from common.db_resilience import AsyncResilientConnection
+
+        conn = _FakeAsyncConn()
+        connection_factory = Mock(return_value=conn)
+        # Healthy at creation, then two probe failures (below the threshold of 3).
+        connection_test = Mock(side_effect=[True, False, False])
+
+        manager = AsyncResilientConnection(
+            connection_factory,
+            connection_test,
+            health_check_ttl=0.0,
+            unhealthy_threshold=3,
+            close_grace_period=0.0,
+        )
+
+        assert await manager.get_connection() is conn
+        assert await manager.get_connection() is conn
+        assert await manager.get_connection() is conn
+
+        await asyncio.sleep(0)
+        assert conn.closed_count == 0, "a busy connection must not be torn down"
+        assert connection_factory.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_replace_after_threshold_failures(self) -> None:
+        """Consecutive failures beyond the threshold DO replace the connection."""
+        from common.db_resilience import AsyncResilientConnection
+
+        old_conn = _FakeAsyncConn()
+        new_conn = _FakeAsyncConn()
+        connection_factory = Mock(side_effect=[old_conn, new_conn])
+        connection_test = Mock(side_effect=[True, False, False, True])
+
+        manager = AsyncResilientConnection(
+            connection_factory,
+            connection_test,
+            health_check_ttl=0.0,
+            unhealthy_threshold=2,
+            close_grace_period=0.0,
+        )
+
+        assert await manager.get_connection() is old_conn
+        assert await manager.get_connection() is old_conn  # first failure tolerated
+        assert await manager.get_connection() is new_conn  # second failure replaces
+
+        await asyncio.sleep(0)
+        assert old_conn.closed_count == 1
+
+    @pytest.mark.asyncio
+    async def test_probe_success_resets_failure_run(self) -> None:
+        """Failures must be CONSECUTIVE — a success in between resets the run."""
+        from common.db_resilience import AsyncResilientConnection
+
+        conn = _FakeAsyncConn()
+        connection_factory = Mock(return_value=conn)
+        connection_test = Mock(side_effect=[True, False, True, False])
+
+        manager = AsyncResilientConnection(
+            connection_factory,
+            connection_test,
+            health_check_ttl=0.0,
+            unhealthy_threshold=2,
+            close_grace_period=0.0,
+        )
+
+        for _ in range(4):
+            assert await manager.get_connection() is conn
+
+        await asyncio.sleep(0)
+        assert conn.closed_count == 0
+        assert connection_factory.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_replaced_connection_close_deferred(self) -> None:
+        """The replaced connection is detached at once but closed only later.
+
+        neo4j documents driver.close() as NOT concurrency-safe with live
+        sessions, so borrowers get a grace period to drain.
+        """
+        from common.db_resilience import AsyncResilientConnection
+
+        old_conn = _FakeAsyncConn()
+        new_conn = _FakeAsyncConn()
+        connection_factory = Mock(side_effect=[old_conn, new_conn])
+        connection_test = Mock(side_effect=[True, False, True])
+
+        manager = AsyncResilientConnection(
+            connection_factory,
+            connection_test,
+            health_check_ttl=0.0,
+            unhealthy_threshold=1,
+            close_grace_period=60.0,
+        )
+
+        assert await manager.get_connection() is old_conn
+        assert await manager.get_connection() is new_conn
+
+        await asyncio.sleep(0)
+        assert old_conn.closed_count == 0, "borrowers must be allowed to drain"
+        assert old_conn in manager._draining
+
+        # An explicit shutdown closes the draining connection immediately.
+        await manager.close()
+        assert old_conn.closed_count == 1
+        assert manager._draining == []
+
+    @pytest.mark.asyncio
+    async def test_healthy_probe_cached_for_ttl(self) -> None:
+        """A successful probe is trusted for health_check_ttl — no probe per call.
+
+        The per-call `RETURN 1` was both a throughput cap (every query paid an
+        extra round trip serialized behind one lock) and the mechanism that made
+        the pool-starvation teardown reachable.
+        """
+        from common.db_resilience import AsyncResilientConnection
+
+        conn = _FakeAsyncConn()
+        connection_factory = Mock(return_value=conn)
+        connection_test = Mock(return_value=True)
+
+        manager = AsyncResilientConnection(
+            connection_factory,
+            connection_test,
+            health_check_ttl=60.0,
+        )
+
+        for _ in range(5):
+            assert await manager.get_connection() is conn
+
+        # Exactly one call: the health test run while creating the connection.
+        assert connection_test.call_count == 1
+
+
+class TestReconnectDoesNotHoldLock:
+    """Regression tests for discogsography-y1qn (lock held across retry/backoff)."""
+
+    @pytest.mark.asyncio
+    async def test_healthy_callers_not_blocked(self) -> None:
+        """A slow reconnect must not block callers of a healthy connection.
+
+        Before the fix the whole retry/backoff cycle ran under the process
+        singleton lock, so every Neo4j session acquisition in the process — API
+        requests, dashboard polls, batch flushes — queued behind one caller's
+        multi-minute outage cycle.
+        """
+        from common.db_resilience import AsyncResilientConnection
+
+        started = asyncio.Event()
+        release = asyncio.Event()
+        conn = _FakeAsyncConn()
+
+        async def slow_factory() -> _FakeAsyncConn:
+            started.set()
+            await release.wait()
+            return conn
+
+        manager: AsyncResilientConnection[_FakeAsyncConn] = AsyncResilientConnection(
+            slow_factory,
+            Mock(return_value=True),
+            health_check_ttl=60.0,
+        )
+        # Pretend a healthy connection is already published.
+        existing = _FakeAsyncConn()
+        manager._connection = existing
+        manager._last_healthy_at = time.monotonic()
+
+        # Force a reconnect by expiring the cached health and failing the probe
+        # threshold, using a second manager so the first stays healthy.
+        reconnecting: AsyncResilientConnection[_FakeAsyncConn] = AsyncResilientConnection(
+            slow_factory,
+            Mock(return_value=True),
+        )
+        waiter = asyncio.create_task(reconnecting.get_connection())
+        await asyncio.wait_for(started.wait(), timeout=1.0)
+
+        # While that cycle is parked mid-factory, the healthy manager must serve
+        # immediately, and the reconnecting manager's own lock must be free.
+        assert await asyncio.wait_for(manager.get_connection(), timeout=1.0) is existing
+        assert not reconnecting._get_lock().locked(), "reconnect must not hold the handle lock"
+
+        release.set()
+        assert await asyncio.wait_for(waiter, timeout=1.0) is conn
+
+    @pytest.mark.asyncio
+    async def test_waiters_share_one_reconnect_cycle(self) -> None:
+        """Concurrent callers join ONE cycle instead of each running their own.
+
+        Before the fix the k-th queued caller failed only after roughly k full
+        cycles (max_retries attempts plus backoff sleeps each).
+        """
+        from common.db_resilience import AsyncResilientConnection
+
+        attempts = 0
+        release = asyncio.Event()
+
+        async def slow_factory() -> _FakeAsyncConn:
+            nonlocal attempts
+            attempts += 1
+            await release.wait()
+            return _FakeAsyncConn()
+
+        manager: AsyncResilientConnection[_FakeAsyncConn] = AsyncResilientConnection(slow_factory, Mock(return_value=True))
+
+        waiters = [asyncio.create_task(manager.get_connection()) for _ in range(8)]
+        await asyncio.sleep(0)
+        release.set()
+        results = await asyncio.wait_for(asyncio.gather(*waiters), timeout=2.0)
+
+        assert attempts == 1, "one shared reconnect cycle, not one per caller"
+        assert len({id(conn) for conn in results}) == 1
+
+    @pytest.mark.asyncio
+    async def test_cooldown_fails_fast_after_cycle(self) -> None:
+        """A caller arriving right after a failed cycle fails fast."""
+        from common.db_resilience import AsyncResilientConnection, ConnectionEstablishmentError
+
+        factory = Mock(side_effect=RuntimeError("Neo4j is down"))
+        manager: AsyncResilientConnection[object] = AsyncResilientConnection(
+            factory,
+            Mock(return_value=True),
+            max_retries=1,
+            reconnect_cooldown=60.0,
+        )
+
+        with pytest.raises(ConnectionEstablishmentError):
+            await manager.get_connection()
+        assert factory.call_count == 1
+
+        with pytest.raises(ConnectionEstablishmentError, match="reconnect cycle failed"):
+            await manager.get_connection()
+
+        # No second cycle was run — the caller failed fast on the memo.
+        assert factory.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_cooldown_expiry_allows_retry(self) -> None:
+        """Once the cooldown lapses, a caller may run a fresh cycle."""
+        from common.db_resilience import AsyncResilientConnection, ConnectionEstablishmentError
+
+        conn = _FakeAsyncConn()
+        factory = Mock(side_effect=[RuntimeError("Neo4j is down"), conn])
+        manager: AsyncResilientConnection[_FakeAsyncConn] = AsyncResilientConnection(
+            factory,
+            Mock(return_value=True),
+            max_retries=1,
+            reconnect_cooldown=0.0,
+        )
+
+        with pytest.raises(ConnectionEstablishmentError):
+            await manager.get_connection()
+
+        assert await manager.get_connection() is conn
+        assert factory.call_count == 2
+
+
+class TestOutageBackoff:
+    """Tests for the per-message consumer outage throttle (discogsography-rb05)."""
+
+    def test_delay_grows_and_is_capped(self) -> None:
+        from common.outage_backoff import OutageBackoff
+
+        backoff = OutageBackoff("test", initial_delay=1.0, max_delay=8.0, multiplier=2.0)
+
+        assert [backoff.next_delay() for _ in range(6)] == [1.0, 2.0, 4.0, 8.0, 8.0, 8.0]
+        assert backoff.consecutive_failures == 6
+
+    def test_success_resets_the_run(self) -> None:
+        from common.outage_backoff import OutageBackoff
+
+        backoff = OutageBackoff("test", initial_delay=1.0, max_delay=8.0)
+
+        backoff.next_delay()
+        backoff.next_delay()
+        backoff.reset()
+
+        assert backoff.consecutive_failures == 0
+        assert backoff.next_delay() == 1.0
+
+    @pytest.mark.asyncio
+    async def test_wait_sleeps_for_the_delay(self) -> None:
+        """The throttle really sleeps — that wall-clock cost IS the fix.
+
+        Calls the implementation captured at import time, since the suite-wide
+        `fast_outage_backoff` fixture replaces `wait` to keep other tests quick.
+        """
+        from unittest.mock import AsyncMock as _AsyncMock, patch as _patch
+
+        from common.outage_backoff import OutageBackoff
+
+        backoff = OutageBackoff("test", initial_delay=2.5, max_delay=30.0)
+
+        with _patch("asyncio.sleep", new_callable=_AsyncMock) as sleep:
+            delay = await _REAL_OUTAGE_WAIT(backoff)
+
+        assert delay == 2.5
+        sleep.assert_awaited_once_with(2.5)

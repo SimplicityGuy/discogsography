@@ -2116,3 +2116,54 @@ class TestRecoverConsumersClearsTagsBrainzgraphinator:
 
         bg.consumer_tags = {}
         bg.queues = {}
+
+
+class TestOutageRequeueBackoff:
+    """Regression tests for discogsography-rb05 (Neo4j outage → dead-lettering)."""
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)
+    async def test_neo4j_outage_engages_throttle(self, mock_neo4j_driver: MagicMock, sample_artist_record: dict[str, Any]) -> None:
+        """Prefetch here is 200, so an unthrottled outage puts 200 messages on
+        the redelivery treadmill at once and dead-letters them within minutes.
+        """
+        from common.outage_backoff import OutageBackoff
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = dumps(sample_artist_record)
+
+        mock_session = await mock_neo4j_driver.session(database="neo4j").__aenter__()
+        mock_session.execute_write.side_effect = ServiceUnavailable("Neo4j is down")
+        backoff = OutageBackoff("test")
+
+        with (
+            patch("brainzgraphinator.brainzgraphinator.graph", mock_neo4j_driver),
+            patch("brainzgraphinator.brainzgraphinator.outage_backoff", backoff),
+        ):
+            await on_artist_message(mock_message)
+
+        assert backoff.consecutive_failures == 1
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)
+    async def test_driver_unavailable_is_transient(self, mock_neo4j_driver: MagicMock, sample_artist_record: dict[str, Any]) -> None:
+        """DatabaseUnavailableError from the resilience layer is an outage too."""
+        from common.db_resilience import DatabaseUnavailableError
+        from common.outage_backoff import OutageBackoff
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = dumps(sample_artist_record)
+
+        mock_session = await mock_neo4j_driver.session(database="neo4j").__aenter__()
+        mock_session.execute_write.side_effect = DatabaseUnavailableError("circuit open")
+        backoff = OutageBackoff("test")
+
+        with (
+            patch("brainzgraphinator.brainzgraphinator.graph", mock_neo4j_driver),
+            patch("brainzgraphinator.brainzgraphinator.outage_backoff", backoff),
+        ):
+            await on_artist_message(mock_message)
+
+        assert backoff.consecutive_failures == 1
+        mock_message.nack.assert_called_once_with(requeue=True)

@@ -19,7 +19,9 @@ from common import (
     AsyncResilientNeo4jDriver,
     AsyncResilientRabbitMQ,
     BrainzgraphinatorConfig,
+    DatabaseUnavailableError,
     HealthServer,
+    OutageBackoff,
     neo4j_security_kwargs,
     setup_logging,
 )
@@ -41,6 +43,11 @@ last_message_time = {
     "releases": 0.0,
 }
 completed_files: set[str] = set()  # Track which files have completed processing
+
+# Throttles requeues while Neo4j is unavailable, so an outage cannot burn the
+# quorum queue's x-delivery-limit budget and dead-letter valid records
+# (discogsography-rb05).
+outage_backoff = OutageBackoff("brainzgraphinator")
 
 # Consumer management
 consumer_tags: dict[str, str] = {}  # {"artists": "consumer-tag-123", ...}
@@ -652,6 +659,9 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
 
             await message.ack()
 
+            # Neo4j answered — clear the outage backoff.
+            outage_backoff.reset()
+
             # Increment counts only after successful processing and ack
             message_counts[data_type] += 1
             last_message_time[data_type] = time.time()
@@ -660,11 +670,18 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
                     f"📊 Enriched {data_type} in Neo4j",
                     message_counts=message_counts[data_type],
                 )
-        except (ServiceUnavailable, SessionExpired) as e:
+        except (ServiceUnavailable, SessionExpired, DatabaseUnavailableError) as e:
             logger.warning(
                 f"⚠️ Neo4j unavailable, will retry {data_type} message",
                 error=str(e),
             )
+            # Pause before requeueing. The main queues are quorum queues with
+            # x-delivery-limit=20, a budget with no time dimension: requeueing
+            # immediately burns all 20 redeliveries in ~3 minutes and RabbitMQ
+            # dead-letters a perfectly valid record mid-outage. Prefetch here is
+            # 200, so an unthrottled Neo4j outage puts 200 messages on that
+            # treadmill at once (discogsography-rb05).
+            await outage_backoff.wait()
             try:
                 await message.nack(requeue=True)
             except Exception as nack_error:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver

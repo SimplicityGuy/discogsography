@@ -307,3 +307,40 @@ async fn test_new_connection_failure_with_retries() {
     let err_msg = format!("{}", result.err().unwrap());
     assert!(err_msg.contains("Failed to connect to AMQP broker after retries"), "Unexpected error: {}", err_msg);
 }
+
+// ── Publisher-confirm timeout (discogsography-rehd) ────────────────────────────
+
+#[tokio::test]
+async fn test_await_confirm_accepts_ack() {
+    let result = MessageQueue::await_confirm(async { Ok(Confirmation::Ack(None)) }).await;
+    assert!(result.is_ok(), "an acked publish must succeed");
+}
+
+#[tokio::test]
+async fn test_await_confirm_rejects_nack() {
+    let result = MessageQueue::await_confirm(async { Ok(Confirmation::Nack(None)) }).await;
+    let err = result.expect_err("a nacked publish must be an error");
+    assert!(err.to_string().contains("not acknowledged"), "unexpected error: {}", err);
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_await_confirm_times_out_on_stall() {
+    // A broker under a memory / disk_free alarm keeps the connection up while
+    // withholding acks, so the confirm future never resolves. Without a
+    // deadline the publisher task parks forever, the bounded batch channel
+    // fills, the batcher blocks, and the whole per-file pipeline wedges —
+    // SIGTERM cannot break it because the shutdown flag is only polled between
+    // files.
+    let stalled = std::future::pending::<lapin::Result<Confirmation>>();
+
+    let result = MessageQueue::await_confirm(stalled).await;
+
+    let err = result.expect_err("a stalled confirm must time out, not hang");
+    assert!(err.to_string().contains("Timed out"), "unexpected error: {}", err);
+}
+
+#[test]
+fn test_publish_confirm_timeout_is_bounded() {
+    assert!(PUBLISH_CONFIRM_TIMEOUT > Duration::ZERO);
+    assert!(PUBLISH_CONFIRM_TIMEOUT <= Duration::from_secs(60));
+}

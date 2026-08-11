@@ -19,7 +19,9 @@ from common import (
     AsyncPostgreSQLPool,
     AsyncResilientRabbitMQ,
     BrainztableinatorConfig,
+    DatabaseUnavailableError,
     HealthServer,
+    OutageBackoff,
     parse_postgres_host_port,
     setup_logging,
 )
@@ -58,6 +60,11 @@ last_message_time = {
     "releases": 0.0,
 }
 completed_files: set[str] = set()  # Track which files have completed processing
+
+# Throttles requeues while PostgreSQL is unavailable, so an outage cannot burn
+# the quorum queue's x-delivery-limit budget and dead-letter valid records
+# (discogsography-rb05).
+outage_backoff = OutageBackoff("brainztableinator")
 current_task = None
 current_progress = 0.0
 
@@ -872,6 +879,9 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
 
         await message.ack()
 
+        # PostgreSQL answered — clear the outage backoff.
+        outage_backoff.reset()
+
         # Increment counter and update last message time only after successful ack
         if data_type in message_counts:
             message_counts[data_type] += 1
@@ -883,8 +893,14 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                     data_type=data_type,
                 )
 
-    except (InterfaceError, OperationalError) as e:
+    except (InterfaceError, OperationalError, DatabaseUnavailableError) as e:
         logger.warning("⚠️ Database connection issue, will retry", error=str(e))
+        # Pause before requeueing. The main queues are quorum queues with
+        # x-delivery-limit=20 — a budget with no time dimension — so requeueing
+        # immediately spends all 20 redeliveries in ~3 minutes and RabbitMQ
+        # dead-letters a perfectly valid record part-way through a routine
+        # database maintenance window (discogsography-rb05).
+        await outage_backoff.wait()
         await message.nack(requeue=True)
     except DataError as e:
         # Malformed data that deterministically fails a column cast (e.g. a

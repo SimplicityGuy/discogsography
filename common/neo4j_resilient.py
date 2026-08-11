@@ -167,6 +167,9 @@ class AsyncResilientNeo4jDriver(AsyncResilientConnection[Any]):
         if self._lock is None:
             self._lock = asyncio.Lock()
         async with self._lock:
+            # Drivers replaced by a reconnect are closed on a grace timer; an
+            # explicit shutdown closes them now (discogsography-4ajv).
+            await self._drain_deferred_closes()
             if self._connection:
                 try:
                     await self._connection.close()
@@ -175,6 +178,8 @@ class AsyncResilientNeo4jDriver(AsyncResilientConnection[Any]):
                     logger.warning(f"⚠️ Error closing async Neo4j driver: {e}")
                 finally:
                     self._connection = None
+            self._last_healthy_at = 0.0
+            self._failed_probes = 0
 
 
 # Helper function to handle transaction retries

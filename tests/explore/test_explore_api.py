@@ -1180,6 +1180,32 @@ class TestExploreServiceEndpoints:
         """discogsography-cu2.63: the per-request read timeout must be disabled so a
         long-running SSE response isn't aborted just because the upstream goes quiet
         between events for longer than the total request timeout.
+
+        discogsography-gav8: that only applies to the SSE path. The timeout is
+        chosen before the content-type is known, so `read=None` is keyed on the
+        request path instead of being applied to every proxied request.
+        """
+        import httpx
+
+        mock_client = self._mock_buffered_proxy_client(200, b"{}", {"content-type": "application/json"})
+
+        with patch("explore.explore._get_http_client", return_value=mock_client):
+            response = explore_client.post("/api/nlq/query", json={"question": "who?"})
+
+        assert response.status_code == 200
+        _method_args, build_kwargs = mock_client.build_request.call_args
+        timeout = build_kwargs["timeout"]
+        assert isinstance(timeout, httpx.Timeout)
+        assert timeout.read is None
+
+    def test_proxy_bounds_read_on_buffered(self, explore_client: TestClient) -> None:
+        """Regression (discogsography-gav8): buffered paths keep a read deadline.
+
+        Before the fix every proxied request was built with `read=None`, so a
+        stalled-but-connected upstream parked `client.send()`/`aread()` forever:
+        each wedged request pinned an httpx pool connection and a server task
+        with no deadline, and once ~100 accumulated the whole /api/* surface
+        returned 504 while /health still reported healthy.
         """
         import httpx
 
@@ -1192,7 +1218,62 @@ class TestExploreServiceEndpoints:
         _method_args, build_kwargs = mock_client.build_request.call_args
         timeout = build_kwargs["timeout"]
         assert isinstance(timeout, httpx.Timeout)
-        assert timeout.read is None
+        assert timeout.read == 150.0
+        assert timeout.connect == 150.0
+        assert timeout.pool == 150.0
+
+    def test_proxy_read_stall_returns_504(self, explore_client: TestClient) -> None:
+        """A body read that times out is reported as 504, and the response closed.
+
+        The `except httpx.TimeoutException` around `aread()` was dead code while
+        the read timeout was disabled (discogsography-gav8).
+        """
+        import httpx
+
+        mock_client = self._mock_buffered_proxy_client(200, b"{}", {"content-type": "application/json"})
+        proxied = mock_client.send.return_value
+        proxied.aread = AsyncMock(side_effect=httpx.ReadTimeout("body stalled"))
+
+        with patch("explore.explore._get_http_client", return_value=mock_client):
+            response = explore_client.get("/api/autocomplete?q=radio&type=artist")
+
+        assert response.status_code == 504
+        proxied.aclose.assert_awaited_once()
+
+    def test_proxy_closes_response_on_success(self, explore_client: TestClient) -> None:
+        """The pool connection is released on every exit path (try/finally)."""
+        mock_client = self._mock_buffered_proxy_client(200, b"{}", {"content-type": "application/json"})
+        proxied = mock_client.send.return_value
+
+        with patch("explore.explore._get_http_client", return_value=mock_client):
+            response = explore_client.get("/api/autocomplete?q=radio&type=artist")
+
+        assert response.status_code == 200
+        proxied.aclose.assert_awaited_once()
+
+    def test_sse_header_phase_bounded(self, explore_client: TestClient) -> None:
+        """The SSE path bounds the header wait even with read=None.
+
+        httpx's read timeout also covers waiting for response headers, so an
+        upstream that connects and then never responds would otherwise park the
+        request with no deadline at all.
+        """
+        import asyncio
+
+        import httpx
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.build_request = MagicMock(return_value=MagicMock())
+        mock_client.send = AsyncMock(side_effect=TimeoutError)
+
+        with (
+            patch("explore.explore._get_http_client", return_value=mock_client),
+            patch("explore.explore.asyncio.timeout", wraps=asyncio.timeout) as mock_timeout,
+        ):
+            response = explore_client.post("/api/nlq/query", json={"question": "who?"})
+
+        assert response.status_code == 504
+        mock_timeout.assert_called_once_with(150.0)
 
     def test_proxy_timeout_returns_504(self, explore_client: TestClient) -> None:
         """Proxy timeout returns 504 with error message."""

@@ -3170,3 +3170,56 @@ class TestMainFullRun:
             mod.shutdown_requested = original_shutdown
             mod.consumer_cancel_tasks.clear()
             mod.consumer_cancel_tasks.update(original_cancel_tasks)
+
+
+class TestOutageRequeueBackoff:
+    """Regression tests for discogsography-rb05 (mirror of the brainz consumers)."""
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_db_outage_engages_throttle(self, sample_artist_data: dict[str, Any]) -> None:
+        """Non-batch mode must throttle requeues during a PostgreSQL outage."""
+        from psycopg.errors import OperationalError
+
+        from common.outage_backoff import OutageBackoff
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        mock_message.routing_key = "artists"
+
+        mock_pool = MagicMock()
+        mock_pool.connection.side_effect = OperationalError("Database unavailable")
+        backoff = OutageBackoff("test")
+
+        with (
+            patch("tableinator.tableinator.connection_pool", mock_pool),
+            patch("tableinator.tableinator.outage_backoff", backoff),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        assert backoff.consecutive_failures == 1
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_pool_unavailable_is_transient(self, sample_artist_data: dict[str, Any]) -> None:
+        """The pool's own DatabaseUnavailableError is an outage, not a poison record."""
+        from common.db_resilience import DatabaseUnavailableError
+        from common.outage_backoff import OutageBackoff
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        mock_message.routing_key = "artists"
+
+        mock_pool = MagicMock()
+        mock_pool.connection.side_effect = DatabaseUnavailableError("circuit open")
+        backoff = OutageBackoff("test")
+
+        with (
+            patch("tableinator.tableinator.connection_pool", mock_pool),
+            patch("tableinator.tableinator.outage_backoff", backoff),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        assert backoff.consecutive_failures == 1
+        mock_message.nack.assert_called_once_with(requeue=True)

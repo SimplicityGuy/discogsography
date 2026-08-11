@@ -108,6 +108,24 @@ class PostgreSQLBatchProcessor:
         # simultaneously and exhausting the PostgreSQL connection pool
         self._flush_semaphore: asyncio.Semaphore | None = None
 
+        # Batches of each data type currently popped from the deque but not yet
+        # written/acked. A popped batch lives in a task-local list, so queue
+        # depth alone is blind to it (discogsography-uo8g).
+        self._in_flight: dict[str, int] = {
+            "artists": 0,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+
+        # Per-data-type flush mutex — serializes flushes of the SAME data type.
+        # The locks are created lazily (never in __init__) because an
+        # asyncio.Lock binds to the event loop running at creation time.
+        # Without this, two flushes of one data type interleave and a healthy
+        # batch's success path resets _consecutive_failures, defeating the
+        # bounded poison guard forever (discogsography-2sm3).
+        self._flush_locks: dict[str, asyncio.Lock] = {}
+
         # Adaptive batch sizing — reduces under PostgreSQL pressure, recovers on success
         # Per-data-type so pressure on one type doesn't affect others
         self._effective_batch_size: dict[str, int] = {
@@ -225,11 +243,62 @@ class PostgreSQLBatchProcessor:
 
         return True
 
+    def _get_flush_lock(self, data_type: str) -> asyncio.Lock:
+        """Return the per-data-type flush mutex, creating it lazily.
+
+        An asyncio.Lock binds to the running event loop at creation time, so it
+        must never be created in __init__ or at module scope.
+        """
+        lock = self._flush_locks.get(data_type)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._flush_locks[data_type] = lock
+        return lock
+
+    async def _wait_for_in_flight(self, data_type: str) -> None:
+        """Block until no batch of this data type is mid-write.
+
+        _flush_queue pops its batch into a task-local list before awaiting the
+        database, so an empty deque does NOT mean this type's writes are
+        committed. The per-type flush mutex is held for the whole
+        pop -> write -> ack cycle, so acquiring it gives callers the
+        happens-before edge they need (discogsography-uo8g).
+        """
+        async with self._get_flush_lock(data_type):
+            return
+
     async def _flush_queue(self, data_type: str) -> None:
+        """Flush one batch for a data type, serialized against other flushes of it.
+
+        Concurrent callers for the SAME data type queue on a per-type mutex.
+        Serializing them is what makes the bounded poison guard work: a failed
+        poison batch is re-enqueued at the FRONT of the deque, so the next flush
+        of that type necessarily re-includes it and increments
+        _consecutive_failures. Without the mutex, a concurrently in-flight
+        healthy batch could succeed and reset the counter to zero, so the DLQ
+        nack branch never fired and the poison batch retried forever
+        (discogsography-2sm3).
+
+        Args:
+            data_type: The data type queue to flush
+        """
+        if not self.queues[data_type]:
+            return
+
+        async with self._get_flush_lock(data_type):
+            self._in_flight[data_type] += 1
+            try:
+                await self._flush_queue_locked(data_type)
+            finally:
+                self._in_flight[data_type] -= 1
+
+    async def _flush_queue_locked(self, data_type: str) -> None:
         """Flush a queue by processing all pending messages.
 
         Uses a semaphore to limit concurrent PostgreSQL operations across data types,
         exponential backoff on PostgreSQL errors, and adaptive batch sizing.
+
+        The caller MUST hold this data type's flush lock.
 
         Args:
             data_type: The data type queue to flush
@@ -552,7 +621,14 @@ class PostgreSQLBatchProcessor:
             return as a completed file.
         """
         retries = 0
-        while self.queues.get(data_type):
+        while True:
+            # A concurrent flush may hold a popped batch that is still being
+            # written. Wait it out BEFORE judging the queue empty, or this
+            # returns while writes for this data type are still landing
+            # (discogsography-uo8g).
+            await self._wait_for_in_flight(data_type)
+            if not self.queues.get(data_type):
+                return True
             prev_len = len(self.queues[data_type])
             wait = self._backoff_until[data_type] - time.time()
             if wait > 0:
@@ -571,7 +647,6 @@ class PostgreSQLBatchProcessor:
                     max_retries=self.config.max_flush_retries,
                 )
                 return False
-        return True
 
     async def periodic_flush(self) -> None:
         """Background task that periodically flushes queues.
@@ -600,6 +675,7 @@ class PostgreSQLBatchProcessor:
             "processed": self.processed_counts.copy(),
             "batches": self.batch_counts.copy(),
             "pending": {k: len(v) for k, v in self.queues.items()},
+            "in_flight": self._in_flight.copy(),
             "effective_batch_size": self._effective_batch_size.copy(),
             "configured_batch_size": self.config.batch_size,
             "consecutive_failures": self._consecutive_failures.copy(),

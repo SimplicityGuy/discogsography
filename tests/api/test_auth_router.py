@@ -38,6 +38,20 @@ def _make_encrypted_totp_secret() -> tuple[str, str]:
     return secret, encrypted
 
 
+def _challenge_only_get(value: str = TEST_USER_ID) -> AsyncMock:
+    """Build a redis.get mock that answers ONLY the 2fa_challenge key.
+
+    A blanket truthy get() also answers `revoked:jti:*` and
+    `password_changed:*`, which the challenge-staleness guard added for
+    discogsography-jxmn then (correctly) treats as an invalidated challenge.
+    """
+
+    async def _get(key: str) -> str | None:
+        return value if key.startswith("2fa_challenge:") else None
+
+    return AsyncMock(side_effect=_get)
+
+
 class TestResetRequest:
     """Tests for POST /api/auth/reset-request."""
 
@@ -566,7 +580,7 @@ class TestTwoFactorVerifyFull:
         secret, encrypted_secret = _make_encrypted_totp_secret()
         challenge_token = _make_challenge_token()
 
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.delete = AsyncMock()
         mock_cur.fetchone = AsyncMock(
@@ -604,7 +618,7 @@ class TestTwoFactorVerifyFull:
         _secret, encrypted_secret = _make_encrypted_totp_secret()
         challenge_token = _make_challenge_token()
 
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_cur.fetchone = AsyncMock(
             return_value={
@@ -641,7 +655,7 @@ class TestTwoFactorVerifyFull:
         _secret, encrypted_secret = _make_encrypted_totp_secret()
         challenge_token = _make_challenge_token()
 
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         # locked_until is in the future
         locked_until = datetime.now(UTC) + timedelta(minutes=10)
@@ -694,7 +708,7 @@ class TestTwoFactorVerifyFull:
         _secret, encrypted_secret = _make_encrypted_totp_secret()
         challenge_token = _make_challenge_token()
 
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_cur.fetchone = AsyncMock(
             return_value={
@@ -756,7 +770,7 @@ class TestTwoFactorRecoveryFull:
         plaintext_codes, hashed_codes = self._make_recovery_setup()
         challenge_token = _make_challenge_token()
 
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.delete = AsyncMock()
         mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps(hashed_codes)})
@@ -780,7 +794,7 @@ class TestTwoFactorRecoveryFull:
         _plaintext_codes, _hashed_codes = self._make_recovery_setup()
         challenge_token = _make_challenge_token()
 
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         # The atomic UPDATE ... WHERE totp_recovery_codes ? %s matches no row for
         # an unknown code, so RETURNING yields nothing (fetchone -> None).
@@ -808,7 +822,7 @@ class TestTwoFactorRecoveryFull:
         last_hashed = [hash_recovery_code(last_code)]
         challenge_token = _make_challenge_token()
 
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_redis.delete = AsyncMock()
         # After the atomic UPDATE removes the last code, RETURNING yields an empty array.
@@ -834,7 +848,7 @@ class TestTwoFactorRecoveryFull:
         """No recovery codes stored should return 401."""
         challenge_token = _make_challenge_token()
 
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         # No stored codes -> the guarded UPDATE matches no row -> RETURNING None.
         mock_cur.fetchone = AsyncMock(return_value=None)
@@ -854,7 +868,7 @@ class TestTwoFactorRecoveryFull:
         """No user row should return 401."""
         challenge_token = _make_challenge_token()
 
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_cur.fetchone = AsyncMock(return_value=None)
 
@@ -1142,7 +1156,7 @@ class TestTwoFactorVerifyEdgeCases:
         secret, encrypted_secret = _make_encrypted_totp_secret()
         token = _make_challenge_token()
 
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         # getdel returns None — another request consumed the challenge between the
         # existence check and this success-path consume.
         mock_redis.getdel = AsyncMock(return_value=None)
@@ -1286,7 +1300,7 @@ class TestTwoFactorStateMachineRegressions:
         _secret, encrypted_secret = _make_encrypted_totp_secret()
         challenge_token = _make_challenge_token()
 
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_cur.fetchone = AsyncMock(return_value={"totp_secret": encrypted_secret, "totp_failed_attempts": 0, "totp_locked_until": None})
 
@@ -1314,7 +1328,7 @@ class TestTwoFactorStateMachineRegressions:
         _secret, encrypted_secret = _make_encrypted_totp_secret()
         challenge_token = _make_challenge_token()
 
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_cur.fetchone = AsyncMock(return_value={"totp_secret": encrypted_secret, "totp_failed_attempts": 0, "totp_locked_until": None})
 
@@ -1344,7 +1358,7 @@ class TestTwoFactorStateMachineRegressions:
         challenge_token = _make_challenge_token()
 
         past = datetime.now(UTC) - timedelta(minutes=1)
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         mock_cur.fetchone = AsyncMock(return_value={"totp_secret": encrypted_secret, "totp_failed_attempts": 5, "totp_locked_until": past})
 
@@ -1373,7 +1387,7 @@ class TestTwoFactorStateMachineRegressions:
         plaintext_codes, _hashed_codes = generate_recovery_codes()
         challenge_token = _make_challenge_token()
 
-        mock_redis.get = AsyncMock(return_value=TEST_USER_ID)
+        mock_redis.get = _challenge_only_get()
         mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
         # RETURNING yields the array after the used code was removed atomically.
         mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps([])})
@@ -1470,3 +1484,195 @@ class TestChangePassword:
         )
         assert response.status_code == 404
         assert response.json()["detail"] == "User not found"
+
+
+class TestChallengeSurvivesPasswordChange:
+    """Regression tests for discogsography-jxmn (2FA challenge outlives a reset)."""
+
+    @staticmethod
+    def _redis_with_password_change(changed_at: int) -> AsyncMock:
+        """redis.get answering both the challenge key and password_changed."""
+
+        async def _get(key: str) -> str | None:
+            if key.startswith("2fa_challenge:"):
+                return TEST_USER_ID
+            if key == f"password_changed:{TEST_USER_ID}":
+                return str(changed_at)
+            return None
+
+        redis = AsyncMock()
+        redis.get = AsyncMock(side_effect=_get)
+        redis.getdel = AsyncMock(return_value=TEST_USER_ID)
+        redis.setex = AsyncMock()
+        redis.delete = AsyncMock()
+        return redis
+
+    def test_verify_rejects_stale_challenge(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """A challenge minted before a password reset must not mint a token.
+
+        The attacker knows the old password (the exact scenario a reset
+        remediates) and holds a phished TOTP code. Before the fix, the challenge
+        stayed redeemable for its full 5-minute TTL and the token it minted had
+        an `iat` AFTER the password_changed marker, so it validated forever.
+        """
+        secret, encrypted_secret = _make_encrypted_totp_secret()
+        issued_at = int(datetime.now(UTC).timestamp()) - 60
+        challenge_token = create_challenge_token(TEST_USER_ID, TEST_USER_EMAIL, TEST_JWT_SECRET, issued_at=issued_at)
+
+        stale = self._redis_with_password_change(issued_at + 10)
+        mock_redis.get = stale.get
+        mock_redis.getdel = stale.getdel
+        mock_cur.fetchone = AsyncMock(
+            return_value={
+                "totp_secret": encrypted_secret,
+                "totp_failed_attempts": 0,
+                "totp_locked_until": None,
+            }
+        )
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/verify",
+                json={"challenge_token": challenge_token, "code": pyotp.TOTP(secret).now()},
+            )
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Challenge invalidated by password change"
+        mock_redis.getdel.assert_not_awaited()
+
+    def test_verify_rejects_same_second_change(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """Inclusive comparison: same-second change still invalidates (CLAUDE.md)."""
+        secret, encrypted_secret = _make_encrypted_totp_secret()
+        issued_at = int(datetime.now(UTC).timestamp()) - 30
+        challenge_token = create_challenge_token(TEST_USER_ID, TEST_USER_EMAIL, TEST_JWT_SECRET, issued_at=issued_at)
+
+        stale = self._redis_with_password_change(issued_at)
+        mock_redis.get = stale.get
+        mock_redis.getdel = stale.getdel
+        mock_cur.fetchone = AsyncMock(
+            return_value={
+                "totp_secret": encrypted_secret,
+                "totp_failed_attempts": 0,
+                "totp_locked_until": None,
+            }
+        )
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/verify",
+                json={"challenge_token": challenge_token, "code": pyotp.TOTP(secret).now()},
+            )
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 401
+
+    def test_recovery_rejects_pre_change_challenge(
+        self,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """The recovery-code path carries the identical defect and fix."""
+        issued_at = int(datetime.now(UTC).timestamp()) - 60
+        challenge_token = create_challenge_token(TEST_USER_ID, TEST_USER_EMAIL, TEST_JWT_SECRET, issued_at=issued_at)
+
+        stale = self._redis_with_password_change(issued_at + 10)
+        mock_redis.get = stale.get
+        mock_redis.getdel = stale.getdel
+
+        response = test_client.post(
+            "/api/auth/2fa/recovery",
+            json={"challenge_token": challenge_token, "code": "AAAA-BBBB"},
+        )
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Challenge invalidated by password change"
+
+    def test_verify_token_uses_challenge_iat(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """The minted access token carries the challenge's iat, not `now`.
+
+        Otherwise a password change landing between the staleness check and the
+        mint would produce a token the marker can never invalidate.
+        """
+        from api.auth import decode_token
+
+        secret, encrypted_secret = _make_encrypted_totp_secret()
+        issued_at = int(datetime.now(UTC).timestamp()) - 120
+        challenge_token = create_challenge_token(TEST_USER_ID, TEST_USER_EMAIL, TEST_JWT_SECRET, issued_at=issued_at)
+
+        mock_redis.get = _challenge_only_get()
+        mock_redis.getdel = AsyncMock(return_value=TEST_USER_ID)
+        mock_cur.fetchone = AsyncMock(
+            return_value={
+                "totp_secret": encrypted_secret,
+                "totp_failed_attempts": 0,
+                "totp_locked_until": None,
+            }
+        )
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/verify",
+                json={"challenge_token": challenge_token, "code": pyotp.TOTP(secret).now()},
+            )
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 200
+        minted = decode_token(response.json()["access_token"], TEST_JWT_SECRET)
+        assert minted["iat"] == issued_at
+
+    def test_login_token_iat_precedes_password_read(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+    ) -> None:
+        """The login mint is stamped before hashed_password is read.
+
+        PBKDF2 verification takes ~100ms; a password change committing inside
+        that window must invalidate the token it produces.
+        """
+        from api.auth import _hash_password, decode_token
+
+        before = int(datetime.now(UTC).timestamp())
+        mock_cur.fetchone = AsyncMock(
+            return_value={
+                "id": TEST_USER_ID,
+                "email": TEST_USER_EMAIL,
+                "hashed_password": _hash_password("testpassword"),
+                "is_active": True,
+                "totp_enabled": False,
+            }
+        )
+
+        response = test_client.post(
+            "/api/auth/login",
+            json={"email": TEST_USER_EMAIL, "password": "testpassword"},
+        )
+
+        assert response.status_code == 200
+        minted = decode_token(response.json()["access_token"], TEST_JWT_SECRET)
+        assert minted["iat"] <= before

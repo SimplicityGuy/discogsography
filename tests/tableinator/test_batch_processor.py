@@ -1677,3 +1677,155 @@ class TestFlushQueuePublicMethod:
             mock_sleep.assert_called_once()
             wait_arg = mock_sleep.call_args[0][0]
             assert wait_arg > 0
+
+
+class TestSameTypeFlushSerialization:
+    """Regression (discogsography-2sm3): flushes of one data type are serialized."""
+
+    @pytest.mark.asyncio
+    async def test_flush_locks_are_created_lazily(self) -> None:
+        """asyncio.Lock must never be built in __init__ (wrong event loop)."""
+        processor = PostgreSQLBatchProcessor(MagicMock())
+
+        assert processor._flush_locks == {}
+
+        lock = processor._get_flush_lock("artists")
+
+        assert isinstance(lock, asyncio.Lock)
+        assert processor._get_flush_lock("artists") is lock
+
+    @pytest.mark.asyncio
+    async def test_concurrent_success_cannot_reset_poison(self) -> None:
+        """Regression (discogsography-2sm3): a concurrent healthy flush of the
+        SAME data type must not reset the poison counter.
+
+        Before the fix, `_flush_queue` had no per-data-type mutex. A failed
+        poison batch was re-enqueued at the FRONT of the deque while another
+        in-flight flush of the same type — which popped healthy messages from
+        behind it — completed afterwards and reset `_consecutive_failures` to 0.
+        The bounded poison guard therefore never reached `max_poison_retries`,
+        so the poison batch was never dead-lettered and its deliveries pinned
+        the prefetch window forever.
+        """
+        config = BatchConfig(
+            batch_size=1,
+            min_batch_size=1,
+            max_poison_retries=3,
+            backoff_initial=0.0,
+        )
+        processor = PostgreSQLBatchProcessor(MagicMock(), config=config)
+
+        async def process(_data_type: str, messages: list[PendingMessage]) -> None:
+            # Yield so concurrent flushes genuinely interleave.
+            await asyncio.sleep(0)
+            if any(msg.data_id == "poison" for msg in messages):
+                raise ValueError("invalid jsonb")
+
+        processor._process_batch = AsyncMock(side_effect=process)  # type: ignore[method-assign]
+
+        acked: list[str] = []
+        nacked: list[str] = []
+
+        def make_msg(data_id: str) -> PendingMessage:
+            async def ack() -> None:
+                acked.append(data_id)
+
+            async def nack() -> None:
+                nacked.append(data_id)
+
+            return PendingMessage(
+                data_type="artists",
+                data_id=data_id,
+                data={"id": data_id},
+                sha256="h",
+                ack_callback=ack,
+                nack_callback=nack,
+            )
+
+        processor.queues["artists"].append(make_msg("poison"))
+        for i in range(20):
+            processor.queues["artists"].append(make_msg(f"healthy-{i}"))
+
+        # Twelve concurrent flushes of the SAME data type — exactly the
+        # interleaving aio-pika's task-per-delivery model produces.
+        await asyncio.gather(*[processor._flush_queue("artists") for _ in range(12)])
+
+        assert nacked == ["poison"], "poison batch must reach the DLQ nack path"
+        assert "poison" not in acked
+
+
+class TestDrainWaitsForInFlight:
+    """Regression tests for discogsography-uo8g (drain blind to popped batches)."""
+
+    @staticmethod
+    def _msg(data_id: str) -> PendingMessage:
+        return PendingMessage(
+            data_type="artists",
+            data_id=data_id,
+            data={"id": data_id},
+            sha256="h",
+            ack_callback=AsyncMock(),
+            nack_callback=AsyncMock(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_in_flight_tracked_while_writing(self) -> None:
+        """A popped-but-unwritten batch is counted, not invisible."""
+        config = BatchConfig(batch_size=1, min_batch_size=1, backoff_initial=0.0)
+        processor = PostgreSQLBatchProcessor(MagicMock(), config=config)
+
+        writing = asyncio.Event()
+        release = asyncio.Event()
+
+        async def process(_data_type: str, _messages: list[PendingMessage]) -> None:
+            writing.set()
+            await release.wait()
+
+        processor._process_batch = AsyncMock(side_effect=process)  # type: ignore[method-assign]
+        processor.queues["artists"].append(self._msg("1"))
+
+        flush = asyncio.create_task(processor._flush_queue("artists"))
+        await asyncio.wait_for(writing.wait(), timeout=1.0)
+
+        assert not processor.queues["artists"]
+        assert processor._in_flight["artists"] == 1
+        assert processor.get_stats()["in_flight"]["artists"] == 1
+
+        release.set()
+        await asyncio.wait_for(flush, timeout=1.0)
+        assert processor._in_flight["artists"] == 0
+
+    @pytest.mark.asyncio
+    async def test_drain_blocks_on_in_flight_batch(self) -> None:
+        """flush_queue must not report drained while a write is still landing.
+
+        tableinator's `file_complete` handler treats a True return as "every
+        row for this file is committed" (discogsography-uo8g).
+        """
+        config = BatchConfig(batch_size=1, min_batch_size=1, backoff_initial=0.0)
+        processor = PostgreSQLBatchProcessor(MagicMock(), config=config)
+
+        writing = asyncio.Event()
+        release = asyncio.Event()
+        completed: list[str] = []
+
+        async def process(_data_type: str, _messages: list[PendingMessage]) -> None:
+            writing.set()
+            await release.wait()
+            completed.append("write")
+
+        processor._process_batch = AsyncMock(side_effect=process)  # type: ignore[method-assign]
+        processor.queues["artists"].append(self._msg("1"))
+
+        in_flight_flush = asyncio.create_task(processor._flush_queue("artists"))
+        await asyncio.wait_for(writing.wait(), timeout=1.0)
+
+        drain = asyncio.create_task(processor.flush_queue("artists"))
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert not drain.done(), "drain returned while a batch was still in flight"
+
+        release.set()
+        assert await asyncio.wait_for(drain, timeout=1.0) is True
+        await asyncio.wait_for(in_flight_flush, timeout=1.0)
+        assert completed == ["write"], "the write must complete before the drain returns"
