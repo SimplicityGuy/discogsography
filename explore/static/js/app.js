@@ -466,8 +466,17 @@ class ExploreApp {
         }
 
         // If we just logged out and were on a personal pane, switch to explore
-        if (!loggedIn && ['collection', 'wantlist', 'recommendations'].includes(this.activePane)) {
+        if (!loggedIn && ['collection', 'wantlist', 'recommendations', 'gaps', 'settings'].includes(this.activePane)) {
             this._switchPane('explore');
+        }
+
+        // Clear personal data rendered into login-gated panes so it isn't left
+        // on screen after logout (e.g. on a shared/kiosk machine).
+        if (!loggedIn) {
+            const settingsEmailEl = document.getElementById('settingsEmail');
+            if (settingsEmailEl) settingsEmailEl.textContent = '';
+            const gapsBodyEl = document.getElementById('gapsBody');
+            if (gapsBodyEl) gapsBodyEl.replaceChildren();
         }
     }
 

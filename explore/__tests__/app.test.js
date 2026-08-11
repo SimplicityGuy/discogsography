@@ -868,6 +868,80 @@ describe('ExploreApp helper methods', () => {
 
             expect(app.activePane).toBe('explore');
         });
+
+        it('should switch to explore pane when logged out on the gaps pane', () => {
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            window.authManager.getUser.mockReturnValue(null);
+            window.authManager.getDiscogsStatus.mockReturnValue(null);
+
+            const app = new ExploreApp();
+            app.activePane = 'gaps';
+            app._updateAuthUI();
+
+            expect(app.activePane).toBe('explore');
+        });
+
+        it('should switch to explore pane when logged out on the settings pane', () => {
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            window.authManager.getUser.mockReturnValue(null);
+            window.authManager.getDiscogsStatus.mockReturnValue(null);
+
+            const app = new ExploreApp();
+            app.activePane = 'settings';
+            app._updateAuthUI();
+
+            expect(app.activePane).toBe('explore');
+        });
+
+        it('should clear rendered settings email on logout', () => {
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            window.authManager.getUser.mockReturnValue(null);
+            window.authManager.getDiscogsStatus.mockReturnValue(null);
+
+            const settingsEmailEl = document.createElement('div');
+            settingsEmailEl.id = 'settingsEmail';
+            settingsEmailEl.textContent = 'alice@example.com';
+            document.body.appendChild(settingsEmailEl);
+
+            const app = new ExploreApp();
+            app.activePane = 'settings';
+            app._updateAuthUI();
+
+            expect(document.getElementById('settingsEmail').textContent).toBe('');
+        });
+
+        it('should clear rendered gaps body content on logout', () => {
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            window.authManager.getUser.mockReturnValue(null);
+            window.authManager.getDiscogsStatus.mockReturnValue(null);
+
+            const gapsBodyEl = document.createElement('div');
+            gapsBodyEl.id = 'gapsBody';
+            gapsBodyEl.innerHTML = '<p>Some personal gap analysis</p>';
+            document.body.appendChild(gapsBodyEl);
+
+            const app = new ExploreApp();
+            app.activePane = 'gaps';
+            app._updateAuthUI();
+
+            expect(document.getElementById('gapsBody').textContent).toBe('');
+        });
+
+        it('should not touch settingsEmail/gapsBody while still logged in', () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            window.authManager.getUser.mockReturnValue({ email: 'alice@example.com' });
+            window.authManager.getDiscogsStatus.mockReturnValue({ connected: false });
+
+            const settingsEmailEl = document.createElement('div');
+            settingsEmailEl.id = 'settingsEmail';
+            settingsEmailEl.textContent = 'alice@example.com';
+            document.body.appendChild(settingsEmailEl);
+
+            const app = new ExploreApp();
+            app._updateAuthUI();
+
+            expect(document.getElementById('settingsEmail').textContent).toBe('alice@example.com');
+        });
     });
 
     describe('ExploreApp._updateAuthUI - Discogs connected', () => {
