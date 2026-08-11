@@ -783,7 +783,15 @@ async def twofa_recovery(request: Request, body: TwoFactorRecoveryModel) -> JSON
     )
 
     # Recovery code redeemed — now consume the challenge so it cannot be replayed.
-    await _redis.getdel(challenge_key)
+    # getdel is atomic, so concurrent requests replaying the same challenge
+    # (with different recovery codes) race here and exactly one wins; the
+    # loser must be rejected — mirrors twofa_verify's identical check
+    # (discogsography-kqw4). The recovery code redeemed above is *not*
+    # un-spent on this path; that's an accepted, bounded trade (same one
+    # twofa_verify's loser already takes on its TOTP code).
+    consumed = await _redis.getdel(challenge_key)
+    if not consumed:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Challenge expired or already used")
 
     # Issue access token, stamped with the CHALLENGE's iat (see twofa_verify).
     access_token, expires_in = _create_access_token_fn(user_id, email, issued_at=payload.get("iat"))

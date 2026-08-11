@@ -891,6 +891,34 @@ class TestTwoFactorRecoveryFull:
         assert "totp_failed_attempts = 0" in executed
         assert "totp_locked_until = NULL" in executed
 
+    def test_recovery_getdel_race_returns_401(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """discogsography-kqw4: a concurrent request that already consumed the
+        challenge (getdel -> None) must reject this one with 401, mirroring
+        twofa_verify's identical check. Previously the getdel return value was
+        discarded entirely, so a single challenge token backed by two
+        recovery codes could mint two independent access tokens."""
+        plaintext_codes, hashed_codes = self._make_recovery_setup()
+        challenge_token = _make_challenge_token()
+
+        mock_redis.get = _challenge_only_get()
+        # getdel returns None — another concurrent request already consumed
+        # this challenge (e.g. via a parallel twofa_verify or twofa_recovery
+        # call) between the existence check and this consume.
+        mock_redis.getdel = AsyncMock(return_value=None)
+        mock_cur.fetchone = AsyncMock(return_value={"totp_recovery_codes": json.dumps(hashed_codes)})
+
+        response = test_client.post(
+            "/api/auth/2fa/recovery",
+            json={"challenge_token": challenge_token, "code": plaintext_codes[0]},
+        )
+        assert response.status_code == 401
+        assert "Challenge expired or already used" in response.json()["detail"]
+
     def test_recovery_invalid_code_returns_401(
         self,
         test_client: TestClient,
