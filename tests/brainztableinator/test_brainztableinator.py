@@ -550,6 +550,137 @@ class TestInsertExternalLinks:
 
 
 # ===========================================================================
+# Present-but-null field coalescing (discogsography-iud5)
+# ===========================================================================
+
+
+class TestNullFieldCoalescing:
+    """The extractor's json! macro always emits every key it knows about, so a field
+    the MusicBrainz dump omits arrives as an explicit null rather than an absent key.
+    dict.get(key, default) then returns None and the default is dead code — NULL was
+    written where FALSE/[] was intended, and ON CONFLICT DO UPDATE overwrote
+    previously-correct values with those nulls on reprocessing."""
+
+    @pytest.mark.asyncio
+    async def test_null_relationship_ended_stores_false(self):
+        mock_conn, mock_cursor = _make_mock_conn()
+        rels = [
+            {
+                "target_mbid": "target-mbid-1",
+                "target_type": "artist",
+                "type": "member of band",
+                "ended": None,
+                "attributes": None,
+            }
+        ]
+
+        await _insert_relationships(mock_conn, "source-mbid-1", "artist", rels)
+
+        row = mock_cursor.executemany.call_args[0][1][0]
+        # ended is the last bound column; a column DEFAULT does not apply to an
+        # explicitly supplied NULL, so WHERE NOT ended would have dropped this row.
+        assert row[-1] is False
+
+    @pytest.mark.asyncio
+    async def test_null_relationship_attributes_stores_empty_array(self):
+        mock_conn, mock_cursor = _make_mock_conn()
+        rels = [
+            {
+                "target_mbid": "target-mbid-1",
+                "target_type": "artist",
+                "type": "member of band",
+                "attributes": None,
+            }
+        ]
+
+        await _insert_relationships(mock_conn, "source-mbid-1", "artist", rels)
+
+        row = mock_cursor.executemany.call_args[0][1][0]
+        # Jsonb(None) dumps the jsonb SCALAR null, on which jsonb_array_length errors.
+        assert row[5].obj == []
+
+    @pytest.mark.asyncio
+    async def test_null_artist_life_span_ended_stores_false(self):
+        mock_conn, mock_cursor = _make_mock_conn()
+        record = {
+            "mbid": "artist-mbid-1",
+            "name": "Test Artist",
+            "life_span": {"begin": None, "end": None, "ended": None},
+            "aliases": None,
+            "tags": None,
+        }
+
+        await process_artist(mock_conn, record)
+
+        params = mock_cursor.execute.call_args[0][1]
+        # (mbid, name, sort_name, mb_type, gender, begin_date, end_date, ended, ...)
+        assert params[7] is False
+        assert params[13].obj == []  # aliases
+        assert params[14].obj == []  # tags
+
+    @pytest.mark.asyncio
+    async def test_null_label_life_span_ended_stores_false(self):
+        mock_conn, mock_cursor = _make_mock_conn()
+        record = {
+            "mbid": "label-mbid-1",
+            "name": "Test Label",
+            "life_span": {"begin": None, "end": None, "ended": None},
+        }
+
+        await process_label(mock_conn, record)
+
+        params = mock_cursor.execute.call_args[0][1]
+        # (mbid, name, mb_type, label_code, begin_date, end_date, ended, ...)
+        assert params[6] is False
+
+    @pytest.mark.asyncio
+    async def test_entirely_null_life_span_is_tolerated(self):
+        """A null life_span object itself must not raise (it is emitted as a dict today,
+        but the guard is what keeps a schema change from crashing the consumer)."""
+        mock_conn, mock_cursor = _make_mock_conn()
+
+        await process_artist(mock_conn, {"mbid": "artist-mbid-2", "name": "Test", "life_span": None})
+
+        params = mock_cursor.execute.call_args[0][1]
+        assert params[5] is None  # begin_date
+        assert params[6] is None  # end_date
+        assert params[7] is False  # ended
+
+    @pytest.mark.asyncio
+    async def test_null_release_group_secondary_types_stores_empty_array(self):
+        mock_conn, mock_cursor = _make_mock_conn()
+
+        await process_release_group(
+            mock_conn,
+            {"mbid": "rg-mbid-1", "name": "Test RG", "secondary_types": None},
+        )
+
+        params = mock_cursor.execute.call_args[0][1]
+        assert params[3].obj == []
+
+    @pytest.mark.asyncio
+    async def test_real_values_are_preserved(self):
+        """Coalescing must not flatten genuine values."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        record = {
+            "mbid": "artist-mbid-3",
+            "name": "Ended Artist",
+            "life_span": {"begin": "1960", "end": "1970", "ended": True},
+            "aliases": ["a"],
+            "tags": ["rock"],
+        }
+
+        await process_artist(mock_conn, record)
+
+        params = mock_cursor.execute.call_args[0][1]
+        assert params[5] == "1960"
+        assert params[6] == "1970"
+        assert params[7] is True
+        assert params[13].obj == ["a"]
+        assert params[14].obj == ["rock"]
+
+
+# ===========================================================================
 # Prefetch / pool-coupling tests
 # ===========================================================================
 
