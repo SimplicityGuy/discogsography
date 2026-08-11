@@ -1455,10 +1455,45 @@ class TestNeo4jSecurityKwargs:
             monkeypatch.setenv("NEO4J_TLS_ENABLED", value)
             assert neo4j_security_kwargs() != {}
 
-    def test_non_true_values_stay_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        for value in ["1", "yes", "on", ""]:
+    def test_enabled_accepts_permissive_truthy_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """NEO4J_TLS_ENABLED uses the same permissive vocabulary as CACHE_WARMING_ENABLED.
+
+        Regression for discogsography-d9tu: an operator spelling "enable" as "1" or "yes"
+        must actually turn TLS on instead of silently staying plaintext.
+        """
+        for value in ["1", "yes", "YES", " 1 "]:
+            monkeypatch.setenv("NEO4J_TLS_ENABLED", value)
+            assert neo4j_security_kwargs() != {}
+
+    def test_unrecognized_values_stay_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for value in ["on", ""]:
             monkeypatch.setenv("NEO4J_TLS_ENABLED", value)
             assert neo4j_security_kwargs() == {}
+
+    def test_verify_default_secure_on_unrecognized_truthy_spellings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """NEO4J_TLS_VERIFY fails CLOSED (verification stays on) for any non-falsey spelling.
+
+        Regression for discogsography-d9tu: an operator who types "1"/"yes"/"on" meaning
+        "yes, verify" must get TrustSystemCAs(), not silently land on TrustAll().
+        """
+        from neo4j import TrustSystemCAs
+
+        monkeypatch.setenv("NEO4J_TLS_ENABLED", "true")
+        for value in ["1", "yes", "on", "True ", "TRUE"]:
+            monkeypatch.setenv("NEO4J_TLS_VERIFY", value)
+            kwargs = neo4j_security_kwargs()
+            assert kwargs["encrypted"] is True
+            assert isinstance(kwargs["trusted_certificates"], TrustSystemCAs)
+
+    def test_verify_explicit_falsey_tokens_disable_verification(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from neo4j import TrustAll
+
+        monkeypatch.setenv("NEO4J_TLS_ENABLED", "true")
+        for value in ["false", "FALSE", "0", "no", " false "]:
+            monkeypatch.setenv("NEO4J_TLS_VERIFY", value)
+            kwargs = neo4j_security_kwargs()
+            assert kwargs["encrypted"] is True
+            assert isinstance(kwargs["trusted_certificates"], TrustAll)
 
 
 class TestParsePostgresHostPort:
