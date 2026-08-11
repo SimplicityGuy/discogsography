@@ -143,8 +143,18 @@ def test_main_no_args_prints_help_and_exits(monkeypatch: pytest.MonkeyPatch) -> 
     assert exc.value.code == 1
 
 
-def test_main_short_password_exits(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    _run_main(monkeypatch, ["--email", "a@example.com", "--password", "short"])
+def test_main_rejects_password_as_cli_argument(monkeypatch: pytest.MonkeyPatch) -> None:
+    """discogsography-dir0: --password must not exist as a CLI flag at all —
+    argparse must reject it rather than silently accepting a leaky argument."""
+    _run_main(monkeypatch, ["--email", "a@example.com", "--password", "longenoughpw"])
+    with pytest.raises(SystemExit) as exc:
+        admin_setup.main()
+    assert exc.value.code == 2  # argparse's "unrecognized arguments" exit code
+
+
+def test_main_short_password_from_env_exits(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    _run_main(monkeypatch, ["--email", "a@example.com"])
+    monkeypatch.setattr(admin_setup, "get_secret", lambda name: "short" if name == "ADMIN_PASSWORD" else None)
     with pytest.raises(SystemExit) as exc:
         admin_setup.main()
     assert exc.value.code == 1
@@ -158,8 +168,29 @@ def test_main_list_calls_list_admins(monkeypatch: pytest.MonkeyPatch) -> None:
     list_admins.assert_called_once_with("fake-conninfo")
 
 
-def test_main_add_calls_add_admin(monkeypatch: pytest.MonkeyPatch) -> None:
-    _run_main(monkeypatch, ["--email", "a@example.com", "--password", "longenoughpw"])
-    with patch.object(admin_setup, "add_admin") as add_admin:
+def test_main_add_calls_add_admin_using_env_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ADMIN_PASSWORD (the get_secret convention) is honored without ever
+    prompting — the scripted/non-interactive path."""
+    _run_main(monkeypatch, ["--email", "a@example.com"])
+    monkeypatch.setattr(admin_setup, "get_secret", lambda name: "longenoughpw" if name == "ADMIN_PASSWORD" else None)
+    with (
+        patch.object(admin_setup, "add_admin") as add_admin,
+        patch.object(admin_setup.getpass, "getpass") as mock_getpass,
+    ):
         admin_setup.main()
+    add_admin.assert_called_once_with("fake-conninfo", "a@example.com", "longenoughpw")
+    mock_getpass.assert_not_called()
+
+
+def test_main_add_prompts_interactively_when_no_env_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No ADMIN_PASSWORD set → falls back to an interactive, non-echoed prompt —
+    never a CLI argument, never in shell history (discogsography-dir0)."""
+    _run_main(monkeypatch, ["--email", "a@example.com"])
+    monkeypatch.setattr(admin_setup, "get_secret", lambda _name: None)
+    with (
+        patch.object(admin_setup, "add_admin") as add_admin,
+        patch.object(admin_setup.getpass, "getpass", return_value="longenoughpw") as mock_getpass,
+    ):
+        admin_setup.main()
+    mock_getpass.assert_called_once()
     add_admin.assert_called_once_with("fake-conninfo", "a@example.com", "longenoughpw")

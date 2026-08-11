@@ -95,9 +95,9 @@ The dashboard includes a login-gated admin panel at `/admin` for managing extrac
 #### Accessing the Admin Panel
 
 ```bash
-# Create an admin account (one-time setup)
-docker exec -it discogsography-api admin-setup \
-  --email admin@example.com --password <min-8-chars>
+# Create an admin account (one-time setup) — prompts for the password
+# interactively; never pass it as a CLI argument (see docs/admin-guide.md).
+docker exec -it discogsography-api admin-setup --email admin@example.com
 
 # Access admin panel
 open http://localhost:8003/admin
