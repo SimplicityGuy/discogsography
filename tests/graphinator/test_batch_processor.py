@@ -811,6 +811,95 @@ class TestProcessMastersBatch:
             await processor._process_masters_batch(messages)
         mock_driver.session.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_masters_multi_genre_skips_part_of(self) -> None:
+        """discogsography-sy5k: a master with >1 genre must not cartesian-link every
+        style to every genre — the assertion is only unambiguous for a single genre."""
+        mock_driver, mock_session = create_async_session_mock()
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        executed_queries: list[str] = []
+
+        async def track_query(query: str, **_params: Any) -> None:
+            executed_queries.append(query)
+
+        mock_tx = AsyncMock()
+        mock_tx.run.side_effect = track_query
+
+        async def execute_write_mock(tx_func: Any) -> None:
+            await tx_func(mock_tx)
+
+        mock_session.execute_write = AsyncMock(side_effect=execute_write_mock)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+        messages = [
+            PendingMessage(
+                "masters",
+                {
+                    "id": "1",
+                    "title": "Master 1",
+                    "sha256": "hash1",
+                    "genres": ["Electronic", "Rock"],
+                    "styles": ["House"],
+                },
+                AsyncMock(),
+                AsyncMock(),
+            )
+        ]
+
+        await processor._process_masters_batch(messages)
+
+        part_of_queries = [q for q in executed_queries if "PART_OF" in q]
+        assert part_of_queries == []
+
+    @pytest.mark.asyncio
+    async def test_masters_single_genre_creates_part_of(self) -> None:
+        """A single-genre master is an unambiguous style->genre assertion and should
+        still create the PART_OF edge."""
+        mock_driver, mock_session = create_async_session_mock()
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        executed_queries: list[tuple[str, dict[str, Any]]] = []
+
+        async def track_query(query: str, **params: Any) -> None:
+            executed_queries.append((query, params))
+
+        mock_tx = AsyncMock()
+        mock_tx.run.side_effect = track_query
+
+        async def execute_write_mock(tx_func: Any) -> None:
+            await tx_func(mock_tx)
+
+        mock_session.execute_write = AsyncMock(side_effect=execute_write_mock)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+        messages = [
+            PendingMessage(
+                "masters",
+                {
+                    "id": "1",
+                    "title": "Master 1",
+                    "sha256": "hash1",
+                    "genres": ["Electronic"],
+                    "styles": ["House", "Techno"],
+                },
+                AsyncMock(),
+                AsyncMock(),
+            )
+        ]
+
+        await processor._process_masters_batch(messages)
+
+        part_of_queries = [(q, p) for q, p in executed_queries if "PART_OF" in q]
+        assert len(part_of_queries) == 1
+        pairs = part_of_queries[0][1]["pairs"]
+        assert sorted(pairs, key=lambda pair: pair["style"]) == [
+            {"genre": "Electronic", "style": "House"},
+            {"genre": "Electronic", "style": "Techno"},
+        ]
+
 
 class TestProcessReleasesBatch:
     """Test _process_releases_batch functionality."""
@@ -972,6 +1061,48 @@ class TestProcessReleasesBatch:
         with patch("graphinator.batch_processor.logger"):
             await processor._process_releases_batch(messages)
         mock_driver.session.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_releases_multi_genre_skips_part_of(self) -> None:
+        """discogsography-sy5k: a release with >1 genre must not cartesian-link every
+        style to every genre — the assertion is only unambiguous for a single genre."""
+        mock_driver, mock_session = create_async_session_mock()
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        executed_queries: list[str] = []
+
+        async def track_query(query: str, **_params: Any) -> None:
+            executed_queries.append(query)
+
+        mock_tx = AsyncMock()
+        mock_tx.run.side_effect = track_query
+
+        async def execute_write_mock(tx_func: Any) -> None:
+            await tx_func(mock_tx)
+
+        mock_session.execute_write = AsyncMock(side_effect=execute_write_mock)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+        messages = [
+            PendingMessage(
+                "releases",
+                {
+                    "id": "1",
+                    "title": "Release 1",
+                    "sha256": "hash1",
+                    "genres": ["Electronic", "Rock"],
+                    "styles": ["House"],
+                },
+                AsyncMock(),
+                AsyncMock(),
+            )
+        ]
+
+        await processor._process_releases_batch(messages)
+
+        part_of_queries = [q for q in executed_queries if "PART_OF" in q]
+        assert part_of_queries == []
 
 
 class TestFlushAll:

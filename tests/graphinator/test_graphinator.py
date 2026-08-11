@@ -1817,8 +1817,9 @@ class TestMasterTransactionLogic:
         # 3. Artist relationships
         # 4. Genre relationships
         # 5. Style relationships
-        # 6. Genre-style connections
-        assert mock_tx.run.call_count == 6
+        # No genre-style (PART_OF) connection: multiple genres make the style-belongs-to
+        # -genre assertion ambiguous, so it is skipped (discogsography-sy5k).
+        assert mock_tx.run.call_count == 5
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1940,6 +1941,45 @@ class TestReleaseTransactionLogic:
         # 7. Style relationships
         # 8. Genre-style connections
         assert mock_tx.run.call_count == 8
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_multi_genre_release_skips_part_of(self, mock_neo4j_driver: MagicMock) -> None:
+        """discogsography-sy5k: a release with >1 genre must not cartesian-link every
+        style to every genre — the assertion is only unambiguous for a single genre."""
+        from graphinator.graphinator import on_release_message
+
+        release_data = {
+            "id": "R123",
+            "title": "Test Release",
+            "sha256": "test_hash",
+            "genres": ["Electronic", "Rock"],
+            "styles": ["House"],
+        }
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(release_data).encode()
+
+        mock_context_manager = mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
+        mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value=None)
+
+        async def execute_tx(tx_func: Any) -> Any:
+            return await tx_func(mock_tx)
+
+        mock_session.execute_write.side_effect = execute_tx
+
+        with (
+            patch("graphinator.graphinator.graph", mock_neo4j_driver),
+            patch("graphinator.graphinator.shutdown_requested", False),
+        ):
+            await on_release_message(mock_message)
+
+        part_of_calls = [call for call in mock_tx.run.call_args_list if "PART_OF" in str(call)]
+        assert part_of_calls == []
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio

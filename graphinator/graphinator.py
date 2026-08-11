@@ -1353,17 +1353,18 @@ async def process_master(tx: Any, record: dict[str, Any]) -> bool:
             master_id=record["id"],
         )
 
-    # Connect styles to genres if both exist
-    if genres_list and styles_list:
+    # Connect styles to genres. PART_OF asserts a style belongs to a genre, which is
+    # only unambiguous when the record carries a single genre — cartesian-linking
+    # every style to every genre on a multi-genre record would create false
+    # Style-[:PART_OF]->Genre edges (discogsography-sy5k).
+    if len(genres_list) == 1 and styles_list:
         await tx.run(
             "UNWIND $genre_style_pairs AS pair "
             "MERGE (g:Genre {name: pair.genre}) "
             "MERGE (s:Style {name: pair.style}) "
             "MERGE (s)-[:PART_OF]->(g)",
             genre_style_pairs=[
-                {"genre": genre, "style": style}
-                for genre in genres_list
-                for style in styles_list
+                {"genre": genres_list[0], "style": style} for style in styles_list
             ],
         )
 
@@ -1458,17 +1459,18 @@ async def process_release(tx: Any, record: dict[str, Any]) -> bool:
             release_id=record["id"],
         )
 
-    # Connect styles to genres if both exist
-    if genres_list and styles_list:
+    # Connect styles to genres. PART_OF asserts a style belongs to a genre, which is
+    # only unambiguous when the record carries a single genre — cartesian-linking
+    # every style to every genre on a multi-genre record would create false
+    # Style-[:PART_OF]->Genre edges (discogsography-sy5k).
+    if len(genres_list) == 1 and styles_list:
         await tx.run(
             "UNWIND $genre_style_pairs AS pair "
             "MERGE (g:Genre {name: pair.genre}) "
             "MERGE (s:Style {name: pair.style}) "
             "MERGE (s)-[:PART_OF]->(g)",
             genre_style_pairs=[
-                {"genre": genre, "style": style}
-                for genre in genres_list
-                for style in styles_list
+                {"genre": genres_list[0], "style": style} for style in styles_list
             ],
         )
 
