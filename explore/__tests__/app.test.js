@@ -1822,6 +1822,18 @@ describe('ExploreApp helper methods', () => {
 
             expect(document.getElementById('loginSubmitBtn').disabled).toBe(false);
         });
+
+        it('should show network-error feedback and re-enable the button on a rejected fetch (regression discogsography-cmw0)', async () => {
+            document.getElementById('loginEmail').value = 'test@test.com';
+            document.getElementById('loginPassword').value = 'password123';
+            window.apiClient.login.mockRejectedValue(new TypeError('Failed to fetch'));
+
+            const app = new ExploreApp();
+            await expect(app._handleLogin()).resolves.toBeUndefined();
+
+            expect(document.getElementById('loginError').textContent).toContain('Could not reach the server');
+            expect(document.getElementById('loginSubmitBtn').disabled).toBe(false);
+        });
     });
 
     describe('ExploreApp._handleRegister - full flow', () => {
@@ -1856,6 +1868,18 @@ describe('ExploreApp helper methods', () => {
             const app = new ExploreApp();
             await app._handleRegister();
 
+            expect(document.getElementById('registerSubmitBtn').disabled).toBe(false);
+        });
+
+        it('should show network-error feedback and re-enable the button on a rejected fetch (regression discogsography-cmw0)', async () => {
+            document.getElementById('registerEmail').value = 'new@test.com';
+            document.getElementById('registerPassword').value = 'password123';
+            window.apiClient.register.mockRejectedValue(new TypeError('Failed to fetch'));
+
+            const app = new ExploreApp();
+            await expect(app._handleRegister()).resolves.toBeUndefined();
+
+            expect(document.getElementById('registerError').textContent).toContain('Could not reach the server');
             expect(document.getElementById('registerSubmitBtn').disabled).toBe(false);
         });
     });
@@ -2780,6 +2804,18 @@ describe('ExploreApp - password reset and 2FA UI handlers', () => {
 
             expect(document.getElementById('resetRequestError').textContent).toBeTruthy();
         });
+
+        it('should show error feedback (not throw unhandled) on a rejected fetch (regression discogsography-cmw0)', async () => {
+            new ExploreApp();
+            document.getElementById('resetEmail').value = 'user@example.com';
+            window.apiClient.resetRequest = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+
+            document.getElementById('resetRequestBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('resetRequestError').textContent).toBeTruthy();
+            expect(document.getElementById('resetRequestSuccess').classList.contains('hidden')).toBe(true);
+        });
     });
 
     describe('login with 2FA challenge response', () => {
@@ -2894,6 +2930,21 @@ describe('ExploreApp - password reset and 2FA UI handlers', () => {
             await new Promise(resolve => setTimeout(resolve, 0));
 
             expect(document.getElementById('resetConfirmError').textContent).toContain('Token expired');
+        });
+
+        it('should show error feedback (not throw unhandled) on a rejected fetch (regression discogsography-cmw0)', async () => {
+            new ExploreApp();
+            document.getElementById('newPassword').value = 'newpassword123';
+            document.getElementById('confirmNewPassword').value = 'newpassword123';
+            delete window.location;
+            window.location = { search: '?reset_token=abc123', pathname: '/', href: '' };
+            window.apiClient.resetConfirm = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+
+            document.getElementById('resetConfirmBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('resetConfirmError').textContent).toBeTruthy();
+            expect(document.getElementById('resetConfirmSuccess').classList.contains('hidden')).toBe(true);
         });
     });
 

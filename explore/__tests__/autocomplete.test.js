@@ -294,6 +294,17 @@ describe('Autocomplete', () => {
             expect(instance.activeIndex).toBe(-1);
         });
 
+        it('should close the dropdown (not stay stuck) on a network-level fetch rejection (regression discogsography-cmw0)', async () => {
+            instance.results = [{ name: 'Stale' }];
+            instance.dropdown.classList.add('show');
+            window.apiClient.autocomplete.mockRejectedValue(new TypeError('Failed to fetch'));
+
+            await expect(instance._search('test')).resolves.toBeUndefined();
+
+            expect(instance.results).toEqual([]);
+            expect(instance.dropdown.classList.contains('show')).toBe(false);
+        });
+
         it('should discard a stale response that resolves after a newer request (discogsography-5fg0)', async () => {
             // Simulate a broad/slow query ('bea') that resolves AFTER a
             // narrower/faster query ('beatles') fired right after it — the

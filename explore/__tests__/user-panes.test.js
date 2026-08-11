@@ -197,6 +197,18 @@ describe('UserPanes', () => {
             expect(body.textContent).toContain('Second Page');
             expect(body.textContent).not.toContain('First Page');
         });
+
+        it('renders the failure state (not a blank pane) on a network-level fetch rejection (regression discogsography-cmw0)', async () => {
+            window.apiClient.getUserCollection.mockRejectedValue(new TypeError('Failed to fetch'));
+            const loading = document.getElementById('collectionLoading');
+
+            await expect(userPanes.loadCollection()).resolves.toBeUndefined();
+
+            const body = document.getElementById('collectionBody');
+            expect(body.querySelector('.user-pane-empty')).not.toBeNull();
+            expect(body.textContent).toContain('Failed to load collection.');
+            expect(loading.classList.contains('active')).toBe(false);
+        });
     });
 
     describe('loadWantlist', () => {
@@ -274,6 +286,18 @@ describe('UserPanes', () => {
             expect(body.textContent).toContain('Second Page');
             expect(body.textContent).not.toContain('First Page');
         });
+
+        it('renders the failure state (not a blank pane) on a network-level fetch rejection (regression discogsography-cmw0)', async () => {
+            window.apiClient.getUserWantlist.mockRejectedValue(new TypeError('Failed to fetch'));
+            const loading = document.getElementById('wantlistLoading');
+
+            await expect(userPanes.loadWantlist()).resolves.toBeUndefined();
+
+            const body = document.getElementById('wantlistBody');
+            expect(body.querySelector('.user-pane-empty')).not.toBeNull();
+            expect(body.textContent).toContain('Failed to load wantlist.');
+            expect(loading.classList.contains('active')).toBe(false);
+        });
     });
 
     describe('loadRecommendations', () => {
@@ -304,6 +328,17 @@ describe('UserPanes', () => {
             const body = document.getElementById('recommendationsBody');
             expect(body.textContent).toContain('Failed to load recommendations');
             expect(body.textContent).not.toContain('No recommendations yet');
+        });
+
+        it('renders the same error state on a network-level fetch rejection (regression discogsography-cmw0)', async () => {
+            window.apiClient.getUserRecommendations.mockRejectedValue(new TypeError('Failed to fetch'));
+            const loading = document.getElementById('recommendationsLoading');
+
+            await expect(userPanes.loadRecommendations()).resolves.toBeUndefined();
+
+            const body = document.getElementById('recommendationsBody');
+            expect(body.textContent).toContain('Failed to load recommendations');
+            expect(loading.classList.contains('active')).toBe(false);
         });
 
         it('should render recommendation items', async () => {
@@ -906,6 +941,12 @@ describe('UserPanes', () => {
             const el = document.getElementById('collectionStats');
             expect(el.querySelectorAll('.stat-card').length).toBe(4);
         });
+
+        it('should not throw an unhandled rejection on a network-level fetch failure (regression discogsography-cmw0)', async () => {
+            window.apiClient.getUserCollectionStats.mockRejectedValue(new TypeError('Failed to fetch'));
+
+            await expect(userPanes.loadCollectionStats()).resolves.toBeUndefined();
+        });
     });
 
     describe('startDiscogsOAuth', () => {
@@ -1392,6 +1433,18 @@ describe('UserPanes', () => {
             expect(body.textContent).toContain('Second Page Release');
             expect(body.textContent).not.toContain('First Page Release');
         });
+
+        it('renders the failure state (not a blank pane) on a network-level fetch rejection (regression discogsography-cmw0)', async () => {
+            window.apiClient.getCollectionGaps.mockRejectedValue(new TypeError('Failed to fetch'));
+            const loading = document.getElementById('gapsLoading');
+
+            await expect(userPanes.loadGapAnalysis('artist', '123')).resolves.toBeUndefined();
+
+            const body = document.getElementById('gapsBody');
+            expect(body.querySelector('.user-pane-empty')).not.toBeNull();
+            expect(body.textContent).toContain('Failed to load gap analysis.');
+            expect(loading.classList.contains('active')).toBe(false);
+        });
     });
 
     describe('_downloadTasteCard', () => {
@@ -1445,6 +1498,19 @@ describe('UserPanes', () => {
             await userPanes._downloadTasteCard(btn);
             expect(clickSpy).toHaveBeenCalled();
             document.createElement.mockRestore();
+        });
+
+        it('resets the button instead of leaving it stuck on "Downloading..." on a network-level fetch rejection (regression discogsography-cmw0)', async () => {
+            vi.useFakeTimers();
+            window.apiClient.getTasteCard.mockRejectedValue(new TypeError('Failed to fetch'));
+            const btn = document.createElement('button');
+
+            await expect(userPanes._downloadTasteCard(btn)).resolves.toBeUndefined();
+
+            expect(btn.textContent).toBe('Download failed');
+            vi.advanceTimersByTime(2000);
+            expect(btn.disabled).toBe(false);
+            vi.useRealTimers();
         });
     });
 

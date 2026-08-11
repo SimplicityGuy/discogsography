@@ -633,12 +633,19 @@ class ExploreApp {
             errorEl.textContent = '';
             successEl.classList.add('hidden');
             if (!email) { errorEl.textContent = 'Please enter your email'; return; }
-            const response = await window.apiClient.resetRequest(email);
-            if (response.ok) {
-                successEl.textContent = 'If an account exists for that email, a reset link has been sent.';
-                successEl.classList.remove('hidden');
-            } else {
-                errorEl.textContent = 'Something went wrong. Please try again.';
+            try {
+                const response = await window.apiClient.resetRequest(email);
+                if (response.ok) {
+                    successEl.textContent = 'If an account exists for that email, a reset link has been sent.';
+                    successEl.classList.remove('hidden');
+                } else {
+                    errorEl.textContent = 'Something went wrong. Please try again.';
+                }
+            } catch {
+                // A network-level fetch rejection — this handler has no try
+                // at all today, so a rejected fetch skips response.ok entirely
+                // and leaves both success/error elements untouched.
+                errorEl.textContent = 'Could not reach the server. Please try again.';
             }
         });
 
@@ -654,18 +661,24 @@ class ExploreApp {
             const params = new URLSearchParams(window.location.search);
             const token = params.get('reset_token');
             if (!token) { errorEl.textContent = 'Invalid reset link'; return; }
-            const response = await window.apiClient.resetConfirm(token, password);
-            if (response.ok) {
-                successEl.textContent = 'Password has been reset! You can now log in.';
-                successEl.classList.remove('hidden');
-                history.replaceState(null, '', window.location.pathname);
-                setTimeout(() => {
-                    const modal = document.getElementById('authModal');
-                    _alpineData(modal).tab = 'login';
-                }, 2000);
-            } else {
-                const data = await response.json().catch(() => ({}));
-                errorEl.textContent = data.detail || 'Reset failed. The link may have expired.';
+            try {
+                const response = await window.apiClient.resetConfirm(token, password);
+                if (response.ok) {
+                    successEl.textContent = 'Password has been reset! You can now log in.';
+                    successEl.classList.remove('hidden');
+                    history.replaceState(null, '', window.location.pathname);
+                    setTimeout(() => {
+                        const modal = document.getElementById('authModal');
+                        _alpineData(modal).tab = 'login';
+                    }, 2000);
+                } else {
+                    const data = await response.json().catch(() => ({}));
+                    errorEl.textContent = data.detail || 'Reset failed. The link may have expired.';
+                }
+            } catch {
+                // A network-level fetch rejection — same missing-try pattern
+                // as the reset-request handler above.
+                errorEl.textContent = 'Could not reach the server. Please try again.';
             }
         });
 
@@ -807,6 +820,10 @@ class ExploreApp {
             Alpine.store('modals').authOpen = false;
             document.getElementById('loginEmail').value = '';
             document.getElementById('loginPassword').value = '';
+        } catch {
+            // A network-level fetch rejection (server restart, dropped Wi-Fi,
+            // CORS/DNS) — surface feedback instead of a silent button reset.
+            if (errorEl) errorEl.textContent = 'Could not reach the server. Please try again.';
         } finally {
             submitBtn.disabled = false;
             const loginIcon = document.createElement('span');
@@ -855,6 +872,10 @@ class ExploreApp {
             } else {
                 if (errorEl) errorEl.textContent = 'Registration failed. Please try again.';
             }
+        } catch {
+            // A network-level fetch rejection — same missing-feedback pattern
+            // as _handleLogin.
+            if (errorEl) errorEl.textContent = 'Could not reach the server. Please try again.';
         } finally {
             submitBtn.disabled = false;
             const regIcon = document.createElement('span');

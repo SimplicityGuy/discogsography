@@ -202,7 +202,7 @@ describe('CollaboratorsPanel', () => {
             expect(container.querySelectorAll('.collaborator-item').length).toBe(2);
         });
 
-        it('should not render when API returns null', async () => {
+        it('replaces the "Loading..." placeholder with an error message when API returns null (regression discogsography-cmw0)', async () => {
             window.apiClient.getCollaborators.mockResolvedValue(null);
             const container = document.getElementById('collaboratorsContainer');
             const loadingText = document.createElement('p');
@@ -211,8 +211,24 @@ describe('CollaboratorsPanel', () => {
 
             await window.collaboratorsPanel.load('123');
 
-            // Container should remain unchanged
-            expect(container.textContent).toBe('Loading...');
+            // The stuck-forever "Loading..." placeholder must be replaced by
+            // a failure message, not left in place indefinitely.
+            expect(container.textContent).not.toBe('Loading...');
+            expect(container.textContent).toContain('Failed to load collaborators');
+        });
+
+        it('replaces the "Loading..." placeholder with an error message on a network-level fetch rejection (regression discogsography-cmw0)', async () => {
+            window.apiClient.getCollaborators.mockRejectedValue(new TypeError('Failed to fetch'));
+            const container = document.getElementById('collaboratorsContainer');
+            const loadingText = document.createElement('p');
+            loadingText.textContent = 'Loading...';
+            container.appendChild(loadingText);
+
+            // Must not throw / produce an unhandled rejection.
+            await expect(window.collaboratorsPanel.load('123')).resolves.toBeUndefined();
+
+            expect(container.textContent).not.toBe('Loading...');
+            expect(container.textContent).toContain('Failed to load collaborators');
         });
 
         it('should not crash when container is missing', async () => {

@@ -170,6 +170,21 @@ describe('search pane', () => {
             expect(resultsEl.textContent).toContain('error occurred');
         });
 
+        it('should hide the loading overlay and render the error state on a network-level fetch rejection (regression discogsography-cmw0)', async () => {
+            window.apiClient.search.mockRejectedValue(new TypeError('Failed to fetch'));
+
+            const input = document.getElementById('searchPaneInput');
+            input.value = 'radiohead';
+
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            await new Promise(r => setTimeout(r, 10));
+
+            const resultsEl = document.getElementById('searchResults');
+            const loadingEl = document.getElementById('searchLoading');
+            expect(resultsEl.textContent).toContain('error occurred');
+            expect(loadingEl.classList.contains('active')).toBe(false);
+        });
+
         it('should render "no results" when results array is empty', async () => {
             window.apiClient.search.mockResolvedValue({
                 results: [],

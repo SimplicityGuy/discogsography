@@ -978,7 +978,16 @@ class SettingsPane {
             return;
         }
 
-        const res = await window.apiClient.mintAppToken(token, name, scopes);
+        let res;
+        try {
+            res = await window.apiClient.mintAppToken(token, name, scopes);
+        } catch {
+            // A network-level fetch rejection — mirror the other settings
+            // handlers (_handleChangePassword, _confirmSetup, _handleDisable)
+            // instead of letting the rejection propagate unhandled.
+            if (errorEl) errorEl.textContent = 'Network error — please try again';
+            return;
+        }
         if (!res || !res.ok || !res.body || !res.body.token) {
             const detail = (res && res.body && res.body.detail) ? res.body.detail : 'Failed to mint token';
             if (errorEl) errorEl.textContent = detail;
@@ -1022,7 +1031,16 @@ class SettingsPane {
         const token = window.authManager && window.authManager.getToken && window.authManager.getToken();
         if (!token) return;
 
-        const ok = await window.apiClient.revokeAppToken(token, tokenId);
+        let ok;
+        try {
+            ok = await window.apiClient.revokeAppToken(token, tokenId);
+        } catch {
+            // A network-level fetch rejection — still surface feedback and
+            // refresh the list, matching the non-ok failure path below.
+            window.alert('Failed to revoke token. It may have already been revoked.');
+            this._loadAppTokens();
+            return;
+        }
         if (!ok) {
             window.alert('Failed to revoke token. It may have already been revoked.');
         }

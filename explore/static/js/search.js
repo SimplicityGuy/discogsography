@@ -132,7 +132,16 @@
         const yearMin = yearMinEl.value ? parseInt(yearMinEl.value, 10) : null;
         const yearMax = yearMaxEl.value ? parseInt(yearMaxEl.value, 10) : null;
 
-        const data = await window.apiClient.search(q, types, selectedGenres, yearMin, yearMax, PAGE_SIZE, currentOffset);
+        let data;
+        try {
+            data = await window.apiClient.search(q, types, selectedGenres, yearMin, yearMax, PAGE_SIZE, currentOffset);
+        } catch {
+            // A network-level fetch rejection (offline, DNS, connection reset,
+            // CORS) — not an HTTP error status — falls through to the same
+            // null-data error rendering below instead of leaving the loading
+            // overlay stuck on-screen forever.
+            data = null;
+        }
 
         // A newer search has since been issued — discard this stale response
         // rather than let it overwrite results/pagination for the current one.

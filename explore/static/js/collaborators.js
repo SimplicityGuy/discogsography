@@ -12,11 +12,36 @@ class CollaboratorsPanel {
      * @param {string} artistId - Neo4j artist ID
      */
     async load(artistId) {
-        const data = await window.apiClient.getCollaborators(artistId);
-        if (!data) return;
         const container = document.getElementById('collaboratorsContainer');
+        let data;
+        try {
+            data = await window.apiClient.getCollaborators(artistId);
+        } catch {
+            // A network-level fetch rejection (offline, DNS, CORS) — treat
+            // exactly like the non-ok/timeout null-return path below so the
+            // placeholder "Loading..." text never sticks around forever.
+            data = null;
+        }
         if (!container) return;
+        if (!data) {
+            this._renderError(container);
+            return;
+        }
         this._renderList(container, data);
+    }
+
+    /**
+     * Replace the caller-supplied "Loading..." placeholder with an error
+     * message when collaborators fail to load (non-ok status, timeout, or
+     * network-level fetch rejection).
+     * @param {HTMLElement} container - Target container
+     */
+    _renderError(container) {
+        container.textContent = '';
+        const msg = document.createElement('p');
+        msg.className = 'text-text-mid text-sm';
+        msg.textContent = 'Failed to load collaborators.';
+        container.appendChild(msg);
     }
 
     /**
