@@ -289,6 +289,12 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    # init: true runs tini as PID 1 so SIGTERM is forwarded to the start.sh
+    # shell (and its STARTUP_DELAY sleep) instead of being discarded — a
+    # non-interactive shell installs no signal handler, so without an init a
+    # stop/restart landing inside the startup delay window is silently ignored
+    # until Docker's SIGKILL grace period expires (discogsography-uur3).
+    init: true
     restart: unless-stopped
     logging: *default-logging
     security_opt:
@@ -428,6 +434,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    init: true
     restart: on-failure
     logging: *default-logging
     security_opt:
@@ -483,6 +490,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    init: true
     restart: on-failure
     logging: *default-logging
     security_opt:
@@ -539,6 +547,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 90s
+    init: true
     restart: on-failure
     logging: *default-logging
     security_opt:
@@ -595,6 +604,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    init: true
     restart: on-failure
     logging: *default-logging
     security_opt:
@@ -660,6 +670,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 45s
+    init: true
     restart: unless-stopped
     logging: *default-logging
     security_opt:
@@ -706,6 +717,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    init: true
     restart: unless-stopped
     logging: *default-logging
     security_opt:
@@ -763,6 +775,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 90s
+    init: true
     restart: unless-stopped
     logging: *default-logging
     security_opt:
