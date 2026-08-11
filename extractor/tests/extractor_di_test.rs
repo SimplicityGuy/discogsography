@@ -504,12 +504,26 @@ async fn test_process_discogs_data_all_files_already_processed() {
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result =
-        extractor::extractor::process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), true, &mut mock_dl, factory, None)
-            .await;
+    let marker_path = StateMarker::file_path(temp_dir.path(), "20260101");
+    let result = extractor::extractor::process_discogs_data(
+        config,
+        state.clone(),
+        shutdown,
+        Arc::new(AtomicBool::new(false)),
+        true,
+        &mut mock_dl,
+        factory,
+        None,
+    )
+    .await;
 
     assert!(result.is_ok());
     assert!(result.unwrap());
+    // discogsography-d58d: the success side of the same branch — a landed broadcast still
+    // reports success, marks the extraction durably complete, and sets health Completed.
+    assert_eq!(state.read().await.extraction_status, ExtractionStatus::Completed);
+    let persisted = StateMarker::load(&marker_path).await.unwrap().unwrap();
+    assert_eq!(persisted.summary.overall_status, PhaseStatus::Completed);
 }
 
 #[tokio::test]
@@ -557,13 +571,25 @@ async fn test_process_discogs_data_mq_factory_create_fails_on_all_processed() {
     }
     let factory = Arc::new(FailingMqFactory);
 
-    let result =
-        extractor::extractor::process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), true, &mut mock_dl, factory, None)
-            .await;
+    let result = extractor::extractor::process_discogs_data(
+        config,
+        state.clone(),
+        shutdown,
+        Arc::new(AtomicBool::new(false)),
+        true,
+        &mut mock_dl,
+        factory,
+        None,
+    )
+    .await;
 
-    // Should still succeed (extraction_complete failure is logged, not fatal)
+    // discogsography-d58d: an unsent extraction_complete is a FAILURE, exactly as in the
+    // normal completion path. Reporting Ok(true)/Completed here deferred the retry to the
+    // next periodic sleep (15 days by default) while health, dashboard, and logs all
+    // claimed the run had completed.
     assert!(result.is_ok());
-    assert!(result.unwrap());
+    assert!(!result.unwrap(), "a failed extraction_complete broadcast must not report success");
+    assert_eq!(state.read().await.extraction_status, ExtractionStatus::Failed);
 }
 
 /// Build a MockDataSource for the resumed all-files-already-processed Discogs path that
@@ -1550,11 +1576,15 @@ async fn test_process_discogs_data_all_processed_extraction_complete_send_fails(
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
 
-    let result = process_discogs_data(config, state, shutdown, Arc::new(AtomicBool::new(false)), true, &mut mock_dl, factory, None).await;
+    let result = process_discogs_data(config, state.clone(), shutdown, Arc::new(AtomicBool::new(false)), true, &mut mock_dl, factory, None).await;
 
-    // Still returns Ok(true) — failure of extraction_complete is logged but not fatal in this path
+    // discogsography-d58d: the send failed, so the version still owes a broadcast. The
+    // early path must report that out of band (Ok(false) + ExtractionStatus::Failed) so the
+    // initial-run promotion to Err / cooldown-restart retries within minutes, instead of
+    // claiming success and sleeping out a whole periodic cycle.
     assert!(result.is_ok());
-    assert!(result.unwrap());
+    assert!(!result.unwrap(), "a failed extraction_complete broadcast must not report success");
+    assert_eq!(state.read().await.extraction_status, ExtractionStatus::Failed);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

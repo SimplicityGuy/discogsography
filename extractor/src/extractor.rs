@@ -228,6 +228,11 @@ pub async fn process_discogs_data(
     if pending_files.is_empty() {
         info!("✅ All files already processed");
 
+        // Tracks whether this path still owes a successful extraction_complete
+        // broadcast. Stays true when there is nothing to send (the version is
+        // already fully Completed from an earlier cycle).
+        let mut broadcast_ok = true;
+
         // Only send extraction_complete on the first completion, not on
         // subsequent periodic checks where the version is already complete.
         if state_marker.summary.overall_status != PhaseStatus::Completed {
@@ -274,12 +279,23 @@ pub async fn process_discogs_data(
                 // Leave overall_status non-Completed so should_process() returns Continue and
                 // the next cycle retries the broadcast instead of Skipping forever.
                 error!("❌ extraction_complete not sent — leaving version incomplete to retry on next cycle");
+                // ...and report the failure out of band too. Reporting Ok(true)/Completed
+                // here deferred the retry to the next PERIODIC_CHECK_DAYS sleep (15 days by
+                // default) while the health endpoint, dashboard, and logs all claimed
+                // success. The normal completion path treats the identical failure as a
+                // failure, which escalates to the cooldown-restart on the initial run and
+                // retries within minutes (discogsography-d58d).
+                broadcast_ok = false;
             }
         }
 
         let mut s = state.write().await;
-        s.extraction_status = ExtractionStatus::Completed;
-        return Ok(true);
+        s.extraction_status = if broadcast_ok {
+            ExtractionStatus::Completed
+        } else {
+            ExtractionStatus::Failed
+        };
+        return Ok(broadcast_ok);
     }
 
     info!("📋 Files to process: total={}, pending={}, completed={}", data_files.len(), pending_files.len(), data_files.len() - pending_files.len());
