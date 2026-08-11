@@ -26,7 +26,7 @@ from common import (
     setup_logging,
 )
 from orjson import loads
-from psycopg.errors import DataError, InterfaceError, OperationalError
+from psycopg.errors import DataError, IntegrityError, InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
 
 logger = structlog.get_logger(__name__)
@@ -948,11 +948,16 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
         # database maintenance window (discogsography-rb05).
         await outage_backoff.wait()
         await message.nack(requeue=True)
-    except DataError as e:
-        # Malformed data that deterministically fails a column cast (e.g. a
-        # non-UUID mbid that slipped past validation above). Retrying would
-        # fail identically every time, so nack without requeue instead of
-        # churning through the quorum queue's redelivery limit.
+    except (DataError, IntegrityError) as e:
+        # Malformed data that deterministically fails a column cast (DataError, e.g. a
+        # non-UUID mbid that slipped past validation above) or a constraint
+        # (IntegrityError, e.g. NotNullViolation when the dump line carried no
+        # name/title, which the extractor forwards as "name": null). Retrying would
+        # fail identically every time, so nack without requeue instead of churning
+        # through the quorum queue's redelivery limit — 20 futile redeliveries, each
+        # opening a pooled connection and rolling back a transaction, per bad record
+        # (discogsography-yuyg). None of the musicbrainz tables declare a foreign key,
+        # so no IntegrityError here is order-dependent/transient.
         logger.error(
             "❌ Non-retryable data error, nacking without requeue",
             data_type=data_type,

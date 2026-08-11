@@ -953,6 +953,54 @@ class TestOnDataMessage:
             mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_integrity_error_nacks_without_requeue(self):
+        """discogsography-yuyg: a NOT NULL violation is deterministic, not transient.
+
+        NotNullViolation derives from psycopg's IntegrityError, NOT DataError, so it
+        used to fall through to the generic handler and be nacked with requeue=True —
+        20 futile redeliveries per bad record, each opening a pooled connection and
+        rolling back a transaction, before the broker dead-lettered it anyway. Reached
+        whenever a dump line carries no name/title: the extractor forwards it as
+        "name": null and the four musicbrainz tables all declare name TEXT NOT NULL.
+        """
+        from psycopg.errors import NotNullViolation
+
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "550e8400-e29b-41d4-a716-446655440000"}'
+
+        mock_pool = MagicMock()
+        mock_conn = AsyncMock()
+        mock_conn.transaction = MagicMock(return_value=AsyncMock())
+        mock_conn_cm = AsyncMock()
+        mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.connection = MagicMock(return_value=mock_conn_cm)
+
+        mock_processor = AsyncMock(side_effect=NotNullViolation('null value in column "name" violates not-null constraint'))
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
+            patch(
+                "brainztableinator.brainztableinator.message_counts",
+                {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0},
+            ),
+            patch(
+                "brainztableinator.brainztableinator.last_message_time",
+                {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0},
+            ),
+            patch.dict(
+                "brainztableinator.brainztableinator.PROCESSORS",
+                {"artists": mock_processor},
+            ),
+        ):
+            await on_data_message(mock_message, "artists")
+
+            mock_message.nack.assert_called_once_with(requeue=False)
+            mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_no_processor_for_data_type_nacks(self):
         """Unknown data type with no processor should nack without requeue."""
         mock_message = AsyncMock()

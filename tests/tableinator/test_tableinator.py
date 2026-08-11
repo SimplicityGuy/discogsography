@@ -1979,6 +1979,57 @@ class TestOnDataMessageDatabaseOperations:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
+    @patch("tableinator.tableinator.BATCH_MODE", False)
+    async def test_handles_integrity_error_without_requeue(self, sample_artist_data: dict[str, Any]) -> None:
+        """discogsography-yuyg (mirror): a constraint violation is deterministic.
+
+        IntegrityError (e.g. NotNullViolation) is not a subclass of DataError, so it
+        used to reach the generic handler and be nacked with requeue=True, spending all
+        20 of the quorum queue's redeliveries — each opening a pooled connection and
+        rolling back — before the broker dead-lettered it anyway."""
+        from psycopg.errors import NotNullViolation
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        mock_message.routing_key = "artists"
+
+        mock_pool = MagicMock()
+        mock_pool.connection.side_effect = NotNullViolation('null value in column "data_id"')
+
+        with (
+            patch("tableinator.tableinator.connection_pool", mock_pool),
+            patch("tableinator.tableinator.logger"),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_message.nack.assert_called_once_with(requeue=False)
+        mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    @patch("tableinator.tableinator.BATCH_MODE", False)
+    async def test_handles_data_error_without_requeue(self, sample_artist_data: dict[str, Any]) -> None:
+        """The cast-failure half of the same classification."""
+        from psycopg.errors import DataError
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        mock_message.routing_key = "artists"
+
+        mock_pool = MagicMock()
+        mock_pool.connection.side_effect = DataError("invalid input syntax")
+
+        with (
+            patch("tableinator.tableinator.connection_pool", mock_pool),
+            patch("tableinator.tableinator.logger"),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_message.nack.assert_called_once_with(requeue=False)
+        mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_handles_nack_failure(self, sample_artist_data: dict[str, Any]) -> None:
         """Test handling failure during nack operation."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)

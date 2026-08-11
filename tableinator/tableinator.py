@@ -27,7 +27,7 @@ from common import (
 )
 from orjson import loads
 from psycopg import sql
-from psycopg.errors import InterfaceError, OperationalError
+from psycopg.errors import DataError, IntegrityError, InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
 
 from tableinator.batch_processor import BatchConfig, PostgreSQLBatchProcessor
@@ -943,6 +943,22 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
         # minutes of a database outage (discogsography-rb05).
         await outage_backoff.wait()
         await message.nack(requeue=True)
+    except (DataError, IntegrityError) as e:
+        # Deterministic per-record faults: a failed column cast (DataError) or a
+        # violated constraint (IntegrityError, e.g. a NULL data_id). Retrying fails
+        # identically every time, so nack straight to the DLQ instead of spending all
+        # 20 of the quorum queue's redeliveries — each one opening a pooled connection
+        # and rolling back — before the broker dead-letters it anyway. Mirrors
+        # brainztableinator's branch (discogsography-yuyg).
+        logger.error(
+            "❌ Non-retryable data error, nacking without requeue",
+            data_type=data_type,
+            error=str(e),
+        )
+        try:
+            await message.nack(requeue=False)
+        except Exception as nack_error:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
+            logger.warning("⚠️ Failed to nack message", error=str(nack_error))
     except Exception as e:  # noqa: BLE001 - per-message fault must nack rather than kill the consumer
         logger.error("❌ Failed to process message", data_type=data_type, error=str(e))
         try:
