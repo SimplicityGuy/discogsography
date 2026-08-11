@@ -856,8 +856,16 @@ async fn progress_reporter(state: Arc<RwLock<ExtractorState>>, shutdown: Arc<tok
 
         // Log progress
         info!(
-            "📊 Extraction Progress: {} total records (Artists: {}, Labels: {}, Masters: {}, Releases: {})",
-            total, s.extraction_progress.artists, s.extraction_progress.labels, s.extraction_progress.masters, s.extraction_progress.releases
+            // Every type total() sums over must be listed, otherwise the parts do not add
+            // up to the printed total on the MusicBrainz instance (release_groups) and the
+            // type that is actually moving is hidden behind an always-zero Masters.
+            "📊 Extraction Progress: {} total records (Artists: {}, Labels: {}, Masters: {}, Release Groups: {}, Releases: {})",
+            total,
+            s.extraction_progress.artists,
+            s.extraction_progress.labels,
+            s.extraction_progress.masters,
+            s.extraction_progress.release_groups,
+            s.extraction_progress.releases
         );
 
         if !s.completed_files.is_empty() {
