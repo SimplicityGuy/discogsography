@@ -56,11 +56,22 @@ def _validate_path_segment(value: str) -> bool:
 
 
 def _auth_headers(request: Request) -> dict[str, str]:
-    """Extract Authorization header from the incoming request."""
+    """Build headers for the proxied request: Authorization plus trustworthy forwarding info.
+
+    X-Forwarded-For/-Proto are always set from what THIS service observed as the
+    TCP peer and request scheme — never copied from the inbound request, which
+    would let a client spoof its apparent IP and defeat the API's per-IP rate
+    limits (e.g. the admin login limiter, api/routers/admin.py). api/api.py only
+    trusts these headers when they arrive from the internal docker network. See
+    discogsography-quq5.
+    """
     headers: dict[str, str] = {}
     auth = request.headers.get("authorization")
     if auth:
         headers["Authorization"] = auth
+    if request.client and request.client.host:
+        headers["X-Forwarded-For"] = request.client.host
+    headers["X-Forwarded-Proto"] = request.url.scheme
     return headers
 
 

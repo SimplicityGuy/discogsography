@@ -89,7 +89,12 @@ async def health_check() -> JSONResponse:
     return JSONResponse(content=get_health_data())
 
 
-_PROXY_SKIP_HEADERS = frozenset({"host", "content-length", "transfer-encoding"})
+# x-forwarded-for/-proto are stripped from the inbound request before forwarding:
+# explore is the public edge, so any value a client sent for these is untrusted and
+# must not be passed through verbatim (that would let an attacker spoof their
+# apparent IP to the API and defeat per-IP rate limiting downstream). explore sets
+# its own trustworthy values below, from what it actually observed as the peer.
+_PROXY_SKIP_HEADERS = frozenset({"host", "content-length", "transfer-encoding", "x-forwarded-for", "x-forwarded-proto"})
 
 # Content-Type prefix used by sse_starlette's EventSourceResponse (see
 # api/routers/nlq.py) for the NLQ 'Ask' streaming endpoint.
@@ -122,6 +127,17 @@ async def proxy_api(path: str, request: Request) -> Response:
     client = _get_http_client()
     url = f"/api/{path}"
     forward_headers = {k: v for k, v in request.headers.items() if k.lower() not in _PROXY_SKIP_HEADERS}
+
+    # Set trustworthy X-Forwarded-For/-Proto from what explore itself observed as the
+    # TCP peer and request scheme — never from client-supplied headers (stripped above).
+    # api/api.py trusts these only when they arrive from the internal docker network
+    # (FORWARDED_ALLOW_IPS), so this is the sole source of per-client identity that
+    # api's rate limiter (api/limiter.py get_remote_address) resolves. See
+    # discogsography-quq5.
+    client_host = request.client.host if request.client else None
+    if client_host:
+        forward_headers["x-forwarded-for"] = client_host
+    forward_headers["x-forwarded-proto"] = request.url.scheme
 
     req = client.build_request(
         method=request.method,

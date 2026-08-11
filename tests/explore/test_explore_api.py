@@ -1244,6 +1244,38 @@ class TestExploreServiceEndpoints:
         assert ("formats", "CD") in pairs
         assert sum(1 for k, _v in pairs if k == "formats") == 2
 
+    def test_proxy_sets_trustworthy_x_forwarded_for(self, explore_client: TestClient) -> None:
+        """discogsography-quq5: the proxy must set X-Forwarded-For from the real TCP
+        peer it observed — never forward a client-supplied value verbatim, or an
+        attacker could spoof their apparent IP and defeat the API's per-IP rate
+        limiting (which collapses to a single bucket without this).
+        """
+        mock_client = self._mock_buffered_proxy_client(200, b"{}", {"content-type": "application/json"})
+
+        with patch("explore.explore._get_http_client", return_value=mock_client):
+            response = explore_client.get(
+                "/api/autocomplete?q=radio&type=artist",
+                headers={"X-Forwarded-For": "1.2.3.4"},  # attacker-supplied — must be discarded
+            )
+
+        assert response.status_code == 200
+        _method_args, build_kwargs = mock_client.build_request.call_args
+        forwarded_headers = build_kwargs["headers"]
+        # TestClient's default peer is testclient — never the attacker-supplied 1.2.3.4.
+        assert forwarded_headers["x-forwarded-for"] != "1.2.3.4"
+
+    def test_proxy_sets_x_forwarded_proto(self, explore_client: TestClient) -> None:
+        """The proxy sets X-Forwarded-Proto from the actual request scheme."""
+        mock_client = self._mock_buffered_proxy_client(200, b"{}", {"content-type": "application/json"})
+
+        with patch("explore.explore._get_http_client", return_value=mock_client):
+            response = explore_client.get("/api/autocomplete?q=radio&type=artist")
+
+        assert response.status_code == 200
+        _method_args, build_kwargs = mock_client.build_request.call_args
+        forwarded_headers = build_kwargs["headers"]
+        assert forwarded_headers["x-forwarded-proto"] in {"http", "https"}
+
     def test_proxy_strips_hop_headers(self, explore_client: TestClient) -> None:
         """Proxy does not forward content-encoding / transfer-encoding in response."""
         mock_client = self._mock_buffered_proxy_client(

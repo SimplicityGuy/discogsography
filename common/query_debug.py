@@ -19,6 +19,45 @@ PROFILING_LOG_PATH = Path("/logs/profiling.log")
 
 _profiling_logger: logging.Logger | None = None
 
+#: Substring deny-list (case-insensitive) matched against rendered query text.
+#: Any query that touches one of these credential-bearing columns/tables has
+#: its bound parameters redacted before being written to DEBUG/profiling
+#: logs — see discogsography-elsu. Keep in sync with the columns/tables
+#: actually written by api/routers/auth.py and api/api.py's OAuth flow.
+_SENSITIVE_QUERY_MARKERS: tuple[str, ...] = (
+    "hashed_password",
+    "totp_secret",
+    "totp_recovery_codes",
+    "oauth_tokens",
+    "access_token",
+    "access_secret",
+    "app_config",
+)
+
+_REDACTED = "<redacted>"
+
+
+def _redact_if_sensitive(rendered_query: str, params: Any) -> Any:
+    """Return ``params`` unchanged, or a redaction placeholder for sensitive statements.
+
+    A query is considered sensitive if its rendered text contains any of
+    :data:`_SENSITIVE_QUERY_MARKERS` (case-insensitive substring match) — this
+    covers password hashes, TOTP secrets/recovery codes, OAuth tokens, and the
+    ``app_config`` table (which stores the Discogs consumer key/secret).
+
+    Args:
+        rendered_query: The rendered query text (SQL or Cypher).
+        params: The bound parameters that would otherwise be logged.
+
+    Returns:
+        ``params`` if the query is not sensitive, otherwise the string
+        ``"<redacted>"``.
+    """
+    normalized = rendered_query.lower()
+    if any(marker in normalized for marker in _SENSITIVE_QUERY_MARKERS):
+        return _REDACTED
+    return params
+
 
 def is_debug() -> bool:
     """Check if the root logger is at DEBUG level."""
@@ -81,7 +120,8 @@ def log_cypher_query(cypher: str, params: dict[str, Any] | None) -> None:
         cypher: The Cypher query string.
         params: Query parameters.
     """
-    _logger.debug("🔗 Cypher query: %s | params: %s", cypher, params)
+    safe_params = _redact_if_sensitive(cypher, params)
+    _logger.debug("🔗 Cypher query: %s | params: %s", cypher, safe_params)
 
 
 def log_sql_query(query: Any, params: Any, cursor: Any) -> None:
@@ -96,7 +136,8 @@ def log_sql_query(query: Any, params: Any, cursor: Any) -> None:
         cursor: The database cursor (used for rendering Composable queries).
     """
     rendered = query.as_string(cursor) if hasattr(query, "as_string") else query
-    _logger.debug("🐘 SQL query: %s | params: %s", rendered, params)
+    safe_params = _redact_if_sensitive(str(rendered), params)
+    _logger.debug("🐘 SQL query: %s | params: %s", rendered, safe_params)
 
 
 def _render_sql(query: Any, cursor: Any) -> str:
@@ -206,11 +247,12 @@ def log_profile_result(cypher: str, params: dict[str, Any] | None, summary: Any)
     else:
         string_repr = profile.args.get("string-representation", "")
 
+    safe_params = _redact_if_sensitive(cypher, params)
     prof_logger = get_profiling_logger()
     prof_logger.info(
         "\n══════════════════════════════════════════════════════════\nPROFILE result for Cypher query:\n\n%s\n\nParameters: %s\n\n%s",
         cypher,
-        params,
+        safe_params,
         string_repr,
     )
 
@@ -235,6 +277,7 @@ def log_explain_result(
     error_type = type(original_error).__name__
     error_msg = str(original_error)
 
+    safe_params = _redact_if_sensitive(cypher, params)
     prof_logger = get_profiling_logger()
     prof_logger.info(
         "\n══════════════════════════════════════════════════════════\n"
@@ -244,7 +287,7 @@ def log_explain_result(
         "Original error: %s: %s\n\n"
         "%s",
         cypher,
-        params,
+        safe_params,
         error_type,
         error_msg,
         string_repr,
@@ -259,6 +302,7 @@ def log_sql_profile_result(sql: str, params: Any, plan_text: str) -> None:
         params: Query parameters.
         plan_text: The execution plan output from PostgreSQL.
     """
+    safe_params = _redact_if_sensitive(sql, params)
     prof_logger = get_profiling_logger()
     prof_logger.info(
         "\n══════════════════════════════════════════════════════════\n"
@@ -267,7 +311,7 @@ def log_sql_profile_result(sql: str, params: Any, plan_text: str) -> None:
         "Parameters: %s\n\n"
         "%s",
         sql,
-        params,
+        safe_params,
         plan_text,
     )
 
@@ -289,6 +333,7 @@ def log_sql_explain_result(
     error_type = type(original_error).__name__
     error_msg = str(original_error)
 
+    safe_params = _redact_if_sensitive(sql, params)
     prof_logger = get_profiling_logger()
     prof_logger.info(
         "\n══════════════════════════════════════════════════════════\n"
@@ -298,7 +343,7 @@ def log_sql_explain_result(
         "Original error: %s: %s\n\n"
         "%s",
         sql,
-        params,
+        safe_params,
         error_type,
         error_msg,
         plan_text,

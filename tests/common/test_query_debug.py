@@ -202,6 +202,107 @@ class TestLogSqlQuery:
         assert "SELECT * FROM labels WHERE id = 1" in caplog.text
 
 
+class TestSensitiveQueryRedaction:
+    """Test that credential-bearing queries have params redacted (discogsography-elsu)."""
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "UPDATE users SET hashed_password = %s WHERE id = %s",
+            "UPDATE users SET totp_secret = %s, totp_recovery_codes = %s WHERE id = %s",
+            "INSERT INTO oauth_tokens (user_id, access_token, access_secret) VALUES (%s, %s, %s)",
+            "INSERT INTO app_config (key, value) VALUES (%s, %s)",
+            "UPDATE USERS SET HASHED_PASSWORD = %s WHERE id = %s",  # case-insensitive
+        ],
+    )
+    def test_log_sql_query_redacts_sensitive_params(self, query: str, caplog: pytest.LogCaptureFixture) -> None:
+        """log_sql_query never writes raw params for credential-bearing statements."""
+        logging.getLogger().setLevel(logging.DEBUG)
+
+        from common.query_debug import log_sql_query
+
+        with caplog.at_level(logging.DEBUG, logger="common.query_debug"):
+            log_sql_query(query, ("super-secret-value", "user-id"), None)
+
+        assert "super-secret-value" not in caplog.text
+        assert "<redacted>" in caplog.text
+
+    def test_log_sql_query_does_not_redact_non_sensitive_params(self, caplog: pytest.LogCaptureFixture) -> None:
+        """log_sql_query logs params as-is for non-sensitive statements."""
+        logging.getLogger().setLevel(logging.DEBUG)
+
+        from common.query_debug import log_sql_query
+
+        with caplog.at_level(logging.DEBUG, logger="common.query_debug"):
+            log_sql_query("SELECT * FROM artists WHERE id = %s", (42,), None)
+
+        assert "42" in caplog.text
+        assert "<redacted>" not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_execute_sql_redacts_sensitive_params(self, caplog: pytest.LogCaptureFixture) -> None:
+        """execute_sql (the standard wrapper used by all auth/OAuth call sites) redacts too."""
+        from unittest.mock import AsyncMock
+
+        logging.getLogger().setLevel(logging.DEBUG)
+        cursor = AsyncMock()
+
+        from common.query_debug import execute_sql
+
+        with caplog.at_level(logging.DEBUG, logger="common.query_debug"):
+            await execute_sql(
+                cursor,
+                "INSERT INTO users (email, hashed_password) VALUES (%s, %s)",
+                ("user@example.com", "pbkdf2-hash-value"),
+            )
+
+        assert "pbkdf2-hash-value" not in caplog.text
+        assert "<redacted>" in caplog.text
+
+    def test_log_sql_profile_result_redacts_sensitive_params(self, tmp_path: Path) -> None:
+        """log_sql_profile_result (DB_PROFILING path) redacts sensitive params too."""
+        log_file = tmp_path / "profiling.log"
+
+        with patch("common.query_debug.PROFILING_LOG_PATH", log_file):
+            import common.query_debug as mod
+
+            mod._profiling_logger = None
+
+            from common.query_debug import log_sql_profile_result
+
+            log_sql_profile_result(
+                "UPDATE users SET hashed_password = %s WHERE id = %s",
+                ("plaintext-hash", "user-id"),
+                "Update on users",
+            )
+
+        content = log_file.read_text()
+        assert "plaintext-hash" not in content
+        assert "<redacted>" in content
+
+    def test_log_sql_explain_result_redacts_sensitive_params(self, tmp_path: Path) -> None:
+        """log_sql_explain_result (error path) redacts sensitive params too."""
+        log_file = tmp_path / "profiling.log"
+
+        with patch("common.query_debug.PROFILING_LOG_PATH", log_file):
+            import common.query_debug as mod
+
+            mod._profiling_logger = None
+
+            from common.query_debug import log_sql_explain_result
+
+            log_sql_explain_result(
+                "INSERT INTO oauth_tokens (access_token) VALUES (%s)",
+                ("plaintext-oauth-token",),
+                "Insert on oauth_tokens",
+                RuntimeError("boom"),
+            )
+
+        content = log_file.read_text()
+        assert "plaintext-oauth-token" not in content
+        assert "<redacted>" in content
+
+
 class TestExecuteSql:
     """Test execute_sql function."""
 
