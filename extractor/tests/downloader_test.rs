@@ -301,9 +301,58 @@ async fn test_corrupted_metadata_handling() {
     let metadata_path = temp_dir.path().join(".discogs_metadata.json");
     fs::write(&metadata_path, "not valid json {{{").await.unwrap();
 
-    // Attempting to load should fail
-    let result = Downloader::new(temp_dir.path().to_path_buf()).await;
-    assert!(result.is_err(), "Should fail with corrupted metadata");
+    // A corrupt metadata cache must not wedge startup (bead discogsography-fsmp):
+    // it is quarantined and startup continues with empty metadata.
+    let downloader = Downloader::new(temp_dir.path().to_path_buf()).await.expect("corrupt metadata must not fail startup");
+    assert!(downloader.metadata.is_empty());
+
+    assert!(!metadata_path.exists(), "corrupt metadata file should be moved aside");
+    let quarantined = temp_dir.path().join(".discogs_metadata.json.corrupt");
+    assert!(quarantined.exists(), "corrupt metadata file should be quarantined");
+    assert_eq!(fs::read_to_string(&quarantined).await.unwrap(), "not valid json {{{");
+}
+
+#[tokio::test]
+async fn test_truncated_metadata_recovery() {
+    // A SIGKILL / power loss during a plain in-place write used to leave a truncated or
+    // zero-byte file, which parsed as an error and crash-looped the service forever.
+    for contents in ["", "{\"discogs_20260801_artists.xml.gz\":{\"path\":\"/discogs-data/dis"] {
+        let temp_dir = TempDir::new().unwrap();
+        let metadata_path = temp_dir.path().join(".discogs_metadata.json");
+        fs::write(&metadata_path, contents).await.unwrap();
+
+        let downloader = Downloader::new(temp_dir.path().to_path_buf()).await.expect("truncated metadata must not fail startup");
+        assert!(downloader.metadata.is_empty());
+        assert!(!metadata_path.exists(), "truncated metadata file should be moved aside");
+    }
+}
+
+#[tokio::test]
+async fn test_metadata_write_is_atomic() {
+    // save_metadata must go through a temp file + rename, leaving no partial state.
+    let temp_dir = TempDir::new().unwrap();
+    let mut downloader = Downloader::new(temp_dir.path().to_path_buf()).await.unwrap();
+
+    downloader.metadata.insert(
+        "discogs_20260801_artists.xml.gz".to_string(),
+        LocalFileInfo {
+            path: "/discogs-data/discogs_20260801_artists.xml.gz".to_string(),
+            checksum: "abc123".to_string(),
+            version: "202608".to_string(),
+            size: 4096,
+        },
+    );
+    downloader.save_metadata().unwrap();
+
+    let metadata_path = temp_dir.path().join(".discogs_metadata.json");
+    let tmp_path = temp_dir.path().join(".discogs_metadata.json.tmp");
+    assert!(metadata_path.exists(), "metadata file should exist after save");
+    assert!(!tmp_path.exists(), "temp file should be renamed away, not left behind");
+
+    // The persisted bytes must be complete and re-loadable.
+    let reloaded = Downloader::new(temp_dir.path().to_path_buf()).await.unwrap();
+    assert_eq!(reloaded.metadata.len(), 1);
+    assert_eq!(reloaded.metadata["discogs_20260801_artists.xml.gz"].checksum, "abc123");
 }
 
 #[tokio::test]

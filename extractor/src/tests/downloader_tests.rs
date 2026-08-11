@@ -66,8 +66,12 @@ async fn test_load_metadata_invalid_json() {
 
     std::fs::write(&metadata_path, "invalid json").unwrap();
 
-    let result = load_metadata(temp_dir.path());
-    assert!(result.is_err());
+    // A corrupt metadata cache is recoverable (bead discogsography-fsmp): it is
+    // quarantined and loading falls back to an empty map instead of wedging startup.
+    let loaded = load_metadata(temp_dir.path()).expect("corrupt metadata must not be fatal");
+    assert!(loaded.is_empty());
+    assert!(!metadata_path.exists());
+    assert!(temp_dir.path().join(".discogs_metadata.json.corrupt").exists());
 }
 
 #[tokio::test]
