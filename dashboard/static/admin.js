@@ -2328,7 +2328,7 @@ class AdminDashboard {
                         if (rec.violations && rec.violations.length > 0) {
                             lines.push('**Violations:**');
                             rec.violations.forEach(v => {
-                                lines.push(`- \`${v.rule}\` on field \`${v.message || '(unknown)'}\``);
+                                lines.push(`- \`${v.rule}\` on field \`${v.field || '(unknown)'}\` — value: \`${v.field_value || '(not captured)'}\``);
                             });
                             lines.push('');
                         }

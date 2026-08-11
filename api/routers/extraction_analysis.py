@@ -945,7 +945,10 @@ def _build_prompt_contexts(all_violations: list[dict[str, Any]], flagged_version
             sample_records.append(
                 {
                     "record_id": rid,
-                    "violations": [{"rule": m.get("rule", ""), "message": m.get("message", m.get("field", ""))} for m in record_violations],
+                    "violations": [
+                        {"rule": m.get("rule", ""), "field": m.get("field", ""), "field_value": m.get("field_value", m.get("value", ""))}
+                        for m in record_violations
+                    ],
                     "raw_xml": raw_xml,
                     "parsed_json": parsed_json,
                 }
@@ -1014,7 +1017,7 @@ def _build_rule_sections(all_violations: list[dict[str, Any]], flagged_version_d
         # Collect unique field values to show distribution
         field_values: list[str] = []
         for v in matching[:50]:
-            val = v.get("value", v.get("field", ""))
+            val = v.get("field_value", v.get("value", ""))
             if val and val not in field_values:
                 field_values.append(str(val))
             if len(field_values) >= 10:
@@ -1043,7 +1046,7 @@ def _build_rule_sections(all_violations: list[dict[str, Any]], flagged_version_d
             section_lines.append("Violations:")
             for rv in record_violations:
                 section_lines.append(
-                    f"  - `{rv.get('rule', '')}` on field `{rv.get('field', rv.get('message', ''))}` — value: `{rv.get('value', '(not captured)')}`"
+                    f"  - `{rv.get('rule', '')}` on field `{rv.get('field', '')}` — value: `{rv.get('field_value', rv.get('value', '(not captured)'))}`"
                 )
 
             if parsed_json:

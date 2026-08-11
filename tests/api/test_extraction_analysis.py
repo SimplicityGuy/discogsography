@@ -745,6 +745,28 @@ class TestPromptContextEndpoint:
         assert "1" in record_ids
         assert "2" in record_ids
 
+    def test_prompt_context_sample_violations_carry_field_value(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Regression (discogsography-15gn): sample violations expose the extractor's real `field`/`field_value`
+        keys — not a speculative `value`/`message` key that never exists in violations.jsonl."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/20260101/prompt-context",
+                json={"rules": [{"rule": "year-out-of-range", "entity_type": "artists"}]},
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        ctx = data["contexts"][0]
+        record_1 = next(r for r in ctx["sample_records"] if r["record_id"] == "1")
+        violation = record_1["violations"][0]
+        assert violation["field"] == "year"
+        assert violation["field_value"] == "1850"
+
     def test_prompt_context_multiple_rules(self, test_client: TestClient, tmp_path: Path) -> None:
         """Returns separate contexts when multiple rules are selected."""
         import api.routers.extraction_analysis as ea
@@ -888,6 +910,39 @@ class TestGenerateAiPromptEndpoint:
         call_kwargs = mock_client.messages.create.call_args[1]
         assert call_kwargs["model"] == "claude-sonnet-4-20250514"
         assert "year-out-of-range" in call_kwargs["messages"][0]["content"]
+
+    def test_ai_prompt_includes_field_values_not_captured_placeholder(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Regression (discogsography-15gn): the prompt sent to Claude must contain the actual violation
+        values (field_value) rather than the dead '(not captured)' fallback caused by reading a
+        never-populated 'value' key."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        mock_text_block = MagicMock()
+        mock_text_block.text = "## Root Cause Analysis\nThe year field is out of range."
+        mock_response = MagicMock()
+        mock_response.content = [mock_text_block]
+
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+        with (
+            patch.object(ea, "_discogs_data_root", tmp_path),
+            patch.object(ea, "_musicbrainz_data_root", None),
+            patch.object(ea, "_anthropic_client", mock_client),
+        ):
+            resp = test_client.post(
+                "/api/admin/extraction-analysis/20260101/generate-ai-prompt",
+                json={"rules": [{"rule": "year-out-of-range", "entity_type": "artists"}]},
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        call_kwargs = mock_client.messages.create.call_args[1]
+        prompt_sent = call_kwargs["messages"][0]["content"]
+        assert "1850" in prompt_sent
+        assert "(not captured)" not in prompt_sent
 
     def test_returns_502_on_anthropic_error(self, test_client: TestClient, tmp_path: Path) -> None:
         """Returns 502 when the Anthropic API call fails."""
