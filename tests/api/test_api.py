@@ -184,6 +184,37 @@ class TestHealthEndpoint:
         assert data["service"] == "api"
 
 
+class TestMetricsMiddlewareCardinality:
+    """discogsography-jlei: metrics_middleware must key on the matched route's
+    path TEMPLATE, so path cardinality is bounded by the number of registered
+    routes — not by attacker-controlled URL segments."""
+
+    def test_unmatched_paths_collapse_to_a_single_bucket(self, test_client: TestClient) -> None:
+        from api.api import app
+
+        test_client.get("/totally-made-up-path-one")
+        test_client.get("/another-made-up-path-two")
+        test_client.get("/yet-a-third-bogus-path")
+
+        stats = app.state.metrics_buffer.flush()
+        assert "<unmatched>" in stats
+        assert stats["<unmatched>"]["count"] >= 3
+        # None of the raw junk paths became their own distinct key.
+        assert "/totally-made-up-path-one" not in stats
+        assert "/another-made-up-path-two" not in stats
+
+    def test_matched_route_uses_its_path_template(self, test_client: TestClient) -> None:
+        from api.api import app
+
+        # Unauthenticated DELETE — rejected by the require_user dependency
+        # (401) before the handler body runs, so no backend I/O is needed.
+        test_client.delete("/api/user/app-tokens/some-token-id")
+
+        stats = app.state.metrics_buffer.flush()
+        assert "/api/user/app-tokens/{token_id}" in stats
+        assert "/api/user/app-tokens/some-token-id" not in stats
+
+
 class TestRegisterEndpoint:
     """Tests for POST /api/auth/register."""
 
