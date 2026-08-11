@@ -63,6 +63,66 @@
 }
 
 /* ============================================================
+   Light palette — applied whenever the .dark class is absent from
+   <html> (theme.js toggles that class for 'light'/'auto' modes; see
+   explore/static/js/theme.js). :root:not(.dark) has higher specificity
+   than the bare :root block above, so it wins without needing !important.
+   ============================================================ */
+:root:not(.dark) {
+    /* Background scale */
+    --bg-void: #e7ebf0;
+    --bg-deep: #f4f6f9;
+    --card-bg: #ffffff;
+    --inner-bg: #eef1f5;
+    --border-color: #d7dce4;
+    --inner-border: #d7dce4;
+    --bg-hover: #e2e7ee;
+
+    /* Text scale */
+    --text-high: #10192b;
+    --text-mid: #45526b;
+    --text-dim: #64748b;
+    --text-muted: #94a3b8;
+
+    /* Cyan — primary accent (deepened for AA contrast on light backgrounds) */
+    --cyan-900: #b2ebf2;
+    --cyan-700: #00707d;
+    --cyan-500: #007c91;
+    --cyan-glow: #0097a7;
+    --cyan-bright: #005662;
+
+    /* Purple — secondary accent (deepened for AA contrast on light backgrounds) */
+    --purple-900: #ede7f6;
+    --purple-700: #4527a0;
+    --purple-500: #5e35b1;
+    --purple-300: #7c4dff;
+    --purple-bright: #311b92;
+
+    /* Legacy aliases (used by Tailwind classes and existing markup) */
+    --blue-accent: #007c91;
+    --purple-accent: #5e35b1;
+
+    /* Semantic status (deepened for AA contrast on light backgrounds) */
+    --accent-green: #1b8a45;
+    --accent-yellow: #b45f06;
+    --accent-red: #c62828;
+
+    /* UI tokens */
+    --card-shadow: 0 1px 3px rgba(15,23,42,0.12), 0 1px 2px rgba(15,23,42,0.08);
+    --scrollbar-thumb: #c3cbd6;
+    --glass-bg: rgba(255,255,255,0.9);
+    --label-bg: rgba(255,255,255,0.85);
+    --overlay-bg: rgba(15,23,42,0.6);
+    --gauge-track: #d7dce4;
+    --log-msg: #45526b;
+    --row-border: rgba(15,23,42,0.08);
+
+    /* Graph node colors stay the same across themes — they're drawn on the
+       graph canvas background (--bg-deep), not on card/text surfaces, and
+       already have enough contrast against both dark and light canvases. */
+}
+
+/* ============================================================
    Utility classes (matching dashboard)
    ============================================================ */
 

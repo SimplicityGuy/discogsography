@@ -213,3 +213,51 @@ describe('theme toggle markup', () => {
         expect(html).toContain('js/theme.js');
     });
 });
+
+describe('light palette (regression discogsography-68oe)', () => {
+    /**
+     * Extract `--name: value;` custom-property declarations out of the FIRST
+     * top-level block matching `selector`, e.g. the bare `:root { ... }`
+     * dark-default block or the `:root:not(.dark) { ... }` light override.
+     */
+    function extractCustomProps(css, selectorPattern) {
+        const blockMatch = css.match(new RegExp(`${selectorPattern}\\s*\\{([^}]*)\\}`));
+        expect(blockMatch, `expected a ${selectorPattern} block to exist in styles.css`).toBeTruthy();
+        const body = blockMatch[1];
+        const props = {};
+        for (const m of body.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)) {
+            props[m[1]] = m[2].trim();
+        }
+        return props;
+    }
+
+    it('defines a :root:not(.dark) light override block in styles.css', () => {
+        const css = readFileSync(resolve(__dirname, '..', 'static', 'css', 'styles.css'), 'utf-8');
+        expect(css).toMatch(/:root:not\(\.dark\)\s*\{/);
+    });
+
+    it('overrides every dark-default background/text/border token with a distinct light value', () => {
+        const css = readFileSync(resolve(__dirname, '..', 'static', 'css', 'styles.css'), 'utf-8');
+        const darkDefaults = extractCustomProps(css, ':root');
+        const lightOverrides = extractCustomProps(css, ':root:not\\(\\.dark\\)');
+
+        const criticalTokens = [
+            '--bg-void', '--bg-deep', '--card-bg', '--inner-bg',
+            '--border-color', '--inner-border', '--bg-hover',
+            '--text-high', '--text-mid', '--text-dim', '--text-muted',
+        ];
+
+        for (const token of criticalTokens) {
+            expect(darkDefaults[token], `${token} missing from base :root`).toBeTruthy();
+            expect(lightOverrides[token], `${token} missing from :root:not(.dark) override`).toBeTruthy();
+            expect(lightOverrides[token]).not.toBe(darkDefaults[token]);
+        }
+    });
+
+    it('does not hardcode a dark background on <body> via inline style (would defeat any CSS-variable light palette)', () => {
+        const html = readFileSync(resolve(__dirname, '..', 'static', 'index.html'), 'utf-8');
+        const bodyTagMatch = html.match(/<body\b[^>]*>/);
+        expect(bodyTagMatch).toBeTruthy();
+        expect(bodyTagMatch[0]).not.toMatch(/style=/);
+    });
+});
