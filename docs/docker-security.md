@@ -142,6 +142,7 @@ secrets/
 ├── jwt_secret_key.txt          # openssl rand -hex 32
 ├── encryption_master_key.txt   # base64-urlsafe 32-byte HKDF master key
 ├── resend_api_key.txt          # Resend API key (empty disables email delivery)
+├── nlq_api_key.txt             # NLQ provider API key (empty unless NLQ_ENABLED)
 ├── postgres_username.txt       # discogsography
 ├── postgres_password.txt       # openssl rand -base64 24
 ├── rabbitmq_username.txt       # discogsography
