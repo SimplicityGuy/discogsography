@@ -140,6 +140,26 @@ class TestAdminLogin:
         )
         assert resp.status_code == 403
 
+    def test_success_does_not_log_email(self, test_client: TestClient, mock_cur: AsyncMock) -> None:
+        """discogsography-1385: admin login success log must carry user_id, not email."""
+        from structlog.testing import capture_logs
+
+        admin_row = _make_admin_row()
+        mock_cur.fetchone = AsyncMock(return_value=admin_row)
+
+        with capture_logs() as captured:
+            resp = test_client.post(
+                "/api/admin/auth/login",
+                json={"email": TEST_ADMIN_EMAIL, "password": "adminpassword123"},
+            )
+        assert resp.status_code == 200
+
+        success_events = [entry for entry in captured if "logged in" in entry.get("event", "")]
+        assert success_events, "expected an admin-login-success log entry"
+        for entry in success_events:
+            assert entry.get("user_id") == TEST_ADMIN_ID
+            assert TEST_ADMIN_EMAIL not in str(entry.values())
+
 
 class TestAdminLogout:
     def test_success(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
@@ -325,6 +345,34 @@ class TestDlqPurge:
             headers=_admin_auth_headers(),
         )
         assert resp.status_code == 502
+
+    @patch("api.routers.admin.httpx.AsyncClient")
+    def test_purge_success_does_not_log_email(self, mock_client_cls: Any, test_client: TestClient) -> None:
+        """discogsography-1385: DLQ-purge audit log must carry admin_id, not
+        the admin's email address (PII)."""
+        from structlog.testing import capture_logs
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 204
+        mock_client_instance = AsyncMock()
+        mock_client_instance.delete = AsyncMock(return_value=mock_response)
+        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+        mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client_instance
+
+        with capture_logs() as captured:
+            resp = test_client.post(
+                "/api/admin/dlq/purge/discogsography-discogs-graphinator-artists.dlq",
+                headers=_admin_auth_headers(),
+            )
+        assert resp.status_code == 200
+
+        purge_events = [entry for entry in captured if "purged" in entry.get("event", "")]
+        assert purge_events, "expected a DLQ-purge log entry"
+        for entry in purge_events:
+            assert entry.get("admin_id") == TEST_ADMIN_ID
+            assert "admin_email" not in entry
+            assert TEST_ADMIN_EMAIL not in str(entry.values())
 
     @patch("api.routers.admin.httpx.AsyncClient")
     def test_purge_read_timeout_returns_502(self, mock_client_cls: Any, test_client: TestClient) -> None:

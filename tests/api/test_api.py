@@ -282,6 +282,35 @@ class TestRegisterEndpoint:
         )
         assert response.status_code == 500
 
+    def test_register_success_avoids_logging_email(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+    ) -> None:
+        """discogsography-1385: the success log must carry user_id, never the
+        registrant's email (PII) — no ad-hoc emoji/log rule bypass."""
+        from structlog.testing import capture_logs
+
+        mock_cur.fetchone.return_value = {
+            "id": TEST_USER_ID,
+            "email": TEST_USER_EMAIL,
+            "is_active": True,
+            "created_at": datetime.now(UTC),
+        }
+
+        with capture_logs() as captured:
+            response = test_client.post(
+                "/api/auth/register",
+                json={"email": TEST_USER_EMAIL, "password": "Password123!"},
+            )
+        assert response.status_code == 201
+
+        success_events = [entry for entry in captured if "registered" in entry.get("event", "")]
+        assert success_events, "expected a registration-success log entry"
+        for entry in success_events:
+            assert entry.get("user_id") == TEST_USER_ID
+            assert TEST_USER_EMAIL not in str(entry.values())
+
 
 class TestLoginEndpoint:
     """Tests for POST /api/auth/login."""
@@ -364,6 +393,38 @@ class TestLoginEndpoint:
             json={"email": TEST_USER_EMAIL, "password": "password"},
         )
         assert response.status_code == 401
+
+    def test_login_success_does_not_log_email(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+    ) -> None:
+        """discogsography-1385: sibling of the registration leak — the
+        high-volume per-session login log must also carry user_id, not email."""
+        from structlog.testing import capture_logs
+
+        from api.auth import _hash_password
+
+        hashed = _hash_password("correctpassword")
+        mock_cur.fetchone.return_value = {
+            "id": TEST_USER_ID,
+            "email": TEST_USER_EMAIL,
+            "is_active": True,
+            "hashed_password": hashed,
+        }
+
+        with capture_logs() as captured:
+            response = test_client.post(
+                "/api/auth/login",
+                json={"email": TEST_USER_EMAIL, "password": "correctpassword"},
+            )
+        assert response.status_code == 200
+
+        success_events = [entry for entry in captured if "logged in" in entry.get("event", "")]
+        assert success_events, "expected a login-success log entry"
+        for entry in success_events:
+            assert entry.get("user_id") == TEST_USER_ID
+            assert TEST_USER_EMAIL not in str(entry.values())
 
 
 class TestMeEndpoint:

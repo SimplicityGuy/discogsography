@@ -118,7 +118,7 @@ async def admin_login(request: Request, body: AdminLoginRequest) -> JSONResponse
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
     access_token, expires_in = create_admin_token(str(admin["id"]), admin["email"], _config.jwt_secret_key)
-    logger.info("✅ Admin logged in", email=body.email)
+    logger.info("✅ Admin logged in", user_id=str(admin["id"]))
     await record_audit_entry(pool=_pool, admin_id=str(admin["id"]), action="admin.login", target=body.email, details={"success": True})
 
     return JSONResponse(
@@ -593,8 +593,8 @@ async def purge_dlq(
             detail="RabbitMQ management API unreachable",
         ) from exc
 
-    admin_email = current_admin.get("email", "unknown")
-    logger.info("🗑️ DLQ purged", queue=queue, messages_purged=messages_purged, admin_email=admin_email)
+    admin_id = current_admin.get("sub", "unknown")
+    logger.info("🗑️ DLQ purged", queue=queue, messages_purged=messages_purged, admin_id=admin_id)
     if _pool is not None:
         await record_audit_entry(
             pool=_pool, admin_id=current_admin["sub"], action="dlq.purge", target=queue, details={"purged_count": messages_purged}

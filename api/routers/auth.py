@@ -156,7 +156,7 @@ async def register(request: Request, body: RegisterRequest) -> JSONResponse:  # 
             detail="Registration failed",
         )
 
-    logger.info("✅ User registered", email=body.email)
+    logger.info("✅ User registered", user_id=str(row["id"]))
     return JSONResponse(
         content={"message": "Registration processed"},
         status_code=status.HTTP_201_CREATED,
@@ -226,7 +226,7 @@ async def login(request: Request, body: LoginRequest) -> JSONResponse:  # noqa: 
         )
 
     access_token, expires_in = _create_access_token_fn(str(user["id"]), user["email"], issued_at=credential_issued_at)
-    logger.info("✅ User logged in", email=body.email)
+    logger.info("✅ User logged in", user_id=str(user["id"]))
 
     return JSONResponse(
         content={

@@ -23,6 +23,23 @@ class TestLogNotificationChannel:
         channel = LogNotificationChannel()
         assert isinstance(channel, NotificationChannel)
 
+    @pytest.mark.asyncio
+    async def test_send_password_reset_does_not_log_email(self) -> None:
+        """discogsography-1385: the fallback log channel must never bind the
+        recipient's email address into a structlog event (PII)."""
+        from structlog.testing import capture_logs
+
+        from api.notifications import LogNotificationChannel
+
+        channel = LogNotificationChannel()
+        with capture_logs() as captured:
+            await channel.send_password_reset("user@example.com", "https://example.com/reset?token=abc123")
+
+        assert captured
+        for entry in captured:
+            assert "email" not in entry
+            assert "user@example.com" not in str(entry.values())
+
 
 def _mock_async_client(mock_response: MagicMock) -> MagicMock:
     """Build a mock httpx.AsyncClient whose `.post()` returns `mock_response`."""
@@ -179,3 +196,27 @@ class TestResendNotificationChannel:
             )
 
             await channel.send_password_reset("user@example.com", "https://example.com/reset")
+
+    @pytest.mark.asyncio
+    async def test_send_password_reset_success_does_not_log_email(self) -> None:
+        """discogsography-1385: success-path log must not bind email either."""
+        from structlog.testing import capture_logs
+
+        from api.notifications import ResendNotificationChannel
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_client = _mock_async_client(mock_response)
+
+        with patch("api.notifications.httpx.AsyncClient", return_value=mock_client), capture_logs() as captured:
+            channel = ResendNotificationChannel(
+                api_key="test-key",
+                sender_email="noreply@test.com",
+                sender_name="Test",
+            )
+            await channel.send_password_reset("user@example.com", "https://example.com/reset")
+
+        assert captured
+        for entry in captured:
+            assert "email" not in entry
+            assert "user@example.com" not in str(entry.values())
