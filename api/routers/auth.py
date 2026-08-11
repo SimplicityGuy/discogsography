@@ -542,13 +542,26 @@ async def twofa_confirm(
     if not verify_totp_code(secret, body.code):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
 
-    # Enable TOTP
+    # Enable TOTP — guarded on the EXACT secret whose code was just verified
+    # (bound as `row["totp_secret"]`, read above), not a blind write. Without
+    # this guard, a concurrent twofa_disable committing between our SELECT and
+    # this UPDATE would land as totp_enabled=TRUE with totp_secret/
+    # totp_recovery_codes NULLed — login demands 2FA but neither twofa_verify
+    # nor twofa_recovery can ever satisfy it, a permanent lockout
+    # (discogsography-8vlp). rowcount 0 means the setup state changed
+    # underneath us (disabled, or re-setup with a new secret) — treat that as
+    # a conflict rather than silently reporting success.
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,
-            "UPDATE users SET totp_enabled = TRUE, updated_at = NOW() WHERE id = %s::uuid",
-            (user_id,),
+            "UPDATE users SET totp_enabled = TRUE, updated_at = NOW() WHERE id = %s::uuid AND totp_secret = %s",
+            (user_id, row["totp_secret"]),
         )
+        if cur.rowcount == 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="2FA setup state changed — restart 2FA setup",
+            )
 
     logger.info("✅ 2FA enabled", user_id=user_id)
     return JSONResponse(content={"message": "2FA has been enabled"})

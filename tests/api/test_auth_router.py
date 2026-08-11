@@ -640,6 +640,76 @@ class TestTwoFactorConfirm:
 
         assert response.status_code == 503
 
+    def test_confirm_refuses_on_concurrent_disable_race(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """discogsography-8vlp: if a concurrent twofa_disable commits between
+        confirm's SELECT and its enable UPDATE, the guarded
+        `AND totp_secret = %s` matches zero rows — confirm must reject with
+        409 rather than landing totp_enabled=TRUE against a NULLed secret
+        (which would permanently lock the account out: login demands 2FA but
+        neither twofa_verify nor twofa_recovery could ever satisfy it)."""
+        secret, encrypted_secret = _make_encrypted_totp_secret()
+        mock_cur.fetchone = AsyncMock(return_value={"totp_secret": encrypted_secret})
+        mock_redis.get = AsyncMock(return_value=None)
+        # The code is verified against the secret read above, but a concurrent
+        # disable clears totp_secret before the enable UPDATE runs, so the
+        # guarded WHERE matches no row.
+        mock_cur.rowcount = 0
+
+        valid_code = pyotp.TOTP(secret).now()
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/confirm",
+                headers=auth_headers,
+                json={"code": valid_code},
+            )
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 409
+
+    def test_confirm_enable_update_is_guarded_on_secret(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """The enable UPDATE must bind the exact secret read at the top of the
+        handler, not perform a blind write."""
+        secret, encrypted_secret = _make_encrypted_totp_secret()
+        mock_cur.fetchone = AsyncMock(return_value={"totp_secret": encrypted_secret})
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_cur.rowcount = 1
+
+        valid_code = pyotp.TOTP(secret).now()
+
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=_TEST_MASTER_KEY)
+        try:
+            response = test_client.post(
+                "/api/auth/2fa/confirm",
+                headers=auth_headers,
+                json={"code": valid_code},
+            )
+        finally:
+            auth_router._config = original_config
+
+        assert response.status_code == 200
+        enable_calls = [call for call in mock_cur.execute.call_args_list if "totp_enabled = TRUE" in call.args[0]]
+        assert len(enable_calls) == 1
+        query, params = enable_calls[0].args
+        assert "AND totp_secret = %s" in query
+        assert params == (TEST_USER_ID, encrypted_secret)
+
 
 # ---------------------------------------------------------------------------
 # 2FA Verify — TOTP login verification (lines 433-499)
