@@ -159,6 +159,19 @@ class PostgreSQLBatchProcessor:
             "releases": 0.0,
         }
 
+        # Set whenever a message for this data_type is nacked to the DLQ this run
+        # (normalize failure, missing 'id', or a poison batch) WITHOUT being
+        # upserted — the row it would have refreshed keeps its prior updated_at.
+        # purge_stale_rows() must not run for a data_type with this flag set: the
+        # dump-present, DLQ'd record's row still looks stale by updated_at alone
+        # and would otherwise be deleted (discogsography-x763).
+        self._had_dlq_nacks: dict[str, bool] = {
+            "artists": False,
+            "labels": False,
+            "masters": False,
+            "releases": False,
+        }
+
         # Load batch size from environment
         env_batch_size = os.environ.get("POSTGRES_BATCH_SIZE")
         if env_batch_size:
@@ -205,6 +218,7 @@ class PostgreSQLBatchProcessor:
         data_id = data.get("id")
         if not data_id:
             logger.error("❌ Message missing 'id' field", data_type=data_type)
+            self._had_dlq_nacks[data_type] = True
             await nack_callback()
             return False
 
@@ -219,6 +233,7 @@ class PostgreSQLBatchProcessor:
                 data_type=data_type,
                 error=str(e),
             )
+            self._had_dlq_nacks[data_type] = True
             await nack_callback()
             return False
 
@@ -424,6 +439,7 @@ class PostgreSQLBatchProcessor:
                         consecutive_failures=self._consecutive_failures[data_type],
                         error=str(e),
                     )
+                    self._had_dlq_nacks[data_type] = True
                     for msg in messages:
                         try:
                             await msg.nack_callback()
@@ -681,3 +697,14 @@ class PostgreSQLBatchProcessor:
             "consecutive_failures": self._consecutive_failures.copy(),
             "transient_failures": self._transient_failures.copy(),
         }
+
+    def had_dlq_nacks(self, data_type: str) -> bool:
+        """Whether a message for this data_type was nacked to the DLQ this run
+        without being upserted (see ``_had_dlq_nacks``). purge_stale_rows() must
+        not run while this is true — see discogsography-x763."""
+        return self._had_dlq_nacks.get(data_type, False)
+
+    def reset_dlq_nacks(self, data_type: str) -> None:
+        """Clear the DLQ-nack flag for a data_type, e.g. after extraction_complete
+        has decided whether to purge (successfully or by skipping)."""
+        self._had_dlq_nacks[data_type] = False

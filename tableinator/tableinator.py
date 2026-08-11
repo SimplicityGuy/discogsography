@@ -734,9 +734,22 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                 await message.nack(requeue=True)
                 return
 
-            # Purge stale rows from prior extractions
+            # Purge stale rows from prior extractions. Skip entirely if any message
+            # for this data_type was nacked to the DLQ this run (poison batch,
+            # flush-retry exhaustion, or normalize/missing-id failure): a DLQ'd
+            # record that is still present in the current dump was never upserted,
+            # so its row's updated_at was never refreshed and would otherwise look
+            # stale and get purged — deleting a still-current record beyond the DLQ.
+            # See discogsography-x763.
             purge_ok = True
-            if connection_pool is not None:
+            if batch_processor is not None and batch_processor.had_dlq_nacks(data_type):
+                logger.warning(
+                    "⚠️ Skipping stale row purge — messages were nacked to the DLQ "
+                    "this run, so some dump-present rows may not have been refreshed",
+                    data_type=data_type,
+                )
+                batch_processor.reset_dlq_nacks(data_type)
+            elif connection_pool is not None:
                 try:
                     record_counts = data.get("record_counts", {})
                     await purge_stale_rows(
