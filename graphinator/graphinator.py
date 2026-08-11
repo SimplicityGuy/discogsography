@@ -44,6 +44,11 @@ completed_files: set[str] = set()  # Track which files have completed processing
 # cross-type stub creation (release batches MERGE Artist/Label/Master stubs)
 # has fully stopped before we DETACH DELETE.
 extraction_complete_signals: set[str] = set()
+# Post-import maintenance runs DETACHED from the AMQP delivery that triggers it
+# (see check_file_completion). Strong references are held here so the loop cannot
+# garbage-collect the task mid-flight.
+post_import_maintenance_task: asyncio.Task[bool] | None = None
+maintenance_tasks: set[asyncio.Task[bool]] = set()
 current_task = None
 current_progress = 0.0
 
@@ -539,32 +544,108 @@ async def check_file_completion(
             received=sorted(extraction_complete_signals),
         )
 
-        # Post-import maintenance is coupled to the extraction_complete ack:
-        # both steps are idempotent, so on failure we nack(requeue=True) to
-        # retry rather than acking (and silently skipping) the sole trigger.
-        maintenance_ok = True
+        # Ack the trigger BEFORE maintenance starts, never after. Post-import
+        # maintenance is unbounded work — genre/style stats alone run ~10-30s per
+        # node over 16 genres + ~757 styles, label stats cover ~2.3M labels, and
+        # stub cleanup DETACH DELETEs millions of nodes — routinely hours. Holding
+        # the delivery unacked across it trips RabbitMQ's 30-minute consumer ack
+        # timeout, which closes the SHARED channel with PRECONDITION_FAILED: all
+        # four consumers die, the signal is redelivered, maintenance restarts from
+        # scratch, and after x-delivery-limit=20 redeliveries the trigger is
+        # dead-lettered and maintenance never completes at all. See
+        # discogsography-zjja.
+        await message.ack()
 
-        # Clean up stub nodes created by cross-type MERGE operations, across
-        # EVERY entity label — not just this type's — because release batches
-        # create Artist/Label/Master stubs regardless of which signal arrived
-        # last.
-        if graph is not None and not await cleanup_all_stub_nodes():
-            maintenance_ok = False
+        # Maintenance now runs detached with its own retry, because the AMQP
+        # delivery is no longer available as a retry token.
+        start_post_import_maintenance()
+        return True
 
-        # All releases are now imported — compute aggregate stats on
-        # Genre/Style/Label nodes.
-        if graph is not None and not await compute_genre_style_stats():
+    return False
+
+
+def start_post_import_maintenance() -> None:
+    """Launch post-import maintenance as a detached, single-flight task.
+
+    Single-flight matters: extraction_complete can be redelivered (consumer
+    restart, recovery loop) and every step is a heavy Neo4j sweep — two
+    concurrent runs would contend for the same transaction pool the retry logic
+    is trying to relieve.
+    """
+    global post_import_maintenance_task
+
+    if (
+        post_import_maintenance_task is not None
+        and not post_import_maintenance_task.done()
+    ):
+        logger.info(
+            "⏳ Post-import maintenance already running — ignoring duplicate trigger"
+        )
+        return
+
+    task = asyncio.create_task(run_post_import_maintenance())
+    post_import_maintenance_task = task
+    maintenance_tasks.add(task)
+    task.add_done_callback(maintenance_tasks.discard)
+
+
+async def run_post_import_maintenance() -> bool:
+    """Run stub cleanup and aggregate stats, retrying on failure.
+
+    Detached from the extraction_complete delivery (which is acked immediately),
+    so this owns the retry the nack/requeue used to provide. Every step is
+    idempotent, so a retry re-runs the whole sweep safely.
+
+    Returns:
+        True if a full pass succeeded, False if every attempt failed.
+    """
+    for attempt in range(1, POST_IMPORT_MAINTENANCE_MAX_ATTEMPTS + 1):
+        if shutdown_requested:
+            logger.warning(
+                "🛑 Shutdown requested — abandoning post-import maintenance",
+                attempt=attempt,
+            )
+            return False
+
+        try:
+            maintenance_ok = True
+
+            # Clean up stub nodes created by cross-type MERGE operations, across
+            # EVERY entity label — not just one type's — because release batches
+            # create Artist/Label/Master stubs regardless of which signal arrived
+            # last.
+            if graph is not None and not await cleanup_all_stub_nodes():
+                maintenance_ok = False
+
+            # All releases are now imported — compute aggregate stats on
+            # Genre/Style/Label nodes.
+            if graph is not None and not await compute_genre_style_stats():
+                maintenance_ok = False
+        except Exception as e:  # noqa: BLE001 - detached task: log and retry instead of dying silently
+            logger.error(
+                "❌ Post-import maintenance raised", attempt=attempt, error=str(e)
+            )
             maintenance_ok = False
 
         if maintenance_ok:
-            await message.ack()
-        else:
+            logger.info("✅ Post-import maintenance complete", attempt=attempt)
+            return True
+
+        if attempt == POST_IMPORT_MAINTENANCE_MAX_ATTEMPTS:
             logger.error(
-                "❌ Post-import maintenance failed, nacking extraction_complete for retry",
-                data_type=data_type,
+                "❌ Post-import maintenance failed after every attempt — stub nodes and "
+                "aggregate stats are stale until it is re-run",
+                attempts=attempt,
             )
-            await message.nack(requeue=True)
-        return True
+            return False
+
+        delay = POST_IMPORT_MAINTENANCE_RETRY_DELAY_SECONDS * (2 ** (attempt - 1))
+        logger.warning(
+            "⚠️ Post-import maintenance failed — retrying",
+            attempt=attempt,
+            retry_in_seconds=delay,
+        )
+        await asyncio.sleep(delay)
 
     return False
 
@@ -766,6 +847,13 @@ MAINTENANCE_MIN_BATCH_SIZE = 50
 
 MAINTENANCE_MAX_ATTEMPTS = 4
 MAINTENANCE_RETRY_BASE_DELAY_SECONDS = 30.0
+
+# Whole-sweep retries for the detached post-import maintenance task. The AMQP
+# delivery is acked before maintenance starts (discogsography-zjja), so this — not
+# nack/requeue — is what retries a failed sweep. Kept small: each pass is hours of
+# Neo4j work, and every step is idempotent so a later manual re-run is always safe.
+POST_IMPORT_MAINTENANCE_MAX_ATTEMPTS = 3
+POST_IMPORT_MAINTENANCE_RETRY_DELAY_SECONDS = 60.0
 
 # Pause between consecutive heavy maintenance queries so the transaction pool
 # can drain before the next one claims it, rather than running them back to back.
@@ -1786,6 +1874,16 @@ async def main() -> None:
             # Cancel any pending consumer cancellation tasks
             for task in list(consumer_cancel_tasks.values()):
                 task.cancel()
+
+            # Cancel detached post-import maintenance. Its trigger was already
+            # acked, and every step is idempotent — an interrupted sweep is
+            # re-run by the next extraction_complete or manually.
+            for maintenance_task in list(maintenance_tasks):
+                maintenance_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await maintenance_task
+            if maintenance_tasks:
+                logger.info("✅ Post-import maintenance task stopped")
 
             # Close RabbitMQ connection if still active
             await close_rabbitmq_connection()
