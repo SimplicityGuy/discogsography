@@ -779,16 +779,44 @@ async def run_post_import_maintenance() -> bool:
         try:
             maintenance_ok = True
 
+            # Drain EVERY batch queue first, not just the signalling type's. The
+            # extraction_complete branch flushes only its own data type, and a type
+            # whose signal was acked earlier can still hold pending messages:
+            # _flush_queue re-enqueues a transiently-failed batch at the front of that
+            # type's deque, so writes reappear after flush_queue already saw it empty.
+            # Cleanup then DETACH DELETEs sha256-less stubs of every label while those
+            # batches MERGE fresh stubs — the stubs survive forever with no sha256, or
+            # the sweep deletes a stub together with a just-written edge. The gate is
+            # "all four signals received"; this makes it "all four queues quiescent"
+            # too, which is the invariant the deferral comment actually claims
+            # (discogsography-fyxy). flush_all is a no-op on empty queues and waits out
+            # in-flight batches per type.
+            if batch_processor is not None and not await batch_processor.flush_all():
+                logger.error(
+                    "❌ Batch queues did not drain — deferring stub cleanup rather than "
+                    "sweeping while writers are still creating stubs",
+                )
+                maintenance_ok = False
+
             # Clean up stub nodes created by cross-type MERGE operations, across
             # EVERY entity label — not just one type's — because release batches
             # create Artist/Label/Master stubs regardless of which signal arrived
             # last.
-            if graph is not None and not await cleanup_all_stub_nodes():
+            if (
+                maintenance_ok
+                and graph is not None
+                and not await cleanup_all_stub_nodes()
+            ):
                 maintenance_ok = False
 
             # All releases are now imported — compute aggregate stats on
-            # Genre/Style/Label nodes.
-            if graph is not None and not await compute_genre_style_stats():
+            # Genre/Style/Label nodes. Skipped when the queues never drained: the
+            # counts would be computed over a graph that is still being written.
+            if (
+                maintenance_ok
+                and graph is not None
+                and not await compute_genre_style_stats()
+            ):
                 maintenance_ok = False
         except Exception as e:  # noqa: BLE001 - detached task: log and retry instead of dying silently
             logger.error(

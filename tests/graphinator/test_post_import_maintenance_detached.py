@@ -17,7 +17,7 @@ task own the retry the nack used to provide.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from aio_pika.abc import AbstractIncomingMessage
 import pytest
@@ -134,6 +134,74 @@ async def test_redelivered_trigger_does_not_start_a_second_run() -> None:
     # Both deliveries are still acked — an unacked duplicate would rot on the channel.
     first.ack.assert_awaited_once()
     second.ack.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_maintenance_drains_every_queue_before_cleanup() -> None:
+    """discogsography-fyxy: cleanup DETACH DELETEs sha256-less stubs of EVERY label, so
+    every batch queue — not just the signalling type's — must be quiescent first.
+
+    The extraction_complete branch flushes only its own data type, and a type whose
+    signal was acked earlier can still hold pending messages: _flush_queue re-enqueues a
+    transiently-failed batch at the front of that type's deque, so writes reappear after
+    flush_queue already judged it empty. Those batches then MERGE fresh stubs while the
+    sweep runs.
+    """
+    order: list[str] = []
+
+    async def flush_all() -> bool:
+        order.append("flush_all")
+        return True
+
+    async def cleanup() -> bool:
+        order.append("cleanup")
+        return True
+
+    async def stats() -> bool:
+        order.append("stats")
+        return True
+
+    mock_batch = MagicMock()
+    mock_batch.flush_all = flush_all
+
+    with (
+        patch.object(g, "graph", AsyncMock()),
+        patch.object(g, "batch_processor", mock_batch),
+        patch.object(g, "cleanup_all_stub_nodes", cleanup),
+        patch.object(g, "compute_genre_style_stats", stats),
+        patch.object(g, "POST_IMPORT_MAINTENANCE_RETRY_DELAY_SECONDS", 0.0),
+    ):
+        ok = await g.run_post_import_maintenance()
+
+    assert ok is True
+    assert order == ["flush_all", "cleanup", "stats"]
+
+
+@pytest.mark.asyncio
+async def test_maintenance_skips_sweeps_when_queues_do_not_drain() -> None:
+    """A queue that will not drain means writers are still creating stubs. Sweeping
+    anyway is what strands orphan stubs; defer to the retry instead."""
+    swept = {"n": 0}
+
+    async def cleanup() -> bool:
+        swept["n"] += 1
+        return True
+
+    mock_batch = MagicMock()
+    mock_batch.flush_all = AsyncMock(return_value=False)
+
+    with (
+        patch.object(g, "graph", AsyncMock()),
+        patch.object(g, "batch_processor", mock_batch),
+        patch.object(g, "cleanup_all_stub_nodes", cleanup),
+        patch.object(g, "compute_genre_style_stats", AsyncMock(return_value=True)),
+        patch.object(g, "POST_IMPORT_MAINTENANCE_RETRY_DELAY_SECONDS", 0.0),
+    ):
+        ok = await g.run_post_import_maintenance()
+
+    assert ok is False
+    assert swept["n"] == 0, "stub cleanup must not run over queues that are still writing"
+    assert mock_batch.flush_all.await_count == g.POST_IMPORT_MAINTENANCE_MAX_ATTEMPTS
 
 
 @pytest.mark.asyncio
