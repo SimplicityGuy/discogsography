@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use lapin::{BasicProperties, Channel, Connection, ConnectionProperties, ExchangeKind, options::*, types::FieldTable};
+use lapin::{BasicProperties, Channel, Confirmation, Connection, ConnectionProperties, ExchangeKind, options::*, types::FieldTable};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -14,6 +14,19 @@ use crate::types::{DataMessage, DataType, ExtractionCompleteMessage, FileComplet
 #[allow(dead_code)]
 const DEFAULT_EXCHANGE_PREFIX: &str = "discogsography-discogs";
 const AMQP_EXCHANGE_TYPE: ExchangeKind = ExchangeKind::Fanout;
+
+/// Deadline for a publisher-confirm to come back from the broker.
+///
+/// Publisher confirms are enabled (`confirm_select`), and awaiting the confirm
+/// future had no timeout. When RabbitMQ trips a memory or `disk_free` alarm it
+/// stops acking publishes while leaving the connection TCP-connected, so
+/// `get_channel`'s reconnect path — which only fires on a DISCONNECTED channel —
+/// never triggers. The publisher task then parks forever, the bounded
+/// batch channel fills, the batcher blocks on `send().await`, and the whole
+/// per-file pipeline wedges. The shutdown flag is only polled BETWEEN files, so
+/// SIGTERM cannot break it and the container is SIGKILLed
+/// (discogsography-rehd).
+const PUBLISH_CONFIRM_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[cfg_attr(feature = "test-support", mockall::automock)]
 #[async_trait]
@@ -131,6 +144,32 @@ impl MessageQueue {
             .with_delivery_mode(2) // Persistent
     }
 
+    /// Await a publisher-confirm under a bounded deadline.
+    ///
+    /// A stalled broker (resource alarm / flow control) keeps the connection up
+    /// while withholding acks, so an unbounded await never resolves. Timing out
+    /// turns the wedge into an error the caller can count and retry, and lets
+    /// the task fail cleanly instead of parking the whole pipeline
+    /// (discogsography-rehd).
+    async fn await_confirm<F>(confirm_future: F) -> Result<()>
+    where
+        F: std::future::Future<Output = lapin::Result<Confirmation>>,
+    {
+        let confirm = match tokio::time::timeout(PUBLISH_CONFIRM_TIMEOUT, confirm_future).await {
+            Ok(result) => result.context("Failed to confirm message delivery")?,
+            Err(_) => {
+                error!("❌ Publisher confirm timed out after {:?} — broker may be under a resource alarm", PUBLISH_CONFIRM_TIMEOUT);
+                return Err(anyhow::anyhow!("Timed out after {:?} waiting for publisher confirm", PUBLISH_CONFIRM_TIMEOUT));
+            }
+        };
+
+        if !confirm.is_ack() {
+            return Err(anyhow::anyhow!("Message was not acknowledged by broker"));
+        }
+
+        Ok(())
+    }
+
     async fn get_channel(&self) -> Result<Channel> {
         // Fast path: check if channel is connected under read lock
         {
@@ -190,16 +229,12 @@ impl MessagePublisher for MessageQueue {
         let exchange_name = self.exchange_name(data_type);
         let payload = serde_json::to_vec(&message).context("Failed to serialize message")?;
 
-        let confirm = channel
+        let publish = channel
             .basic_publish(exchange_name.as_str().into(), "".into(), BasicPublishOptions::default(), &payload, Self::message_properties())
             .await
-            .context("Failed to publish message")?
-            .await
-            .context("Failed to confirm message delivery")?;
+            .context("Failed to publish message")?;
 
-        if !confirm.is_ack() {
-            return Err(anyhow::anyhow!("Message was not acknowledged by broker"));
-        }
+        Self::await_confirm(publish).await?;
 
         Ok(())
     }
@@ -211,16 +246,12 @@ impl MessagePublisher for MessageQueue {
         for message in messages {
             let payload = serde_json::to_vec(&Message::Data(message)).context("Failed to serialize message")?;
 
-            let confirm = channel
+            let publish = channel
                 .basic_publish(exchange_name.as_str().into(), "".into(), BasicPublishOptions::default(), &payload, Self::message_properties())
                 .await
-                .context("Failed to publish message")?
-                .await
-                .context("Failed to confirm message delivery")?;
+                .context("Failed to publish message")?;
 
-            if !confirm.is_ack() {
-                return Err(anyhow::anyhow!("Message was not acknowledged by broker"));
-            }
+            Self::await_confirm(publish).await?;
         }
 
         Ok(())
