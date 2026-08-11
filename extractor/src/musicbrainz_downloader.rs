@@ -37,11 +37,41 @@ pub fn discover_mb_dump_files(root: &Path) -> Result<HashMap<DataType, PathBuf>>
 
     // `root` comes from operator-controlled config (CLI/env var), not HTTP input.
     let read_dir_result = std::fs::read_dir(root); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+
+    // A listing failure that is NOT "directory missing" is a genuine I/O error and must not
+    // be reported to the caller as "no dump files" — process_musicbrainz_data treats an empty
+    // map as a benign Completed run, so an EACCES/EIO/EMFILE would be durably misreported as
+    // success on every cycle. It is remembered here rather than returned immediately because
+    // the exact-name probing below needs no directory listing at all and still succeeds when
+    // the directory is traversable but not listable.
+    let mut listing_error: Option<std::io::Error> = None;
+
     let entries: Vec<_> = match read_dir_result {
-        Ok(rd) => rd.filter_map(|e| e.ok()).filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false)).collect(),
+        Ok(rd) => rd
+            .filter_map(|entry| match entry {
+                Ok(entry) => Some(entry),
+                Err(e) => {
+                    warn!("⚠️ Skipping unreadable entry in MusicBrainz dump directory {:?}: {}", root, e);
+                    None
+                }
+            })
+            .filter(|entry| match entry.file_type() {
+                Ok(ft) => ft.is_file(),
+                Err(e) => {
+                    warn!("⚠️ Cannot stat {:?} in MusicBrainz dump directory: {}", entry.path(), e);
+                    false
+                }
+            })
+            .collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // Genuinely absent directory — nothing has been downloaded yet. Benign.
+            warn!("⚠️ MusicBrainz dump directory {:?} does not exist: {}", root, e);
+            Vec::new()
+        }
         Err(e) => {
-            warn!("⚠️ Cannot read MusicBrainz dump directory {:?}: {}", root, e);
-            return Ok(found);
+            warn!("⚠️ Cannot list MusicBrainz dump directory {:?}: {} — falling back to exact-name probing", root, e);
+            listing_error = Some(e);
+            Vec::new()
         }
     };
 
@@ -76,6 +106,11 @@ pub fn discover_mb_dump_files(root: &Path) -> Result<HashMap<DataType, PathBuf>>
     }
 
     if found.is_empty() {
+        // Exact-name probing recovered nothing, so the listing failure is the reason we
+        // found no files. Surface it as an error instead of an empty (success) result.
+        if let Some(e) = listing_error {
+            return Err(e).context(format!("Failed to read MusicBrainz dump directory {root:?}"));
+        }
         warn!("⚠️ No MusicBrainz dump files found in {:?}", root);
     } else {
         info!("📋 Discovered {} MusicBrainz dump file(s) in {:?}", found.len(), root);
@@ -236,13 +271,29 @@ impl MbDownloader {
         // tar extractor, and xz encoder, landing on disk only as {entity}.jsonl.xz.
         // SHA256 is computed on the raw compressed bytes as they flow past.
         for entity in MB_ENTITIES {
+            let out_path = version_dir.join(format!("{}.jsonl.xz", entity)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+
+            // Per-entity resume. A final `{entity}.jsonl(.xz)` can only exist because a previous
+            // run fully extracted and SHA256-verified it (see `is_version_complete` — the download
+            // path renames into place only after verification), so trusting it here is no weaker
+            // an assumption than the version-level gate already makes for all four entities.
+            // Without this skip, a run that dies on entity N re-downloads and re-extracts the
+            // multi-GB tarballs of entities 1..N-1 on every retry. Both the compressed and bare
+            // variants are honored, matching `is_version_complete` and `discover_mb_dump_files`.
+            let plain_path = version_dir.join(format!("{}.jsonl", entity)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            if out_path.exists() || plain_path.exists() {
+                info!("⏭️ MusicBrainz {} dump already extracted, skipping re-download", entity);
+                continue;
+            }
+
+            // Looked up after the skip so an already-materialized entity does not fail the whole
+            // run when its checksum line is absent from SHA256SUMS.
             let tarball_name = format!("{}.tar.xz", entity);
             let expected_hash = checksums
                 .get(&tarball_name)
                 .ok_or_else(|| anyhow::anyhow!("No SHA256 checksum found for {} in SHA256SUMS", tarball_name))?;
 
             let download_url = format!("{}{}/{}", self.base_url, version, tarball_name);
-            let out_path = version_dir.join(format!("{}.jsonl.xz", entity)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
 
             self.stream_download_verify_extract(&download_url, entity, expected_hash, &out_path).await?;
 
@@ -286,6 +337,12 @@ impl MbDownloader {
         // only after SHA256 passes. A hard crash (OOM/SIGKILL/power loss) mid-extraction then
         // leaves only a `{entity}.jsonl.xz.tmp` — which is_version_complete does NOT accept —
         // instead of a truncated `{entity}.jsonl.xz` that would be forever trusted as complete.
+        //
+        // Extending that guarantee from process kills to actual power loss needs two fsyncs,
+        // because ordering between the data blocks and the directory entry is otherwise not
+        // guaranteed: the `.tmp` file's data is fsynced before the rename (in
+        // `extract_entity_from_reader`), and the parent directory is fsynced after it
+        // (`sync_parent_dir`).
         let tmp_path = tmp_download_path(out_path);
         let mut last_error: Option<anyhow::Error> = None;
 
@@ -366,6 +423,12 @@ impl MbDownloader {
                         last_error = Some(anyhow::anyhow!(msg));
                         let _ = fs::remove_file(&tmp_path).await;
                         continue;
+                    }
+                    // Make the new directory entry itself durable; the file's own data was
+                    // fsynced before the rename inside extract_entity_from_reader.
+                    {
+                        let out_path_for_sync = out_path.to_path_buf();
+                        let _ = tokio::task::spawn_blocking(move || sync_parent_dir(&out_path_for_sync)).await;
                     }
                     let elapsed = attempt_start.elapsed().as_secs_f64();
                     let speed = if elapsed > 0.0 { (total_bytes as f64 / 1_048_576.0) / elapsed } else { 0.0 };
@@ -468,6 +531,32 @@ fn tmp_download_path(out_path: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// fsync the directory that contains `path` so a rename into it survives power loss.
+///
+/// `rename(2)` is atomic with respect to what a running system observes, but on journaling
+/// file systems the *new directory entry* only becomes durable once the parent directory is
+/// itself fsynced. Without this, the rename can be persisted while the renamed file's data
+/// blocks are not — the exact shape that leaves a truncated `{entity}.jsonl.xz` at a path
+/// `is_version_complete` trusts forever.
+///
+/// Best-effort: on platforms where a directory cannot be opened for sync this warns rather
+/// than failing an otherwise complete, checksum-verified download.
+pub(crate) fn sync_parent_dir(path: &Path) {
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    // `parent` is derived from operator-controlled config, not HTTP input.
+    match std::fs::File::open(parent) {
+        // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+        Ok(dir) => {
+            if let Err(e) = dir.sync_all() {
+                warn!("⚠️ Failed to fsync directory {:?}: {}", parent, e);
+            }
+        }
+        Err(e) => warn!("⚠️ Failed to open directory {:?} for fsync: {}", parent, e),
+    }
+}
+
 /// Extract `mbdump/<entity>` from a `.tar.xz` file on disk into a compressed `.jsonl.xz`
 /// output file. Thin wrapper around [`extract_entity_from_reader`] — kept as a stable public
 /// entry point so existing disk-based tests and any standalone callers keep working.
@@ -482,6 +571,7 @@ pub fn extract_entity_from_tarball(tar_path: &Path, entity: &str, out_path: &Pat
     let tmp_path = tmp_download_path(out_path);
     extract_entity_from_reader(file, entity, &tmp_path).map(|_| ())?;
     std::fs::rename(&tmp_path, out_path).with_context(|| format!("Failed to rename {:?} -> {:?}", tmp_path, out_path))?;
+    sync_parent_dir(out_path);
     Ok(())
 }
 
@@ -542,7 +632,13 @@ fn extract_entity_from_reader<R: Read>(reader: R, entity: &str, out_path: &Path)
                     last_progress_log = now;
                 }
             }
-            encoder.finish().context("Failed to finalize XZ compression")?;
+            // Flush the XZ footer, then force the data to stable storage BEFORE the caller
+            // renames this file into its final path. Without the fsync the rename can be
+            // journaled while the data blocks are not, and a power loss leaves a truncated
+            // `{entity}.jsonl.xz` at the final path — which `is_version_complete` trusts
+            // forever, wedging extraction until an operator deletes the file by hand.
+            let finished = encoder.finish().context("Failed to finalize XZ compression")?;
+            finished.sync_all().with_context(|| format!("Failed to fsync {:?}", out_path))?;
             Ok(())
         })();
 

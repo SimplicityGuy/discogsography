@@ -1151,3 +1151,192 @@ fn test_extract_entity_from_tarball_success_leaves_no_tmp() {
     decoder.read_to_string(&mut decompressed).unwrap();
     assert_eq!(decompressed, original_content);
 }
+
+/// Make `dir` traversable but not listable and return false when the process can still
+/// list it anyway (i.e. running as root), so the caller can skip the assertion.
+#[cfg(unix)]
+fn make_unlistable(dir: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o111)).unwrap();
+    std::fs::read_dir(dir).is_err()
+}
+
+#[cfg(unix)]
+fn restore_listable(dir: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_discover_unlistable_dir_errors() {
+    // A real I/O failure (EACCES/EIO/EMFILE) must NOT be flattened into Ok(empty):
+    // process_musicbrainz_data reads an empty map as a benign run and reports
+    // Completed/success, wedging the service in a silent no-op loop for the whole
+    // periodic-check window.
+    let dir = TempDir::new().unwrap();
+    if !make_unlistable(dir.path()) {
+        return; // running as root — the permission bit is not enforced
+    }
+
+    let result = discover_mb_dump_files(dir.path());
+    restore_listable(dir.path());
+
+    let err = result.expect_err("an unreadable dump directory must surface as an error, not Ok(empty)");
+    assert!(format!("{err:#}").contains("Failed to read MusicBrainz dump directory"), "unexpected error: {err:#}");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_discover_unlistable_dir_probes_exact_names() {
+    // Traversable-but-not-listable (x without r) still supports exact-name probing, so
+    // discovery must fall through to it instead of bailing out of the whole function.
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("artist.jsonl.xz"), b"fake").unwrap();
+    std::fs::write(dir.path().join("label.jsonl.xz"), b"fake").unwrap();
+    if !make_unlistable(dir.path()) {
+        return; // running as root — the permission bit is not enforced
+    }
+
+    let result = discover_mb_dump_files(dir.path());
+    restore_listable(dir.path());
+
+    let found = result.expect("exact-name probing needs no directory listing and must still succeed");
+    assert_eq!(found.len(), 2);
+    assert!(found.contains_key(&DataType::Artists));
+    assert!(found.contains_key(&DataType::Labels));
+}
+
+/// Build a tiny `{entity}.tar.xz` body containing one JSONL record.
+fn build_entity_tarball(entity: &str) -> Vec<u8> {
+    let content = format!("{{\"id\":\"test-{}\"}}\n", entity);
+    let mut tar_data = Vec::new();
+    {
+        let mut builder = tar::Builder::new(&mut tar_data);
+        let bytes = content.as_bytes();
+        let mut header = tar::Header::new_gnu();
+        header.set_path(format!("{}/mbdump/{}", entity, entity)).unwrap();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder.append(&header, bytes).unwrap();
+        builder.finish().unwrap();
+    }
+    let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
+    encoder.write_all(&tar_data).unwrap();
+    encoder.finish().unwrap()
+}
+
+#[tokio::test]
+async fn test_download_latest_resumes_per_entity() {
+    // discogsography-ov20 regression: a run that died partway through the entity loop must
+    // not re-download and re-extract the entities it already materialized. Only `release`
+    // is missing here, so only `release.tar.xz` may be fetched.
+    let dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let index_html = r#"<html><body>
+        <a href="20260325-001001/">20260325-001001/</a>
+    </body></html>"#;
+    let _index_mock = server.mock("GET", "/").with_status(200).with_body(index_html).create_async().await;
+
+    // Three entities already on disk from the previous run — one bare `.jsonl`, to prove the
+    // skip honors both variants that is_version_complete accepts.
+    let version_dir = dir.path().join("20260325-001001");
+    std::fs::create_dir(&version_dir).unwrap();
+    std::fs::write(version_dir.join("artist.jsonl.xz"), b"previous-run-artist").unwrap();
+    std::fs::write(version_dir.join("label.jsonl"), b"previous-run-label").unwrap();
+    std::fs::write(version_dir.join("release-group.jsonl.xz"), b"previous-run-release-group").unwrap();
+
+    let release_body = build_entity_tarball("release");
+    // SHA256SUMS deliberately carries ONLY the missing entity's line: an already-materialized
+    // entity must not fail the run on an absent checksum line either.
+    let sha256_lines = format!("{} *release.tar.xz\n", hex::encode(sha2::Sha256::digest(&release_body)));
+    let _sha_mock = server.mock("GET", "/20260325-001001/SHA256SUMS").with_status(200).with_body(&sha256_lines).create_async().await;
+
+    let release_mock = server
+        .mock("GET", "/20260325-001001/release.tar.xz")
+        .with_status(200)
+        .with_body(release_body)
+        .expect(1)
+        .create_async()
+        .await;
+    let artist_mock = server.mock("GET", "/20260325-001001/artist.tar.xz").with_status(200).expect(0).create_async().await;
+    let label_mock = server.mock("GET", "/20260325-001001/label.tar.xz").with_status(200).expect(0).create_async().await;
+    let rg_mock = server.mock("GET", "/20260325-001001/release-group.tar.xz").with_status(200).expect(0).create_async().await;
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), base_url);
+    let result = downloader.download_latest().await.unwrap();
+
+    assert!(matches!(result, MbDownloadResult::Downloaded(v) if v == "20260325-001001"));
+
+    release_mock.assert_async().await;
+    artist_mock.assert_async().await;
+    label_mock.assert_async().await;
+    rg_mock.assert_async().await;
+
+    // Already-present outputs must be left byte-for-byte alone.
+    assert_eq!(std::fs::read(version_dir.join("artist.jsonl.xz")).unwrap(), b"previous-run-artist");
+    assert_eq!(std::fs::read(version_dir.join("label.jsonl")).unwrap(), b"previous-run-label");
+    assert_eq!(std::fs::read(version_dir.join("release-group.jsonl.xz")).unwrap(), b"previous-run-release-group");
+    assert!(version_dir.join("release.jsonl.xz").exists(), "the missing entity must still be downloaded");
+}
+
+#[test]
+fn test_sync_parent_dir_on_existing_file() {
+    // The durability helper must succeed quietly for a normal file in a real directory.
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("artist.jsonl.xz");
+    std::fs::write(&file, b"payload").unwrap();
+
+    sync_parent_dir(&file);
+
+    assert_eq!(std::fs::read(&file).unwrap(), b"payload");
+}
+
+#[test]
+fn test_sync_parent_dir_missing_parent_is_best_effort() {
+    // A missing/unopenable parent must warn rather than panic — a durability nicety must
+    // never fail an otherwise complete, checksum-verified download.
+    sync_parent_dir(Path::new("/nonexistent/path/to/mb/dumps/artist.jsonl.xz"));
+    sync_parent_dir(Path::new("artist.jsonl.xz"));
+}
+
+#[test]
+fn test_extract_entity_from_tarball_output_is_durable() {
+    // discogsography-ug9f regression: the output must be fsynced before it is renamed into
+    // place, so a power loss cannot leave a truncated file at the final path that
+    // is_version_complete then trusts forever. The observable surface is that the published
+    // file is complete and decompresses fully.
+    let dir = TempDir::new().unwrap();
+    let tar_path = dir.path().join("artist.tar.xz");
+    let out_path = dir.path().join("artist.jsonl.xz");
+
+    let payload: String = (0..500).map(|i| format!("{{\"id\":\"artist-{i}\"}}\n")).collect();
+    let mut tar_data = Vec::new();
+    {
+        let mut builder = tar::Builder::new(&mut tar_data);
+        let bytes = payload.as_bytes();
+        let mut header = tar::Header::new_gnu();
+        header.set_path("artist/mbdump/artist").unwrap();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder.append(&header, bytes).unwrap();
+        builder.finish().unwrap();
+    }
+    let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
+    encoder.write_all(&tar_data).unwrap();
+    std::fs::write(&tar_path, encoder.finish().unwrap()).unwrap();
+
+    extract_entity_from_tarball(&tar_path, "artist", &out_path).unwrap();
+
+    assert!(out_path.exists());
+    assert!(!tmp_download_path(&out_path).exists(), "the .tmp staging file must be gone after the rename");
+
+    let mut round_tripped = String::new();
+    xz2::read::XzDecoder::new(std::fs::File::open(&out_path).unwrap()).read_to_string(&mut round_tripped).unwrap();
+    assert_eq!(round_tripped, payload, "the published file must contain the complete XZ stream");
+}

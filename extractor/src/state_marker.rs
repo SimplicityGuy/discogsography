@@ -23,11 +23,18 @@ pub struct FileDownloadStatus {
     pub bytes_downloaded: u64,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
+    /// SHA-256 of the bytes currently on disk for this file, once verified.
+    ///
+    /// This is what links the two otherwise-independent phase machines: a processing
+    /// status is only valid for the byte-image it was computed from, and that image is
+    /// identified here. Defaulted so markers written before this field existed still load.
+    #[serde(default)]
+    pub checksum: Option<String>,
 }
 
 impl Default for FileDownloadStatus {
     fn default() -> Self {
-        Self { status: PhaseStatus::Pending, bytes_downloaded: 0, started_at: None, completed_at: None }
+        Self { status: PhaseStatus::Pending, bytes_downloaded: 0, started_at: None, completed_at: None, checksum: None }
     }
 }
 
@@ -68,11 +75,25 @@ pub struct FileProcessingStatus {
     pub batches_sent: u64,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
+    /// Checksum of the downloaded byte-image this processing status was computed from.
+    ///
+    /// `None` means the provenance is unknown (a marker written before this field existed),
+    /// in which case the status is left alone rather than speculatively invalidated.
+    #[serde(default)]
+    pub source_checksum: Option<String>,
 }
 
 impl Default for FileProcessingStatus {
     fn default() -> Self {
-        Self { status: PhaseStatus::Pending, records_extracted: 0, messages_published: 0, batches_sent: 0, started_at: None, completed_at: None }
+        Self {
+            status: PhaseStatus::Pending,
+            records_extracted: 0,
+            messages_published: 0,
+            batches_sent: 0,
+            started_at: None,
+            completed_at: None,
+            source_checksum: None,
+        }
     }
 }
 
@@ -331,6 +352,7 @@ impl StateMarker {
                     bytes_downloaded: bytes,
                     started_at: Some(Utc::now()),
                     completed_at: Some(Utc::now()),
+                    checksum: None,
                 },
             );
         }
@@ -340,6 +362,61 @@ impl StateMarker {
         }
         // Recalculate total bytes from all files
         self.download_phase.bytes_downloaded = self.download_phase.downloads_by_file.values().map(|s| s.bytes_downloaded).sum();
+    }
+
+    /// Record the checksum of the bytes now on disk for `filename` and, if a completed
+    /// processing status was derived from *different* bytes, invalidate it so the file is
+    /// processed again.
+    ///
+    /// The download and processing phases are otherwise independent state machines keyed by
+    /// the same filename, with no invariant linking them. That let a file whose bytes had
+    /// just been declared untrustworthy — and re-downloaded to replace them — keep a
+    /// `Completed` processing status computed from the old, bad bytes: `pending_files()`
+    /// filters purely on processing status, so the corrected file was never re-parsed and
+    /// the run still finalized as Completed, permanently for that version.
+    ///
+    /// Invalidation is deliberately narrow. It fires only when both checksums are known and
+    /// they differ, so the common case of an operator deleting a processed `.xml.gz` to
+    /// reclaim disk (re-downloaded → identical bytes) does not force a needless reparse, and
+    /// markers predating the checksum field are left untouched.
+    ///
+    /// Returns `true` when a completed processing status was invalidated.
+    pub fn file_bytes_verified(&mut self, filename: &str, checksum: &str) -> bool {
+        let previous_checksum = match self.processing_phase.progress_by_file.get(filename) {
+            Some(status) if status.status == PhaseStatus::Completed => status.source_checksum.clone(),
+            _ => None,
+        };
+
+        if let Some(status) = self.download_phase.downloads_by_file.get_mut(filename) {
+            status.checksum = Some(checksum.to_string());
+        }
+
+        let stale = previous_checksum.is_some_and(|previous| previous != checksum);
+        if !stale {
+            return false;
+        }
+
+        warn!("⚠️ {} was re-downloaded with different bytes than the ones already processed — re-queuing it for processing", filename);
+
+        self.processing_phase.progress_by_file.remove(filename);
+        self.processing_phase.files_processed = self.processing_phase.files_processed.saturating_sub(1);
+        if let Some(data_type) = extract_data_type(filename) {
+            self.summary.files_by_type.insert(data_type, PhaseStatus::Pending);
+        }
+        // Drop the stale record/message counts too — they feed /health totals and the
+        // extraction_complete record_counts broadcast.
+        self.sync_phase_totals();
+
+        // The version is no longer fully processed, so it must not be skipped on a later cycle.
+        if self.summary.overall_status == PhaseStatus::Completed {
+            self.summary.overall_status = PhaseStatus::InProgress;
+        }
+        if self.processing_phase.status == PhaseStatus::Completed {
+            self.processing_phase.status = PhaseStatus::InProgress;
+            self.processing_phase.completed_at = None;
+        }
+
+        true
     }
 
     /// Mark download phase as completed
@@ -364,7 +441,11 @@ impl StateMarker {
     pub fn start_file_processing(&mut self, filename: &str) {
         self.processing_phase.current_file = Some(filename.to_string());
 
-        let status = FileProcessingStatus { status: PhaseStatus::InProgress, started_at: Some(Utc::now()), ..Default::default() };
+        // Bind this processing attempt to the byte-image it is about to read, so a later
+        // re-download of different bytes can tell that the resulting status is stale.
+        let source_checksum = self.download_phase.downloads_by_file.get(filename).and_then(|s| s.checksum.clone());
+
+        let status = FileProcessingStatus { status: PhaseStatus::InProgress, started_at: Some(Utc::now()), source_checksum, ..Default::default() };
 
         self.processing_phase.progress_by_file.insert(filename.to_string(), status);
 

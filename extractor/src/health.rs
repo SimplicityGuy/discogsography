@@ -93,6 +93,9 @@ async fn metrics_handler(State((state, _)): State<AppState>) -> (StatusCode, Jso
         "extraction_progress_artists": state.extraction_progress.artists,
         "extraction_progress_labels": state.extraction_progress.labels,
         "extraction_progress_masters": state.extraction_progress.masters,
+        // MusicBrainz-only type — omitting it made the per-type counters sum to less
+        // than extraction_progress_total on the extractor-musicbrainz instance.
+        "extraction_progress_release_groups": state.extraction_progress.release_groups,
         "extraction_progress_releases": state.extraction_progress.releases,
         "extraction_progress_total": state.extraction_progress.total(),
         "completed_files": state.completed_files.len(),

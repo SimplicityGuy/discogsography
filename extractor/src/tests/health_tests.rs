@@ -235,6 +235,7 @@ async fn test_metrics_json_format() {
     assert!(value.get("extraction_progress_artists").is_some());
     assert!(value.get("extraction_progress_labels").is_some());
     assert!(value.get("extraction_progress_masters").is_some());
+    assert!(value.get("extraction_progress_release_groups").is_some());
     assert!(value.get("extraction_progress_releases").is_some());
     assert!(value.get("extraction_progress_total").is_some());
     assert!(value.get("completed_files").is_some());
@@ -321,4 +322,48 @@ async fn test_health_extraction_status_completed() {
     let trigger = Arc::new(Mutex::new(None::<bool>));
     let (_, json) = health_handler(State((state, trigger))).await;
     assert_eq!(json.0["extraction_status"], "completed");
+}
+
+#[tokio::test]
+async fn test_metrics_parts_sum_to_published_total() {
+    // On the extractor-musicbrainz instance release_groups is nonzero; the published
+    // per-type counters must sum to extraction_progress_total, and release-group
+    // throughput must be observable at all.
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    {
+        let mut s = state.write().await;
+        s.extraction_progress.artists = 1000;
+        s.extraction_progress.labels = 500;
+        s.extraction_progress.release_groups = 700;
+        s.extraction_progress.releases = 2000;
+    }
+
+    let trigger = Arc::new(Mutex::new(None::<bool>));
+    let (status, json) = metrics_handler(State((state, trigger))).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let value = json.0;
+    assert_eq!(value["extraction_progress_release_groups"], 700);
+    assert_eq!(value["extraction_progress_total"], 4200);
+
+    let parts: u64 = ["artists", "labels", "masters", "release_groups", "releases"]
+        .iter()
+        .map(|t| value[format!("extraction_progress_{t}")].as_u64().unwrap_or_else(|| panic!("missing extraction_progress_{t}")))
+        .sum();
+    assert_eq!(parts, value["extraction_progress_total"].as_u64().unwrap(), "per-type metrics must sum to the published total");
+}
+
+#[tokio::test]
+async fn test_metrics_and_health_report_same_types() {
+    // /metrics and /health must not disagree about which data types exist.
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let trigger = Arc::new(Mutex::new(None::<bool>));
+    let (_, health_json) = health_handler(State((state.clone(), trigger.clone()))).await;
+    let (_, metrics_json) = metrics_handler(State((state, trigger))).await;
+
+    let health_progress = health_json.0["extraction_progress"].clone();
+    for data_type in ["artists", "labels", "masters", "release_groups", "releases", "total"] {
+        assert!(health_progress.get(data_type).is_some(), "/health is missing {data_type}");
+        assert!(metrics_json.0.get(format!("extraction_progress_{data_type}")).is_some(), "/metrics is missing {data_type}");
+    }
 }
