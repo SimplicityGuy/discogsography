@@ -1,5 +1,6 @@
 """Tests for database resilience utilities."""
 
+import asyncio
 import time
 from unittest.mock import Mock
 
@@ -1158,7 +1159,12 @@ class TestResilientConnectionCloseOnReplace:
 
     @pytest.mark.asyncio
     async def test_cu2_33_async_closes_old_connection_on_replace(self) -> None:
-        """Async: the old unhealthy connection must be closed before reconnecting."""
+        """Async: the old unhealthy connection must be closed before reconnecting.
+
+        Health caching and teardown hysteresis are disabled here so a single
+        failed probe replaces the connection; both are covered on their own by
+        TestConnectionTeardownHysteresis (discogsography-4ajv).
+        """
         from common.db_resilience import AsyncResilientConnection
 
         old_conn = _FakeAsyncConn()
@@ -1166,10 +1172,18 @@ class TestResilientConnectionCloseOnReplace:
         connection_factory = Mock(side_effect=[old_conn, new_conn])
         connection_test = Mock(side_effect=[True, False, True])
 
-        manager = AsyncResilientConnection(connection_factory, connection_test)
+        manager = AsyncResilientConnection(
+            connection_factory,
+            connection_test,
+            health_check_ttl=0.0,
+            unhealthy_threshold=1,
+            close_grace_period=0.0,
+        )
         assert await manager.get_connection() is old_conn
         assert await manager.get_connection() is new_conn
 
+        # The replaced connection is closed by a deferred task (zero grace here).
+        await asyncio.sleep(0)
         assert old_conn.closed_count == 1
         assert manager._connection is new_conn
 
@@ -1187,3 +1201,148 @@ class TestResilientConnectionCloseOnReplace:
         assert await manager.get_connection() is good_conn
 
         assert bad_conn.closed_count == 1
+
+
+class TestConnectionTeardownHysteresis:
+    """Regression tests for discogsography-4ajv (health-check TOCTOU teardown)."""
+
+    @pytest.mark.asyncio
+    async def test_single_failed_probe_keeps_connection(self) -> None:
+        """A lone failed probe must NOT close a connection with live borrowers.
+
+        Before the fix, one failed `RETURN 1` — which a saturated pool produces
+        purely from load, since session acquisition blocks up to
+        connection_acquisition_timeout and then raises — closed the shared
+        driver out from under every in-flight session.
+        """
+        from common.db_resilience import AsyncResilientConnection
+
+        conn = _FakeAsyncConn()
+        connection_factory = Mock(return_value=conn)
+        # Healthy at creation, then two probe failures (below the threshold of 3).
+        connection_test = Mock(side_effect=[True, False, False])
+
+        manager = AsyncResilientConnection(
+            connection_factory,
+            connection_test,
+            health_check_ttl=0.0,
+            unhealthy_threshold=3,
+            close_grace_period=0.0,
+        )
+
+        assert await manager.get_connection() is conn
+        assert await manager.get_connection() is conn
+        assert await manager.get_connection() is conn
+
+        await asyncio.sleep(0)
+        assert conn.closed_count == 0, "a busy connection must not be torn down"
+        assert connection_factory.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_replace_after_threshold_failures(self) -> None:
+        """Consecutive failures beyond the threshold DO replace the connection."""
+        from common.db_resilience import AsyncResilientConnection
+
+        old_conn = _FakeAsyncConn()
+        new_conn = _FakeAsyncConn()
+        connection_factory = Mock(side_effect=[old_conn, new_conn])
+        connection_test = Mock(side_effect=[True, False, False, True])
+
+        manager = AsyncResilientConnection(
+            connection_factory,
+            connection_test,
+            health_check_ttl=0.0,
+            unhealthy_threshold=2,
+            close_grace_period=0.0,
+        )
+
+        assert await manager.get_connection() is old_conn
+        assert await manager.get_connection() is old_conn  # first failure tolerated
+        assert await manager.get_connection() is new_conn  # second failure replaces
+
+        await asyncio.sleep(0)
+        assert old_conn.closed_count == 1
+
+    @pytest.mark.asyncio
+    async def test_probe_success_resets_failure_run(self) -> None:
+        """Failures must be CONSECUTIVE — a success in between resets the run."""
+        from common.db_resilience import AsyncResilientConnection
+
+        conn = _FakeAsyncConn()
+        connection_factory = Mock(return_value=conn)
+        connection_test = Mock(side_effect=[True, False, True, False])
+
+        manager = AsyncResilientConnection(
+            connection_factory,
+            connection_test,
+            health_check_ttl=0.0,
+            unhealthy_threshold=2,
+            close_grace_period=0.0,
+        )
+
+        for _ in range(4):
+            assert await manager.get_connection() is conn
+
+        await asyncio.sleep(0)
+        assert conn.closed_count == 0
+        assert connection_factory.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_replaced_connection_close_deferred(self) -> None:
+        """The replaced connection is detached at once but closed only later.
+
+        neo4j documents driver.close() as NOT concurrency-safe with live
+        sessions, so borrowers get a grace period to drain.
+        """
+        from common.db_resilience import AsyncResilientConnection
+
+        old_conn = _FakeAsyncConn()
+        new_conn = _FakeAsyncConn()
+        connection_factory = Mock(side_effect=[old_conn, new_conn])
+        connection_test = Mock(side_effect=[True, False, True])
+
+        manager = AsyncResilientConnection(
+            connection_factory,
+            connection_test,
+            health_check_ttl=0.0,
+            unhealthy_threshold=1,
+            close_grace_period=60.0,
+        )
+
+        assert await manager.get_connection() is old_conn
+        assert await manager.get_connection() is new_conn
+
+        await asyncio.sleep(0)
+        assert old_conn.closed_count == 0, "borrowers must be allowed to drain"
+        assert old_conn in manager._draining
+
+        # An explicit shutdown closes the draining connection immediately.
+        await manager.close()
+        assert old_conn.closed_count == 1
+        assert manager._draining == []
+
+    @pytest.mark.asyncio
+    async def test_healthy_probe_cached_for_ttl(self) -> None:
+        """A successful probe is trusted for health_check_ttl — no probe per call.
+
+        The per-call `RETURN 1` was both a throughput cap (every query paid an
+        extra round trip serialized behind one lock) and the mechanism that made
+        the pool-starvation teardown reachable.
+        """
+        from common.db_resilience import AsyncResilientConnection
+
+        conn = _FakeAsyncConn()
+        connection_factory = Mock(return_value=conn)
+        connection_test = Mock(return_value=True)
+
+        manager = AsyncResilientConnection(
+            connection_factory,
+            connection_test,
+            health_check_ttl=60.0,
+        )
+
+        for _ in range(5):
+            assert await manager.get_connection() is conn
+
+        # Exactly one call: the health test run while creating the connection.
+        assert connection_test.call_count == 1

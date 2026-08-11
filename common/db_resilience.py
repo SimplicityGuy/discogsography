@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Callable
+import contextlib
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -326,6 +327,9 @@ class AsyncResilientConnection[T]:
         backoff: ExponentialBackoff | None = None,
         max_retries: int = 3,
         name: str = "AsyncConnection",
+        health_check_ttl: float = 30.0,
+        unhealthy_threshold: int = 3,
+        close_grace_period: float = 30.0,
     ):
         self.connection_factory = connection_factory
         self.connection_test = connection_test
@@ -333,8 +337,20 @@ class AsyncResilientConnection[T]:
         self.backoff = backoff or ExponentialBackoff()
         self.max_retries = max_retries
         self.name = name
+        # Seconds a successful health probe is trusted before re-probing.
+        self.health_check_ttl = health_check_ttl
+        # Consecutive failed probes required before a live connection is replaced.
+        self.unhealthy_threshold = unhealthy_threshold
+        # Seconds a replaced connection is left open so in-flight borrowers can drain.
+        self.close_grace_period = close_grace_period
         self._connection: T | None = None
         self._lock: asyncio.Lock | None = None
+        self._last_healthy_at: float = 0.0
+        self._failed_probes: int = 0
+        # Connections detached from the manager but not yet closed, and the
+        # tasks that will close them (discogsography-4ajv).
+        self._draining: list[Any] = []
+        self._close_tasks: set[asyncio.Task[None]] = set()
 
     async def _aclose_connection(self, connection: Any) -> None:
         """Best-effort close of a connection, dispatching aclose()/close() like close()."""
@@ -351,20 +367,103 @@ class AsyncResilientConnection[T]:
         except Exception as e:
             logger.warning(f"⚠️ {self.name}: Error closing connection: {e}")
 
+    async def _probe_connection(self, connection: T) -> bool:
+        """Run the health check, never letting it raise."""
+        try:
+            return bool(await self._test_connection(connection))
+        except Exception as e:
+            logger.warning(f"⚠️ {self.name}: Connection test failed: {e}")
+            return False
+
+    async def _connection_is_usable(self, connection: T) -> bool:
+        """Decide whether an existing connection may still be handed out.
+
+        Two guards keep a merely BUSY connection from being torn down
+        (discogsography-4ajv):
+
+        * a successful probe is trusted for ``health_check_ttl`` seconds, so
+          borrowing does not pay a health round trip per call — that round trip
+          is also what made the pool-starvation trigger reachable; and
+        * ``unhealthy_threshold`` CONSECUTIVE probe failures are required before
+          the connection is declared dead. One failure is not proof the server
+          is gone: a pool-acquisition timeout means every slot is busy, i.e. the
+          connection is working, and replacing it would abort the in-flight work
+          of every other coroutine holding a session borrowed from it.
+        """
+        now = time.monotonic()
+        if self._last_healthy_at and now - self._last_healthy_at < self.health_check_ttl:
+            return True
+
+        if await self._probe_connection(connection):
+            self._failed_probes = 0
+            self._last_healthy_at = now
+            return True
+
+        self._failed_probes += 1
+        if self._failed_probes < self.unhealthy_threshold:
+            logger.warning(
+                f"⚠️ {self.name}: Health check failed ({self._failed_probes}/{self.unhealthy_threshold}) — "
+                "keeping the existing connection; in-flight borrowers must not be aborted on one probe"
+            )
+            return True
+
+        logger.error(f"❌ {self.name}: Health check failed {self._failed_probes} consecutive times — replacing the connection")
+        return False
+
+    def _schedule_deferred_close(self, connection: Any) -> None:
+        """Close a replaced connection only after in-flight borrowers can drain.
+
+        The manager's lock serializes access to the HANDLE, never use of the
+        object: a caller keeps using a session borrowed from it long after
+        get_connection() returned, and the neo4j driver documents close() as
+        NOT concurrency-safe with live sessions. So the replaced connection is
+        detached immediately and closed after ``close_grace_period``
+        (discogsography-4ajv).
+        """
+        if connection is None:
+            return
+        self._draining.append(connection)
+        task = asyncio.create_task(self._close_after_grace(connection))
+        self._close_tasks.add(task)
+        task.add_done_callback(self._close_tasks.discard)
+
+    async def _close_after_grace(self, connection: Any) -> None:
+        """Wait out the grace period, then close a detached connection."""
+        if self.close_grace_period > 0:
+            await asyncio.sleep(self.close_grace_period)
+        try:
+            await self._aclose_connection(connection)
+        finally:
+            with contextlib.suppress(ValueError):
+                self._draining.remove(connection)
+
+    async def _drain_deferred_closes(self) -> None:
+        """Close every detached connection immediately (explicit shutdown)."""
+        for task in list(self._close_tasks):
+            task.cancel()
+        self._close_tasks.clear()
+        draining, self._draining = self._draining, []
+        for connection in draining:
+            await self._aclose_connection(connection)
+
     async def get_connection(self) -> T:
         """Get a healthy connection, creating or reconnecting if needed."""
         if self._lock is None:
             self._lock = asyncio.Lock()
         async with self._lock:
-            if self._connection and await self._test_connection(self._connection):
-                return self._connection
+            connection = self._connection
+            if connection is not None:
+                if await self._connection_is_usable(connection):
+                    return connection
 
-            # The existing connection is unhealthy. Close and discard it BEFORE reconnecting —
-            # otherwise the retry loop overwrites self._connection and orphans the old object
-            # (e.g. a whole Neo4j driver pool of 50 sockets that GC cannot close via __del__).
-            if self._connection is not None:
-                await self._aclose_connection(self._connection)
+                # Declared dead. Detach it BEFORE reconnecting — otherwise the retry loop
+                # overwrites self._connection and orphans the old object (e.g. a whole Neo4j
+                # driver pool of 50 sockets that GC cannot close via __del__) — but close it
+                # on a grace timer rather than out from under live sessions.
                 self._connection = None
+                self._failed_probes = 0
+                self._last_healthy_at = 0.0
+                self._schedule_deferred_close(connection)
 
             # Connection is not healthy, try to create new one
             retry_count = 0
@@ -392,6 +491,10 @@ class AsyncResilientConnection[T]:
 
                     conn = await self.circuit_breaker.call_async(create_connection)
                     self._connection = cast("T", conn)
+                    # create_connection already health-checked it — don't re-probe
+                    # borrowers for another health_check_ttl seconds.
+                    self._last_healthy_at = time.monotonic()
+                    self._failed_probes = 0
                     logger.info(f"✅ {self.name}: Connection established successfully")
                     return cast("T", conn)
 
@@ -425,9 +528,12 @@ class AsyncResilientConnection[T]:
         if self._lock is None:
             self._lock = asyncio.Lock()
         async with self._lock:
+            await self._drain_deferred_closes()
             if self._connection is not None:
                 await self._aclose_connection(self._connection)
                 self._connection = None
+            self._last_healthy_at = 0.0
+            self._failed_probes = 0
 
 
 # Context managers for resilient connections
