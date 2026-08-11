@@ -23,6 +23,7 @@ from api.auth import (
     generate_totp_secret,
     get_totp_encryption_key,
     hash_recovery_code,
+    token_revocation_reason,
     verify_totp_code,
 )
 from api.limiter import limiter
@@ -55,6 +56,25 @@ _create_access_token_fn: Any = None
 _notification_channel: Any = None
 
 _security = HTTPBearer()
+
+
+async def _reject_stale_challenge(payload: dict[str, Any]) -> None:
+    """Reject a 2FA challenge that the user's credentials have outlived.
+
+    A challenge token proves knowledge of the password that was current when it
+    was minted, and it stays redeemable for its full 5-minute TTL. Redeeming it
+    mints a fresh access token whose `iat` is necessarily AFTER the
+    `password_changed:{user_id}` marker, so the marker — enforced only at
+    access-token validation — could never invalidate it. The invariant ("no
+    credential derived from the pre-change password may be honored") has to be
+    enforced at the MINT site too, against the challenge's own `iat`
+    (discogsography-jxmn).
+    """
+    if await token_revocation_reason(payload, _redis) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Challenge invalidated by password change",
+        )
 
 
 def configure(
@@ -153,6 +173,13 @@ async def login(request: Request, body: LoginRequest) -> JSONResponse:  # noqa: 
             detail="Service not ready",
         )
 
+    # Stamped BEFORE the password is read, and used as the `iat` of whatever
+    # credential this login mints. _verify_password is deliberately slow
+    # (PBKDF2, 100k iterations); a password change committing inside that window
+    # must invalidate this login, which the `iat <= password_changed` predicate
+    # can only see if `iat` predates the marker (discogsography-jxmn).
+    credential_issued_at = int(datetime.now(UTC).timestamp())
+
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
             cur,
@@ -185,7 +212,7 @@ async def login(request: Request, body: LoginRequest) -> JSONResponse:  # noqa: 
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Service not ready (Redis required for 2FA)",
             )
-        challenge = create_challenge_token(str(user["id"]), user["email"], _config.jwt_secret_key)
+        challenge = create_challenge_token(str(user["id"]), user["email"], _config.jwt_secret_key, issued_at=credential_issued_at)
         challenge_payload = decode_token(challenge, _config.jwt_secret_key)
         jti = challenge_payload["jti"]
         # Store challenge JTI in Redis with 5 min TTL
@@ -198,7 +225,7 @@ async def login(request: Request, body: LoginRequest) -> JSONResponse:  # noqa: 
             }
         )
 
-    access_token, expires_in = _create_access_token_fn(str(user["id"]), user["email"])
+    access_token, expires_in = _create_access_token_fn(str(user["id"]), user["email"], issued_at=credential_issued_at)
     logger.info("✅ User logged in", email=body.email)
 
     return JSONResponse(
@@ -513,6 +540,8 @@ async def twofa_verify(request: Request, body: TwoFactorVerifyModel) -> JSONResp
     if not jti:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid challenge token")
 
+    await _reject_stale_challenge(payload)
+
     # Verify challenge exists (without consuming) before checking lockout,
     # so locked-out users don't waste their challenge token.
     challenge_key = f"2fa_challenge:{jti}"
@@ -604,8 +633,10 @@ async def twofa_verify(request: Request, body: TwoFactorVerifyModel) -> JSONResp
             (user_id,),
         )
 
-    # Issue access token
-    access_token, expires_in = _create_access_token_fn(user_id, email)
+    # Issue access token, stamped with the CHALLENGE's iat: the credential this
+    # token derives from is the password proven at login, so a password change
+    # after that moment must invalidate it too (discogsography-jxmn).
+    access_token, expires_in = _create_access_token_fn(user_id, email, issued_at=payload.get("iat"))
     logger.info("✅ 2FA verification successful", user_id=user_id)
     return JSONResponse(
         content={
@@ -635,6 +666,8 @@ async def twofa_recovery(request: Request, body: TwoFactorRecoveryModel) -> JSON
     jti = payload.get("jti")
     if not jti:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid challenge token")
+
+    await _reject_stale_challenge(payload)
 
     # Verify the challenge EXISTS (without consuming) before validating the code,
     # so a mistyped recovery code does not burn the challenge token. The challenge
@@ -684,8 +717,8 @@ async def twofa_recovery(request: Request, body: TwoFactorRecoveryModel) -> JSON
     # Recovery code redeemed — now consume the challenge so it cannot be replayed.
     await _redis.getdel(challenge_key)
 
-    # Issue access token
-    access_token, expires_in = _create_access_token_fn(user_id, email)
+    # Issue access token, stamped with the CHALLENGE's iat (see twofa_verify).
+    access_token, expires_in = _create_access_token_fn(user_id, email, issued_at=payload.get("iat"))
     logger.info("✅ 2FA recovery code used", user_id=user_id, remaining_codes=len(remaining))
 
     content: dict[str, Any] = {

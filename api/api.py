@@ -103,8 +103,15 @@ def get_health_data() -> dict[str, Any]:
     }
 
 
-def _create_access_token(user_id: str, email: str) -> tuple[str, int]:
-    """Create a HS256 JWT access token. Returns (token, expires_in_seconds)."""
+def _create_access_token(user_id: str, email: str, issued_at: int | None = None) -> tuple[str, int]:
+    """Create a HS256 JWT access token. Returns (token, expires_in_seconds).
+
+    ``issued_at`` lets a caller stamp the token with the moment the credential it
+    was derived from was verified, instead of the (later) moment of minting. A
+    password change committing in between must invalidate the new token, and the
+    `iat <= password_changed` predicate can only see that if `iat` predates the
+    change (discogsography-jxmn).
+    """
     if _config is None:
         raise RuntimeError("Service not initialized")
 
@@ -114,7 +121,7 @@ def _create_access_token(user_id: str, email: str) -> tuple[str, int]:
         "sub": user_id,
         "email": email,
         "exp": int(expire.timestamp()),
-        "iat": int(datetime.now(UTC).timestamp()),
+        "iat": issued_at if issued_at is not None else int(datetime.now(UTC).timestamp()),
         "jti": secrets.token_hex(16),
     }
 

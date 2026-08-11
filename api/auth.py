@@ -192,10 +192,17 @@ def hash_recovery_code(code: str) -> str:
     return hashlib.sha256(code.encode("utf-8")).hexdigest()
 
 
-def create_challenge_token(user_id: str, email: str, secret_key: str) -> str:
+def create_challenge_token(user_id: str, email: str, secret_key: str, issued_at: int | None = None) -> str:
     """Create a short-lived 2FA challenge JWT (5 min TTL).
 
     This token proves the password was correct but is NOT a full access token.
+
+    ``issued_at`` lets the caller stamp the token with the moment the password
+    was READ rather than the moment the token was minted. Password verification
+    is deliberately slow (PBKDF2, 100k iterations), and a password change that
+    commits inside that window must invalidate the credential derived from the
+    old password — which only works if ``iat`` predates the change marker
+    (discogsography-jxmn).
     """
     expire = datetime.now(UTC) + timedelta(minutes=5)
     payload: dict[str, Any] = {
@@ -203,7 +210,7 @@ def create_challenge_token(user_id: str, email: str, secret_key: str) -> str:
         "email": email,
         "type": "2fa_challenge",
         "exp": int(expire.timestamp()),
-        "iat": int(datetime.now(UTC).timestamp()),
+        "iat": issued_at if issued_at is not None else int(datetime.now(UTC).timestamp()),
         "jti": secrets.token_hex(16),
     }
     header = b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
