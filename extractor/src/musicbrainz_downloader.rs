@@ -271,13 +271,29 @@ impl MbDownloader {
         // tar extractor, and xz encoder, landing on disk only as {entity}.jsonl.xz.
         // SHA256 is computed on the raw compressed bytes as they flow past.
         for entity in MB_ENTITIES {
+            let out_path = version_dir.join(format!("{}.jsonl.xz", entity)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+
+            // Per-entity resume. A final `{entity}.jsonl(.xz)` can only exist because a previous
+            // run fully extracted and SHA256-verified it (see `is_version_complete` — the download
+            // path renames into place only after verification), so trusting it here is no weaker
+            // an assumption than the version-level gate already makes for all four entities.
+            // Without this skip, a run that dies on entity N re-downloads and re-extracts the
+            // multi-GB tarballs of entities 1..N-1 on every retry. Both the compressed and bare
+            // variants are honored, matching `is_version_complete` and `discover_mb_dump_files`.
+            let plain_path = version_dir.join(format!("{}.jsonl", entity)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            if out_path.exists() || plain_path.exists() {
+                info!("⏭️ MusicBrainz {} dump already extracted, skipping re-download", entity);
+                continue;
+            }
+
+            // Looked up after the skip so an already-materialized entity does not fail the whole
+            // run when its checksum line is absent from SHA256SUMS.
             let tarball_name = format!("{}.tar.xz", entity);
             let expected_hash = checksums
                 .get(&tarball_name)
                 .ok_or_else(|| anyhow::anyhow!("No SHA256 checksum found for {} in SHA256SUMS", tarball_name))?;
 
             let download_url = format!("{}{}/{}", self.base_url, version, tarball_name);
-            let out_path = version_dir.join(format!("{}.jsonl.xz", entity)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
 
             self.stream_download_verify_extract(&download_url, entity, expected_hash, &out_path).await?;
 
