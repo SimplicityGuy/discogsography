@@ -235,6 +235,29 @@ describe('SettingsPane — App Tokens card', () => {
             expect(container.querySelector('#appTokenMintBtn')).toBeTruthy();
             expect(window.apiClient.mintAppToken).not.toHaveBeenCalled();
         });
+
+        it('preserves an in-progress mint form across pane re-activation (regression discogsography-3vz8)', async () => {
+            window.settingsPane.init();
+            await flush();
+            container.querySelector('#appTokenMintBtn').click();
+
+            const nameInput = container.querySelector('#appTokenName');
+            nameInput.value = 'GRUVAX kiosk';
+
+            // Simulate the Settings pane re-activating (app.js calls init()
+            // again on every activation) while the user has an in-progress
+            // mint form open.
+            window.settingsPane.init();
+            await flush();
+
+            expect(window.apiClient.listAppTokens).toHaveBeenCalledTimes(2);
+            // The mint form must still be showing — not torn down and
+            // replaced by the token list — and the typed name preserved.
+            const nameInputAfter = container.querySelector('#appTokenName');
+            expect(nameInputAfter).toBeTruthy();
+            expect(nameInputAfter.value).toBe('GRUVAX kiosk');
+            expect(container.querySelector('#appTokenMintBtn')).toBeNull();
+        });
     });
 
     describe('reveal screen', () => {

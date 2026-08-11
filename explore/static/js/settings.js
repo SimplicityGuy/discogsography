@@ -636,6 +636,13 @@ class SettingsPane {
         }
         this._activeTokens = (res && Array.isArray(res.active)) ? res.active : [];
         this._revokedTokens = (res && Array.isArray(res.revoked)) ? res.revoked : [];
+        if (this._appTokensView === 'minting') {
+            // Preserve the in-progress mint form (and whatever the user has
+            // typed into it) instead of tearing it down via a re-render —
+            // mirrors the 'revealing' guard below. The refreshed token list
+            // renders once minting finishes and the view returns to 'list'.
+            return;
+        }
         if (this._appTokensView !== 'revealing') {
             this._appTokensView = 'list';
         }
