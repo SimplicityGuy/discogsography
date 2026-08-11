@@ -1193,3 +1193,191 @@ async fn test_year_body_read_failure_is_logged() {
     let logs = capture.contents();
     assert!(logs.contains("Failed to read year 2026 directory body"), "the lost year must be logged, not silently dropped; logs were:\n{logs}");
 }
+
+#[tokio::test]
+async fn test_forced_redownload_requeues_processed_file() {
+    // discogsography-qhel regression: cu2.106 revokes trust in bad bytes on the download
+    // side, but the processing status computed from those bytes used to survive — so
+    // pending_files() skipped the corrected file, the run finalized Completed, and the
+    // corrected data was never parsed or published for the whole monthly version.
+    use sha2::{Digest, Sha256};
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let main_page_html = r#"<html><body>
+        <a href="?prefix=data%2F2026%2F">2026/</a>
+    </body></html>"#;
+    let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_page_html).create_async().await;
+
+    let year_page_html = r#"<html><body>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
+    </body></html>"#;
+    let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(year_page_html).create_async().await;
+
+    let _checksum_mock = server
+        .mock("GET", "/?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt")
+        .with_status(200)
+        .with_body(fake_data_checksums_txt())
+        .create_async()
+        .await;
+
+    let file_types = ["artists", "labels", "masters", "releases"];
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
+
+    // Session 1's world: locally trusted bytes that do NOT match the published CHECKSUM.
+    let mut trusted_checksums = std::collections::HashMap::new();
+    for file_type in &file_types {
+        let filename = format!("discogs_20260101_{}.xml.gz", file_type);
+        let content = format!("previously trusted bad {} data", file_type);
+        let local_path = temp_dir.path().join(&filename);
+        fs::write(&local_path, content.as_bytes()).await.unwrap();
+
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        let checksum = hex::encode(hasher.finalize());
+        trusted_checksums.insert(filename.clone(), checksum.clone());
+
+        downloader.metadata.insert(
+            filename,
+            LocalFileInfo { path: local_path.to_string_lossy().to_string(), checksum, version: "202601".to_string(), size: content.len() as u64 },
+        );
+    }
+
+    // Session 1's marker: artists was parsed from the bad bytes and marked Completed.
+    let artists = "discogs_20260101_artists.xml.gz".to_string();
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_download(4);
+    marker.start_file_download(&artists);
+    marker.file_downloaded(&artists, 42);
+    marker.file_bytes_verified(&artists, &trusted_checksums[&artists]);
+    marker.complete_download();
+    marker.start_processing(4);
+    marker.start_file_processing(&artists);
+    marker.complete_file_processing(&artists, 500);
+
+    let all_files: Vec<String> = file_types.iter().map(|t| format!("discogs_20260101_{}.xml.gz", t)).collect();
+    assert!(!marker.pending_files(&all_files).contains(&artists), "precondition: artists starts out completed");
+
+    downloader.set_state_marker(marker, temp_dir.path().join("marker.json"));
+
+    let mut _download_mocks = Vec::new();
+    for file_type in &file_types {
+        let download_path = format!("/?download=data%2F2026%2Fdiscogs_20260101_{}.xml.gz", file_type);
+        let mock = server
+            .mock("GET", download_path.as_str())
+            .with_status(200)
+            .with_body(format!("fake {} data", file_type))
+            .create_async()
+            .await;
+        _download_mocks.push(mock);
+    }
+
+    downloader.download_discogs_data().await.unwrap();
+
+    let marker = downloader.take_state_marker().expect("marker returns from the downloader");
+    assert!(
+        marker.pending_files(&all_files).contains(&artists),
+        "a file re-downloaded with different bytes must be re-queued, not skipped as already processed"
+    );
+    assert_eq!(marker.processing_phase.files_processed, 0, "the stale completion must not still be counted");
+}
+
+#[tokio::test]
+async fn test_unchanged_redownload_keeps_file_processed() {
+    // The counterpart: an operator deleting a processed .xml.gz to reclaim disk gets the
+    // same bytes back, which must not force a needless multi-GB reparse.
+    use sha2::{Digest, Sha256};
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let main_page_html = r#"<html><body>
+        <a href="?prefix=data%2F2026%2F">2026/</a>
+    </body></html>"#;
+    let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_page_html).create_async().await;
+
+    let year_page_html = r#"<html><body>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
+    </body></html>"#;
+    let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(year_page_html).create_async().await;
+
+    let _checksum_mock = server
+        .mock("GET", "/?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt")
+        .with_status(200)
+        .with_body(fake_data_checksums_txt())
+        .create_async()
+        .await;
+
+    let file_types = ["artists", "labels", "masters", "releases"];
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
+
+    // The good bytes the server will serve, hashed exactly as download_file would.
+    let artists = "discogs_20260101_artists.xml.gz".to_string();
+    let mut hasher = Sha256::new();
+    hasher.update(b"fake artists data");
+    let good_checksum = hex::encode(hasher.finalize());
+
+    // artists is absent from disk (deleted to reclaim disk) but already processed.
+    for file_type in &file_types {
+        if *file_type == "artists" {
+            continue;
+        }
+        let filename = format!("discogs_20260101_{}.xml.gz", file_type);
+        let content = format!("fake {} data", file_type);
+        let local_path = temp_dir.path().join(&filename);
+        fs::write(&local_path, content.as_bytes()).await.unwrap();
+
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        downloader.metadata.insert(
+            filename,
+            LocalFileInfo {
+                path: local_path.to_string_lossy().to_string(),
+                checksum: hex::encode(hasher.finalize()),
+                version: "202601".to_string(),
+                size: content.len() as u64,
+            },
+        );
+    }
+
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_download(4);
+    marker.start_file_download(&artists);
+    marker.file_downloaded(&artists, 17);
+    marker.file_bytes_verified(&artists, &good_checksum);
+    marker.complete_download();
+    marker.start_processing(4);
+    marker.start_file_processing(&artists);
+    marker.complete_file_processing(&artists, 500);
+    downloader.set_state_marker(marker, temp_dir.path().join("marker.json"));
+
+    let mut _download_mocks = Vec::new();
+    for file_type in &file_types {
+        let download_path = format!("/?download=data%2F2026%2Fdiscogs_20260101_{}.xml.gz", file_type);
+        let mock = server
+            .mock("GET", download_path.as_str())
+            .with_status(200)
+            .with_body(format!("fake {} data", file_type))
+            .create_async()
+            .await;
+        _download_mocks.push(mock);
+    }
+
+    downloader.download_discogs_data().await.unwrap();
+
+    let marker = downloader.take_state_marker().unwrap();
+    let all_files: Vec<String> = file_types.iter().map(|t| format!("discogs_20260101_{}.xml.gz", t)).collect();
+    assert!(!marker.pending_files(&all_files).contains(&artists), "identical bytes must not force a reparse of an already-processed file");
+    assert_eq!(marker.processing_phase.records_extracted, 500);
+}

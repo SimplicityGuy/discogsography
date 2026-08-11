@@ -500,3 +500,141 @@ fn test_interrupted_download_no_progress() {
     assert_eq!(marker.completed_file_count(), 0);
     assert_eq!(marker.should_process(), ProcessingDecision::Reprocess);
 }
+
+/// Drive one file through download → process, recording the checksum it was derived from.
+fn marker_with_processed_file(filename: &str, checksum: &str, records: u64) -> StateMarker {
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_download(1);
+    marker.start_file_download(filename);
+    marker.file_downloaded(filename, 1024);
+    marker.file_bytes_verified(filename, checksum);
+    marker.complete_download();
+
+    marker.start_processing(1);
+    marker.start_file_processing(filename);
+    marker.complete_file_processing(filename, records);
+    marker
+}
+
+#[test]
+fn test_redownloaded_bytes_requeue_that_file() {
+    // discogsography-qhel regression: when a file is re-downloaded because its previously
+    // trusted bytes were wrong, the Completed processing status computed from those bad
+    // bytes must not survive — otherwise pending_files() skips the corrected file, the run
+    // finalizes Completed, and the corrected data is never parsed or published.
+    let file = "discogs_20260101_artists.xml.gz";
+    let mut marker = marker_with_processed_file(file, "checksum-of-corrupt-bytes", 500);
+
+    let all_files = vec![file.to_string(), "discogs_20260101_labels.xml.gz".to_string()];
+    assert!(!marker.pending_files(&all_files).contains(&file.to_string()), "precondition: the file starts out completed");
+
+    let invalidated = marker.file_bytes_verified(file, "checksum-of-corrected-bytes");
+
+    assert!(invalidated, "different bytes must invalidate the processing status");
+    assert!(marker.pending_files(&all_files).contains(&file.to_string()), "the re-downloaded file must be re-queued for processing");
+    assert_eq!(marker.processing_phase.files_processed, 0, "the stale completion must not still be counted");
+    assert_eq!(marker.processing_phase.records_extracted, 0, "stale record counts must not be reported as authoritative");
+    assert_eq!(marker.summary.files_by_type.get("artists"), Some(&PhaseStatus::Pending));
+}
+
+#[test]
+fn test_identical_redownload_keeps_completion() {
+    // The narrow counterpart: an operator deleting a processed .xml.gz to reclaim disk gets
+    // the same bytes back, which must NOT force a needless multi-GB reparse.
+    let file = "discogs_20260101_artists.xml.gz";
+    let mut marker = marker_with_processed_file(file, "same-checksum", 500);
+
+    let invalidated = marker.file_bytes_verified(file, "same-checksum");
+
+    assert!(!invalidated, "identical bytes must not invalidate a completed file");
+    assert!(!marker.pending_files(&[file.to_string()]).contains(&file.to_string()));
+    assert_eq!(marker.processing_phase.files_processed, 1);
+    assert_eq!(marker.processing_phase.records_extracted, 500);
+}
+
+#[test]
+fn test_unknown_provenance_keeps_completed() {
+    // A marker written before source_checksum existed has unknown provenance; leave it alone
+    // rather than speculatively re-processing every file on the next run.
+    let file = "discogs_20260101_artists.xml.gz";
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_processing(1);
+    marker.start_file_processing(file);
+    marker.complete_file_processing(file, 500);
+    assert!(marker.processing_phase.progress_by_file[file].source_checksum.is_none());
+
+    let invalidated = marker.file_bytes_verified(file, "some-new-checksum");
+
+    assert!(!invalidated, "unknown provenance must not trigger invalidation");
+    assert!(!marker.pending_files(&[file.to_string()]).contains(&file.to_string()));
+}
+
+#[test]
+fn test_invalidation_reopens_completed_version() {
+    // A version already finalized as Completed would otherwise take the Skip path forever,
+    // so re-queuing a file has to reopen the summary too.
+    let file = "discogs_20260101_artists.xml.gz";
+    let mut marker = marker_with_processed_file(file, "old-bytes", 500);
+    marker.complete_processing();
+    marker.complete_extraction();
+    assert_eq!(marker.should_process(), ProcessingDecision::Skip);
+
+    assert!(marker.file_bytes_verified(file, "new-bytes"));
+
+    assert_ne!(marker.summary.overall_status, PhaseStatus::Completed);
+    assert_eq!(marker.should_process(), ProcessingDecision::Continue, "the version must be re-entered, not skipped");
+    assert!(marker.pending_files(&[file.to_string()]).contains(&file.to_string()));
+}
+
+#[test]
+fn test_checksum_fields_survive_serde_round_trip() {
+    let file = "discogs_20260101_artists.xml.gz";
+    let marker = marker_with_processed_file(file, "checksum-abc", 500);
+
+    let json = serde_json::to_string(&marker).unwrap();
+    let loaded: StateMarker = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(loaded.download_phase.downloads_by_file[file].checksum.as_deref(), Some("checksum-abc"));
+    assert_eq!(loaded.processing_phase.progress_by_file[file].source_checksum.as_deref(), Some("checksum-abc"));
+}
+
+#[test]
+fn test_legacy_marker_json_without_checksums_loads() {
+    // Markers on disk predate both new fields; #[serde(default)] must keep them loadable.
+    let json = r#"{
+        "metadata_version": "1.0",
+        "last_updated": "2026-01-31T12:34:56.789Z",
+        "current_version": "20260101",
+        "download_phase": {
+            "status": "completed", "started_at": null, "completed_at": null,
+            "files_downloaded": 1, "files_total": 1, "bytes_downloaded": 10,
+            "downloads_by_file": {
+                "discogs_20260101_artists.xml.gz": {
+                    "status": "completed", "bytes_downloaded": 10, "started_at": null, "completed_at": null
+                }
+            },
+            "errors": []
+        },
+        "processing_phase": {
+            "status": "completed", "started_at": null, "completed_at": null,
+            "files_processed": 1, "files_total": 1, "records_extracted": 5, "current_file": null,
+            "progress_by_file": {
+                "discogs_20260101_artists.xml.gz": {
+                    "status": "completed", "records_extracted": 5, "messages_published": 5,
+                    "batches_sent": 1, "started_at": null, "completed_at": null
+                }
+            },
+            "errors": []
+        },
+        "publishing_phase": {
+            "status": "completed", "messages_published": 5, "batches_sent": 1,
+            "errors": [], "last_amqp_heartbeat": null
+        },
+        "summary": {"overall_status": "completed", "total_duration_seconds": null, "files_by_type": {}}
+    }"#;
+
+    let marker: StateMarker = serde_json::from_str(json).unwrap();
+
+    assert!(marker.download_phase.downloads_by_file["discogs_20260101_artists.xml.gz"].checksum.is_none());
+    assert!(marker.processing_phase.progress_by_file["discogs_20260101_artists.xml.gz"].source_checksum.is_none());
+}

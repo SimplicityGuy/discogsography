@@ -31,6 +31,15 @@ Each marker tracks:
     "files_downloaded": 4,
     "files_total": 4,
     "bytes_downloaded": 5234567890,
+    "downloads_by_file": {
+      "discogs_20260101_artists.xml.gz": {
+        "status": "completed",
+        "bytes_downloaded": 1234567890,
+        "started_at": "2026-01-31T12:00:00.000Z",
+        "completed_at": "2026-01-31T12:05:00.000Z",
+        "checksum": "a1b2c3..."
+      }
+    },
     "errors": []
   },
 
@@ -48,7 +57,8 @@ Each marker tracks:
         "records_extracted": 500000,
         "messages_published": 5000,
         "started_at": "2026-01-31T12:15:00.000Z",
-        "completed_at": "2026-01-31T12:20:00.000Z"
+        "completed_at": "2026-01-31T12:20:00.000Z",
+        "source_checksum": "a1b2c3..."
       },
       "discogs_20260101_labels.xml.gz": {
         "status": "completed",
@@ -129,6 +139,32 @@ When the extractor restarts, it checks the state marker and makes one of three d
 - Skip completed files
 - Resume processing unfinished files
 - Continue from last checkpoint
+
+### Byte-image provenance (re-download invalidation)
+
+The download and processing phases are independent state machines keyed by the same
+filename, so they need one explicit invariant linking them: **a processing status is
+valid only for the byte-image it was computed from.**
+
+- `download_phase.downloads_by_file[file].checksum` — SHA-256 of the bytes currently on
+  disk, recorded once they are verified.
+- `processing_phase.progress_by_file[file].source_checksum` — the checksum that was in
+  effect when this file's processing started.
+
+When the downloader materializes bytes for a file (whether freshly downloaded or already
+present), it calls `file_bytes_verified()`. If that file has a `completed` processing
+status whose `source_checksum` differs from the new checksum, the entry is dropped:
+`pending_files()` then re-queues the file, `files_processed` and the record counts are
+corrected, and a `completed` version is reopened so it is not skipped.
+
+This matters when the downloader forces a re-download because the locally trusted
+checksum disagrees with the Discogs-published `CHECKSUM`: without invalidation, the
+corrected bytes would be skipped by resume and never published for that version.
+
+Invalidation is deliberately narrow — it fires only when both checksums are known and
+they differ. Re-downloading identical bytes (e.g. an operator deleted a processed
+`.xml.gz` to reclaim disk) does not force a reparse, and markers written before these
+fields existed have unknown provenance and are left untouched.
 
 ### 3. Skip (Already Complete)
 

@@ -214,9 +214,18 @@ impl Downloader {
                             warn!("⚠️ Failed to persist metadata after downloading {}: {}", filename, e);
                         }
 
-                        // Track file download in state marker with actual downloaded size
+                        // Track file download in state marker with actual downloaded size, and
+                        // bind the marker to the byte-image now on disk. If these bytes differ
+                        // from the ones an earlier session already processed (the whole point of
+                        // a forced re-download), that stale Completed processing status is
+                        // dropped so pending_files() re-queues the file — otherwise the
+                        // corrected data would never be parsed or published.
+                        let verified_checksum = self.metadata.get(filename).map(|info| info.checksum.clone());
                         if let Some(ref mut marker) = self.state_marker {
                             marker.file_downloaded(filename, downloaded_size);
+                            if let Some(ref checksum) = verified_checksum {
+                                marker.file_bytes_verified(filename, checksum);
+                            }
                         }
                         self.save_state_marker().await;
 
@@ -230,11 +239,17 @@ impl Downloader {
             } else {
                 info!("✅ Already have latest version of: {}", filename);
 
-                // Track existing file in state marker with actual file size
+                // Track existing file in state marker with actual file size. The locally
+                // trusted checksum is recorded too, so the first run after this change
+                // establishes the provenance that later re-downloads are compared against.
+                let local_path = self.output_directory.join(filename);
+                let file_size = tokio::fs::metadata(&local_path).await.map(|m| m.len()).unwrap_or(0);
+                let local_checksum = self.metadata.get(filename).map(|info| info.checksum.clone());
                 if let Some(ref mut marker) = self.state_marker {
-                    let local_path = self.output_directory.join(filename);
-                    let file_size = tokio::fs::metadata(&local_path).await.map(|m| m.len()).unwrap_or(0);
                     marker.file_downloaded(filename, file_size);
+                    if let Some(ref checksum) = local_checksum {
+                        marker.file_bytes_verified(filename, checksum);
+                    }
                 }
                 self.save_state_marker().await;
 
