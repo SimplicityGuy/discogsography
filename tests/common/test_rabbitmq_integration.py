@@ -210,6 +210,11 @@ class TestLiveReconnect:
                 OP_TIMEOUT,
             )
 
+            # discogsography-6ino: callbacks also fire on the INITIAL connect, so the
+            # flag is already set here. Clear it before dropping the connection —
+            # otherwise the assertion below passes without a reconnect ever happening.
+            reconnected.clear()
+
             async with _mgmt() as client:
                 dropped = await _step("force-close all client connections", _drop_all_connections(client), OP_TIMEOUT + STATS_TIMEOUT)
                 assert dropped >= 1, "no connections were dropped, so nothing was tested"
