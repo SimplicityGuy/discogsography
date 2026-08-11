@@ -425,11 +425,12 @@ async def get_explore_traversal(
     MATCH path = (start)-[:{_PATH_REL_TYPES}*1..{hops}]-(discovered)
     WHERE discovered <> start
       AND (discovered:Artist OR discovered:Label OR discovered:Genre OR discovered:Style)
-    WITH DISTINCT discovered,
+    WITH discovered,
          [n IN nodes(path) | coalesce(n.name, n.title, n.id)] AS path_names,
          [r IN relationships(path) | type(r)] AS rel_types,
          length(path) AS dist
     ORDER BY dist
+    WITH discovered, collect({{path_names: path_names, rel_types: rel_types, dist: dist}})[0] AS best
     RETURN coalesce(discovered.id, discovered.name) AS id,
            coalesce(discovered.name, discovered.id) AS name,
            CASE
@@ -438,7 +439,8 @@ async def get_explore_traversal(
              WHEN discovered:Genre THEN 'genre'
              WHEN discovered:Style THEN 'style'
            END AS type,
-           path_names, rel_types, dist
+           best.path_names AS path_names, best.rel_types AS rel_types, best.dist AS dist
+    ORDER BY best.dist
     LIMIT 100
     """
     return await run_query(driver, cypher, entity_id=entity_id)
