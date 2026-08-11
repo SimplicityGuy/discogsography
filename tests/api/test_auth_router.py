@@ -86,6 +86,54 @@ class TestResetRequest:
         response = test_client.post("/api/auth/reset-request", json={"email": " Test@Example.COM "})
         assert response.status_code == 200
 
+    def test_reset_request_defers_redis_and_email_off_the_request_path(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """discogsography-0lof: the SELECT must be the only DB/network work done
+        BEFORE the response is built. `_process_reset_request` (Redis setex +
+        notification send) is scheduled as a FastAPI background task so its
+        cost never leaks into response timing and never diverges between the
+        known-email and unknown-email branches."""
+        mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
+        channel = AsyncMock()
+        original_channel = auth_router._notification_channel
+        auth_router._notification_channel = channel
+        try:
+            response = test_client.post("/api/auth/reset-request", json={"email": TEST_USER_EMAIL})
+        finally:
+            auth_router._notification_channel = original_channel
+
+        assert response.status_code == 200
+        # Background task must have actually run (TestClient awaits background
+        # tasks before returning) and performed the Redis + notification work.
+        mock_redis.setex.assert_called_once()
+        channel.send_password_reset.assert_called_once()
+
+    def test_reset_request_unknown_email_does_not_touch_redis_or_notify(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """The no-op branch for a nonexistent email must genuinely do nothing —
+        confirms the background task is a no-op rather than a disguised no-op
+        that still leaks timing via a dummy Redis round-trip."""
+        mock_cur.fetchone = AsyncMock(return_value=None)
+        channel = AsyncMock()
+        original_channel = auth_router._notification_channel
+        auth_router._notification_channel = channel
+        try:
+            response = test_client.post("/api/auth/reset-request", json={"email": "unknown@example.com"})
+        finally:
+            auth_router._notification_channel = original_channel
+
+        assert response.status_code == 200
+        mock_redis.setex.assert_not_called()
+        channel.send_password_reset.assert_not_called()
+
     def test_reset_link_is_absolute_and_uses_app_base_url(
         self,
         test_client: TestClient,

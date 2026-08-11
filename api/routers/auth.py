@@ -5,7 +5,7 @@ import json
 import secrets
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
@@ -300,9 +300,35 @@ async def get_me(
 # ---------------------------------------------------------------------------
 
 
+async def _process_reset_request(user: dict[str, Any] | None) -> None:
+    """Mint the reset token, write it to Redis, and send the email — OFF the request path.
+
+    Scheduled unconditionally by the caller (whether or not the account
+    exists) and only does real work when ``user`` is truthy. This means the
+    HTTP response for reset-request returns after nothing but the initial
+    SELECT on both branches, so response timing carries no signal about
+    account existence — the Redis `setex` and the outbound Resend HTTP call
+    (the actual timing oracle) both happen after the client already has the
+    response (discogsography-0lof).
+    """
+    if not user or _redis is None or _config is None:
+        return
+    token = secrets.token_urlsafe(32)
+    await _redis.setex(
+        f"reset:{token}",
+        900,  # 15 min TTL
+        json.dumps({"user_id": str(user["id"]), "email": user["email"]}),
+    )
+    # Must be absolute: this link is emailed, and a mail client has no base
+    # URL to resolve a relative href against.
+    reset_url = f"{_config.app_base_url}/?reset_token={token}"
+    if _notification_channel:
+        await _notification_channel.send_password_reset(user["email"], reset_url)
+
+
 @router.post("/api/auth/reset-request")
 @limiter.limit("3/minute")
-async def reset_request(request: Request, body: ResetRequestModel) -> JSONResponse:  # noqa: ARG001
+async def reset_request(request: Request, body: ResetRequestModel, background_tasks: BackgroundTasks) -> JSONResponse:  # noqa: ARG001
     """Request a password reset. Same response whether email exists or not."""
     if _pool is None or _redis is None or _config is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
@@ -311,18 +337,8 @@ async def reset_request(request: Request, body: ResetRequestModel) -> JSONRespon
         await execute_sql(cur, "SELECT id, email FROM users WHERE email = %s", (body.email,))
         user = await cur.fetchone()
 
-    if user:
-        token = secrets.token_urlsafe(32)
-        await _redis.setex(
-            f"reset:{token}",
-            900,  # 15 min TTL
-            json.dumps({"user_id": str(user["id"]), "email": user["email"]}),
-        )
-        # Must be absolute: this link is emailed, and a mail client has no base
-        # URL to resolve a relative href against.
-        reset_url = f"{_config.app_base_url}/?reset_token={token}"
-        if _notification_channel:
-            await _notification_channel.send_password_reset(user["email"], reset_url)
+    # Scheduled on BOTH branches — see _process_reset_request docstring.
+    background_tasks.add_task(_process_reset_request, user)
 
     return JSONResponse(content={"message": "If an account exists for that email, a reset link has been sent"})
 
