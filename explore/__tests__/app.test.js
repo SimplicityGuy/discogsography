@@ -2024,6 +2024,23 @@ describe('ExploreApp helper methods', () => {
             expect(window.authManager.init).toHaveBeenCalled();
             expect(result).toBe(true);
         });
+
+        it('should still call _restoreFromUrl (not strand it) if _initAuth rejects for an unrelated reason (regression discogsography-ponr)', async () => {
+            history.replaceState(null, '', '/');
+            const restoreSpy = vi.spyOn(ExploreApp.prototype, '_restoreFromUrl').mockResolvedValue(undefined);
+            // authManager.init() itself now catches network rejections
+            // internally, but this exercises the app.js-level backstop for
+            // any other unexpected failure in the auth-init chain.
+            window.authManager.init.mockRejectedValue(new Error('unexpected failure'));
+
+            new ExploreApp();
+            // Let the unawaited constructor promise chain settle.
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(restoreSpy).toHaveBeenCalled();
+            restoreSpy.mockRestore();
+        });
     });
 
     describe('ExploreApp._loadExplore', () => {

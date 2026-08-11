@@ -9,6 +9,29 @@ class AuthManager {
         this._discogsStatus = null;
         this._listeners = [];
         this._challengeToken = null;
+
+        // Sync auth state across tabs: a logout (or token change) in one tab
+        // only clears that tab's localStorage/memory (see clear()) — without
+        // this, a second open tab keeps its stale in-memory token and shows
+        // the user as logged in indefinitely (discogsography-ponr).
+        if (typeof window !== 'undefined' && window.addEventListener) {
+            window.addEventListener('storage', (e) => this._onStorageEvent(e));
+        }
+    }
+
+    /**
+     * Cross-tab sync: react to another tab changing/clearing `auth_token`.
+     * @param {StorageEvent} e
+     */
+    _onStorageEvent(e) {
+        if (e.key !== 'auth_token') return;
+        if (e.newValue === this._token) return;
+        this._token = e.newValue || null;
+        if (!this._token) {
+            this._user = null;
+            this._discogsStatus = null;
+        }
+        this.notify();
     }
 
     /** Whether the user is currently logged in. */
@@ -86,15 +109,26 @@ class AuthManager {
      */
     async init() {
         if (!this._token) return false;
-        const user = await window.apiClient.getMe(this._token);
-        if (!user) {
+        try {
+            const user = await window.apiClient.getMe(this._token);
+            if (!user) {
+                this.clear();
+                return false;
+            }
+            this._user = user;
+            const discogsStatus = await window.apiClient.getDiscogsStatus(this._token);
+            this._discogsStatus = discogsStatus;
+            return true;
+        } catch {
+            // A network-level fetch rejection (server unreachable, offline,
+            // DNS/CORS, server restart) — api-client only converts HTTP error
+            // statuses to null, so this is the ONLY place such a rejection
+            // would otherwise escape init() uncaught, aborting page-load auth
+            // restore (discogsography-ponr). Treat it like an invalid session
+            // rather than letting the caller's page-load chain reject.
             this.clear();
             return false;
         }
-        this._user = user;
-        const discogsStatus = await window.apiClient.getDiscogsStatus(this._token);
-        this._discogsStatus = discogsStatus;
-        return true;
     }
 }
 

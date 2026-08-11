@@ -3,6 +3,21 @@
  */
 class ApiClient {
     /**
+     * Detect an expired/revoked JWT (401) on an authenticated request and
+     * reconcile client-side auth state immediately, instead of silently
+     * collapsing it into the same "return null" path as any other error —
+     * which otherwise leaves the nav showing a stale logged-in user while
+     * every authenticated feature quietly goes dead (discogsography-ponr).
+     * @param {Response} response
+     */
+    _checkAuthResponse(response) {
+        if (response && response.status === 401 && window.authManager?.isLoggedIn()) {
+            window.authManager.clear();
+            window.authManager.notify();
+        }
+    }
+
+    /**
      * Autocomplete search.
      * @param {string} query - Search query
      * @param {string} type - Entity type (artist, genre, label, style)
@@ -117,6 +132,7 @@ class ApiClient {
             headers,
             body: JSON.stringify({ nodes, center }),
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -229,6 +245,7 @@ class ApiClient {
         const response = await fetch('/api/auth/2fa/setup', {
             method: 'POST', headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
         });
+        this._checkAuthResponse(response);
         return response;
     }
 
@@ -237,6 +254,7 @@ class ApiClient {
             method: 'POST', headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
             body: JSON.stringify({ code }),
         });
+        this._checkAuthResponse(response);
         return response;
     }
 
@@ -261,6 +279,7 @@ class ApiClient {
             method: 'POST', headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
             body: JSON.stringify({ code, password }),
         });
+        this._checkAuthResponse(response);
         return response;
     }
 
@@ -270,6 +289,7 @@ class ApiClient {
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
         });
+        this._checkAuthResponse(response);
         return response;
     }
 
@@ -278,6 +298,7 @@ class ApiClient {
         const response = await fetch('/api/auth/me', {
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -289,6 +310,7 @@ class ApiClient {
         const response = await fetch('/api/oauth/authorize/discogs', {
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -300,6 +322,7 @@ class ApiClient {
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({ state, oauth_verifier: oauthVerifier }),
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -309,6 +332,7 @@ class ApiClient {
         const response = await fetch('/api/oauth/status/discogs', {
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -319,6 +343,7 @@ class ApiClient {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -334,6 +359,7 @@ class ApiClient {
         const response = await fetch('/api/user/app-tokens', {
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -349,6 +375,7 @@ class ApiClient {
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, scopes }),
         });
+        this._checkAuthResponse(response);
         let body = null;
         try { body = await response.json(); } catch { /* no-op */ }
         return { ok: response.ok, status: response.status, body };
@@ -364,6 +391,7 @@ class ApiClient {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         return response.status === 204;
     }
 
@@ -375,6 +403,7 @@ class ApiClient {
         const response = await fetch(`/api/user/collection?${params}`, {
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -385,6 +414,7 @@ class ApiClient {
         const response = await fetch(`/api/user/wantlist?${params}`, {
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -395,6 +425,7 @@ class ApiClient {
         const response = await fetch(`/api/user/recommendations?${params}`, {
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -404,6 +435,7 @@ class ApiClient {
         const response = await fetch('/api/user/collection/stats', {
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -413,6 +445,7 @@ class ApiClient {
         const headers = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
         const response = await fetch(`/api/user/status?${params}`, { headers });
+        if (token) this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -424,6 +457,7 @@ class ApiClient {
         const response = await fetch('/api/collection/formats', {
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -441,6 +475,7 @@ class ApiClient {
         const response = await fetch(`/api/collection/gaps/${entityType}/${encodeURIComponent(entityId)}?${params}`, {
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -453,6 +488,7 @@ class ApiClient {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         const body = await response.json().catch(() => null);
         return { ok: response.ok, status: response.status, body };
     }
@@ -462,6 +498,7 @@ class ApiClient {
         const response = await fetch('/api/sync/status', {
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -478,6 +515,7 @@ class ApiClient {
         const response = await fetch('/api/user/taste/fingerprint', {
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.json();
     }
@@ -492,6 +530,7 @@ class ApiClient {
         const response = await fetch('/api/user/taste/card', {
             headers: { 'Authorization': `Bearer ${token}` },
         });
+        this._checkAuthResponse(response);
         if (!response.ok) return null;
         return response.blob();
     }

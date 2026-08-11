@@ -391,7 +391,14 @@ class ExploreApp {
         window.authManager.onChange(() => this._updateAuthUI());
 
         this._bindEvents();
-        this._initAuth().then(() => this._restoreFromUrl());
+        // authManager.init() now catches its own network-level rejections
+        // (discogsography-ponr), but this .catch() is kept as a backstop so
+        // an unrelated failure in _updateAuthUI()/_initAuth() can never skip
+        // _restoreFromUrl() and strand any node/search state encoded in the URL.
+        this._initAuth().then(() => this._restoreFromUrl()).catch((err) => {
+            console.error('Auth initialisation failed:', err);
+            this._restoreFromUrl();
+        });
     }
 
     // ------------------------------------------------------------------ //
