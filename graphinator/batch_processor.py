@@ -326,7 +326,24 @@ class Neo4jBatchProcessor:
             self._flush_semaphore = asyncio.Semaphore(
                 self.config.max_concurrent_flushes
             )
-        async with self._flush_semaphore:
+
+        # Acquire manually (not `async with`) so a cancellation delivered
+        # WHILE BLOCKED on the acquire itself — routine under load, since
+        # max_concurrent_flushes is small relative to potential concurrent
+        # flush callers — is caught here and re-enqueues `messages` before
+        # propagating. Semaphore.__aenter__ raises CancelledError straight out
+        # with no permit held and no enclosing handler, so `messages` (already
+        # popped off the deque above) would otherwise vanish: never written,
+        # never acked, never nacked, and invisible to the next flush
+        # (discogsography-r8hr).
+        try:
+            await self._flush_semaphore.acquire()
+        except asyncio.CancelledError:
+            for msg in reversed(messages):
+                queue.appendleft(msg)
+            raise
+
+        try:
             try:
                 # Process batch based on data type.
                 # _process_*_batch returns a set of indices that should be
@@ -481,6 +498,8 @@ class Neo4jBatchProcessor:
                 self._backoff_until[data_type] = time.time() + delay
                 # Messages are back on deque for retry — do NOT nack them
                 return
+        finally:
+            self._flush_semaphore.release()
 
         batch_duration = time.time() - batch_start
 
