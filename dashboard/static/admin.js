@@ -2143,14 +2143,18 @@ class AdminDashboard {
             const tbody = document.getElementById('ea-cmp-tbody');
             if (!summary || !tableWrap || !tbody) return;
 
-            const totalA = data.total_a ?? 0;
-            const totalB = data.total_b ?? 0;
+            // The API (extraction_analysis.compare_versions) returns per-rule
+            // deltas under `details` — not `delta` — and does not send
+            // total_a/total_b directly; derive them by summing count_a/count_b
+            // across all rules (discogsography-c892).
+            const deltas = data.details || [];
+            const totalA = deltas.reduce((sum, d) => sum + (d.count_a ?? 0), 0);
+            const totalB = deltas.reduce((sum, d) => sum + (d.count_b ?? 0), 0);
             const delta = totalB - totalA;
             const sign = delta > 0 ? '+' : '';
             summary.textContent = `${vA}: ${totalA.toLocaleString()} violations → ${vB}: ${totalB.toLocaleString()} violations (${sign}${delta.toLocaleString()})`;
             summary.style.display = '';
 
-            const deltas = data.delta || [];
             if (deltas.length === 0) {
                 tbody.replaceChildren(_emptyRow(5, 'No differences found.'));
             } else {
