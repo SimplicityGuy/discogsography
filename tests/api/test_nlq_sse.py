@@ -106,3 +106,92 @@ async def test_sse_cancels_engine_task_on_client_disconnect() -> None:
     await iterator.aclose()
 
     assert cancelled.is_set()
+
+
+@pytest.mark.asyncio
+async def test_streamed_result_event_carries_actions() -> None:
+    """Regression discogsography-l6fm.
+
+    Actions were emitted ONLY on the sideband ``actions`` frame while the
+    ``result`` frame omitted them, but the sole SSE consumer reads
+    ``result.actions``. Every streaming query therefore applied ``[]`` — the whole
+    UI-action system (seed_graph, switch_pane, focus_node, …) was dead in
+    production, since the Ask pill only ever uses the streaming path.
+
+    The streamed result must carry the same ``actions`` the non-streaming JSON
+    body does.
+    """
+    from api.nlq.actions import SeedGraphAction, _SeedEntity  # type: ignore[attr-defined]
+    from api.nlq.engine import NLQResult
+    from api.routers import nlq as nlq_router
+
+    engine = MagicMock()
+    engine.run = AsyncMock(
+        return_value=NLQResult(
+            summary="Here is the answer.",
+            entities=[],
+            tools_used=["search"],
+            actions=[SeedGraphAction(entities=[_SeedEntity(name="Kraftwerk", entity_type="artist")])],
+        )
+    )
+    nlq_router._engine = engine
+
+    response = nlq_router._stream_response("Show Kraftwerk on the graph", None, None)
+    events = [event async for event in response.body_iterator]
+
+    kinds = [e.get("event") for e in events]
+    result_payload = json.loads(events[kinds.index("result")]["data"])
+    actions_payload = json.loads(events[kinds.index("actions")]["data"])
+
+    assert result_payload["actions"] == actions_payload["actions"], "the result frame must carry the same actions as the sideband frame"
+    assert result_payload["actions"][0]["type"] == "seed_graph"
+
+
+@pytest.mark.asyncio
+async def test_streamed_cached_replay_result_event_carries_actions() -> None:
+    """Regression discogsography-l6fm — same omission on the cached-replay path."""
+    from api.routers import nlq as nlq_router
+
+    engine = MagicMock()
+    engine.run = AsyncMock(side_effect=AssertionError("engine must not run for a cache hit"))
+    nlq_router._engine = engine
+
+    cached = {
+        "query": "who produced Thriller",
+        "summary": "Quincy Jones",
+        "entities": [],
+        "tools_used": ["search"],
+        "actions": [{"type": "seed_graph"}],
+        "cached": True,
+    }
+    response = nlq_router._stream_response("who produced Thriller", None, None, cached=cached)
+    events = [event async for event in response.body_iterator]
+
+    result_payload = json.loads(events[1]["data"])
+
+    assert result_payload["actions"] == [{"type": "seed_graph"}]
+    assert result_payload["cached"] is True
+
+
+@pytest.mark.asyncio
+async def test_streamed_result_matches_non_streaming_body_keys() -> None:
+    """The two response modes must expose the same result contract.
+
+    The streaming/non-streaming key divergence is what let ``actions`` go missing
+    on one path only; pin the shapes together so they cannot drift again.
+    """
+    from api.nlq.engine import NLQResult
+    from api.routers import nlq as nlq_router
+
+    engine = MagicMock()
+    engine.run = AsyncMock(return_value=NLQResult(summary="s", entities=[], tools_used=[], actions=[]))
+    nlq_router._engine = engine
+
+    response = nlq_router._stream_response("q", None, None)
+    events = [event async for event in response.body_iterator]
+    kinds = [e.get("event") for e in events]
+    streamed_keys = set(json.loads(events[kinds.index("result")]["data"]))
+
+    non_streaming_keys = {"query", "summary", "entities", "tools_used", "actions", "cached"}
+
+    assert streamed_keys == non_streaming_keys

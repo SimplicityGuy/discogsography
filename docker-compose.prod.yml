@@ -126,6 +126,17 @@ services:
       - ./scripts/neo4j-entrypoint.sh:/scripts/neo4j-entrypoint.sh:ro
     secrets:
       - neo4j_password
+    # The base healthcheck authenticates with the literal dev password, but
+    # neo4j-entrypoint.sh sets NEO4J_AUTH from /run/secrets/neo4j_password (a
+    # random value in prod). Probe with the SAME secret the server was seeded
+    # from — otherwise the check fails auth forever, neo4j never turns healthy,
+    # and every service gated on `neo4j: service_healthy` deadlocks at boot.
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$$(cat /run/secrets/neo4j_password)\" 'RETURN 1 AS health'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
     environment:
       JAVA_TOOL_OPTIONS: '--enable-native-access=ALL-UNNAMED'
       NEO4J_dbms_memory_transaction_total_max: 8G

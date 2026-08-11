@@ -44,6 +44,11 @@ completed_files: set[str] = set()  # Track which files have completed processing
 # cross-type stub creation (release batches MERGE Artist/Label/Master stubs)
 # has fully stopped before we DETACH DELETE.
 extraction_complete_signals: set[str] = set()
+# Post-import maintenance runs DETACHED from the AMQP delivery that triggers it
+# (see check_file_completion). Strong references are held here so the loop cannot
+# garbage-collect the task mid-flight.
+post_import_maintenance_task: asyncio.Task[bool] | None = None
+maintenance_tasks: set[asyncio.Task[bool]] = set()
 current_task = None
 current_progress = 0.0
 
@@ -205,6 +210,32 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
 
     # Schedule new cancellation
     consumer_cancel_tasks[data_type] = asyncio.create_task(cancel_after_delay())
+
+
+async def cancel_all_consumers() -> None:
+    """Stop new deliveries at shutdown by cancelling every consumer.
+
+    Shutdown previously had no deregistration phase at all: the flag flipped, the
+    consumers stayed subscribed, and the per-message guard nacked whatever the
+    broker kept pushing. Cancelling here closes the delivery tap BEFORE the
+    seconds-long flush/teardown sequence, so nothing is redelivered into a
+    service that is on its way out. Best-effort: teardown continues regardless.
+    """
+    for data_type, consumer_tag in list(consumer_tags.items()):
+        queue = queues.get(data_type)
+        if queue is None:
+            consumer_tags.pop(data_type, None)
+            continue
+        try:
+            await queue.cancel(consumer_tag, nowait=True)
+            consumer_tags.pop(data_type, None)
+        except Exception as e:  # noqa: BLE001 - best-effort teardown; the connection is being discarded regardless
+            logger.warning(
+                "⚠️ Failed to cancel consumer during shutdown",
+                data_type=data_type,
+                error=str(e),
+            )
+    logger.info("✅ Consumers cancelled for shutdown")
 
 
 async def close_rabbitmq_connection() -> None:
@@ -487,8 +518,21 @@ async def check_file_completion(
         )
 
         # Flush remaining batches for this data type before cancellation
-        if batch_processor is not None:
-            await batch_processor.flush_queue(data_type)
+        if batch_processor is not None and not await batch_processor.flush_queue(
+            data_type
+        ):
+            # The drain gave up with records still pending (typically a database
+            # outage). Marking the file complete here would cancel the consumer
+            # and let post-import maintenance run over an incomplete graph while
+            # the service reports success. Requeue the marker instead — the
+            # pending records stay queued and periodic_flush retries them.
+            # See discogsography-hh7r.
+            logger.error(
+                "❌ Flush incomplete — requeueing file_complete instead of marking the file done",
+                data_type=data_type,
+            )
+            await message.nack(requeue=True)
+            return True
 
         # Mark complete only after flush succeeds
         completed_files.add(data_type)
@@ -508,8 +552,18 @@ async def check_file_completion(
         )
 
         # Flush remaining batches for this data type before cleanup
-        if batch_processor is not None:
-            await batch_processor.flush_queue(data_type)
+        if batch_processor is not None and not await batch_processor.flush_queue(
+            data_type
+        ):
+            # Records are still pending, so this type is NOT complete. Recording
+            # the signal would let stub cleanup and stats run over a graph that is
+            # still missing rows. Requeue and retry (discogsography-hh7r).
+            logger.error(
+                "❌ Flush incomplete — requeueing extraction_complete instead of recording the signal",
+                data_type=data_type,
+            )
+            await message.nack(requeue=True)
+            return True
 
         # Record this type's completion signal (idempotent — safe under
         # nack/requeue redelivery).
@@ -539,32 +593,108 @@ async def check_file_completion(
             received=sorted(extraction_complete_signals),
         )
 
-        # Post-import maintenance is coupled to the extraction_complete ack:
-        # both steps are idempotent, so on failure we nack(requeue=True) to
-        # retry rather than acking (and silently skipping) the sole trigger.
-        maintenance_ok = True
+        # Ack the trigger BEFORE maintenance starts, never after. Post-import
+        # maintenance is unbounded work — genre/style stats alone run ~10-30s per
+        # node over 16 genres + ~757 styles, label stats cover ~2.3M labels, and
+        # stub cleanup DETACH DELETEs millions of nodes — routinely hours. Holding
+        # the delivery unacked across it trips RabbitMQ's 30-minute consumer ack
+        # timeout, which closes the SHARED channel with PRECONDITION_FAILED: all
+        # four consumers die, the signal is redelivered, maintenance restarts from
+        # scratch, and after x-delivery-limit=20 redeliveries the trigger is
+        # dead-lettered and maintenance never completes at all. See
+        # discogsography-zjja.
+        await message.ack()
 
-        # Clean up stub nodes created by cross-type MERGE operations, across
-        # EVERY entity label — not just this type's — because release batches
-        # create Artist/Label/Master stubs regardless of which signal arrived
-        # last.
-        if graph is not None and not await cleanup_all_stub_nodes():
-            maintenance_ok = False
+        # Maintenance now runs detached with its own retry, because the AMQP
+        # delivery is no longer available as a retry token.
+        start_post_import_maintenance()
+        return True
 
-        # All releases are now imported — compute aggregate stats on
-        # Genre/Style/Label nodes.
-        if graph is not None and not await compute_genre_style_stats():
+    return False
+
+
+def start_post_import_maintenance() -> None:
+    """Launch post-import maintenance as a detached, single-flight task.
+
+    Single-flight matters: extraction_complete can be redelivered (consumer
+    restart, recovery loop) and every step is a heavy Neo4j sweep — two
+    concurrent runs would contend for the same transaction pool the retry logic
+    is trying to relieve.
+    """
+    global post_import_maintenance_task
+
+    if (
+        post_import_maintenance_task is not None
+        and not post_import_maintenance_task.done()
+    ):
+        logger.info(
+            "⏳ Post-import maintenance already running — ignoring duplicate trigger"
+        )
+        return
+
+    task = asyncio.create_task(run_post_import_maintenance())
+    post_import_maintenance_task = task
+    maintenance_tasks.add(task)
+    task.add_done_callback(maintenance_tasks.discard)
+
+
+async def run_post_import_maintenance() -> bool:
+    """Run stub cleanup and aggregate stats, retrying on failure.
+
+    Detached from the extraction_complete delivery (which is acked immediately),
+    so this owns the retry the nack/requeue used to provide. Every step is
+    idempotent, so a retry re-runs the whole sweep safely.
+
+    Returns:
+        True if a full pass succeeded, False if every attempt failed.
+    """
+    for attempt in range(1, POST_IMPORT_MAINTENANCE_MAX_ATTEMPTS + 1):
+        if shutdown_requested:
+            logger.warning(
+                "🛑 Shutdown requested — abandoning post-import maintenance",
+                attempt=attempt,
+            )
+            return False
+
+        try:
+            maintenance_ok = True
+
+            # Clean up stub nodes created by cross-type MERGE operations, across
+            # EVERY entity label — not just one type's — because release batches
+            # create Artist/Label/Master stubs regardless of which signal arrived
+            # last.
+            if graph is not None and not await cleanup_all_stub_nodes():
+                maintenance_ok = False
+
+            # All releases are now imported — compute aggregate stats on
+            # Genre/Style/Label nodes.
+            if graph is not None and not await compute_genre_style_stats():
+                maintenance_ok = False
+        except Exception as e:  # noqa: BLE001 - detached task: log and retry instead of dying silently
+            logger.error(
+                "❌ Post-import maintenance raised", attempt=attempt, error=str(e)
+            )
             maintenance_ok = False
 
         if maintenance_ok:
-            await message.ack()
-        else:
+            logger.info("✅ Post-import maintenance complete", attempt=attempt)
+            return True
+
+        if attempt == POST_IMPORT_MAINTENANCE_MAX_ATTEMPTS:
             logger.error(
-                "❌ Post-import maintenance failed, nacking extraction_complete for retry",
-                data_type=data_type,
+                "❌ Post-import maintenance failed after every attempt — stub nodes and "
+                "aggregate stats are stale until it is re-run",
+                attempts=attempt,
             )
-            await message.nack(requeue=True)
-        return True
+            return False
+
+        delay = POST_IMPORT_MAINTENANCE_RETRY_DELAY_SECONDS * (2 ** (attempt - 1))
+        logger.warning(
+            "⚠️ Post-import maintenance failed — retrying",
+            attempt=attempt,
+            retry_in_seconds=delay,
+        )
+        await asyncio.sleep(delay)
 
     return False
 
@@ -766,6 +896,13 @@ MAINTENANCE_MIN_BATCH_SIZE = 50
 
 MAINTENANCE_MAX_ATTEMPTS = 4
 MAINTENANCE_RETRY_BASE_DELAY_SECONDS = 30.0
+
+# Whole-sweep retries for the detached post-import maintenance task. The AMQP
+# delivery is acked before maintenance starts (discogsography-zjja), so this — not
+# nack/requeue — is what retries a failed sweep. Kept small: each pass is hours of
+# Neo4j work, and every step is idempotent so a later manual re-run is always safe.
+POST_IMPORT_MAINTENANCE_MAX_ATTEMPTS = 3
+POST_IMPORT_MAINTENANCE_RETRY_DELAY_SECONDS = 60.0
 
 # Pause between consecutive heavy maintenance queries so the transaction pool
 # can drain before the next one claims it, rather than running them back to back.
@@ -1280,8 +1417,16 @@ def make_message_handler(
 
     async def handler(message: AbstractIncomingMessage) -> None:
         if shutdown_requested:
-            logger.info("🛑 Shutdown requested, rejecting new messages")
-            await message.nack(requeue=True)
+            # Leave the delivery UNACKED — never nack(requeue=True) here. The
+            # consumer is still subscribed at this point, so a requeue is
+            # redelivered within milliseconds and nacked again, burning a quorum
+            # x-delivery-count per cycle; at x-delivery-limit=20 valid records
+            # are dead-lettered within a second of a routine restart. Returning
+            # without settling lets the connection close requeue them exactly
+            # once. See discogsography-lnn4.
+            logger.debug(
+                "🛑 Shutdown requested, leaving message unacked for redelivery"
+            )
             return
 
         record_id = "unknown"
@@ -1758,6 +1903,11 @@ async def main() -> None:
         except KeyboardInterrupt:
             logger.info("🛑 Received interrupt signal, shutting down gracefully")
         finally:
+            # Stop new deliveries FIRST, before the multi-second flush/teardown
+            # below: a still-subscribed consumer keeps being handed messages it
+            # can only leave unacked (discogsography-lnn4).
+            await cancel_all_consumers()
+
             # Cancel progress reporting
             progress_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -1786,6 +1936,16 @@ async def main() -> None:
             # Cancel any pending consumer cancellation tasks
             for task in list(consumer_cancel_tasks.values()):
                 task.cancel()
+
+            # Cancel detached post-import maintenance. Its trigger was already
+            # acked, and every step is idempotent — an interrupted sweep is
+            # re-run by the next extraction_complete or manually.
+            for maintenance_task in list(maintenance_tasks):
+                maintenance_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await maintenance_task
+            if maintenance_tasks:
+                logger.info("✅ Post-import maintenance task stopped")
 
             # Close RabbitMQ connection if still active
             await close_rabbitmq_connection()

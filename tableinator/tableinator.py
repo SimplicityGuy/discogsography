@@ -225,6 +225,32 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
     consumer_cancel_tasks[data_type] = asyncio.create_task(cancel_after_delay())
 
 
+async def cancel_all_consumers() -> None:
+    """Stop new deliveries at shutdown by cancelling every consumer.
+
+    Shutdown previously had no deregistration phase at all: the flag flipped, the
+    consumers stayed subscribed, and the per-message guard nacked whatever the
+    broker kept pushing. Cancelling here closes the delivery tap BEFORE the
+    seconds-long flush/teardown sequence, so nothing is redelivered into a
+    service that is on its way out. Best-effort: teardown continues regardless.
+    """
+    for data_type, consumer_tag in list(consumer_tags.items()):
+        queue = queues.get(data_type)
+        if queue is None:
+            consumer_tags.pop(data_type, None)
+            continue
+        try:
+            await queue.cancel(consumer_tag, nowait=True)
+            consumer_tags.pop(data_type, None)
+        except Exception as e:  # noqa: BLE001 - best-effort teardown; the connection is being discarded regardless
+            logger.warning(
+                "⚠️ Failed to cancel consumer during shutdown",
+                data_type=data_type,
+                error=str(e),
+            )
+    logger.info("✅ Consumers cancelled for shutdown")
+
+
 async def close_rabbitmq_connection() -> None:
     """Close the RabbitMQ connection and channel when all consumers are idle."""
     global active_connection, active_channel
@@ -629,8 +655,13 @@ def make_data_handler(
 
 async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> None:
     if shutdown_requested:
-        logger.info("🛑 Shutdown requested, rejecting new messages")
-        await message.nack(requeue=True)
+        # Leave the delivery UNACKED — never nack(requeue=True) here. The
+        # consumer is still subscribed at this point, so a requeue is redelivered
+        # within milliseconds and nacked again, burning a quorum x-delivery-count
+        # per cycle; at x-delivery-limit=20 valid records are dead-lettered within
+        # a second of a routine restart. Returning without settling lets the
+        # connection close requeue them exactly once. See discogsography-lnn4.
+        logger.debug("🛑 Shutdown requested, leaving message unacked for redelivery")
         return
 
     try:
@@ -645,8 +676,22 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
             )
 
             # Flush remaining batches for this data type before cancellation
-            if batch_processor is not None:
-                await batch_processor.flush_queue(data_type)
+            if batch_processor is not None and not await batch_processor.flush_queue(
+                data_type
+            ):
+                # The drain gave up with rows still pending (typically a database
+                # outage). Marking the file complete here would cancel the
+                # consumer and let purge_stale_rows delete the very rows those
+                # pending messages were about to refresh, while the service
+                # reports success. Requeue the marker instead — the pending
+                # records stay queued and periodic_flush retries them.
+                # See discogsography-hh7r.
+                logger.error(
+                    "❌ Flush incomplete — requeueing file_complete instead of marking the file done",
+                    data_type=data_type,
+                )
+                await message.nack(requeue=True)
+                return
 
             # Mark complete only after flush to prevent premature idle detection
             completed_files.add(data_type)
@@ -666,9 +711,20 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                 version=data.get("version"),
             )
 
-            # Flush remaining batches for this data type before cleanup
-            if batch_processor is not None:
-                await batch_processor.flush_queue(data_type)
+            # Flush remaining batches for this data type before cleanup. A purge
+            # on top of an incomplete drain is actively destructive: the pending
+            # messages' rows still carry an old updated_at, so purge_stale_rows
+            # would DELETE exactly the records that were about to be refreshed.
+            # See discogsography-hh7r.
+            if batch_processor is not None and not await batch_processor.flush_queue(
+                data_type
+            ):
+                logger.error(
+                    "❌ Flush incomplete — requeueing extraction_complete instead of purging stale rows",
+                    data_type=data_type,
+                )
+                await message.nack(requeue=True)
+                return
 
             # Purge stale rows from prior extractions
             purge_ok = True
@@ -1178,6 +1234,11 @@ async def main() -> None:
         except KeyboardInterrupt:
             logger.info("🛑 Received interrupt signal, shutting down gracefully")
         finally:
+            # Stop new deliveries FIRST, before the multi-second flush/teardown
+            # below: a still-subscribed consumer keeps being handed messages it
+            # can only leave unacked (discogsography-lnn4).
+            await cancel_all_consumers()
+
             # Cancel progress reporting
             progress_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

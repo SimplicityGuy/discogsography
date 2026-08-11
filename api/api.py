@@ -31,6 +31,7 @@ from api.auth import (
     decrypt_oauth_token,
     encrypt_oauth_token,
     get_oauth_encryption_key,
+    token_revocation_reason,
 )
 import api.dependencies as _dependencies
 from api.limiter import limiter
@@ -150,27 +151,14 @@ async def _get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token",
             )
-        # Check jti blacklist (revoked tokens via logout)
-        jti: str | None = payload.get("jti")
-        if jti and _redis:
-            revoked = await _redis.get(f"revoked:jti:{jti}")
-            if revoked:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token has been revoked",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-        # Check if password was changed after token was issued
-        if user_id and _redis:
-            pw_changed = await _redis.get(f"password_changed:{user_id}")
-            if pw_changed:
-                issued_at = payload.get("iat", 0)
-                if issued_at <= int(pw_changed):
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Token has been revoked",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
+        # Revocation (jti blacklist via logout + password change) — shared with
+        # every other auth site so no site can silently drift out of lockstep.
+        if await token_revocation_reason(payload, _redis) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         return payload
     except ValueError as exc:
         raise HTTPException(

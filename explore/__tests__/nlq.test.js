@@ -220,7 +220,11 @@ describe('ApiClient NLQ', () => {
             }).not.toThrow();
             await new Promise(resolve => setTimeout(resolve, 30));
             expect(onResult).not.toHaveBeenCalled();
-            expect(onError).not.toHaveBeenCalled();
+            // ...but the caller must not be stranded either: an unusable result
+            // frame ends the stream with no result, which now settles as an
+            // error rather than leaving the pill spinning (discogsography-ebgz).
+            expect(onError).toHaveBeenCalledTimes(1);
+            expect(onError.mock.calls[0][0].message).toBe('stream closed without a result');
         });
     });
 });

@@ -199,7 +199,8 @@ def _fake_request(token: str) -> object:
     return _Req(f"Bearer {token}")
 
 
-def test_extract_user_id_rejects_challenge_token() -> None:
+@pytest.mark.asyncio
+async def test_extract_user_id_rejects_challenge_token() -> None:
     """Regression discogsography-cu2.1 — _extract_user_id must not resolve a 2FA challenge token to a user."""
     from api.routers import nlq as nlq_router
 
@@ -207,7 +208,7 @@ def test_extract_user_id_rejects_challenge_token() -> None:
     nlq_router.configure(nlq_router.NLQConfig(), engine=None, redis=None, jwt_secret=secret)
 
     challenge = _sign_jwt({"sub": "user-1", "email": "x@y.com", "exp": 9_999_999_999, "type": "2fa_challenge"}, secret)
-    assert nlq_router._extract_user_id(_fake_request(challenge)) is None  # type: ignore[arg-type]
+    assert await nlq_router._extract_user_id(_fake_request(challenge)) is None  # type: ignore[arg-type]
 
     access = _sign_jwt({"sub": "user-1", "email": "x@y.com", "exp": 9_999_999_999}, secret)
-    assert nlq_router._extract_user_id(_fake_request(access)) == "user-1"  # type: ignore[arg-type]
+    assert await nlq_router._extract_user_id(_fake_request(access)) == "user-1"  # type: ignore[arg-type]

@@ -17,7 +17,12 @@ from api.app_tokens import (
     hash_token,
     require_app_token,  # noqa: F401  — re-exported for callers
 )
-from api.auth import decode_token
+from api.auth import (
+    REASON_CREDENTIALS_CHANGED,
+    REASON_REVOKED,
+    decode_token,
+    token_revocation_reason,
+)
 
 
 _security = HTTPBearer(auto_error=False)
@@ -46,20 +51,9 @@ async def get_optional_user(
     # Admin and 2FA challenge tokens must not be treated as an authenticated user.
     if payload.get("type") is not None:
         return None
-    # Check JTI revocation
-    jti: str | None = payload.get("jti")
-    if jti and _redis:
-        revoked = await _redis.get(f"revoked:jti:{jti}")
-        if revoked:
-            return None
-    # Check password-changed revocation
-    user_id = payload.get("sub")
-    if user_id and _redis:
-        pw_changed = await _redis.get(f"password_changed:{user_id}")
-        if pw_changed:
-            issued_at = payload.get("iat", 0)
-            if issued_at <= int(pw_changed):
-                return None
+    # Revocation (jti blacklist + password change) — shared with every other auth site
+    if await token_revocation_reason(payload, _redis) is not None:
+        return None
     return payload
 
 
@@ -88,20 +82,14 @@ async def require_user(
     user_id: str | None = payload.get("sub")
     if user_id is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"})
-    # Check JTI revocation
-    jti: str | None = payload.get("jti")
-    if jti and _redis:
-        revoked = await _redis.get(f"revoked:jti:{jti}")
-        if revoked:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked", headers={"WWW-Authenticate": "Bearer"})
-    if user_id and _redis:
-        pw_changed = await _redis.get(f"password_changed:{user_id}")
-        if pw_changed:
-            issued_at = payload.get("iat", 0)
-            if issued_at <= int(pw_changed):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalidated by password change", headers={"WWW-Authenticate": "Bearer"}
-                )
+    # Revocation (jti blacklist + password change) — shared with every other auth site
+    reason = await token_revocation_reason(payload, _redis)
+    if reason == REASON_REVOKED:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked", headers={"WWW-Authenticate": "Bearer"})
+    if reason == REASON_CREDENTIALS_CHANGED:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalidated by password change", headers={"WWW-Authenticate": "Bearer"}
+        )
     return payload
 
 
@@ -213,19 +201,12 @@ async def require_admin(
     user_id: str | None = payload.get("sub")
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid token")
-    # Check token revocation in Redis
-    jti: str | None = payload.get("jti")
-    if jti and _redis:
-        revoked = await _redis.get(f"revoked:jti:{jti}")
-        if revoked:
-            raise HTTPException(status_code=401, detail="Token has been revoked")
-    # Check password-changed revocation
-    if _redis:
-        pw_changed = await _redis.get(f"password_changed:{user_id}")
-        if pw_changed:
-            issued_at = payload.get("iat", 0)
-            if issued_at <= int(pw_changed):
-                raise HTTPException(status_code=401, detail="Token invalidated by password change")
+    # Revocation (jti blacklist + password change) — shared with every other auth site
+    reason = await token_revocation_reason(payload, _redis)
+    if reason == REASON_REVOKED:
+        raise HTTPException(status_code=401, detail="Token has been revoked")
+    if reason == REASON_CREDENTIALS_CHANGED:
+        raise HTTPException(status_code=401, detail="Token invalidated by password change")
     # DB verification: confirm user exists and is_admin=True
     if _pool is not None:
         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:

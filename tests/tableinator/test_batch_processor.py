@@ -831,10 +831,15 @@ class TestPostgreSQLBatchProcessor:
         assert processor._flush_queue.await_count == 3
 
     @pytest.mark.asyncio
-    async def test_public_flush_queue_retry_limit_nacks_remaining(self) -> None:
-        """When _flush_queue makes no progress (queue never shrinks), the drain loop
-        hits max_flush_retries and nacks every remaining message rather than spinning
-        forever."""
+    async def test_public_flush_queue_retry_limit_keeps_messages(self) -> None:
+        """When _flush_queue makes no progress, the drain gives up WITHOUT nacking.
+
+        discogsography-hh7r: the give-up path used to nack every pending message,
+        and the nack callback is nack(requeue=False) — an immediate dead-letter
+        that bypasses the quorum queue's delivery budget. A brief outage therefore
+        sent valid records straight to a DLQ nothing replays. The messages now stay
+        queued for periodic_flush, and the caller learns about it from the return.
+        """
         processor = PostgreSQLBatchProcessor(MagicMock(), BatchConfig(max_flush_retries=3, backoff_initial=0.0))
 
         # _flush_queue never drains the queue → no progress on every attempt.
@@ -849,16 +854,16 @@ class TestPostgreSQLBatchProcessor:
             processor.queues["artists"].append(PendingMessage("artists", str(i), {"id": str(i)}, "h", AsyncMock(), nack))
 
         with patch("tableinator.batch_processor.logger") as mock_logger:
-            await processor.flush_queue("artists")
+            drained = await processor.flush_queue("artists")
 
-        assert not processor.queues["artists"], "remaining messages must be drained via nack"
-        assert len(nacks) == 2
+        assert drained is False, "an incomplete drain must be reported to the caller"
+        assert len(processor.queues["artists"]) == 2, "pending messages must be kept for retry"
+        assert nacks == []
         assert any("Flush retry limit reached" in str(c.args[0]) for c in mock_logger.error.call_args_list)
 
     @pytest.mark.asyncio
-    async def test_public_flush_queue_backoff_retry_limit_nacks_remaining(self) -> None:
-        """The backoff branch (wait > 0) also enforces the retry limit and nacks the
-        remaining messages when no progress is made."""
+    async def test_public_flush_queue_backoff_retry_limit_keeps_messages(self) -> None:
+        """The backoff branch (wait > 0) also gives up without nacking (hh7r)."""
         processor = PostgreSQLBatchProcessor(MagicMock(), BatchConfig(max_flush_retries=2, backoff_initial=0.0))
 
         # Force the wait > 0 backoff branch on every iteration.
@@ -873,50 +878,44 @@ class TestPostgreSQLBatchProcessor:
         processor.queues["artists"].append(PendingMessage("artists", "0", {"id": "0"}, "h", AsyncMock(), nack))
 
         with patch("tableinator.batch_processor.asyncio.sleep", new_callable=AsyncMock), patch("tableinator.batch_processor.logger") as mock_logger:
-            await processor.flush_queue("artists")
+            drained = await processor.flush_queue("artists")
 
-        assert not processor.queues["artists"]
-        assert len(nacks) == 1
+        assert drained is False
+        assert len(processor.queues["artists"]) == 1
+        assert nacks == []
         assert any("Flush retry limit reached" in str(c.args[0]) for c in mock_logger.error.call_args_list)
 
     @pytest.mark.asyncio
-    async def test_public_flush_queue_backoff_nack_failure_is_logged(self) -> None:
-        """A failing nack while draining the backoff-branch retry-limit remainder is
-        caught and logged, not raised."""
-        processor = PostgreSQLBatchProcessor(MagicMock(), BatchConfig(max_flush_retries=1, backoff_initial=0.0))
+    async def test_public_flush_queue_reports_success_when_drained(self) -> None:
+        """A complete drain returns True so the caller may mark the file done (hh7r)."""
+        processor = PostgreSQLBatchProcessor(MagicMock(), BatchConfig(max_flush_retries=3, backoff_initial=0.0))
 
-        processor._backoff_until["artists"] = time.time() + 3600
-        processor._flush_queue = AsyncMock()  # type: ignore[method-assign]
+        async def drain_one(data_type: str) -> None:
+            if processor.queues[data_type]:
+                processor.queues[data_type].popleft()
 
-        async def failing_nack() -> None:
-            raise RuntimeError("channel closed")
+        processor._flush_queue = AsyncMock(side_effect=drain_one)  # type: ignore[method-assign]
 
-        processor.queues["artists"].append(PendingMessage("artists", "0", {"id": "0"}, "h", AsyncMock(), failing_nack))
+        for i in range(2):
+            processor.queues["artists"].append(PendingMessage("artists", str(i), {"id": str(i)}, "h", AsyncMock(), AsyncMock()))
 
-        with patch("tableinator.batch_processor.asyncio.sleep", new_callable=AsyncMock), patch("tableinator.batch_processor.logger") as mock_logger:
-            await processor.flush_queue("artists")
+        drained = await processor.flush_queue("artists")
 
+        assert drained is True
         assert not processor.queues["artists"]
-        assert any("Failed to nack message" in str(c.args[0]) for c in mock_logger.warning.call_args_list)
 
     @pytest.mark.asyncio
-    async def test_public_flush_queue_nack_failure_is_logged(self) -> None:
-        """A failing nack while draining the no-backoff retry-limit remainder is caught
-        and logged, not raised."""
-        processor = PostgreSQLBatchProcessor(MagicMock(), BatchConfig(max_flush_retries=1, backoff_initial=0.0))
+    async def test_flush_all_reports_any_incomplete_queue(self) -> None:
+        """flush_all aggregates: one stuck queue makes the whole drain False (hh7r)."""
+        processor = PostgreSQLBatchProcessor(MagicMock(), BatchConfig(max_flush_retries=2, backoff_initial=0.0))
 
         processor._flush_queue = AsyncMock()  # type: ignore[method-assign]
+        processor.queues["artists"].append(PendingMessage("artists", "0", {"id": "0"}, "h", AsyncMock(), AsyncMock()))
 
-        async def failing_nack() -> None:
-            raise RuntimeError("channel closed")
+        with patch("tableinator.batch_processor.logger"):
+            drained = await processor.flush_all()
 
-        processor.queues["artists"].append(PendingMessage("artists", "0", {"id": "0"}, "h", AsyncMock(), failing_nack))
-
-        with patch("tableinator.batch_processor.logger") as mock_logger:
-            await processor.flush_queue("artists")
-
-        assert not processor.queues["artists"]
-        assert any("Failed to nack message" in str(c.args[0]) for c in mock_logger.warning.call_args_list)
+        assert drained is False
 
     @pytest.mark.asyncio
     async def test_public_flush_queue_backoff_progress_resets_retries(self) -> None:
@@ -936,8 +935,9 @@ class TestPostgreSQLBatchProcessor:
             processor.queues["artists"].append(PendingMessage("artists", str(i), {"id": str(i)}, "h", AsyncMock(), AsyncMock()))
 
         with patch("tableinator.batch_processor.asyncio.sleep", new_callable=AsyncMock):
-            await processor.flush_queue("artists")
+            drained = await processor.flush_queue("artists")
 
+        assert drained is True
         assert not processor.queues["artists"]
         assert processor._flush_queue.await_count == 2
 
@@ -1213,8 +1213,12 @@ class TestInterfaceAndOperationalErrorHandling:
         assert len(processor.queues["artists"]) == 1
 
     @pytest.mark.asyncio
-    async def test_consecutive_failures_increments_on_operational_error(self) -> None:
-        """_consecutive_failures should increment on OperationalError."""
+    async def test_transient_failures_increment_on_operational_error(self) -> None:
+        """A transient outage increments the TRANSIENT counter, never the poison one.
+
+        discogsography-4lrp: both branches used to share _consecutive_failures, so
+        a database outage pre-charged the poison guard that dead-letters batches.
+        """
         mock_connection_cm = AsyncMock()
         mock_connection_cm.__aenter__ = AsyncMock(side_effect=OperationalError("DB down"))
         mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
@@ -1223,7 +1227,7 @@ class TestInterfaceAndOperationalErrorHandling:
         mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
 
         processor = PostgreSQLBatchProcessor(mock_connection_pool)
-        assert processor._consecutive_failures["artists"] == 0
+        assert processor._transient_failures["artists"] == 0
 
         processor.queues["artists"].append(
             PendingMessage(
@@ -1239,7 +1243,8 @@ class TestInterfaceAndOperationalErrorHandling:
         with patch("tableinator.batch_processor.logger"):
             await processor._flush_queue("artists")
 
-        assert processor._consecutive_failures["artists"] == 1
+        assert processor._transient_failures["artists"] == 1
+        assert processor._consecutive_failures["artists"] == 0
 
     @pytest.mark.asyncio
     async def test_backoff_until_set_on_interface_error(self) -> None:

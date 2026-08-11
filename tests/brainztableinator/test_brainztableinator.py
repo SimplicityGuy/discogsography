@@ -574,14 +574,20 @@ class TestOnDataMessage:
 
     @pytest.mark.asyncio
     async def test_shutdown_requested_nacks_with_requeue(self):
-        """When shutdown_requested is True, message should be nacked with requeue."""
+        """When shutdown_requested is True the message is left UNSETTLED.
+
+        discogsography-lnn4: a still-subscribed consumer would be redelivered a
+        nacked message within milliseconds, burning one quorum x-delivery-count
+        per cycle until x-delivery-limit=20 dead-letters a perfectly valid record.
+        Leaving it unsettled defers redelivery to connection close.
+        """
         mock_message = AsyncMock()
         mock_message.body = b'{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test Artist"}'
 
         with patch("brainztableinator.brainztableinator.shutdown_requested", True):
             await on_data_message(mock_message, "artists")
 
-            mock_message.nack.assert_called_once_with(requeue=True)
+            mock_message.nack.assert_not_called()
             mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio

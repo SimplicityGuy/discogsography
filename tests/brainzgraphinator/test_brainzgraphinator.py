@@ -612,12 +612,18 @@ class TestMessageHandling:
     @pytest.mark.asyncio
     @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", True)
     async def test_on_data_message_shutdown_nacks(self) -> None:
-        """Message received during shutdown is nacked with requeue."""
+        """Message received during shutdown is left UNSETTLED, not nacked.
+
+        discogsography-lnn4: a still-subscribed consumer would be redelivered a
+        nacked message within milliseconds, burning one quorum x-delivery-count
+        per cycle until x-delivery-limit=20 dead-letters a perfectly valid record.
+        Leaving it unsettled defers redelivery to connection close.
+        """
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
 
         await on_artist_message(mock_message)
 
-        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.nack.assert_not_called()
         mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio

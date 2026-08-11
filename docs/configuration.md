@@ -974,6 +974,7 @@ This creates `secrets/` with these files (all `chmod 600`, directory `chmod 700`
 ```
 secrets/
 ├── resend_api_key.txt        # Optional — Resend API key
+├── nlq_api_key.txt           # Optional — NLQ provider API key (empty unless NLQ_ENABLED)
 ├── encryption_master_key.txt # base64(urandom(32))
 ├── jwt_secret_key.txt        # openssl rand -hex 32
 ├── neo4j_password.txt        # openssl rand -base64 24

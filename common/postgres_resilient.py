@@ -17,6 +17,8 @@ from .db_resilience import (
     AsyncResilientConnection,
     CircuitBreaker,
     CircuitBreakerConfig,
+    ConnectionEstablishmentError,
+    DatabaseUnavailableError,
     ExponentialBackoff,
 )
 
@@ -50,7 +52,10 @@ class ResilientPostgreSQLPool:
         # Circuit breaker for database failures
         self.circuit_breaker = CircuitBreaker(
             CircuitBreakerConfig(
-                name="PostgreSQL", failure_threshold=3, recovery_timeout=30, expected_exception=(DatabaseError, InterfaceError, OperationalError)
+                name="PostgreSQL",
+                failure_threshold=3,
+                recovery_timeout=30,
+                expected_exception=(DatabaseError, InterfaceError, OperationalError, DatabaseUnavailableError),
             )
         )
 
@@ -245,7 +250,7 @@ class ResilientPostgreSQLPool:
                     time.sleep(delay)
 
         if not conn:
-            raise Exception(f"Failed to get PostgreSQL connection after {self.max_retries} attempts") from last_error
+            raise ConnectionEstablishmentError(f"Failed to get PostgreSQL connection after {self.max_retries} attempts") from last_error
 
         try:
             yield conn
@@ -303,7 +308,10 @@ class AsyncResilientPostgreSQL(AsyncResilientConnection[Any]):
         # Circuit breaker for PostgreSQL failures
         circuit_breaker = CircuitBreaker(
             CircuitBreakerConfig(
-                name="AsyncPostgreSQL", failure_threshold=3, recovery_timeout=30, expected_exception=(DatabaseError, InterfaceError, OperationalError)
+                name="AsyncPostgreSQL",
+                failure_threshold=3,
+                recovery_timeout=30,
+                expected_exception=(DatabaseError, InterfaceError, OperationalError, DatabaseUnavailableError),
             )
         )
 
@@ -373,7 +381,7 @@ class AsyncPostgreSQLPool:
                 name="AsyncPostgreSQL",
                 failure_threshold=3,
                 recovery_timeout=30,
-                expected_exception=(DatabaseError, InterfaceError, OperationalError),
+                expected_exception=(DatabaseError, InterfaceError, OperationalError, DatabaseUnavailableError),
             )
         )
 
@@ -617,7 +625,7 @@ class AsyncPostgreSQLPool:
                     await asyncio.sleep(delay)
 
         if not conn:
-            raise Exception(f"Failed to get PostgreSQL connection after {self.max_retries} attempts") from last_error
+            raise ConnectionEstablishmentError(f"Failed to get PostgreSQL connection after {self.max_retries} attempts") from last_error
 
         try:
             yield conn

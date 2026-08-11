@@ -45,14 +45,20 @@ class NLQQueryRequest(BaseModel):
     context: dict[str, Any] | None = None
 
 
-def _extract_user_id(request: Request) -> str | None:
-    """Extract user_id from an optional Bearer token. Returns None if missing or invalid."""
+async def _extract_user_id(request: Request) -> str | None:
+    """Extract user_id from an optional Bearer token. Returns None if missing, invalid, or revoked.
+
+    Async because revocation state lives in Redis: a resolved user_id unlocks the
+    authenticated collection tools, so a logged-out or password-changed token must
+    NOT resolve here either (discogsography-aexv). Any failure — bad token, Redis
+    error — fails closed to None, i.e. an anonymous/public query.
+    """
     auth_header = request.headers.get("authorization", "")
     if not auth_header.lower().startswith("bearer "):
         return None
     token = auth_header[7:]
     try:
-        from api.auth import decode_token  # noqa: PLC0415
+        from api.auth import decode_token, token_revocation_reason  # noqa: PLC0415
 
         if _jwt_secret is None:
             return None
@@ -60,6 +66,10 @@ def _extract_user_id(request: Request) -> str | None:
         # Allowlist: only pure access tokens (no `type` claim) resolve to a user.
         # Admin and 2FA challenge tokens must not be treated as an authenticated user.
         if payload.get("type") is not None:
+            return None
+        # Signature and exp alone do not make a token current — logout and
+        # password change revoke it in Redis, exactly as every other auth site checks.
+        if await token_revocation_reason(payload, _redis) is not None:
             return None
         return payload.get("sub")
     except (ValueError, Exception):
@@ -127,7 +137,7 @@ async def nlq_query(request: Request, body: NLQQueryRequest) -> Any:
         return JSONResponse(content={"error": "NLQ is not available"}, status_code=503)
 
     # Extract optional user_id from Bearer token
-    user_id = _extract_user_id(request)
+    user_id = await _extract_user_id(request)
 
     # Determine the response mode BEFORE consulting the cache. A streaming client
     # must ALWAYS receive an event stream — never a plain JSON cache body, which
@@ -202,7 +212,8 @@ def _stream_response(
         # Replay a cached result as synthetic SSE events so a streaming client
         # never hangs on a plain JSON cache body. See discogsography-cu2.27.
         if cached is not None:
-            yield {"event": "actions", "data": json.dumps({"actions": cached.get("actions", [])})}
+            cached_actions = cached.get("actions", [])
+            yield {"event": "actions", "data": json.dumps({"actions": cached_actions})}
             yield {
                 "event": "result",
                 "data": json.dumps(
@@ -211,6 +222,10 @@ def _stream_response(
                         "summary": cached.get("summary"),
                         "entities": cached.get("entities"),
                         "tools_used": cached.get("tools_used"),
+                        # Mirror the non-streaming JSON body: actions travel on the
+                        # result frame too, not only the sideband event. See
+                        # discogsography-l6fm.
+                        "actions": cached_actions,
                         "cached": True,
                     }
                 ),
@@ -256,17 +271,22 @@ def _stream_response(
                 return
 
             # Emit actions event before result so the client can snapshot and apply
+            actions_payload = [action.model_dump(by_alias=True, mode="json") for action in result.actions]
             yield {
                 "event": "actions",
-                "data": json.dumps({"actions": [action.model_dump(by_alias=True, mode="json") for action in result.actions]}),
+                "data": json.dumps({"actions": actions_payload}),
             }
 
-            # Emit final result
+            # Emit final result. `actions` is repeated here on purpose: the
+            # non-streaming JSON body and the Redis cache entry both carry it on
+            # the result object, and a client that only subscribes to `result`
+            # would otherwise apply nothing at all. See discogsography-l6fm.
             response_data = {
                 "query": query,
                 "summary": result.summary,
                 "entities": result.entities,
                 "tools_used": result.tools_used,
+                "actions": actions_payload,
                 "cached": False,
             }
             yield {"event": "result", "data": json.dumps(response_data)}

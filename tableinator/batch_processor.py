@@ -14,6 +14,7 @@ from typing import Any
 
 import structlog
 from common import normalize_record
+from common.db_resilience import DatabaseUnavailableError
 from psycopg import sql
 from psycopg.errors import InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
@@ -115,7 +116,17 @@ class PostgreSQLBatchProcessor:
             "masters": self.config.batch_size,
             "releases": self.config.batch_size,
         }
+        # Deterministic (poison) failures only — this is what gates the DLQ nack.
         self._consecutive_failures: dict[str, int] = {
+            "artists": 0,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+        # Transient (outage) failures — drives backoff and adaptive batch sizing
+        # ONLY. Kept separate so a database outage can never pre-charge the poison
+        # counter and dead-letter healthy records (discogsography-4lrp).
+        self._transient_failures: dict[str, int] = {
             "artists": 0,
             "labels": 0,
             "masters": 0,
@@ -265,7 +276,12 @@ class PostgreSQLBatchProcessor:
                     queue.appendleft(msg)
                 raise
 
-            except (InterfaceError, OperationalError) as e:
+            # TRANSIENT: the database is unreachable or the operation can succeed
+            # on a retry — never the payload's fault. DatabaseUnavailableError
+            # covers the pool's own failures (connection could not be established,
+            # circuit breaker open), which used to surface as a bare Exception and
+            # be misread as a poison batch. See discogsography-4lrp.
+            except (InterfaceError, OperationalError, DatabaseUnavailableError) as e:
                 logger.error(
                     "❌ PostgreSQL connection error during batch",
                     data_type=data_type,
@@ -277,12 +293,12 @@ class PostgreSQLBatchProcessor:
                     queue.appendleft(msg)
 
                 # Exponential backoff — prevent tight retry loop that worsens pool exhaustion
-                self._consecutive_failures[data_type] += 1
+                self._transient_failures[data_type] += 1
                 delay = min(
                     self.config.backoff_initial
                     * (
                         self.config.backoff_multiplier
-                        ** (self._consecutive_failures[data_type] - 1)
+                        ** (self._transient_failures[data_type] - 1)
                     ),
                     self.config.backoff_max,
                 )
@@ -300,14 +316,14 @@ class PostgreSQLBatchProcessor:
                         old_size=old_size,
                         new_size=self._effective_batch_size[data_type],
                         backoff_seconds=round(delay, 1),
-                        consecutive_failures=self._consecutive_failures[data_type],
+                        transient_failures=self._transient_failures[data_type],
                     )
                 else:
                     logger.warning(
                         "⏳ Backing off before retry",
                         data_type=data_type,
                         backoff_seconds=round(delay, 1),
-                        consecutive_failures=self._consecutive_failures[data_type],
+                        transient_failures=self._transient_failures[data_type],
                     )
 
                 # Messages are back on deque for retry — do NOT nack them
@@ -349,6 +365,7 @@ class PostgreSQLBatchProcessor:
                     # Reset per-data-type state so healthy batches behind the
                     # poison resume normal processing.
                     self._consecutive_failures[data_type] = 0
+                    self._transient_failures[data_type] = 0
                     self._backoff_until[data_type] = 0.0
                     self._effective_batch_size[data_type] = self.config.batch_size
                     return
@@ -399,6 +416,7 @@ class PostgreSQLBatchProcessor:
 
             # Reset failure tracking on success
             self._consecutive_failures[data_type] = 0
+            self._transient_failures[data_type] = 0
 
             # Adaptive batch sizing — gradually recover toward configured size
             if self._effective_batch_size[data_type] < self.config.batch_size:
@@ -498,20 +516,40 @@ class PostgreSQLBatchProcessor:
                     skipped=len(unchanged_ids),
                 )
 
-    async def flush_all(self) -> None:
-        """Flush all pending queues, draining each completely."""
-        for data_type in self.queues:
-            await self.flush_queue(data_type)
+    async def flush_all(self) -> bool:
+        """Flush all pending queues, draining each completely.
 
-    async def flush_queue(self, data_type: str) -> None:
+        Returns:
+            True only if EVERY queue drained; False if any hit its retry limit
+            with messages still pending.
+        """
+        drained = True
+        for data_type in self.queues:
+            if not await self.flush_queue(data_type):
+                drained = False
+        return drained
+
+    async def flush_queue(self, data_type: str) -> bool:
         """Fully drain a single data type queue.
 
-        Unlike _flush_queue which processes up to one batch, this loops
-        until the queue is completely empty. Yields to the event loop
-        during backoff periods instead of busy-spinning.
+        Unlike _flush_queue which processes up to one batch, this loops until the
+        queue is completely empty. Yields to the event loop during backoff periods
+        instead of busy-spinning.
 
-        Enforces a retry limit to prevent infinite loops when persistent
-        errors cause messages to be re-enqueued indefinitely.
+        Enforces a retry limit so a persistent error cannot loop forever. On
+        giving up it leaves the remaining messages ON THE QUEUE — it must NEVER
+        nack them. The nack callback is `nack(requeue=False)`, which dead-letters
+        immediately and bypasses the quorum queue's x-delivery-limit budget
+        entirely, so a 30-second database blip used to send every pending record
+        straight to a DLQ nothing replays. Pending messages stay in memory and are
+        retried by periodic_flush once the database recovers; genuinely poison
+        batches are still dead-lettered by _flush_queue's poison guard.
+        See discogsography-hh7r.
+
+        Returns:
+            True if the queue drained completely, False if the retry limit was
+            reached with messages still pending — callers MUST NOT treat a False
+            return as a completed file.
         """
         retries = 0
         while self.queues.get(data_type):
@@ -519,51 +557,21 @@ class PostgreSQLBatchProcessor:
             wait = self._backoff_until[data_type] - time.time()
             if wait > 0:
                 await asyncio.sleep(wait)
-                await self._flush_queue(data_type)
-                curr_len = len(self.queues.get(data_type, []))
-                if curr_len < prev_len:
-                    retries = 0
-                else:
-                    retries += 1
-                    if retries >= self.config.max_flush_retries:
-                        remaining = len(self.queues.get(data_type, []))
-                        logger.error(
-                            "❌ Flush retry limit reached — nacking remaining messages",
-                            data_type=data_type,
-                            remaining=remaining,
-                            max_retries=self.config.max_flush_retries,
-                        )
-                        queue = self.queues[data_type]
-                        while queue:
-                            msg = queue.popleft()
-                            try:
-                                await msg.nack_callback()
-                            except Exception as e:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
-                                logger.warning("⚠️ Failed to nack message", error=str(e))
-                        break
-                continue
             await self._flush_queue(data_type)
             curr_len = len(self.queues.get(data_type, []))
-            if curr_len >= prev_len:
-                retries += 1
-                if retries >= self.config.max_flush_retries:
-                    remaining = len(self.queues.get(data_type, []))
-                    logger.error(
-                        "❌ Flush retry limit reached — nacking remaining messages",
-                        data_type=data_type,
-                        remaining=remaining,
-                        max_retries=self.config.max_flush_retries,
-                    )
-                    queue = self.queues[data_type]
-                    while queue:
-                        msg = queue.popleft()
-                        try:
-                            await msg.nack_callback()
-                        except Exception as e:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
-                            logger.warning("⚠️ Failed to nack message", error=str(e))
-                    break
-            else:
+            if curr_len < prev_len:
                 retries = 0
+                continue
+            retries += 1
+            if retries >= self.config.max_flush_retries:
+                logger.error(
+                    "❌ Flush retry limit reached — messages kept for retry",
+                    data_type=data_type,
+                    remaining=curr_len,
+                    max_retries=self.config.max_flush_retries,
+                )
+                return False
+        return True
 
     async def periodic_flush(self) -> None:
         """Background task that periodically flushes queues.
@@ -595,4 +603,5 @@ class PostgreSQLBatchProcessor:
             "effective_batch_size": self._effective_batch_size.copy(),
             "configured_batch_size": self.config.batch_size,
             "consecutive_failures": self._consecutive_failures.copy(),
+            "transient_failures": self._transient_failures.copy(),
         }

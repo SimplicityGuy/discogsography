@@ -18,6 +18,25 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+class DatabaseUnavailableError(Exception):
+    """The database could not be reached — a TRANSIENT, infrastructure-level fault.
+
+    Raised by the resilience layer itself, never by a query. Callers use it to
+    tell "the database is down" apart from "this record is bad": the resilience
+    wrappers used to raise a bare ``Exception`` here, so consumers classifying on
+    exception type saw an outage as a deterministic, poison payload and
+    dead-lettered perfectly valid records (discogsography-4lrp).
+    """
+
+
+class ConnectionEstablishmentError(DatabaseUnavailableError):
+    """Every attempt to establish (or health-check) a connection failed."""
+
+
+class CircuitOpenError(DatabaseUnavailableError):
+    """The circuit breaker is open, so the call was rejected without an attempt."""
+
+
 class CircuitState(Enum):
     """Circuit breaker states."""
 
@@ -57,7 +76,7 @@ class CircuitBreaker:
                     logger.info(f"🔄 {self.config.name}: Circuit breaker entering HALF_OPEN state")
                     is_trial = True
                 else:
-                    raise Exception(f"{self.config.name}: Circuit breaker is OPEN")
+                    raise CircuitOpenError(f"{self.config.name}: Circuit breaker is OPEN")
             elif self.state == CircuitState.HALF_OPEN:
                 is_trial = True
 
@@ -104,7 +123,7 @@ class CircuitBreaker:
                     logger.info(f"🔄 {self.config.name}: Circuit breaker entering HALF_OPEN state")
                     is_trial = True
                 else:
-                    raise Exception(f"{self.config.name}: Circuit breaker is OPEN")
+                    raise CircuitOpenError(f"{self.config.name}: Circuit breaker is OPEN")
             elif self.state == CircuitState.HALF_OPEN:
                 is_trial = True
 
@@ -260,7 +279,7 @@ class ResilientConnection[T]:
                         if not self.connection_test(conn):
                             # Close the just-built connection before discarding it.
                             self._close_connection(conn)
-                            raise Exception("Connection test failed")
+                            raise ConnectionEstablishmentError("Connection test failed")
                         return conn
 
                     self._connection = self.circuit_breaker.call(create_connection)
@@ -278,7 +297,7 @@ class ResilientConnection[T]:
                     else:
                         logger.error(f"❌ {self.name}: All connection attempts failed")
 
-            raise Exception(f"{self.name}: Failed to establish connection after {self.max_retries} attempts") from last_error
+            raise ConnectionEstablishmentError(f"{self.name}: Failed to establish connection after {self.max_retries} attempts") from last_error
 
     def _test_connection(self, connection: T) -> bool:
         """Test if connection is healthy."""
@@ -368,7 +387,7 @@ class AsyncResilientConnection[T]:
                             # Close the just-built connection before discarding it, so a failed
                             # health test does not leak a fresh pool/socket per attempt.
                             await self._aclose_connection(conn)
-                            raise Exception("Connection test failed")
+                            raise ConnectionEstablishmentError("Connection test failed")
                         return cast("T", conn)
 
                     conn = await self.circuit_breaker.call_async(create_connection)
@@ -387,7 +406,7 @@ class AsyncResilientConnection[T]:
                     else:
                         logger.error(f"❌ {self.name}: All connection attempts failed")
 
-            raise Exception(f"{self.name}: Failed to establish connection after {self.max_retries} attempts") from last_error
+            raise ConnectionEstablishmentError(f"{self.name}: Failed to establish connection after {self.max_retries} attempts") from last_error
 
     async def _test_connection(self, connection: T) -> bool:
         """Test if connection is healthy."""

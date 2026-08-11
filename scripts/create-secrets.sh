@@ -38,6 +38,12 @@ write_secret "encryption_master_key.txt" "$(python3 -c 'import base64, os; print
 # When empty, password reset links are logged instead of emailed.
 write_secret "resend_api_key.txt" "${RESEND_API_KEY:-}"
 
+# NLQ (natural-language query) provider API key — optional, feature is off by
+# default (NLQ_ENABLED unset). The file must exist regardless: docker-compose.prod.yml
+# declares it as a file-backed secret for the api service, and compose refuses to
+# create the container when the source file is missing.
+write_secret "nlq_api_key.txt" "${NLQ_API_KEY:-}"
+
 # PostgreSQL credentials
 write_secret "postgres_username.txt" "discogsography"
 write_secret "postgres_password.txt" "$(openssl rand -base64 24)"

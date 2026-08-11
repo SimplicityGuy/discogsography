@@ -1,0 +1,5 @@
+# Optional — API key for the NLQ (natural-language query) provider.
+# The NLQ feature is disabled by default (NLQ_ENABLED unset); leave this empty
+# until you turn it on. The file must still exist — docker-compose.prod.yml
+# mounts it as a required secret for the api service.
+your-nlq-provider-api-key-here

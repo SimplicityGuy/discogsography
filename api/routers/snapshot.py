@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import redis.asyncio as aioredis
 
-from api.auth import decode_token
+from api.auth import REASON_CREDENTIALS_CHANGED, REASON_REVOKED, decode_token, token_revocation_reason
 from api.limiter import bearer_token_key_func, limiter
 from api.models import SnapshotRequest, SnapshotResponse, SnapshotRestoreResponse
 from api.snapshot_store import SnapshotQuotaExceededError, SnapshotStore, SnapshotTooLargeError
@@ -47,31 +47,25 @@ async def _get_current_user(
         # password and must be rejected before TOTP verification.
         if payload.get("type") is not None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"})
-        # Check jti blacklist (revoked tokens via logout)
-        jti: str | None = payload.get("jti")
-        if jti and _redis:
-            revoked = await _redis.get(f"revoked:jti:{jti}")
-            if revoked:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token has been revoked",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
         # Validate sub claim presence
         user_id: str | None = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"})
-        # Check password-changed revocation
-        if _redis:
-            pw_changed = await _redis.get(f"password_changed:{user_id}")
-            if pw_changed:
-                issued_at = payload.get("iat", 0)
-                if issued_at <= int(pw_changed):
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Token invalidated by password change",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
+        # Revocation (jti blacklist via logout + password change) — shared with
+        # every other auth site so no site can silently drift out of lockstep.
+        reason = await token_revocation_reason(payload, _redis)
+        if reason == REASON_REVOKED:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if reason == REASON_CREDENTIALS_CHANGED:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token invalidated by password change",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         return payload
     except ValueError as exc:
         raise HTTPException(

@@ -37,6 +37,16 @@ export function initNlq({ app, apiClient, mountId = 'nlqPillMount' }) {
 function _submit({ query, app, apiClient, applier, pill }) {
     pill.setLoading();
 
+    // Actions arrive on their own SSE frame, ahead of the result frame, so they
+    // can be applied as soon as the agent decides them. The result frame repeats
+    // them for non-streaming parity, so guard against applying twice: whichever
+    // frame lands first wins and its counts are what the answer reports.
+    let counts = null;
+    const applyOnce = (actions) => {
+        if (counts) return;
+        counts = applier.apply(actions || []);
+    };
+
     apiClient.askNlqStream(
         query,
         {
@@ -45,8 +55,7 @@ function _submit({ query, app, apiClient, applier, pill }) {
         },
         () => {},
         (result) => {
-            const actions = result.actions || [];
-            const counts = applier.apply(actions);
+            applyOnce(result.actions);
             pill.setAnswer({
                 summary: result.summary || '',
                 entities: result.entities || [],
@@ -63,11 +72,12 @@ function _submit({ query, app, apiClient, applier, pill }) {
             pill.setAnswer({
                 summary: 'Request failed — please try again.',
                 entities: [],
-                appliedActions: [],
-                skipped: 0,
+                appliedActions: counts ? counts.appliedTypes : [],
+                skipped: counts ? counts.skipped : 0,
                 isError: true,
             });
         },
+        (actions) => applyOnce(actions),
     );
 }
 

@@ -21,6 +21,21 @@ from graphinator.graphinator import (
 )
 
 
+async def _await_post_import_maintenance() -> bool | None:
+    """Await the detached post-import maintenance task, if one was started.
+
+    extraction_complete is acked immediately and maintenance runs in its own task
+    (discogsography-zjja), so tests that assert on maintenance effects must join
+    that task instead of assuming it ran inline.
+    """
+    import graphinator.graphinator as g
+
+    task = g.post_import_maintenance_task
+    if task is None:
+        return None
+    return await task
+
+
 class TestOnArtistMessage:
     """Test on_artist_message handler."""
 
@@ -141,12 +156,19 @@ class TestOnArtistMessage:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", True)
     async def test_reject_on_shutdown(self) -> None:
-        """Test message rejection during shutdown."""
+        """During shutdown a message is left UNSETTLED, not nacked.
+
+        discogsography-lnn4: nack(requeue=True) against a still-subscribed
+        consumer is redelivered in milliseconds and burns a quorum
+        x-delivery-count per cycle, dead-lettering valid records at
+        x-delivery-limit=20. Leaving it unacked defers redelivery to the
+        connection close, which costs exactly one delivery-count.
+        """
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
 
         await on_artist_message(mock_message)
 
-        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.nack.assert_not_called()
         mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
@@ -323,12 +345,12 @@ class TestOnLabelMessage:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", True)
     async def test_reject_on_shutdown(self) -> None:
-        """Test label message rejection during shutdown."""
+        """discogsography-lnn4: shutdown leaves the message unsettled, not nacked."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
 
         await on_label_message(mock_message)
 
-        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.nack.assert_not_called()
         mock_message.ack.assert_not_called()
 
 
@@ -994,6 +1016,8 @@ class TestCheckFileCompletion:
 
         with patch("graphinator.graphinator.compute_genre_style_stats", AsyncMock(return_value=True)):
             result = await check_file_completion(completion_data, "releases", mock_message)
+            # Maintenance is detached from the delivery (discogsography-zjja).
+            await _await_post_import_maintenance()
 
         assert result is True
         # Cleanup runs for EVERY entity label, not just the triggering type.
@@ -1270,6 +1294,8 @@ class TestCheckFileCompletionComputeGenreStyleStats:
         from graphinator.graphinator import check_file_completion
 
         result = await check_file_completion(completion_data, "releases", mock_message)
+        # Maintenance is detached from the delivery (discogsography-zjja).
+        await _await_post_import_maintenance()
 
         assert result is True
         # Cleanup now runs for every entity label; stats compute exactly once.
@@ -1315,10 +1341,14 @@ class TestCheckFileCompletionComputeGenreStyleStats:
 
 
 class TestCheckFileCompletionMaintenanceFailure:
-    """Regression (cu2.50): extraction_complete must NOT be acked when post-import
-    maintenance (cleanup_stub_nodes / compute_genre_style_stats) fails — it must
-    nack(requeue=True) so the idempotent maintenance is retried, since the
-    extraction_complete signal is emitted exactly once per run.
+    """Post-import maintenance failure handling.
+
+    Originally (cu2.50) a failed maintenance pass nacked(requeue=True) so the
+    idempotent work would be retried, since extraction_complete is emitted once
+    per run. discogsography-zjja replaced that: the delivery is acked BEFORE
+    maintenance starts — holding it across hours of Neo4j sweeps trips RabbitMQ's
+    30-minute consumer ack timeout and kills the shared channel — and the retry
+    now lives in the detached maintenance task itself.
     """
 
     @pytest.mark.asyncio
@@ -1349,8 +1379,8 @@ class TestCheckFileCompletionMaintenanceFailure:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.compute_genre_style_stats", new_callable=AsyncMock)
     @patch("graphinator.graphinator.cleanup_stub_nodes", new_callable=AsyncMock)
-    async def test_nacks_when_compute_stats_fails(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
-        """compute_genre_style_stats fails → nack(requeue=True), never ack."""
+    async def test_acks_and_retries_in_task_when_compute_stats_fails(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
+        """compute_genre_style_stats fails → still ack; the detached task retries."""
         mock_cleanup.return_value = True
         mock_compute.return_value = False  # stats computation failed at scale
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -1365,17 +1395,22 @@ class TestCheckFileCompletionMaintenanceFailure:
         from graphinator.graphinator import check_file_completion
 
         result = await check_file_completion(completion_data, "releases", mock_message)
+        maintenance_ok = await _await_post_import_maintenance()
 
         assert result is True
-        mock_message.nack.assert_called_once_with(requeue=True)
-        mock_message.ack.assert_not_called()
+        # The delivery must never be held for the retry — that is what killed the
+        # shared channel via the broker's 30-minute consumer ack timeout.
+        mock_message.ack.assert_called_once()
+        mock_message.nack.assert_not_called()
+        assert maintenance_ok is False
+        assert mock_compute.await_count == graphinator.graphinator.POST_IMPORT_MAINTENANCE_MAX_ATTEMPTS
         graphinator.graphinator.graph = None
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.compute_genre_style_stats", new_callable=AsyncMock)
     @patch("graphinator.graphinator.cleanup_stub_nodes", new_callable=AsyncMock)
-    async def test_nacks_when_cleanup_fails(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
-        """cleanup_stub_nodes fails → nack(requeue=True), never ack."""
+    async def test_acks_and_retries_in_task_when_cleanup_fails(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
+        """cleanup_stub_nodes fails → still ack; the detached task retries."""
         mock_cleanup.return_value = False  # DETACH DELETE failed
         mock_compute.return_value = True
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -1391,10 +1426,12 @@ class TestCheckFileCompletionMaintenanceFailure:
         from graphinator.graphinator import check_file_completion
 
         result = await check_file_completion(completion_data, "artists", mock_message)
+        maintenance_ok = await _await_post_import_maintenance()
 
         assert result is True
-        mock_message.nack.assert_called_once_with(requeue=True)
-        mock_message.ack.assert_not_called()
+        mock_message.ack.assert_called_once()
+        mock_message.nack.assert_not_called()
+        assert maintenance_ok is False
         graphinator.graphinator.graph = None
 
 
@@ -4454,19 +4491,28 @@ class TestStubCleanupBatchAndOrdering:
             assert handled is True
             message.ack.assert_called_once()
             message.nack.assert_not_called()
+            await _await_post_import_maintenance()
             assert called == ["cleanup", "stats"]
 
         g.extraction_complete_signals = set()
 
     @pytest.mark.asyncio
-    async def test_final_signal_nacks_when_maintenance_fails(self) -> None:
-        """cu2.67: failed maintenance nacks for retry and keeps the signal latch."""
+    async def test_final_signal_acks_and_retries_in_task_when_maintenance_fails(self) -> None:
+        """discogsography-zjja: failed maintenance retries in its own task, not via nack.
+
+        cu2.67 originally nacked so the idempotent sweep would be retried, but
+        that held the delivery across hours of Neo4j work and tripped the broker's
+        consumer ack timeout. The ack now happens first and the retry moved into
+        the detached task.
+        """
         import graphinator.graphinator as g
 
         g.extraction_complete_signals = {"artists", "labels", "masters"}
         graph_mock, _ = self._make_graph_mock()
+        attempts = {"n": 0}
 
         async def failing_cleanup_all() -> bool:
+            attempts["n"] += 1
             return False
 
         async def fake_stats() -> bool:
@@ -4481,11 +4527,15 @@ class TestStubCleanupBatchAndOrdering:
             message = AsyncMock(spec=AbstractIncomingMessage)
             data = {"type": "extraction_complete", "version": "v1"}
             handled = await g.check_file_completion(data, "releases", message)
+            maintenance_ok = await _await_post_import_maintenance()
 
         assert handled is True
-        message.nack.assert_called_once_with(requeue=True)
-        message.ack.assert_not_called()
-        # Idempotent latch retained so the requeued message retries cleanly.
+        message.ack.assert_called_once()
+        message.nack.assert_not_called()
+        assert maintenance_ok is False
+        # The retry that the nack used to provide now lives in the task.
+        assert attempts["n"] == g.POST_IMPORT_MAINTENANCE_MAX_ATTEMPTS
+        # Idempotent latch retained so a redelivered signal re-triggers cleanly.
         assert "releases" in g.extraction_complete_signals
 
         g.extraction_complete_signals = set()

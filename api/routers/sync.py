@@ -11,7 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
 import structlog
 
-from api.auth import decode_token, get_oauth_encryption_key
+from api.auth import decode_token, get_oauth_encryption_key, token_revocation_reason
 from api.limiter import limiter
 from api.syncer import run_full_sync
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver
@@ -55,27 +55,14 @@ async def _get_current_user(
         user_id: str | None = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-        # Check jti blacklist (revoked tokens via logout)
-        jti: str | None = payload.get("jti")
-        if jti and _redis:
-            revoked = await _redis.get(f"revoked:jti:{jti}")
-            if revoked:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token has been revoked",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-        # Check if password was changed after token was issued
-        if user_id and _redis:
-            pw_changed = await _redis.get(f"password_changed:{user_id}")
-            if pw_changed:
-                issued_at = payload.get("iat", 0)
-                if issued_at <= int(pw_changed):
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Token has been revoked",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
+        # Revocation (jti blacklist via logout + password change) — shared with
+        # every other auth site so no site can silently drift out of lockstep.
+        if await token_revocation_reason(payload, _redis) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         # Allowlist: only pure access tokens (which carry NO `type` claim) may
         # authenticate. Admin tokens and 2FA challenge tokens (type="2fa_challenge")
         # are rejected — a challenge token proves only the password, not the second factor.
