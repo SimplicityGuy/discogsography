@@ -817,8 +817,15 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                 await message.nack(requeue=True)
             return
 
-        # Normal message processing - require 'id' field
-        if "id" not in data:
+        # Normal message processing - require a non-empty 'id' field.
+        # Falsy (not just absent), matching every sibling site: graphinator.py's
+        # `if not record.get("id")`, both batch processors' `if not data_id`, and the
+        # brainz* consumers. Key-presence alone let `"id": null` through to an INSERT
+        # into a NOT NULL PRIMARY KEY, whose deterministic IntegrityError landed in the
+        # generic handler and was nacked with requeue=True — burning all 20 redeliveries
+        # before dead-lettering — while `"id": ""` silently wrote a junk row keyed on the
+        # empty string and acked it as success (discogsography-ria1).
+        if not data.get("id"):
             logger.error("❌ Message missing 'id' field", data=data)
             await message.nack(requeue=False)
             return

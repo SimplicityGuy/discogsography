@@ -977,6 +977,33 @@ class TestOnDataMessageExtended:
         mock_message.nack.assert_called_once_with(requeue=False)
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad_id", [None, ""])
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_handles_falsy_id_field(self, bad_id: str | None) -> None:
+        """discogsography-ria1: a present-but-falsy id is just as invalid as a missing one.
+
+        Key-presence-only validation let `"id": null` reach an INSERT into a NOT NULL
+        PRIMARY KEY; the resulting deterministic IntegrityError fell to the generic
+        handler and was nacked with requeue=True, burning all 20 redeliveries before the
+        DLQ. `"id": ""` was worse — it upserted a junk row keyed on the empty string and
+        was acked as a success. Every sibling consumer already rejects falsy ids.
+        """
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"id": bad_id, "name": "Test Artist"}).encode()
+        mock_message.routing_key = "artists"
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.BATCH_MODE", False),
+            patch("tableinator.tableinator.connection_pool", MagicMock()),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        # Deterministic poison -> straight to the DLQ, no redelivery cycling, no write.
+        mock_message.nack.assert_called_once_with(requeue=False)
+        mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_handles_no_connection_pool(self) -> None:
         """Test handling when connection pool is not initialized."""
