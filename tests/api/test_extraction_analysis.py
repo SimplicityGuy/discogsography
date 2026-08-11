@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+import time
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1250,6 +1251,102 @@ class TestViolationsReadBoundedAndOffloaded:
         assert resp1.status_code == 200
         assert resp2.status_code == 200
         spy.assert_called_once()
+
+
+class TestCacheStampedeSingleFlight:
+    """Regression for discogsography-jrm3: concurrent misses for the same key
+    must collapse into a single computation, not one duplicate scan per
+    concurrent caller."""
+
+    def setup_method(self) -> None:
+        import api.routers.extraction_analysis as ea
+
+        ea._violations_cache.clear()
+        ea._skipped_cache.clear()
+        ea._parsing_error_cache.clear()
+
+    @pytest.mark.asyncio
+    async def test_get_violations_single_flight_collapses_concurrent_misses(self, tmp_path: Path) -> None:
+        """N concurrent callers missing the cache for the SAME key must
+        trigger exactly one filesystem scan — not N duplicate scans each
+        holding its own parsed corpus in memory simultaneously."""
+        import api.routers.extraction_analysis as ea
+
+        entity_dir = tmp_path / "flagged" / "20260101" / "artists"
+        entity_dir.mkdir(parents=True)
+        (entity_dir / "violations.jsonl").write_text(json.dumps({"record_id": "1", "rule": "x", "severity": "warning"}) + "\n")
+        flagged_version_dir = entity_dir.parent
+
+        call_count = 0
+        real_read = ea._read_violations
+
+        def slow_read(*args: object, **kwargs: object) -> list[dict]:
+            nonlocal call_count
+            call_count += 1
+            time.sleep(0.05)  # widen the window so concurrent callers definitely overlap
+            return real_read(*args, **kwargs)  # type: ignore[arg-type]
+
+        with patch.object(ea, "_read_violations", side_effect=slow_read):
+            results = await asyncio.gather(*[ea._get_violations(flagged_version_dir) for _ in range(5)])
+
+        assert call_count == 1
+        assert all(r == results[0] for r in results)
+
+    @pytest.mark.asyncio
+    async def test_get_skipped_single_flight_collapses_concurrent_misses(self, tmp_path: Path) -> None:
+        """Same guarantee as violations, for the skipped-records cache."""
+        import api.routers.extraction_analysis as ea
+
+        entity_dir = tmp_path / "flagged" / "20260101" / "artists"
+        entity_dir.mkdir(parents=True)
+        (entity_dir / "skipped.jsonl").write_text(json.dumps({"record_id": "1", "reason": "x"}) + "\n")
+        flagged_version_dir = entity_dir.parent
+
+        call_count = 0
+        real_read = ea._read_skipped
+
+        def slow_read(*args: object, **kwargs: object) -> list[dict]:
+            nonlocal call_count
+            call_count += 1
+            time.sleep(0.05)
+            return real_read(*args, **kwargs)  # type: ignore[arg-type]
+
+        with patch.object(ea, "_read_skipped", side_effect=slow_read):
+            results = await asyncio.gather(*[ea._get_skipped(flagged_version_dir) for _ in range(5)])
+
+        assert call_count == 1
+        assert all(r == results[0] for r in results)
+
+    @pytest.mark.asyncio
+    async def test_parsing_errors_concurrent_calls_single_flight(self, tmp_path: Path) -> None:
+        """The heaviest cache (parsing-errors, wrapping classification) must
+        also collapse concurrent misses — this is the exact Promise.all
+        fan-out pattern the admin dashboard uses (summary + parsing-errors
+        fired together for the same version). Calls the handler directly
+        (bypassing the ASGI/TestClient layer, which serializes requests) so
+        the concurrency is real."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        call_count = 0
+        real_classify = ea._classify_all_violations
+
+        def slow_classify(*args: object, **kwargs: object) -> tuple[list, list, list]:
+            nonlocal call_count
+            call_count += 1
+            time.sleep(0.05)
+            return real_classify(*args, **kwargs)  # type: ignore[arg-type]
+
+        with (
+            patch.object(ea, "_discogs_data_root", tmp_path),
+            patch.object(ea, "_musicbrainz_data_root", None),
+            patch.object(ea, "_classify_all_violations", side_effect=slow_classify),
+        ):
+            responses = await asyncio.gather(*[ea.get_parsing_errors("20260101", {"sub": "admin-1"}) for _ in range(3)])
+
+        assert all(r.status_code == 200 for r in responses)
+        assert call_count == 1
 
 
 class TestLoadStateMarkerCorrupt:
