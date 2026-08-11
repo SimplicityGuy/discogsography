@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Explore service for interactive graph exploration of Discogs data."""
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -100,6 +101,17 @@ _PROXY_SKIP_HEADERS = frozenset({"host", "content-length", "transfer-encoding", 
 # api/routers/nlq.py) for the NLQ 'Ask' streaming endpoint.
 _STREAMING_CONTENT_TYPE_PREFIX = "text/event-stream"
 
+# Total budget for connect/write/pool, and the default read budget for every
+# BUFFERED proxied response.
+_PROXY_TIMEOUT_SECONDS = 150.0
+
+# The only upstream paths that stream (SSE). The timeout has to be chosen before
+# the response's content-type is known, so the read timeout may only be disabled
+# for these — disabling it for every request meant a stalled upstream wedged a
+# buffered request forever, pinning an httpx pool connection and a server task
+# with no deadline until the pool was exhausted (discogsography-gav8).
+_STREAMING_PATHS = frozenset({"nlq/query"})
+
 _http_client: httpx.AsyncClient | None = None
 
 
@@ -108,6 +120,26 @@ def _get_http_client() -> httpx.AsyncClient:
         msg = "HTTP client not initialized — service not started"
         raise RuntimeError(msg)
     return _http_client
+
+
+def _is_streaming_path(path: str) -> bool:
+    """Whether this upstream path returns an SSE stream."""
+    return path.strip("/") in _STREAMING_PATHS
+
+
+def _proxy_timeout(path: str) -> httpx.Timeout:
+    """Build the per-request timeout, disabling the read budget for SSE only.
+
+    An SSE response may legitimately go quiet between events for longer than the
+    total timeout (e.g. a long Anthropic generation phase), so streaming paths
+    get `read=None`. Every other path keeps a bounded read timeout: without it
+    `client.send()`/`aread()` on a buffered response had no deadline at all, and
+    a stalled-but-connected upstream (hung Neo4j query, half-open TCP after an
+    OOM-kill) parked the request forever (discogsography-gav8).
+    """
+    if _is_streaming_path(path):
+        return httpx.Timeout(_PROXY_TIMEOUT_SECONDS, read=None)
+    return httpx.Timeout(_PROXY_TIMEOUT_SECONDS)
 
 
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
@@ -150,16 +182,22 @@ async def proxy_api(path: str, request: Request) -> Response:
         params=httpx.QueryParams(tuple(request.query_params.multi_items())),
         content=await request.body(),
         headers=forward_headers,
-        # Disable the read timeout: an SSE response may legitimately go quiet
-        # between events for longer than the client's total 150s timeout without
-        # being stalled (e.g. a long Anthropic generation phase). Connect/write/pool
-        # timeouts are unchanged so a genuinely dead upstream is still caught.
-        timeout=httpx.Timeout(150.0, read=None),
+        # Read timeout disabled for SSE paths only — see _proxy_timeout.
+        timeout=_proxy_timeout(path),
     )
 
     try:
-        proxied = await client.send(req, stream=True)
-    except httpx.TimeoutException:
+        if _is_streaming_path(path):
+            # The read timeout is disabled for this path, and httpx's read
+            # timeout also covers waiting for the response HEADERS — so bound
+            # the header phase explicitly. Otherwise an upstream that accepts
+            # the connection and then stalls before responding parks this task
+            # (and its pool connection) with no deadline at all.
+            async with asyncio.timeout(_PROXY_TIMEOUT_SECONDS):
+                proxied = await client.send(req, stream=True)
+        else:
+            proxied = await client.send(req, stream=True)
+    except (httpx.TimeoutException, TimeoutError):
         logger.warning("⚠️ Proxy request timed out", path=path)
         return JSONResponse(content={"error": "Request timed out"}, status_code=504)
     except httpx.HTTPError as exc:
@@ -185,15 +223,16 @@ async def proxy_api(path: str, request: Request) -> Response:
 
     try:
         await proxied.aread()
-    except httpx.TimeoutException:
-        await proxied.aclose()
+    except (httpx.TimeoutException, TimeoutError):
         logger.warning("⚠️ Proxy request timed out", path=path)
         return JSONResponse(content={"error": "Request timed out"}, status_code=504)
     except httpx.HTTPError as exc:
-        await proxied.aclose()
         logger.error("❌ Proxy request failed", path=path, error=describe_exception(exc))
         return JSONResponse(content={"error": "Upstream service error"}, status_code=502)
-    await proxied.aclose()
+    finally:
+        # finally, not per-branch: a client disconnect cancels this task mid-read,
+        # and the pool connection must be released on that path too.
+        await proxied.aclose()
 
     return Response(content=proxied.content, status_code=proxied.status_code, headers=response_headers)
 
