@@ -86,22 +86,15 @@ class MetricsBuffer:
             self._entries.popleft()
         self._entries.append(_Entry(path=path, status_code=status_code, duration_ms=duration_ms))
 
-    def flush(self) -> dict[str, dict[str, Any]]:
-        """Group buffered entries by path and compute stats, WITHOUT clearing the buffer.
-
-        Non-destructive on purpose: the caller is responsible for calling
-        :meth:`clear` only after the returned stats have been durably persisted.
-        This keeps a failed persist from silently discarding the window's
-        samples — they simply stay buffered (growth still bounded by
-        ``max_size`` via ``record()``'s eviction) and are folded into the next
-        cycle's stats until a persist finally succeeds.
-        """
-        if not self._entries:
+    @staticmethod
+    def _compute_stats(entries: deque[_Entry] | list[_Entry]) -> dict[str, dict[str, Any]]:
+        """Group entries by path and compute count/percentile/error-count stats."""
+        if not entries:
             return {}
 
         groups: dict[str, list[float]] = {}
         error_counts: dict[str, int] = {}
-        for entry in self._entries:
+        for entry in entries:
             groups.setdefault(entry.path, []).append(entry.duration_ms)
             if entry.status_code >= 500:
                 error_counts[entry.path] = error_counts.get(entry.path, 0) + 1
@@ -119,9 +112,69 @@ class MetricsBuffer:
             }
         return result
 
+    def flush(self) -> dict[str, dict[str, Any]]:
+        """Group buffered entries by path and compute stats, WITHOUT clearing the buffer.
+
+        Non-destructive on purpose: the caller is responsible for calling
+        :meth:`clear` only after the returned stats have been durably persisted.
+        This keeps a failed persist from silently discarding the window's
+        samples — they simply stay buffered (growth still bounded by
+        ``max_size`` via ``record()``'s eviction) and are folded into the next
+        cycle's stats until a persist finally succeeds.
+
+        NOTE: pairing this with :meth:`clear` after an ``await`` (e.g. a
+        persist call) is a TOCTOU — any entry ``record()``ed during that
+        ``await`` is silently dropped by ``clear()``'s wholesale replacement,
+        because it was never part of the snapshot ``flush()`` returned
+        (discogsography-qtts). Callers that persist across an await should
+        use :meth:`drain` / :meth:`restore` instead, which swap the buffer
+        out atomically so newly-arrived entries can never be in the
+        snapshot that gets dropped.
+        """
+        return self._compute_stats(self._entries)
+
     def clear(self) -> None:
         """Drop all buffered entries.  Call only after a successful persist of ``flush()``'s result."""
         self._entries = deque()
+
+    def drain(self) -> tuple[dict[str, dict[str, Any]], deque[_Entry]]:
+        """Atomically swap out the buffer and compute stats from the swapped-out copy.
+
+        Returns ``(stats, samples)``. The swap (``samples = self._entries;
+        self._entries = deque()``) is a single, non-yielding assignment, so
+        any entry ``record()``ed after this call returns lands in the FRESH
+        deque — never in ``samples`` — regardless of how long the caller then
+        spends ``await``ing a persist. This is what makes drain/restore safe
+        across an await where ``flush``/``clear`` is not: on persist failure,
+        pass ``samples`` to :meth:`restore` to put them back ahead of
+        whatever arrived in the meantime, instead of ``clear()`` wiping both
+        the persisted snapshot AND everything recorded during the persist
+        window (discogsography-qtts).
+        """
+        samples = self._entries
+        self._entries = deque()
+        try:
+            stats = self._compute_stats(samples)
+        except Exception:
+            # Stats computation blew up on this batch — put the raw samples
+            # back rather than losing them silently.
+            self.restore(samples)
+            raise
+        return stats, samples
+
+    def restore(self, samples: deque[_Entry]) -> None:
+        """Re-prepend entries a failed persist could not durably store.
+
+        Placed AHEAD of anything recorded since the matching :meth:`drain`
+        call, then trimmed from the left (oldest-first) to ``max_size`` —
+        the same eviction order :meth:`record` uses — so a restore can never
+        transiently exceed the bound record() otherwise enforces.
+        """
+        if not samples:
+            return
+        self._entries.extendleft(reversed(samples))
+        while len(self._entries) > self.max_size:
+            self._entries.popleft()
 
 
 # ---------------------------------------------------------------------------
@@ -299,10 +352,15 @@ async def run_collector(
         except Exception:
             logger.error("❌ Error collecting service health")
 
-        # 3. Flush metrics buffer (non-destructive) and attach endpoint_stats to API row
+        # 3. Drain metrics buffer — an ATOMIC swap (not the non-destructive
+        # flush()), so any request recorded during the persist `await` below
+        # lands in the buffer's fresh deque and is never part of the samples
+        # a failed persist has to restore or a successful one discards
+        # (discogsography-qtts). Attach endpoint_stats to the API health row.
         endpoint_stats: dict[str, dict[str, Any]] = {}
+        buffer_samples: deque[Any] = deque()
         try:
-            endpoint_stats = metrics_buffer.flush()
+            endpoint_stats, buffer_samples = metrics_buffer.drain()
             if endpoint_stats:
                 # Find existing API row or create synthetic one
                 api_row = next((r for r in health_rows if r["service_name"] == "api"), None)
@@ -321,18 +379,21 @@ async def run_collector(
         except Exception:
             logger.error("❌ Error flushing metrics buffer")
 
-        # 4. Persist — only drop the buffered endpoint stats once they're durably
-        # written; on failure they stay buffered (bounded by max_size) and are
-        # retried as part of the next cycle's stats instead of being lost.
+        # 4. Persist — only drop the drained endpoint stats once they're durably
+        # written. On failure (including cancellation) they are restored
+        # AHEAD of anything recorded during this await, instead of being lost
+        # (drain() already removed them from the live buffer, so a `clear()`-
+        # style "leave them buffered" is no longer available — restore() is
+        # the equivalent for the atomic-swap design).
         try:
             await persist_metrics(pool, queue_rows, health_rows)
             logger.info("📊 Persisted metrics", queues=len(queue_rows), health=len(health_rows))
-            if endpoint_stats:
-                metrics_buffer.clear()
         except asyncio.CancelledError:
+            metrics_buffer.restore(buffer_samples)
             raise
         except Exception:
             logger.error("❌ Error persisting metrics")
+            metrics_buffer.restore(buffer_samples)
 
         # 5. Prune
         try:
