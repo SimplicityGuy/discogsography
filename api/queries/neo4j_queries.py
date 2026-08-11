@@ -169,15 +169,31 @@ async def autocomplete_style(driver: AsyncResilientNeo4jDriver, query: str, limi
 
 
 async def explore_artist(driver: AsyncResilientNeo4jDriver, name: str) -> dict[str, Any] | None:
-    """Get artist center node with category counts."""
+    """Get artist center node with category counts.
+
+    alias_count dedups across ALIAS_OF/MEMBER_OF categories the same way
+    count_artist_aliases and expand_artist_aliases do, so an artist reachable
+    through more than one category still contributes exactly one
+    (discogsography-1wiu).
+    """
     cypher = """
     MATCH (a:Artist {name: $name})
+    CALL {
+        WITH a
+        OPTIONAL MATCH (a)-[:ALIAS_OF]->(alias:Artist)
+        WITH a, collect(DISTINCT alias.id) AS alias_ids
+        OPTIONAL MATCH (a)-[:MEMBER_OF]->(grp:Artist)
+        WITH a, alias_ids, collect(DISTINCT grp.id) AS group_ids
+        OPTIONAL MATCH (m:Artist)-[:MEMBER_OF]->(a)
+        WITH alias_ids, group_ids, collect(DISTINCT m.id) AS member_ids
+        UNWIND (alias_ids + group_ids + member_ids) AS related_id
+        WITH DISTINCT related_id WHERE related_id IS NOT NULL
+        RETURN count(related_id) AS alias_count
+    }
     RETURN a.id AS id, a.name AS name,
            COUNT { MATCH (r:Release)-[:BY]->(a) RETURN DISTINCT r } AS release_count,
            COUNT { MATCH (r:Release)-[:BY]->(a), (r)-[:ON]->(l:Label) RETURN DISTINCT l } AS label_count,
-           COUNT { (a)-[:ALIAS_OF]->(:Artist) }
-               + COUNT { (a)-[:MEMBER_OF]->(:Artist) }
-               + COUNT { (:Artist)-[:MEMBER_OF]->(a) } AS alias_count
+           alias_count
     """
     return await run_single(driver, cypher, name=name)
 
@@ -556,16 +572,25 @@ async def count_artist_labels(driver: AsyncResilientNeo4jDriver, artist_name: st
 
 
 async def count_artist_aliases(driver: AsyncResilientNeo4jDriver, artist_name: str, *, before_year: int | None = None) -> int:  # noqa: ARG001
-    """Count total aliases, group memberships, and members for an artist."""
+    """Count total distinct aliases, group memberships, and members for an artist.
+
+    Mirrors expand_artist_aliases's dedup: an artist reachable through more
+    than one category (e.g. both ALIAS_OF and MEMBER_OF the same node) must
+    contribute exactly one to this total, matching the one row expand_artist_aliases
+    returns for it — otherwise pagination's `total` disagrees with the
+    enumerable row count (discogsography-1wiu).
+    """
     cypher = """
     MATCH (a:Artist {name: $name})
     OPTIONAL MATCH (a)-[:ALIAS_OF]->(alias:Artist)
-    WITH a, count(DISTINCT alias) AS alias_count
+    WITH a, collect(DISTINCT alias.id) AS alias_ids
     OPTIONAL MATCH (a)-[:MEMBER_OF]->(grp:Artist)
-    WITH a, alias_count, count(DISTINCT grp) AS group_count
+    WITH a, alias_ids, collect(DISTINCT grp.id) AS group_ids
     OPTIONAL MATCH (m:Artist)-[:MEMBER_OF]->(a)
-    WITH alias_count, group_count, count(DISTINCT m) AS member_count
-    RETURN alias_count + group_count + member_count AS total
+    WITH alias_ids, group_ids, collect(DISTINCT m.id) AS member_ids
+    UNWIND (alias_ids + group_ids + member_ids) AS related_id
+    WITH DISTINCT related_id WHERE related_id IS NOT NULL
+    RETURN count(related_id) AS total
     """
     return await run_count(driver, cypher, name=artist_name)
 

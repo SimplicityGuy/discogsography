@@ -253,6 +253,29 @@ class TestExploreQueries:
         assert result == record
 
     @pytest.mark.asyncio
+    async def test_explore_artist_alias_count_dedups_across_categories(self) -> None:
+        """Regression (discogsography-1wiu): explore_artist's alias_count badge must
+        use the same cross-category DISTINCT dedup as count_artist_aliases /
+        expand_artist_aliases, not a plain per-category COUNT {} sum."""
+        from api.queries.neo4j_queries import explore_artist
+
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"id": "1", "name": "Radiohead", "release_count": 10, "label_count": 2, "alias_count": 1})
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=mock_session)
+
+        await explore_artist(driver, "Radiohead")
+
+        cypher = mock_session.run.call_args[0][0]
+        assert "alias_ids + group_ids + member_ids" in cypher
+        assert "DISTINCT related_id" in cypher
+        assert "COUNT { (a)-[:ALIAS_OF]->(:Artist) }" not in cypher
+
+    @pytest.mark.asyncio
     async def test_explore_artist_not_found(self) -> None:
         from api.queries.neo4j_queries import explore_artist
 
@@ -519,6 +542,24 @@ class TestCountQueries:
 
         driver = _make_driver(single={"total": 1})
         assert await count_artist_aliases(driver, "Radiohead") == 1
+
+    @pytest.mark.asyncio
+    async def test_count_artist_aliases_dedups_across_categories(self) -> None:
+        """Regression (discogsography-1wiu): count_artist_aliases must dedup a node
+        reachable through more than one category (e.g. both ALIAS_OF and MEMBER_OF)
+        the same way expand_artist_aliases's `RETURN DISTINCT item.id` does — a
+        plain per-category sum would double-count it and disagree with the
+        paginated row count."""
+        from api.queries.neo4j_queries import count_artist_aliases
+
+        driver, captured_cypher, _captured_params = _make_capturing_driver(total=1)
+        await count_artist_aliases(driver, "Radiohead")
+        cypher = captured_cypher[0]
+        # Must union the three category id lists and count DISTINCT non-null ids,
+        # not `alias_count + group_count + member_count`.
+        assert "alias_ids + group_ids + member_ids" in cypher
+        assert "DISTINCT related_id" in cypher
+        assert "alias_count + group_count + member_count" not in cypher
 
     @pytest.mark.asyncio
     async def test_count_genre_releases(self) -> None:
