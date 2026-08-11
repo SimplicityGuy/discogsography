@@ -37,11 +37,41 @@ pub fn discover_mb_dump_files(root: &Path) -> Result<HashMap<DataType, PathBuf>>
 
     // `root` comes from operator-controlled config (CLI/env var), not HTTP input.
     let read_dir_result = std::fs::read_dir(root); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+
+    // A listing failure that is NOT "directory missing" is a genuine I/O error and must not
+    // be reported to the caller as "no dump files" — process_musicbrainz_data treats an empty
+    // map as a benign Completed run, so an EACCES/EIO/EMFILE would be durably misreported as
+    // success on every cycle. It is remembered here rather than returned immediately because
+    // the exact-name probing below needs no directory listing at all and still succeeds when
+    // the directory is traversable but not listable.
+    let mut listing_error: Option<std::io::Error> = None;
+
     let entries: Vec<_> = match read_dir_result {
-        Ok(rd) => rd.filter_map(|e| e.ok()).filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false)).collect(),
+        Ok(rd) => rd
+            .filter_map(|entry| match entry {
+                Ok(entry) => Some(entry),
+                Err(e) => {
+                    warn!("⚠️ Skipping unreadable entry in MusicBrainz dump directory {:?}: {}", root, e);
+                    None
+                }
+            })
+            .filter(|entry| match entry.file_type() {
+                Ok(ft) => ft.is_file(),
+                Err(e) => {
+                    warn!("⚠️ Cannot stat {:?} in MusicBrainz dump directory: {}", entry.path(), e);
+                    false
+                }
+            })
+            .collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // Genuinely absent directory — nothing has been downloaded yet. Benign.
+            warn!("⚠️ MusicBrainz dump directory {:?} does not exist: {}", root, e);
+            Vec::new()
+        }
         Err(e) => {
-            warn!("⚠️ Cannot read MusicBrainz dump directory {:?}: {}", root, e);
-            return Ok(found);
+            warn!("⚠️ Cannot list MusicBrainz dump directory {:?}: {} — falling back to exact-name probing", root, e);
+            listing_error = Some(e);
+            Vec::new()
         }
     };
 
@@ -76,6 +106,11 @@ pub fn discover_mb_dump_files(root: &Path) -> Result<HashMap<DataType, PathBuf>>
     }
 
     if found.is_empty() {
+        // Exact-name probing recovered nothing, so the listing failure is the reason we
+        // found no files. Surface it as an error instead of an empty (success) result.
+        if let Some(e) = listing_error {
+            return Err(e).context(format!("Failed to read MusicBrainz dump directory {root:?}"));
+        }
         warn!("⚠️ No MusicBrainz dump files found in {:?}", root);
     } else {
         info!("📋 Discovered {} MusicBrainz dump file(s) in {:?}", found.len(), root);

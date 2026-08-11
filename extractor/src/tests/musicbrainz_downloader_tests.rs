@@ -1151,3 +1151,58 @@ fn test_extract_entity_from_tarball_success_leaves_no_tmp() {
     decoder.read_to_string(&mut decompressed).unwrap();
     assert_eq!(decompressed, original_content);
 }
+
+/// Make `dir` traversable but not listable and return false when the process can still
+/// list it anyway (i.e. running as root), so the caller can skip the assertion.
+#[cfg(unix)]
+fn make_unlistable(dir: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o111)).unwrap();
+    std::fs::read_dir(dir).is_err()
+}
+
+#[cfg(unix)]
+fn restore_listable(dir: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_discover_unlistable_dir_errors() {
+    // A real I/O failure (EACCES/EIO/EMFILE) must NOT be flattened into Ok(empty):
+    // process_musicbrainz_data reads an empty map as a benign run and reports
+    // Completed/success, wedging the service in a silent no-op loop for the whole
+    // periodic-check window.
+    let dir = TempDir::new().unwrap();
+    if !make_unlistable(dir.path()) {
+        return; // running as root — the permission bit is not enforced
+    }
+
+    let result = discover_mb_dump_files(dir.path());
+    restore_listable(dir.path());
+
+    let err = result.expect_err("an unreadable dump directory must surface as an error, not Ok(empty)");
+    assert!(format!("{err:#}").contains("Failed to read MusicBrainz dump directory"), "unexpected error: {err:#}");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_discover_unlistable_dir_probes_exact_names() {
+    // Traversable-but-not-listable (x without r) still supports exact-name probing, so
+    // discovery must fall through to it instead of bailing out of the whole function.
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("artist.jsonl.xz"), b"fake").unwrap();
+    std::fs::write(dir.path().join("label.jsonl.xz"), b"fake").unwrap();
+    if !make_unlistable(dir.path()) {
+        return; // running as root — the permission bit is not enforced
+    }
+
+    let result = discover_mb_dump_files(dir.path());
+    restore_listable(dir.path());
+
+    let found = result.expect("exact-name probing needs no directory listing and must still succeed");
+    assert_eq!(found.len(), 2);
+    assert!(found.contains_key(&DataType::Artists));
+    assert!(found.contains_key(&DataType::Labels));
+}
