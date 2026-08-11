@@ -212,7 +212,8 @@ def _stream_response(
         # Replay a cached result as synthetic SSE events so a streaming client
         # never hangs on a plain JSON cache body. See discogsography-cu2.27.
         if cached is not None:
-            yield {"event": "actions", "data": json.dumps({"actions": cached.get("actions", [])})}
+            cached_actions = cached.get("actions", [])
+            yield {"event": "actions", "data": json.dumps({"actions": cached_actions})}
             yield {
                 "event": "result",
                 "data": json.dumps(
@@ -221,6 +222,10 @@ def _stream_response(
                         "summary": cached.get("summary"),
                         "entities": cached.get("entities"),
                         "tools_used": cached.get("tools_used"),
+                        # Mirror the non-streaming JSON body: actions travel on the
+                        # result frame too, not only the sideband event. See
+                        # discogsography-l6fm.
+                        "actions": cached_actions,
                         "cached": True,
                     }
                 ),
@@ -266,17 +271,22 @@ def _stream_response(
                 return
 
             # Emit actions event before result so the client can snapshot and apply
+            actions_payload = [action.model_dump(by_alias=True, mode="json") for action in result.actions]
             yield {
                 "event": "actions",
-                "data": json.dumps({"actions": [action.model_dump(by_alias=True, mode="json") for action in result.actions]}),
+                "data": json.dumps({"actions": actions_payload}),
             }
 
-            # Emit final result
+            # Emit final result. `actions` is repeated here on purpose: the
+            # non-streaming JSON body and the Redis cache entry both carry it on
+            # the result object, and a client that only subscribes to `result`
+            # would otherwise apply nothing at all. See discogsography-l6fm.
             response_data = {
                 "query": query,
                 "summary": result.summary,
                 "entities": result.entities,
                 "tools_used": result.tools_used,
+                "actions": actions_payload,
                 "cached": False,
             }
             yield {"event": "result", "data": json.dumps(response_data)}
