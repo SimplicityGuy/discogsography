@@ -289,6 +289,21 @@ def _stream_response(
                 "actions": actions_payload,
                 "cached": False,
             }
+
+            # Cache public results — mirrors the non-streaming branch below.
+            # This is the only client the production UI uses (nlq.js always sends
+            # Accept: text/event-stream), so without this write the query cache and
+            # its cached-replay path above are permanently unpopulated. Written
+            # before the "result" yield: a client disconnect raises GeneratorExit
+            # at that yield, and a write placed after it would never run.
+            # See discogsography-c584.
+            if user_id is None and _redis is not None:
+                cache_k = _cache_key(query)
+                try:
+                    await _redis.setex(cache_k, _nlq_config.cache_ttl, json.dumps(response_data))
+                except Exception:
+                    logger.debug("⚠️ NLQ cache write failed", key=cache_k)
+
             yield {"event": "result", "data": json.dumps(response_data)}
         finally:
             # Client disconnect raises GeneratorExit at the current yield; cancel

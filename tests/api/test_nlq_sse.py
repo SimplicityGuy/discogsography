@@ -174,6 +174,76 @@ async def test_streamed_cached_replay_result_event_carries_actions() -> None:
 
 
 @pytest.mark.asyncio
+async def test_streaming_query_writes_redis_cache_for_anonymous_user() -> None:
+    """Regression discogsography-c584.
+
+    The streaming path is the ONLY path the production Ask UI uses (nlq.js
+    always sends Accept: text/event-stream), but the cache write previously
+    existed only on the non-streaming JSON branch. So the cache — and the
+    cached-replay SSE machinery above — was permanently unpopulated in
+    production and every identical anonymous query re-ran the full engine.
+    """
+    from api.nlq.engine import NLQResult
+    from api.routers import nlq as nlq_router
+
+    engine = MagicMock()
+    engine.run = AsyncMock(
+        return_value=NLQResult(summary="Quincy Jones", entities=[], tools_used=["search"], actions=[]),
+    )
+    nlq_router._engine = engine
+
+    from api.nlq.config import NLQConfig
+
+    mock_redis = AsyncMock()
+    original_redis = nlq_router._redis
+    original_config = nlq_router._nlq_config
+    nlq_router._redis = mock_redis
+    nlq_router._nlq_config = NLQConfig(enabled=True, api_key="k", cache_ttl=3600)
+    try:
+        response = nlq_router._stream_response("who produced Thriller", None, None)
+        events = [event async for event in response.body_iterator]
+    finally:
+        nlq_router._redis = original_redis
+        nlq_router._nlq_config = original_config
+
+    kinds = [e.get("event") for e in events]
+    assert "result" in kinds
+
+    mock_redis.setex.assert_awaited_once()
+    call_args = mock_redis.setex.call_args
+    cache_key, ttl, payload_json = call_args[0]
+    assert cache_key == nlq_router._cache_key("who produced Thriller")
+    assert ttl == 3600
+    payload = json.loads(payload_json)
+    assert payload["summary"] == "Quincy Jones"
+    assert payload["cached"] is False
+
+
+@pytest.mark.asyncio
+async def test_streaming_query_does_not_cache_for_authenticated_user() -> None:
+    """Regression discogsography-c584 — mirror the non-streaming branch's
+    user_id is None guard: authenticated results must never populate the
+    public query cache."""
+    from api.nlq.engine import NLQResult
+    from api.routers import nlq as nlq_router
+
+    engine = MagicMock()
+    engine.run = AsyncMock(return_value=NLQResult(summary="private answer", entities=[], tools_used=[], actions=[]))
+    nlq_router._engine = engine
+
+    mock_redis = AsyncMock()
+    original_redis = nlq_router._redis
+    nlq_router._redis = mock_redis
+    try:
+        response = nlq_router._stream_response("my collection stats", "user-123", None)
+        _ = [event async for event in response.body_iterator]
+    finally:
+        nlq_router._redis = original_redis
+
+    mock_redis.setex.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_streamed_result_matches_non_streaming_body_keys() -> None:
     """The two response modes must expose the same result contract.
 
