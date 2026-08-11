@@ -28,7 +28,12 @@ class HealthHandler(BaseHTTPRequestHandler):
             # Get health data from the server instance
             health_data = cast("HealthServer", self.server).get_health_data()
 
-            self.send_response(200)
+            # Only report HTTP 200 for a genuinely healthy service. Any other status
+            # (e.g. "unhealthy", "starting") must return a non-2xx code so `curl -f`
+            # healthchecks (and Docker Compose's condition: service_healthy gating)
+            # actually reflect degraded/not-ready state instead of always reading green.
+            status_code = 200 if health_data.get("status") == "healthy" else 503
+            self.send_response(status_code)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(health_data).encode())

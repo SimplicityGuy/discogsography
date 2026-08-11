@@ -289,6 +289,58 @@ class TestHealthHandlerHTTP:
 
         assert body == new_data
 
+    def test_unhealthy_status_returns_503(self, running_server: HealthServer) -> None:
+        """Regression for discogsography-dsf2: `curl -f` (and Compose's
+        condition: service_healthy) key off HTTP status only, so an "unhealthy"
+        JSON body must produce a non-2xx response — not the previously-hardcoded 200.
+        """
+        running_server.health_func = Mock(return_value={"status": "unhealthy", "error": "no Neo4j connection"})
+
+        conn = self._connect(running_server)
+        conn.request("GET", "/health")
+        response = conn.getresponse()
+        body = json.loads(response.read())
+
+        assert response.status == 503
+        assert body["status"] == "unhealthy"
+
+    def test_non_healthy_status_returns_503(self, running_server: HealthServer) -> None:
+        """Any status other than the literal "healthy" (e.g. "starting", "degraded")
+        must not be reported as HTTP 200 — only the exact healthy state is 2xx."""
+        for status in ["starting", "degraded", "unknown"]:
+            running_server.health_func = Mock(return_value={"status": status})
+
+            conn = self._connect(running_server)
+            conn.request("GET", "/health")
+            response = conn.getresponse()
+            response.read()
+
+            assert response.status == 503, f"status={status!r} should not be reported as 200"
+
+    def test_missing_status_key_returns_503(self, running_server: HealthServer) -> None:
+        """A health_func response with no "status" key must fail closed (503), not 200."""
+        running_server.health_func = Mock(return_value={"service": "test"})
+
+        conn = self._connect(running_server)
+        conn.request("GET", "/health")
+        response = conn.getresponse()
+        response.read()
+
+        assert response.status == 503
+
+    def test_get_health_data_exception_returns_503(self, running_server: HealthServer) -> None:
+        """get_health_data() swallows exceptions into {"status": "unhealthy", ...} —
+        that must surface as HTTP 503, not 200."""
+        running_server.health_func = Mock(side_effect=RuntimeError("boom"))
+
+        conn = self._connect(running_server)
+        conn.request("GET", "/health")
+        response = conn.getresponse()
+        body = json.loads(response.read())
+
+        assert response.status == 503
+        assert body["status"] == "unhealthy"
+
 
 class TestHealthServerMetricsEndpoint:
     """Tests for the optional /metrics endpoint added to HealthServer."""
