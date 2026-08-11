@@ -406,8 +406,8 @@
             window.exploreApp._loadExplore(name, type);
         } else if (window.exploreApp) {
             // For release/master — not directly explorable
-            if (window.app?.showToast) {
-                window.app.showToast(`${type} details are not explorable directly — try searching for the artist or label instead`, 'info');
+            if (window.exploreApp._showToast) {
+                window.exploreApp._showToast(`${type} details are not explorable directly — try searching for the artist or label instead`);
             }
         }
     }

@@ -456,6 +456,7 @@ describe('search pane', () => {
                 _setSearchType: vi.fn(),
                 _switchPane: vi.fn(),
                 _loadExplore: vi.fn(),
+                _showToast: vi.fn(),
                 currentQuery: '',
             };
             window.exploreApp = mockExploreApp;
@@ -478,6 +479,72 @@ describe('search pane', () => {
             // Release type: shows toast instead of switching pane
             expect(mockExploreApp._switchPane).not.toHaveBeenCalled();
             expect(mockExploreApp._loadExplore).not.toHaveBeenCalled();
+        });
+
+        it('should call window.exploreApp._showToast (not the undefined window.app) for non-explorable types (regression discogsography-oi02)', async () => {
+            const mockExploreApp = {
+                _setSearchType: vi.fn(),
+                _switchPane: vi.fn(),
+                _loadExplore: vi.fn(),
+                _showToast: vi.fn(),
+                currentQuery: '',
+            };
+            window.exploreApp = mockExploreApp;
+            // window.app has never been assigned anywhere in explore/static/js/ —
+            // make sure it stays undefined so this test fails if the code
+            // regresses back to reading the wrong global.
+            delete window.app;
+
+            window.apiClient.search.mockResolvedValue({
+                results: [{ name: 'OK Computer', type: 'release', relevance: 0.9 }],
+                total: 1,
+                facets: {},
+                pagination: { has_more: false },
+            });
+
+            const input = document.getElementById('searchPaneInput');
+            input.value = 'ok computer';
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            await new Promise(r => setTimeout(r, 10));
+
+            const card = document.querySelector('.search-result-card');
+            card.click();
+
+            expect(mockExploreApp._showToast).toHaveBeenCalledTimes(1);
+            expect(mockExploreApp._showToast).toHaveBeenCalledWith(
+                expect.stringContaining('not explorable directly')
+            );
+        });
+
+        it('should call window.exploreApp._showToast for master type too (regression discogsography-oi02)', async () => {
+            const mockExploreApp = {
+                _setSearchType: vi.fn(),
+                _switchPane: vi.fn(),
+                _loadExplore: vi.fn(),
+                _showToast: vi.fn(),
+                currentQuery: '',
+            };
+            window.exploreApp = mockExploreApp;
+            delete window.app;
+
+            window.apiClient.search.mockResolvedValue({
+                results: [{ name: 'Master Edition', type: 'master', relevance: 0.9 }],
+                total: 1,
+                facets: {},
+                pagination: { has_more: false },
+            });
+
+            const input = document.getElementById('searchPaneInput');
+            input.value = 'master edition';
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            await new Promise(r => setTimeout(r, 10));
+
+            const card = document.querySelector('.search-result-card');
+            card.click();
+
+            expect(mockExploreApp._showToast).toHaveBeenCalledWith(
+                expect.stringContaining('master details are not explorable directly')
+            );
         });
     });
 
