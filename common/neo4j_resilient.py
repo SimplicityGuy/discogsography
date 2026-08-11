@@ -14,6 +14,7 @@ from .db_resilience import (
     AsyncResilientConnection,
     CircuitBreaker,
     CircuitBreakerConfig,
+    DatabaseUnavailableError,
     ExponentialBackoff,
     ResilientConnection,
 )
@@ -40,7 +41,10 @@ class ResilientNeo4jDriver(ResilientConnection[Any]):
         # Circuit breaker for Neo4j failures
         circuit_breaker = CircuitBreaker(
             CircuitBreakerConfig(
-                name="Neo4j", failure_threshold=3, recovery_timeout=30, expected_exception=(Neo4jError, ServiceUnavailable, SessionExpired)
+                name="Neo4j",
+                failure_threshold=3,
+                recovery_timeout=30,
+                expected_exception=(Neo4jError, ServiceUnavailable, SessionExpired, DatabaseUnavailableError),
             )
         )
 
@@ -112,7 +116,10 @@ class AsyncResilientNeo4jDriver(AsyncResilientConnection[Any]):
         # Circuit breaker for Neo4j failures
         circuit_breaker = CircuitBreaker(
             CircuitBreakerConfig(
-                name="AsyncNeo4j", failure_threshold=3, recovery_timeout=30, expected_exception=(Neo4jError, ServiceUnavailable, SessionExpired)
+                name="AsyncNeo4j",
+                failure_threshold=3,
+                recovery_timeout=30,
+                expected_exception=(Neo4jError, ServiceUnavailable, SessionExpired, DatabaseUnavailableError),
             )
         )
 

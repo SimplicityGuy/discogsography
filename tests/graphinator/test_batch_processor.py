@@ -1576,22 +1576,27 @@ class TestServiceUnavailableHandling:
         nack.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_consecutive_failures_incremented_on_service_unavailable(self) -> None:
-        """Test _consecutive_failures increments on ServiceUnavailable."""
+    async def test_transient_failures_incremented_on_service_unavailable(self) -> None:
+        """A transient outage increments the TRANSIENT counter, never the poison one.
+
+        discogsography-4lrp: both branches used to share _consecutive_failures, so
+        a database outage pre-charged the poison guard that dead-letters batches.
+        """
         from neo4j.exceptions import ServiceUnavailable
 
         mock_driver, mock_session = create_async_session_mock()
         mock_session.execute_write.side_effect = ServiceUnavailable("Neo4j down")
 
         processor = Neo4jBatchProcessor(mock_driver)
-        assert processor._consecutive_failures["artists"] == 0
+        assert processor._transient_failures["artists"] == 0
 
         msg = PendingMessage("artists", {"id": "1", "name": "Artist 1", "sha256": "hash1"}, AsyncMock(), AsyncMock())
         processor.queues["artists"].append(msg)
 
         await processor._flush_queue("artists")
 
-        assert processor._consecutive_failures["artists"] == 1
+        assert processor._transient_failures["artists"] == 1
+        assert processor._consecutive_failures["artists"] == 0
 
     @pytest.mark.asyncio
     async def test_backoff_until_set_on_service_unavailable(self) -> None:
@@ -1671,7 +1676,8 @@ class TestServiceUnavailableHandling:
         await processor._flush_queue("artists")
 
         assert len(processor.queues["artists"]) == 1
-        assert processor._consecutive_failures["artists"] == 1
+        assert processor._transient_failures["artists"] == 1
+        assert processor._consecutive_failures["artists"] == 0
         assert processor._effective_batch_size["artists"] == 50
 
 

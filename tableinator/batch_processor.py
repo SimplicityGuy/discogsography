@@ -14,6 +14,7 @@ from typing import Any
 
 import structlog
 from common import normalize_record
+from common.db_resilience import DatabaseUnavailableError
 from psycopg import sql
 from psycopg.errors import InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
@@ -115,7 +116,17 @@ class PostgreSQLBatchProcessor:
             "masters": self.config.batch_size,
             "releases": self.config.batch_size,
         }
+        # Deterministic (poison) failures only — this is what gates the DLQ nack.
         self._consecutive_failures: dict[str, int] = {
+            "artists": 0,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+        # Transient (outage) failures — drives backoff and adaptive batch sizing
+        # ONLY. Kept separate so a database outage can never pre-charge the poison
+        # counter and dead-letter healthy records (discogsography-4lrp).
+        self._transient_failures: dict[str, int] = {
             "artists": 0,
             "labels": 0,
             "masters": 0,
@@ -265,7 +276,12 @@ class PostgreSQLBatchProcessor:
                     queue.appendleft(msg)
                 raise
 
-            except (InterfaceError, OperationalError) as e:
+            # TRANSIENT: the database is unreachable or the operation can succeed
+            # on a retry — never the payload's fault. DatabaseUnavailableError
+            # covers the pool's own failures (connection could not be established,
+            # circuit breaker open), which used to surface as a bare Exception and
+            # be misread as a poison batch. See discogsography-4lrp.
+            except (InterfaceError, OperationalError, DatabaseUnavailableError) as e:
                 logger.error(
                     "❌ PostgreSQL connection error during batch",
                     data_type=data_type,
@@ -277,12 +293,12 @@ class PostgreSQLBatchProcessor:
                     queue.appendleft(msg)
 
                 # Exponential backoff — prevent tight retry loop that worsens pool exhaustion
-                self._consecutive_failures[data_type] += 1
+                self._transient_failures[data_type] += 1
                 delay = min(
                     self.config.backoff_initial
                     * (
                         self.config.backoff_multiplier
-                        ** (self._consecutive_failures[data_type] - 1)
+                        ** (self._transient_failures[data_type] - 1)
                     ),
                     self.config.backoff_max,
                 )
@@ -300,14 +316,14 @@ class PostgreSQLBatchProcessor:
                         old_size=old_size,
                         new_size=self._effective_batch_size[data_type],
                         backoff_seconds=round(delay, 1),
-                        consecutive_failures=self._consecutive_failures[data_type],
+                        transient_failures=self._transient_failures[data_type],
                     )
                 else:
                     logger.warning(
                         "⏳ Backing off before retry",
                         data_type=data_type,
                         backoff_seconds=round(delay, 1),
-                        consecutive_failures=self._consecutive_failures[data_type],
+                        transient_failures=self._transient_failures[data_type],
                     )
 
                 # Messages are back on deque for retry — do NOT nack them
@@ -349,6 +365,7 @@ class PostgreSQLBatchProcessor:
                     # Reset per-data-type state so healthy batches behind the
                     # poison resume normal processing.
                     self._consecutive_failures[data_type] = 0
+                    self._transient_failures[data_type] = 0
                     self._backoff_until[data_type] = 0.0
                     self._effective_batch_size[data_type] = self.config.batch_size
                     return
@@ -399,6 +416,7 @@ class PostgreSQLBatchProcessor:
 
             # Reset failure tracking on success
             self._consecutive_failures[data_type] = 0
+            self._transient_failures[data_type] = 0
 
             # Adaptive batch sizing — gradually recover toward configured size
             if self._effective_batch_size[data_type] < self.config.batch_size:
@@ -595,4 +613,5 @@ class PostgreSQLBatchProcessor:
             "effective_batch_size": self._effective_batch_size.copy(),
             "configured_batch_size": self.config.batch_size,
             "consecutive_failures": self._consecutive_failures.copy(),
+            "transient_failures": self._transient_failures.copy(),
         }

@@ -15,7 +15,8 @@ from typing import Any
 import structlog
 from common import normalize_record
 from common.credit_roles import categorize_role
-from neo4j.exceptions import ServiceUnavailable, SessionExpired
+from common.db_resilience import DatabaseUnavailableError
+from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
 
 logger = structlog.get_logger(__name__)
 
@@ -111,7 +112,17 @@ class Neo4jBatchProcessor:
             "masters": self.config.batch_size,
             "releases": self.config.batch_size,
         }
+        # Deterministic (poison) failures only — this is what gates the DLQ nack.
         self._consecutive_failures: dict[str, int] = {
+            "artists": 0,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+        # Transient (outage) failures — drives backoff and adaptive batch sizing
+        # ONLY. Kept separate so a database outage can never pre-charge the poison
+        # counter and dead-letter healthy records (discogsography-4lrp).
+        self._transient_failures: dict[str, int] = {
             "artists": 0,
             "labels": 0,
             "masters": 0,
@@ -270,7 +281,19 @@ class Neo4jBatchProcessor:
                     queue.appendleft(msg)
                 raise
 
-            except (ServiceUnavailable, SessionExpired) as e:
+            # TRANSIENT: the database is unreachable or the operation can succeed
+            # on a retry — never the payload's fault. DatabaseUnavailableError
+            # covers the resilient wrapper's own failures (connection could not be
+            # established, circuit breaker open), which used to surface as a bare
+            # Exception and be misread as a poison batch; TransientError covers
+            # deadlocks from concurrent MERGEs on shared nodes.
+            # See discogsography-4lrp.
+            except (
+                ServiceUnavailable,
+                SessionExpired,
+                TransientError,
+                DatabaseUnavailableError,
+            ) as e:
                 logger.error(
                     "❌ Neo4j connection error during batch",
                     data_type=data_type,
@@ -282,12 +305,12 @@ class Neo4jBatchProcessor:
                     queue.appendleft(msg)
 
                 # Exponential backoff — prevent tight retry loop that worsens pool exhaustion
-                self._consecutive_failures[data_type] += 1
+                self._transient_failures[data_type] += 1
                 delay = min(
                     self.config.backoff_initial
                     * (
                         self.config.backoff_multiplier
-                        ** (self._consecutive_failures[data_type] - 1)
+                        ** (self._transient_failures[data_type] - 1)
                     ),
                     self.config.backoff_max,
                 )
@@ -305,14 +328,14 @@ class Neo4jBatchProcessor:
                         old_size=old_size,
                         new_size=self._effective_batch_size[data_type],
                         backoff_seconds=round(delay, 1),
-                        consecutive_failures=self._consecutive_failures[data_type],
+                        transient_failures=self._transient_failures[data_type],
                     )
                 else:
                     logger.warning(
                         "⏳ Backing off before retry",
                         data_type=data_type,
                         backoff_seconds=round(delay, 1),
-                        consecutive_failures=self._consecutive_failures[data_type],
+                        transient_failures=self._transient_failures[data_type],
                     )
 
                 # Messages are back on deque for retry — do NOT nack them
@@ -355,6 +378,7 @@ class Neo4jBatchProcessor:
                     # Reset per-data-type state so healthy batches behind the
                     # poison resume normal processing.
                     self._consecutive_failures[data_type] = 0
+                    self._transient_failures[data_type] = 0
                     self._backoff_until[data_type] = 0.0
                     self._effective_batch_size[data_type] = self.config.batch_size
                     return
@@ -408,6 +432,7 @@ class Neo4jBatchProcessor:
 
             # Reset failure tracking on success
             self._consecutive_failures[data_type] = 0
+            self._transient_failures[data_type] = 0
 
             # Adaptive batch sizing — gradually recover toward configured size
             if self._effective_batch_size[data_type] < self.config.batch_size:
@@ -1213,4 +1238,5 @@ class Neo4jBatchProcessor:
             "effective_batch_size": self._effective_batch_size.copy(),
             "configured_batch_size": self.config.batch_size,
             "consecutive_failures": self._consecutive_failures.copy(),
+            "transient_failures": self._transient_failures.copy(),
         }

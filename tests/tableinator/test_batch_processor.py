@@ -1213,8 +1213,12 @@ class TestInterfaceAndOperationalErrorHandling:
         assert len(processor.queues["artists"]) == 1
 
     @pytest.mark.asyncio
-    async def test_consecutive_failures_increments_on_operational_error(self) -> None:
-        """_consecutive_failures should increment on OperationalError."""
+    async def test_transient_failures_increment_on_operational_error(self) -> None:
+        """A transient outage increments the TRANSIENT counter, never the poison one.
+
+        discogsography-4lrp: both branches used to share _consecutive_failures, so
+        a database outage pre-charged the poison guard that dead-letters batches.
+        """
         mock_connection_cm = AsyncMock()
         mock_connection_cm.__aenter__ = AsyncMock(side_effect=OperationalError("DB down"))
         mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
@@ -1223,7 +1227,7 @@ class TestInterfaceAndOperationalErrorHandling:
         mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
 
         processor = PostgreSQLBatchProcessor(mock_connection_pool)
-        assert processor._consecutive_failures["artists"] == 0
+        assert processor._transient_failures["artists"] == 0
 
         processor.queues["artists"].append(
             PendingMessage(
@@ -1239,7 +1243,8 @@ class TestInterfaceAndOperationalErrorHandling:
         with patch("tableinator.batch_processor.logger"):
             await processor._flush_queue("artists")
 
-        assert processor._consecutive_failures["artists"] == 1
+        assert processor._transient_failures["artists"] == 1
+        assert processor._consecutive_failures["artists"] == 0
 
     @pytest.mark.asyncio
     async def test_backoff_until_set_on_interface_error(self) -> None:
