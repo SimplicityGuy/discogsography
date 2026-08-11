@@ -28,6 +28,34 @@ const AMQP_EXCHANGE_TYPE: ExchangeKind = ExchangeKind::Fanout;
 /// (discogsography-rehd).
 const PUBLISH_CONFIRM_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Decide whether a publisher confirm actually proves delivery.
+///
+/// A broker ack only proves the message was RECEIVED, not that it was ROUTED: a fanout
+/// exchange with zero bound queues acks and drops. Publishing with `mandatory` makes the
+/// broker return such a message, and `returned` carries that `basic.return` — which must
+/// be treated as a failure so the file stays pending instead of being durably marked
+/// Completed while every record was discarded.
+///
+/// Scope limit: `mandatory` only detects total unroutability. If one consumer has
+/// declared and bound its queue but another has not, the message is routable and this
+/// check passes — partial-consumer loss is out of scope here.
+fn check_confirmation(exchange_name: &str, acked: bool, returned: Option<(u16, String)>) -> Result<()> {
+    if let Some((reply_code, reply_text)) = returned {
+        return Err(anyhow::anyhow!(
+            "Message to exchange '{}' was returned as unroutable ({} {}) — no consumer queue is bound",
+            exchange_name,
+            reply_code,
+            reply_text
+        ));
+    }
+
+    if !acked {
+        return Err(anyhow::anyhow!("Message was not acknowledged by broker"));
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(feature = "test-support", mockall::automock)]
 #[async_trait]
 pub trait MessagePublisher: Send + Sync {
@@ -151,23 +179,44 @@ impl MessageQueue {
     /// turns the wedge into an error the caller can count and retry, and lets
     /// the task fail cleanly instead of parking the whole pipeline
     /// (discogsography-rehd).
-    async fn await_confirm<F>(confirm_future: F) -> Result<()>
+    async fn await_confirm<F>(confirm_future: F) -> Result<Confirmation>
     where
         F: std::future::Future<Output = lapin::Result<Confirmation>>,
     {
-        let confirm = match tokio::time::timeout(PUBLISH_CONFIRM_TIMEOUT, confirm_future).await {
-            Ok(result) => result.context("Failed to confirm message delivery")?,
+        match tokio::time::timeout(PUBLISH_CONFIRM_TIMEOUT, confirm_future).await {
+            Ok(result) => result.context("Failed to confirm message delivery"),
             Err(_) => {
                 error!("❌ Publisher confirm timed out after {:?} — broker may be under a resource alarm", PUBLISH_CONFIRM_TIMEOUT);
-                return Err(anyhow::anyhow!("Timed out after {:?} waiting for publisher confirm", PUBLISH_CONFIRM_TIMEOUT));
+                Err(anyhow::anyhow!("Timed out after {:?} waiting for publisher confirm", PUBLISH_CONFIRM_TIMEOUT))
             }
-        };
-
-        if !confirm.is_ack() {
-            return Err(anyhow::anyhow!("Message was not acknowledged by broker"));
         }
+    }
 
-        Ok(())
+    /// Publish options for every extractor publish.
+    ///
+    /// `mandatory` is required for correctness, not politeness: a publisher confirm on a
+    /// fanout exchange with zero bound queues still returns `basic.ack`, so without this
+    /// flag the broker silently drops the message and the extractor records the file as
+    /// Completed. With `mandatory` set, an unroutable message comes back as a
+    /// `basic.return` attached to the confirmation and is treated as a delivery failure.
+    fn publish_options() -> BasicPublishOptions {
+        BasicPublishOptions { mandatory: true, ..Default::default() }
+    }
+
+    /// Publish one already-serialized payload and require both a broker ack and proof
+    /// that the message was routable.
+    async fn publish_payload(&self, channel: &Channel, exchange_name: &str, payload: &[u8]) -> Result<()> {
+        let publish = channel
+            .basic_publish(exchange_name.into(), "".into(), Self::publish_options(), payload, Self::message_properties())
+            .await
+            .context("Failed to publish message")?;
+
+        let confirm = Self::await_confirm(publish).await?;
+
+        let acked = confirm.is_ack();
+        let returned = confirm.take_message().map(|returned| (returned.reply_code, returned.reply_text.to_string()));
+
+        check_confirmation(exchange_name, acked, returned)
     }
 
     async fn get_channel(&self) -> Result<Channel> {
@@ -229,14 +278,7 @@ impl MessagePublisher for MessageQueue {
         let exchange_name = self.exchange_name(data_type);
         let payload = serde_json::to_vec(&message).context("Failed to serialize message")?;
 
-        let publish = channel
-            .basic_publish(exchange_name.as_str().into(), "".into(), BasicPublishOptions::default(), &payload, Self::message_properties())
-            .await
-            .context("Failed to publish message")?;
-
-        Self::await_confirm(publish).await?;
-
-        Ok(())
+        self.publish_payload(&channel, &exchange_name, &payload).await
     }
 
     async fn publish_batch(&self, messages: Vec<DataMessage>, data_type: DataType) -> Result<()> {
@@ -246,12 +288,7 @@ impl MessagePublisher for MessageQueue {
         for message in messages {
             let payload = serde_json::to_vec(&Message::Data(message)).context("Failed to serialize message")?;
 
-            let publish = channel
-                .basic_publish(exchange_name.as_str().into(), "".into(), BasicPublishOptions::default(), &payload, Self::message_properties())
-                .await
-                .context("Failed to publish message")?;
-
-            Self::await_confirm(publish).await?;
+            self.publish_payload(&channel, &exchange_name, &payload).await?;
         }
 
         Ok(())

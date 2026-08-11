@@ -240,17 +240,37 @@ impl StateMarker {
         musicbrainz_root.join(version).join(format!(".mb_extraction_status_{}.json", version))
     }
 
+    /// Number of files that have finished processing.
+    pub fn completed_file_count(&self) -> usize {
+        self.processing_phase.progress_by_file.values().filter(|s| s.status == PhaseStatus::Completed).count()
+    }
+
     /// Check if we should re-process, continue, or skip
     pub fn should_process(&self) -> ProcessingDecision {
-        // If download failed, need to re-download
-        if self.download_phase.status == PhaseStatus::Failed {
-            warn!("⚠️ Download phase failed, will re-download");
-            return ProcessingDecision::Reprocess;
-        }
+        // A failed or interrupted download phase normally means "start over". That is
+        // only safe while nothing has been processed yet: the download layer is
+        // idempotent and self-healing (checksums re-download exactly what is missing or
+        // corrupt), whereas processing progress costs hours of parsing and tens of
+        // millions of republished messages to rebuild. A resumed run re-enters the
+        // download phase on every cycle just to re-verify already-present dumps, so a
+        // crash inside that window must not demote completed files.
+        let download_incomplete = self.download_phase.status == PhaseStatus::Failed || self.download_phase.status == PhaseStatus::InProgress;
 
-        // If download was interrupted (still InProgress), need to re-download
-        if self.download_phase.status == PhaseStatus::InProgress {
-            warn!("⚠️ Download phase interrupted, will re-download");
+        if download_incomplete {
+            let completed = self.completed_file_count();
+            if completed > 0 {
+                warn!(
+                    "⚠️ Download phase {:?} but {} file(s) already processed, will resume (downloads self-heal via checksums)",
+                    self.download_phase.status, completed
+                );
+                return ProcessingDecision::Continue;
+            }
+
+            if self.download_phase.status == PhaseStatus::Failed {
+                warn!("⚠️ Download phase failed, will re-download");
+            } else {
+                warn!("⚠️ Download phase interrupted, will re-download");
+            }
             return ProcessingDecision::Reprocess;
         }
 

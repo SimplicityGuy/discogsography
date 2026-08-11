@@ -638,11 +638,27 @@ impl Downloader {
         Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Download failed after {} attempts", MAX_DOWNLOAD_RETRIES)))
     }
 
+    /// Persist the checksum-trust database.
+    ///
+    /// Written to a temp file, fsynced, then atomically renamed over the final path —
+    /// the same durability contract as [`StateMarker::save`]. A plain in-place write
+    /// leaves a truncated (or zero-byte) file if the process is killed mid-write, and
+    /// a corrupt metadata file used to wedge startup permanently.
     pub fn save_metadata(&self) -> Result<()> {
         let metadata_file = self.output_directory.join(".discogs_metadata.json");
+        let tmp_file = self.output_directory.join(".discogs_metadata.json.tmp");
         let json = serde_json::to_string_pretty(&self.metadata).context("Failed to serialize metadata")?;
 
-        std::fs::write(metadata_file, json).context("Failed to save metadata")?;
+        {
+            use std::io::Write;
+            // Path is built from operator-controlled config plus a hardcoded literal.
+            let mut file = std::fs::File::create(&tmp_file).context("Failed to create metadata temp file")?; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            file.write_all(json.as_bytes()).context("Failed to write metadata temp file")?;
+            // fsync before rename so the rename cannot expose an empty file after a crash.
+            file.sync_all().context("Failed to fsync metadata temp file")?;
+        }
+
+        std::fs::rename(&tmp_file, &metadata_file).context("Failed to save metadata")?;
 
         Ok(())
     }
@@ -656,9 +672,26 @@ fn load_metadata(output_directory: &Path) -> Result<HashMap<String, LocalFileInf
         return Ok(HashMap::new());
     }
 
-    let json = std::fs::read_to_string(metadata_file).context("Failed to read metadata file")?; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+    let json = std::fs::read_to_string(&metadata_file).context("Failed to read metadata file")?; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
 
-    serde_json::from_str(&json).context("Failed to parse metadata")
+    match serde_json::from_str(&json) {
+        Ok(metadata) => Ok(metadata),
+        Err(e) => {
+            // The metadata file is a download cache, not a hard integrity requirement:
+            // treating a corrupt one as fatal crash-looped the service forever. Quarantine
+            // it and start fresh — the worst case is re-verifying/re-downloading dumps,
+            // which `should_download` already handles safely via checksums.
+            warn!("⚠️ Failed to parse metadata file, starting with empty metadata: {}", e);
+
+            let corrupt_path = output_directory.join(".discogs_metadata.json.corrupt");
+            match std::fs::rename(&metadata_file, &corrupt_path) {
+                Ok(()) => warn!("⚠️ Quarantined corrupt metadata file to: {}", corrupt_path.display()),
+                Err(rename_err) => warn!("⚠️ Failed to quarantine corrupt metadata file: {}", rename_err),
+            }
+
+            Ok(HashMap::new())
+        }
+    }
 }
 
 /// Compute a SHA-256 checksum for a local file. Callers only ever pass paths built from

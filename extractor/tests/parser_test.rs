@@ -557,7 +557,8 @@ async fn test_parse_large_batch_with_logging() {
 
 #[tokio::test]
 async fn test_parse_malformed_xml() {
-    // Test XML parsing error handling (covers lines 262-264)
+    // Malformed XML is fault-isolated per record (bead discogsography-7ykt): the bad
+    // record is dropped and parsing continues instead of aborting the whole dump file.
     let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
 <artists>
     <artist id="1">
@@ -572,12 +573,14 @@ async fn test_parse_malformed_xml() {
     temp_file.write_all(&compressed).unwrap();
     temp_file.flush().unwrap();
 
-    let (sender, _receiver) = mpsc::channel(10);
+    let (sender, mut receiver) = mpsc::channel(10);
     let parser = XmlParser::new(DataType::Artists, sender);
-    let result = parser.parse_file(temp_file.path()).await;
+    let count = parser.parse_file(temp_file.path()).await.expect("a single malformed record must not fail the file");
 
-    // Should return an error for malformed XML
-    assert!(result.is_err());
+    // The malformed record is skipped, not emitted, and the file completes normally.
+    assert_eq!(count, 0);
+    let received = tokio::time::timeout(tokio::time::Duration::from_millis(100), receiver.recv()).await;
+    assert!(received.is_err(), "malformed record must not be published");
 }
 
 #[tokio::test]
@@ -646,4 +649,94 @@ async fn test_parse_numeric_char_ref() {
     // &#169; is the copyright symbol ©
     let name = message.data["name"].as_str().unwrap();
     assert!(name.contains("©") || name.contains("169"), "Should resolve numeric char ref, got: {}", name);
+}
+
+/// Helper: gzip `xml_content` into a temp file for `parse_file`.
+fn gzip_to_temp_file(xml_content: &str) -> NamedTempFile {
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+    temp_file
+}
+
+#[tokio::test]
+async fn test_parse_bare_ampersand_in_text() {
+    // Discogs dumps historically ship unescaped `&` in text. quick-xml 0.39+ treats a
+    // dangling `&` as IllFormed unless allow_dangling_amp is set; that must not abort
+    // the file (bead discogsography-7ykt).
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1"><name>Artist One</name></artist>
+    <artist id="2"><name>Tom & Jerry</name></artist>
+    <artist id="3"><name>Artist Three</name></artist>
+</artists>"#;
+
+    let temp_file = gzip_to_temp_file(xml_content);
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+    drop(parser); // release the sender so the drain loop below terminates
+
+    assert_eq!(count, 3, "a bare ampersand must not abort the dump");
+
+    let mut ids = Vec::new();
+    let mut names = Vec::new();
+    while let Some(message) = receiver.recv().await {
+        ids.push(message.id.clone());
+        names.push(message.data["name"].as_str().unwrap_or_default().to_string());
+    }
+    assert_eq!(ids, vec!["1", "2", "3"]);
+    assert!(names[1].contains("Tom") && names[1].contains("Jerry"), "text around the bare & should be preserved, got: {}", names[1]);
+}
+
+#[tokio::test]
+async fn test_parse_skips_malformed_record() {
+    // A mismatched end tag is a hard XML error: the offending record is dropped and
+    // parsing resynchronizes on the next <artist> instead of aborting the file.
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1"><name>Good One</name></artist>
+    <artist id="2"><name>Poison</nome></artist>
+    <artist id="3"><name>Good Three</name></artist>
+    <artist id="4"><name>Good Four</name></artist>
+</artists>"#;
+
+    let temp_file = gzip_to_temp_file(xml_content);
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let count = parser.parse_file(temp_file.path()).await.expect("one poison record must not fail the file");
+    drop(parser); // release the sender so the drain loop below terminates
+
+    let mut ids = Vec::new();
+    while let Some(message) = receiver.recv().await {
+        ids.push(message.id.clone());
+    }
+
+    assert_eq!(count as usize, ids.len());
+    assert!(ids.contains(&"1".to_string()), "records before the poison record must still be emitted: {ids:?}");
+    assert!(ids.contains(&"3".to_string()) && ids.contains(&"4".to_string()), "parser must resynchronize after the poison record: {ids:?}");
+    assert!(!ids.contains(&"2".to_string()), "the malformed record itself must be dropped: {ids:?}");
+}
+
+#[tokio::test]
+async fn test_parse_aborts_past_error_budget() {
+    // Beyond the tolerated malformed-record budget the file is considered unusable.
+    let mut xml_content = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<artists>\n");
+    for i in 0..200 {
+        xml_content.push_str(&format!("    <artist id=\"{i}\"><name>Bad {i}</nome></artist>\n"));
+    }
+    xml_content.push_str("</artists>");
+
+    let temp_file = gzip_to_temp_file(&xml_content);
+
+    let (sender, _receiver) = mpsc::channel(1024);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let result = parser.parse_file(temp_file.path()).await;
+
+    assert!(result.is_err(), "a file that is malformed throughout must still fail");
 }

@@ -1255,8 +1255,9 @@ async fn test_completed_transitions_to_waiting_in_loop() {
 }
 
 mod wait_for_discogs_idle_tests {
-    use crate::extractor::{wait_for_discogs_idle, wait_for_discogs_idle_with_interval};
-    use std::sync::atomic::AtomicBool;
+    use crate::extractor::{WaitOutcome, wait_for_discogs_idle, wait_for_discogs_idle_with_interval};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use tokio::time::Duration;
 
     #[tokio::test]
@@ -1274,7 +1275,7 @@ mod wait_for_discogs_idle_tests {
         let url = format!("{}/health", server.url());
         let result = wait_for_discogs_idle(&url, &shutdown).await;
 
-        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), WaitOutcome::Proceed);
         mock.assert_async().await;
     }
 
@@ -1293,7 +1294,7 @@ mod wait_for_discogs_idle_tests {
         let url = format!("{}/health", server.url());
         let result = wait_for_discogs_idle(&url, &shutdown).await;
 
-        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), WaitOutcome::Proceed);
         mock.assert_async().await;
     }
 
@@ -1312,7 +1313,7 @@ mod wait_for_discogs_idle_tests {
         let url = format!("{}/health", server.url());
         let result = wait_for_discogs_idle(&url, &shutdown).await;
 
-        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), WaitOutcome::Proceed);
         mock.assert_async().await;
     }
 
@@ -1333,7 +1334,7 @@ mod wait_for_discogs_idle_tests {
         let url = format!("{}/health", server.url());
         let result = wait_for_discogs_idle(&url, &shutdown).await;
 
-        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), WaitOutcome::Proceed);
         mock.assert_async().await;
     }
 
@@ -1361,7 +1362,7 @@ mod wait_for_discogs_idle_tests {
         let url = format!("{}/health", server.url());
         let result = wait_for_discogs_idle_with_interval(&url, &shutdown, Duration::from_millis(10)).await;
 
-        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), WaitOutcome::Proceed);
     }
 
     #[tokio::test]
@@ -1381,7 +1382,59 @@ mod wait_for_discogs_idle_tests {
         let url = "http://127.0.0.1:19999/health";
         let result = wait_for_discogs_idle_with_interval(url, &shutdown, Duration::from_millis(10)).await;
 
-        assert!(result.is_ok());
+        // discogsography-l114: a shutdown must be distinguishable from "Discogs is idle",
+        // otherwise the caller falls through and starts a whole new extraction run.
+        assert_eq!(result.unwrap(), WaitOutcome::Shutdown);
+    }
+
+    #[tokio::test]
+    async fn test_shutdown_while_discogs_busy() {
+        // Discogs keeps reporting "running" (the multi-hour park). SIGTERM arrives mid-wait:
+        // the wait must end promptly and report Shutdown, not Proceed.
+        let mut server = mockito::Server::new_async().await;
+        let _mock_running = server
+            .mock("GET", "/health")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"extraction_status": "running"}"#)
+            .create_async()
+            .await;
+
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let url = format!("{}/health", server.url());
+
+        let flag = shutdown.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            flag.store(true, Ordering::SeqCst);
+        });
+
+        // A poll interval far longer than the test timeout proves the sleep is interruptible.
+        let outcome = tokio::time::timeout(Duration::from_secs(10), wait_for_discogs_idle_with_interval(&url, &shutdown, Duration::from_secs(3600)))
+            .await
+            .expect("wait must observe shutdown instead of sleeping out the poll interval");
+
+        assert_eq!(outcome.unwrap(), WaitOutcome::Shutdown);
+    }
+
+    #[tokio::test]
+    async fn test_shutdown_during_unreachable_retry_backoff() {
+        // Same guarantee on the unreachable-endpoint retry path.
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let flag = shutdown.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            flag.store(true, Ordering::SeqCst);
+        });
+
+        let url = "http://127.0.0.1:19999/health";
+        let outcome = tokio::time::timeout(Duration::from_secs(10), wait_for_discogs_idle_with_interval(url, &shutdown, Duration::from_secs(3600)))
+            .await
+            .expect("wait must return once shutdown is observed");
+
+        // Either the retries were exhausted first (Proceed) or shutdown won — but it must
+        // never hang, and once the flag is set the loop must stop waiting.
+        assert!(matches!(outcome.unwrap(), WaitOutcome::Shutdown | WaitOutcome::Proceed));
     }
 
     #[tokio::test]
@@ -1402,7 +1455,7 @@ mod wait_for_discogs_idle_tests {
         let elapsed = start.elapsed();
 
         assert!(result.is_ok(), "must give up after DISCOGS_MAX_UNREACHABLE_RETRIES, not hang for poll_interval-per-attempt");
-        assert!(result.unwrap().is_ok());
+        assert_eq!(result.unwrap().unwrap(), WaitOutcome::Proceed);
         assert!(elapsed < Duration::from_secs(5), "unreachable retries must not wait a full poll_interval per attempt: took {:?}", elapsed);
     }
 }

@@ -97,6 +97,13 @@ pub async fn process_discogs_data(
     // Record extraction start time for consumer cleanup coordination
     let extraction_started_at = chrono::Utc::now();
 
+    // Mirror of the MusicBrainz guard: never begin a new run (status Running, S3 listing,
+    // multi-GB downloads) when shutdown has already been requested. (discogsography-l114)
+    if shutdown_flag.load(Ordering::SeqCst) {
+        info!("🛑 Shutdown requested, not starting Discogs extraction");
+        return Ok(false);
+    }
+
     // Reset progress for new run
     {
         let mut s = state.write().await;
@@ -149,6 +156,9 @@ pub async fn process_discogs_data(
             return Ok(true);
         }
         ProcessingDecision::Reprocess => {
+            // Safe to discard the marker: should_process() only returns Reprocess when no
+            // file has finished processing (otherwise it returns Continue, so an
+            // interrupted download-verification pass cannot wipe processing progress).
             warn!("⚠️ Will re-download and re-process version {}", version);
             state_marker = StateMarker::new(version.clone());
         }
@@ -1096,15 +1106,51 @@ pub(crate) fn discogs_unreachable_backoff(attempt: u32) -> Duration {
     DISCOGS_UNREACHABLE_BASE_DELAY.saturating_mul(multiplier).min(DISCOGS_UNREACHABLE_MAX_DELAY)
 }
 
+/// Outcome of waiting for the Discogs extractor to go idle.
+///
+/// A plain `Ok(())` used to mean BOTH "Discogs is idle, go ahead" and "shutdown was
+/// requested, stop" — so a SIGTERM arriving during the (multi-hour) wait launched a
+/// brand-new MusicBrainz extraction run instead of exiting. (discogsography-l114)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitOutcome {
+    /// Discogs is idle (or unreachable / unparseable) — start the MusicBrainz run.
+    Proceed,
+    /// Shutdown was requested while waiting — do not start any new work.
+    Shutdown,
+}
+
+/// Sleep for `duration`, returning early as soon as shutdown is requested.
+///
+/// Returns `true` if shutdown was observed. The wait between Discogs health polls is an
+/// hour in production; an uninterruptible sleep there means SIGTERM is not even noticed
+/// until long after Docker's stop grace period has elapsed and SIGKILL has landed.
+async fn sleep_unless_shutdown(duration: Duration, shutdown_flag: &AtomicBool) -> bool {
+    const SLICE: Duration = Duration::from_millis(250);
+
+    let deadline = Instant::now() + duration;
+    loop {
+        if shutdown_flag.load(Ordering::SeqCst) {
+            return true;
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return false;
+        }
+
+        sleep(remaining.min(SLICE)).await;
+    }
+}
+
 /// Wait until the Discogs extractor is not actively extracting.
-pub async fn wait_for_discogs_idle(url: &str, shutdown_flag: &AtomicBool) -> Result<()> {
+pub async fn wait_for_discogs_idle(url: &str, shutdown_flag: &AtomicBool) -> Result<WaitOutcome> {
     wait_for_discogs_idle_with_interval(url, shutdown_flag, DISCOGS_POLL_INTERVAL).await
 }
 
 /// Internal implementation with configurable poll interval (for testing). `poll_interval`
 /// governs only the "Discogs is busy" (status == "running") wait; an unreachable endpoint
 /// always uses the short escalating backoff from `discogs_unreachable_backoff`.
-pub async fn wait_for_discogs_idle_with_interval(url: &str, shutdown_flag: &AtomicBool, poll_interval: Duration) -> Result<()> {
+pub async fn wait_for_discogs_idle_with_interval(url: &str, shutdown_flag: &AtomicBool, poll_interval: Duration) -> Result<WaitOutcome> {
     let client = reqwest::Client::builder().timeout(DISCOGS_HEALTH_TIMEOUT).build()?;
 
     let mut unreachable_count: u32 = 0;
@@ -1112,7 +1158,7 @@ pub async fn wait_for_discogs_idle_with_interval(url: &str, shutdown_flag: &Atom
     loop {
         if shutdown_flag.load(Ordering::SeqCst) {
             info!("🛑 Shutdown requested, stopping Discogs health check wait");
-            return Ok(());
+            return Ok(WaitOutcome::Shutdown);
         }
 
         match client.get(url).send().await {
@@ -1126,15 +1172,18 @@ pub async fn wait_for_discogs_idle_with_interval(url: &str, shutdown_flag: &Atom
                             info!("⏳ Discogs extraction in progress, waiting before starting MusicBrainz extraction...");
                         } else {
                             info!("✅ Discogs extractor idle (status: {}), proceeding with MusicBrainz extraction", status);
-                            return Ok(());
+                            return Ok(WaitOutcome::Proceed);
                         }
                     }
                     Err(e) => {
                         warn!("⚠️ Failed to parse Discogs health response: {}, proceeding", e);
-                        return Ok(());
+                        return Ok(WaitOutcome::Proceed);
                     }
                 }
-                tokio::time::sleep(poll_interval).await;
+                if sleep_unless_shutdown(poll_interval, shutdown_flag).await {
+                    info!("🛑 Shutdown requested, stopping Discogs health check wait");
+                    return Ok(WaitOutcome::Shutdown);
+                }
             }
             Err(_) => {
                 unreachable_count += 1;
@@ -1143,14 +1192,17 @@ pub async fn wait_for_discogs_idle_with_interval(url: &str, shutdown_flag: &Atom
                         "⚠️ Discogs health endpoint unreachable after {} attempts, proceeding with MusicBrainz extraction",
                         DISCOGS_MAX_UNREACHABLE_RETRIES
                     );
-                    return Ok(());
+                    return Ok(WaitOutcome::Proceed);
                 }
                 let backoff = discogs_unreachable_backoff(unreachable_count);
                 warn!(
                     "⚠️ Discogs health endpoint unreachable (attempt {}/{}), retrying in {:?}...",
                     unreachable_count, DISCOGS_MAX_UNREACHABLE_RETRIES, backoff
                 );
-                tokio::time::sleep(backoff).await;
+                if sleep_unless_shutdown(backoff, shutdown_flag).await {
+                    info!("🛑 Shutdown requested, stopping Discogs health check wait");
+                    return Ok(WaitOutcome::Shutdown);
+                }
             }
         }
     }
@@ -1173,8 +1225,12 @@ pub async fn run_musicbrainz_loop(
 
     info!("🎵 Starting MusicBrainz extraction...");
 
-    // Wait for Discogs extractor to finish before starting MusicBrainz
-    wait_for_discogs_idle(&config.discogs_health_url, &shutdown_flag).await?;
+    // Wait for Discogs extractor to finish before starting MusicBrainz. A shutdown during
+    // that wait must exit — NOT fall through into a brand-new multi-hour extraction run.
+    if wait_for_discogs_idle(&config.discogs_health_url, &shutdown_flag).await? == WaitOutcome::Shutdown {
+        info!("🛑 Shutdown requested while waiting for Discogs, skipping MusicBrainz extraction");
+        return Ok(());
+    }
 
     let success =
         process_musicbrainz_data(config.clone(), state.clone(), shutdown_flag.clone(), force_reprocess, mq_factory.clone(), compiled_rules.clone())
@@ -1211,8 +1267,13 @@ pub async fn run_musicbrainz_loop(
             _ = sleep(check_interval) => {
                 info!("🔄 Starting periodic check for new MusicBrainz dumps...");
                 // Wait for Discogs extractor to finish before starting MusicBrainz
-                if let Err(e) = wait_for_discogs_idle(&config.discogs_health_url, &shutdown_flag).await {
-                    error!("❌ Failed to check Discogs health: {}", e);
+                match wait_for_discogs_idle(&config.discogs_health_url, &shutdown_flag).await {
+                    Ok(WaitOutcome::Shutdown) => {
+                        info!("🛑 Shutdown requested while waiting for Discogs, skipping periodic MusicBrainz check");
+                        break;
+                    }
+                    Ok(WaitOutcome::Proceed) => {}
+                    Err(e) => error!("❌ Failed to check Discogs health: {}", e),
                 }
                 let start = Instant::now();
                 match process_musicbrainz_data(config.clone(), state.clone(), shutdown_flag.clone(), false, mq_factory.clone(), compiled_rules.clone()).await {
@@ -1231,8 +1292,13 @@ pub async fn run_musicbrainz_loop(
             trigger_force_reprocess = wait_for_trigger(&trigger) => {
                 info!("🔄 MusicBrainz extraction triggered via API (force_reprocess={})...", trigger_force_reprocess);
                 // Wait for Discogs extractor to finish before starting MusicBrainz
-                if let Err(e) = wait_for_discogs_idle(&config.discogs_health_url, &shutdown_flag).await {
-                    error!("❌ Failed to check Discogs health: {}", e);
+                match wait_for_discogs_idle(&config.discogs_health_url, &shutdown_flag).await {
+                    Ok(WaitOutcome::Shutdown) => {
+                        info!("🛑 Shutdown requested while waiting for Discogs, skipping triggered MusicBrainz extraction");
+                        break;
+                    }
+                    Ok(WaitOutcome::Proceed) => {}
+                    Err(e) => error!("❌ Failed to check Discogs health: {}", e),
                 }
                 let start = Instant::now();
                 match process_musicbrainz_data(config.clone(), state.clone(), shutdown_flag.clone(), trigger_force_reprocess, mq_factory.clone(), compiled_rules.clone()).await {
@@ -1270,6 +1336,14 @@ pub async fn process_musicbrainz_data(
 
     let extraction_started_at = chrono::Utc::now();
 
+    // Never start a new run under shutdown: the prelude below (multi-GB download, dump
+    // discovery, AMQP setup, full artist.jsonl.xz scan) has no natural exit point, and
+    // the first per-file check comes far too late for any stop grace period.
+    if shutdown_flag.load(Ordering::SeqCst) {
+        info!("🛑 Shutdown requested, not starting MusicBrainz extraction");
+        return Ok(false);
+    }
+
     // Reset progress for new run
     {
         let mut s = state.write().await;
@@ -1284,6 +1358,13 @@ pub async fn process_musicbrainz_data(
     // Download latest MusicBrainz dump if needed
     let downloader = MbDownloader::new(config.musicbrainz_root.clone(), config.musicbrainz_dump_url.clone());
     let download_result = downloader.download_latest().await?;
+
+    // The download can take hours; do not follow it with the equally long map-building
+    // and per-file passes if shutdown arrived in the meantime.
+    if shutdown_flag.load(Ordering::SeqCst) {
+        info!("🛑 Shutdown requested after MusicBrainz download, stopping before processing");
+        return Ok(false);
+    }
     let version = download_result.version().to_string();
     let versioned_root = config.musicbrainz_root.join(&version);
     info!("📋 Using MusicBrainz dump version: {} from {:?}", version, versioned_root);
