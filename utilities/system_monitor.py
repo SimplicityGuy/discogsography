@@ -142,7 +142,15 @@ def monitor_system() -> None:
     print("\n📬 RabbitMQ Queue Status:")
     print("-" * 40)
     queues = get_queue_stats()
-    if queues:
+    # get_queue_stats() returns None only on a genuine fetch failure
+    # (RequestException); an empty list is a successful 200 response from a broker
+    # with no queues declared yet and must not be conflated with a connectivity
+    # error (discogsography-gpai — mirror of the same fix in monitor_queues.py).
+    if queues is None:
+        print("  Unable to fetch queue data")
+    elif not queues:
+        print("  No queues declared yet")
+    else:
         total_messages = 0
         for queue in queues:
             if "discogsography" in queue["name"] or "musicbrainz" in queue["name"]:
@@ -153,8 +161,6 @@ def monitor_system() -> None:
                 total_messages += total
                 print(f"  {name:<30} Ready: {ready:<8} Unacked: {unacked:<8} Total: {total}")
         print(f"\n  Total messages: {total_messages}")
-    else:
-        print("  Unable to fetch queue data")
 
     # Check Neo4j status
     print("\n🔷 Neo4j Database Status:")

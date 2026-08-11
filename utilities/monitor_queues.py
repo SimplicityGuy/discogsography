@@ -37,7 +37,12 @@ def monitor_queues(interval: int = 5) -> None:
     try:
         while True:
             queues = get_queue_stats()
-            if not queues:
+            # get_queue_stats() returns None only on a genuine fetch failure
+            # (RequestException); an empty list is a successful 200 response from a
+            # broker with no queues declared yet (e.g. right after `just up`, before
+            # the extractor/consumers connect) and must not be conflated with a
+            # connectivity error (discogsography-gpai).
+            if queues is None:
                 print("Failed to fetch queue data")
                 time.sleep(interval)
                 continue
@@ -46,6 +51,11 @@ def monitor_queues(interval: int = 5) -> None:
             print("\033[2J\033[H")
             print(f"RabbitMQ Queue Monitor - {time.strftime('%Y-%m-%d %H:%M:%S')}")
             print("-" * 80)
+            if not queues:
+                print("No queues declared yet")
+                print("-" * 80)
+                time.sleep(interval)
+                continue
             print(f"{'Queue Name':<50} {'Ready':<10} {'Unacked':<10} {'Total':<10}")
             print("-" * 80)
 

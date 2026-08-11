@@ -64,3 +64,20 @@ def test_monitor_queues_handles_empty_fetch(capsys) -> None:
     out = capsys.readouterr().out
     assert "Failed to fetch queue data" in out
     assert "Monitoring stopped." in out
+
+
+def test_monitor_queues_empty_list_is_not_a_fetch_failure(capsys) -> None:
+    """Regression for discogsography-gpai: get_queue_stats() returning [] is a
+    successful HTTP 200 with no queues declared yet (e.g. right after `just up`,
+    before the extractor/consumers connect) — it must not print the same
+    "Failed to fetch queue data" message as a genuine RequestException (None).
+    """
+    with (
+        patch.object(monitor_queues, "get_queue_stats", side_effect=[[], KeyboardInterrupt]),
+        patch.object(monitor_queues.time, "sleep", return_value=None),
+    ):
+        monitor_queues.monitor_queues(interval=1)
+    out = capsys.readouterr().out
+    assert "Failed to fetch queue data" not in out
+    assert "No queues declared yet" in out
+    assert "Monitoring stopped." in out
