@@ -163,7 +163,10 @@ CREATE TABLE musicbrainz.relationships (
     ended                 BOOLEAN DEFAULT FALSE,
     attributes            JSONB,
     created_at            TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (source_mbid, target_mbid, source_entity_type, target_entity_type, relationship_type)
+    CONSTRAINT relationships_natural_key UNIQUE NULLS NOT DISTINCT (
+        source_mbid, target_mbid, source_entity_type, target_entity_type,
+        relationship_type, begin_date, end_date, attributes
+    )
 );
 
 CREATE TABLE musicbrainz.external_links (

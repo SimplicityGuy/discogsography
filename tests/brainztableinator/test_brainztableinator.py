@@ -321,6 +321,40 @@ class TestInsertRelationships:
         assert len(params) == 2
 
     @pytest.mark.asyncio
+    async def test_insert_relationships_conflict_target_includes_discriminating_fields(self):
+        """discogsography-dgtg: the ON CONFLICT target must match the widened
+        relationships_natural_key constraint (begin_date/end_date/attributes included)
+        so two relationship instances differing only by date range or attributes are
+        stored as separate rows instead of one overwriting the other. Only `ended`
+        (a mutable flag, not part of the relationship's identity) should be refreshed
+        on conflict — attributes/begin_date/end_date must NOT be blindly overwritten."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        rels = [
+            {
+                "target_mbid": "target-mbid-1",
+                "target_type": "artist",
+                "type": "member of band",
+                "attributes": ["guitar"],
+                "begin_date": "2000-01-01",
+                "end_date": "2005-01-01",
+                "ended": True,
+            },
+        ]
+
+        await _insert_relationships(mock_conn, "source-mbid-1", "artist", rels)
+
+        sql = mock_cursor.executemany.call_args[0][0]
+        assert (
+            "ON CONFLICT (source_mbid, target_mbid, source_entity_type, target_entity_type, "
+            "relationship_type, begin_date, end_date, attributes)" in sql
+        )
+        conflict_action = sql.split("DO UPDATE SET")[1]
+        assert "ended = EXCLUDED.ended" in conflict_action
+        assert "attributes = EXCLUDED.attributes" not in conflict_action
+        assert "begin_date = EXCLUDED.begin_date" not in conflict_action
+        assert "end_date = EXCLUDED.end_date" not in conflict_action
+
+    @pytest.mark.asyncio
     async def test_insert_relationships_filters_invalid_rows(self):
         """Rows missing target_mbid/target_type/type are dropped from the batch."""
         mock_conn, mock_cursor = _make_mock_conn()
