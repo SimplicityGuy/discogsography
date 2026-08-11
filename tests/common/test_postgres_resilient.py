@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from psycopg.errors import InterfaceError, OperationalError
 import pytest
 
+from common.db_resilience import CircuitState
 from common.postgres_resilient import AsyncPostgreSQLPool, AsyncResilientPostgreSQL, ResilientPostgreSQLPool
 
 
@@ -784,6 +785,35 @@ class TestAsyncPostgreSQLPool:
         assert conn == mock_async_connection
         mock_connect.assert_called_with(**connection_params)
         mock_async_connection.set_autocommit.assert_called_once_with(True)
+
+        # Cleanup
+        await pool.close()
+
+    @pytest.mark.asyncio
+    @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
+    async def test_create_connection_routes_through_circuit_breaker(self, mock_connect: Mock, connection_params: dict) -> None:
+        """discogsography-4q2s: _create_connection must actually invoke the
+        breaker constructed in __init__, not bypass it. 3 consecutive
+        connect() failures must open the circuit so subsequent callers
+        fast-fail (CircuitOpenError) instead of each walking the full
+        connect+backoff ladder during a sustained outage."""
+        mock_connect.side_effect = OperationalError("Postgres is down")
+
+        pool = AsyncPostgreSQLPool(connection_params=connection_params, max_retries=1)
+        assert pool.circuit_breaker.state == CircuitState.CLOSED
+
+        for _ in range(pool.circuit_breaker.config.failure_threshold):
+            with pytest.raises(OperationalError):
+                await pool._create_connection()
+
+        assert pool.circuit_breaker.state == CircuitState.OPEN
+
+        # The breaker itself now rejects the call BEFORE a new connect()
+        # attempt is even made — the fast-fail this bead is about.
+        mock_connect.reset_mock()
+        with pytest.raises(Exception, match="Circuit breaker is OPEN"):
+            await pool._create_connection()
+        mock_connect.assert_not_called()
 
         # Cleanup
         await pool.close()

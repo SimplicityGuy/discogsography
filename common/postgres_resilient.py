@@ -8,7 +8,7 @@ import logging
 from queue import Empty, Full, Queue
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 from psycopg.errors import DatabaseError, InterfaceError, OperationalError
@@ -441,7 +441,21 @@ class AsyncPostgreSQLPool:
         self._initialized = True
 
     async def _create_connection(self) -> psycopg.AsyncConnection[Any]:
-        """Create a new async PostgreSQL connection with retry logic."""
+        """Create a new async PostgreSQL connection, routed through the circuit breaker.
+
+        Every checkout path (initialize, the checkout retry loop, and the
+        health-loop replenish) calls this method directly, so routing it
+        through ``circuit_breaker.call_async`` here — instead of each caller
+        wrapping its own call — makes the breaker actually participate in
+        every connection attempt. Previously the breaker was constructed but
+        never invoked: during a sustained outage every caller independently
+        walked the full 5-attempt retry ladder instead of fast-failing after
+        3 failures (discogsography-4q2s).
+        """
+        return cast("psycopg.AsyncConnection[Any]", await self.circuit_breaker.call_async(self._raw_create_connection))
+
+    async def _raw_create_connection(self) -> psycopg.AsyncConnection[Any]:
+        """Open and validate a new async PostgreSQL connection (no breaker wrapping)."""
         logger.info("🐘 Creating new async PostgreSQL connection")
         conn = await psycopg.AsyncConnection.connect(**self.connection_params)
         await conn.set_autocommit(True)
