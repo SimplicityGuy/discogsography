@@ -1352,6 +1352,38 @@ async def process_label(tx: Any, record: dict[str, Any]) -> bool:
     return True  # Updated successfully
 
 
+async def _prune_stale_edges(
+    tx: Any,
+    label: str,
+    node_id: Any,
+    *,
+    rel_type: str,
+    target_label: str,
+    target_key: str,
+    keep: list[Any],
+) -> None:
+    """Delete this record's managed edges that its NEW version no longer asserts.
+
+    Relationship writes are MERGE-only and therefore purely additive, but the
+    underlying Discogs records are mutable: a release retagged from Rock to Jazz gets a
+    new sha256, passes the hash gate, MERGEs the Jazz edge — and keeps the Rock one
+    forever. compute_genre_style_stats then counts those stale edges
+    (``MATCH (g)<-[:IS]-(r:Release) RETURN count(DISTINCT r)``), so Genre/Style/Label
+    release_count/artist_count are permanently over-stated and explore endpoints list
+    the release under a genre it no longer has (discogsography-bd0u).
+
+    Called with an EMPTY ``keep`` too — that is the "all associations removed" case.
+    Mirrors Neo4jBatchProcessor._prune_stale_edges.
+    """
+    await tx.run(
+        f"MATCH (n:{label} {{id: $node_id}})-[rel:{rel_type}]->(t:{target_label}) "
+        f"WHERE NOT t.{target_key} IN $keep "
+        "DELETE rel",
+        node_id=node_id,
+        keep=keep,
+    )
+
+
 async def process_master(tx: Any, record: dict[str, Any]) -> bool:
     """Process master within a single transaction for atomicity."""
     existing_result = await tx.run(
@@ -1370,6 +1402,36 @@ async def process_master(tx: Any, record: dict[str, Any]) -> bool:
         title=record.get("title", "Unknown Master"),
         year=record.get("year"),
         sha256=record["sha256"],
+    )
+
+    # Prune managed edges this record's NEW version no longer asserts, before the
+    # additive MERGEs below re-create the current set (discogsography-bd0u).
+    await _prune_stale_edges(
+        tx,
+        "Master",
+        record["id"],
+        rel_type="BY",
+        target_label="Artist",
+        target_key="id",
+        keep=[a["id"] for a in (record.get("artists") or []) if a.get("id")],
+    )
+    await _prune_stale_edges(
+        tx,
+        "Master",
+        record["id"],
+        rel_type="IS",
+        target_label="Genre",
+        target_key="name",
+        keep=[g for g in (record.get("genres") or []) if g],
+    )
+    await _prune_stale_edges(
+        tx,
+        "Master",
+        record["id"],
+        rel_type="IS",
+        target_label="Style",
+        target_key="name",
+        keep=[st for st in (record.get("styles") or []) if st],
     )
 
     # Handle artist relationships (normalized to list of {"id": ...} dicts)
@@ -1451,6 +1513,54 @@ async def process_release(tx: Any, record: dict[str, Any]) -> bool:
         year=record.get("year"),
         formats=formats,
         sha256=record["sha256"],
+    )
+
+    # Prune managed edges this record's NEW version no longer asserts, before the
+    # additive MERGEs below re-create the current set (discogsography-bd0u).
+    await _prune_stale_edges(
+        tx,
+        "Release",
+        record["id"],
+        rel_type="BY",
+        target_label="Artist",
+        target_key="id",
+        keep=[a["id"] for a in (record.get("artists") or []) if a.get("id")],
+    )
+    await _prune_stale_edges(
+        tx,
+        "Release",
+        record["id"],
+        rel_type="ON",
+        target_label="Label",
+        target_key="id",
+        keep=[lbl["id"] for lbl in (record.get("labels") or []) if lbl.get("id")],
+    )
+    await _prune_stale_edges(
+        tx,
+        "Release",
+        record["id"],
+        rel_type="DERIVED_FROM",
+        target_label="Master",
+        target_key="id",
+        keep=[record["master_id"]] if record.get("master_id") else [],
+    )
+    await _prune_stale_edges(
+        tx,
+        "Release",
+        record["id"],
+        rel_type="IS",
+        target_label="Genre",
+        target_key="name",
+        keep=[g for g in (record.get("genres") or []) if g],
+    )
+    await _prune_stale_edges(
+        tx,
+        "Release",
+        record["id"],
+        rel_type="IS",
+        target_label="Style",
+        target_key="name",
+        keep=[st for st in (record.get("styles") or []) if st],
     )
 
     # Handle artist relationships (normalized to list of {"id": ...} dicts)

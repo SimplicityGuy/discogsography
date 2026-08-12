@@ -1853,7 +1853,9 @@ class TestMasterTransactionLogic:
         # 5. Style relationships
         # No genre-style (PART_OF) connection: multiple genres make the style-belongs-to
         # -genre assertion ambiguous, so it is skipped (discogsography-sy5k).
-        assert mock_tx.run.call_count == 5
+        # Plus 3 prune queries (BY/Genre-IS/Style-IS) that drop associations the record's
+        # new version no longer asserts before the additive MERGEs (discogsography-bd0u).
+        assert mock_tx.run.call_count == 8
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1974,7 +1976,9 @@ class TestReleaseTransactionLogic:
         # 6. Genre relationships
         # 7. Style relationships
         # 8. Genre-style connections
-        assert mock_tx.run.call_count == 8
+        # ...plus 5 prune queries (BY/ON/DERIVED_FROM/Genre-IS/Style-IS) that drop
+        # associations the record's new version no longer asserts (discogsography-bd0u).
+        assert mock_tx.run.call_count == 13
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
@@ -2099,7 +2103,10 @@ class TestReleaseTransactionLogic:
         # 2. Create release node
         # 3. Person CREDITED_ON relationships
         # 4. Person SAME_AS relationships (for Bob Ludwig who has artist_id)
-        assert mock_tx.run.call_count == 4
+        # ...plus the 5 release prune queries (discogsography-bd0u), which run even when
+        # the record asserts no artists/labels/master/genres/styles — that is exactly the
+        # "every association was removed" case.
+        assert mock_tx.run.call_count == 9
         mock_message.ack.assert_called_once()
 
         # Verify credits cypher was called with correct data
@@ -3243,7 +3250,8 @@ class TestProcessMasterEdgeCases:
         result = await process_master(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
-        assert not any("BY" in c and "artist" in c for c in calls)
+        assert not any("MERGE (m)-[:BY]->" in c and "UNWIND $artists" in c for c in calls)
+        assert not any("MERGE (r)-[:BY]->" in c and "UNWIND $artists" in c for c in calls)
 
 
 class TestProcessLabelSublabelsString:
@@ -3295,7 +3303,8 @@ class TestProcessReleaseArtistNoId:
         result = await process_release(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
-        assert not any("BY" in c and "artist" in c for c in calls)
+        assert not any("MERGE (m)-[:BY]->" in c and "UNWIND $artists" in c for c in calls)
+        assert not any("MERGE (r)-[:BY]->" in c and "UNWIND $artists" in c for c in calls)
 
 
 class TestProcessReleaseLabelNoId:
@@ -3322,7 +3331,83 @@ class TestProcessReleaseLabelNoId:
         result = await process_release(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
-        assert not any(")-[:ON]->" in c for c in calls)
+        assert not any("MERGE (r)-[:ON]->" in c for c in calls)
+
+
+class TestNonBatchStaleEdgePruning:
+    """discogsography-bd0u (non-batch mirror): the single-record path uses the same
+    MERGE-only, additive relationship writes as the batch processor, so it needs the
+    same prune of associations the record's new version no longer asserts."""
+
+    @staticmethod
+    def _prunes(mock_tx: Any, rel_type: str, target: str) -> list[dict[str, Any]]:
+        return [
+            call.kwargs
+            for call in mock_tx.run.call_args_list
+            if "DELETE rel" in call.args[0] and f"[rel:{rel_type}]" in call.args[0] and f":{target})" in call.args[0]
+        ]
+
+    @pytest.mark.asyncio
+    async def test_release_prunes_associations_that_were_dropped(self) -> None:
+        from graphinator.graphinator import process_release
+
+        mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value={"hash": "oldhash"})
+
+        record = {
+            "id": "release-1",
+            "sha256": "newhash",
+            "title": "Retagged Release",
+            "artists": [{"id": "A1"}],
+            "labels": [{"id": "L1"}],
+            "master_id": "M1",
+            "genres": ["Jazz"],
+            "styles": ["Bebop"],
+        }
+
+        assert await process_release(mock_tx, record) is True
+
+        assert self._prunes(mock_tx, "IS", "Genre")[0]["keep"] == ["Jazz"]
+        assert self._prunes(mock_tx, "IS", "Style")[0]["keep"] == ["Bebop"]
+        assert self._prunes(mock_tx, "BY", "Artist")[0]["keep"] == ["A1"]
+        assert self._prunes(mock_tx, "ON", "Label")[0]["keep"] == ["L1"]
+        assert self._prunes(mock_tx, "DERIVED_FROM", "Master")[0]["keep"] == ["M1"]
+
+    @pytest.mark.asyncio
+    async def test_master_prunes_dropped_associations(self) -> None:
+        from graphinator.graphinator import process_master
+
+        mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value={"hash": "oldhash"})
+
+        record = {
+            "id": "master-1",
+            "sha256": "newhash",
+            "title": "Retagged Master",
+            "genres": ["Jazz"],
+            "styles": [],
+        }
+
+        assert await process_master(mock_tx, record) is True
+
+        assert self._prunes(mock_tx, "IS", "Genre")[0]["keep"] == ["Jazz"]
+        # Every style was dropped — the empty keep-list is what removes those edges.
+        assert self._prunes(mock_tx, "IS", "Style")[0]["keep"] == []
+
+    @pytest.mark.asyncio
+    async def test_unchanged_record_is_not_pruned(self) -> None:
+        """A hash match returns before any write; pruning there would delete edges
+        nothing is about to rewrite."""
+        from graphinator.graphinator import process_release
+
+        mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value={"hash": "samehash"})
+
+        assert await process_release(mock_tx, {"id": "r1", "sha256": "samehash", "genres": ["Rock"]}) is False
+        assert not [c for c in mock_tx.run.call_args_list if "DELETE rel" in c.args[0]]
 
 
 class TestProcessReleaseMasterNoId:
@@ -3346,7 +3431,9 @@ class TestProcessReleaseMasterNoId:
         result = await process_release(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
-        assert not any("DERIVED_FROM" in c for c in calls)
+        # The prune query still mentions DERIVED_FROM (with an empty keep-list, which
+        # correctly removes any stale edge); only the MERGE must be absent.
+        assert not any("MERGE (r)-[:DERIVED_FROM]" in c for c in calls)
 
 
 class TestMainConfigError:
