@@ -52,7 +52,16 @@ class Autocomplete {
     async _search(query) {
         const requestId = ++this._reqId;
         const type = window.exploreApp ? window.exploreApp.searchType : 'artist';
-        const results = await window.apiClient.autocomplete(query, type);
+        let results;
+        try {
+            results = await window.apiClient.autocomplete(query, type);
+        } catch {
+            // A network-level fetch rejection (offline, DNS, CORS) — apiClient
+            // only converts HTTP error statuses to an empty array; a thrown
+            // fetch would otherwise leave the dropdown showing stale results
+            // forever. Treat it the same as the no-results case.
+            results = [];
+        }
         if (requestId !== this._reqId) return;
         this.results = results;
         this.activeIndex = -1;

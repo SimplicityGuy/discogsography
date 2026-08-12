@@ -46,6 +46,11 @@ class UserPanes {
             }
             this._collectionTotal = data.total;
             this._renderCollectionList(body, data);
+        } catch {
+            // A network-level fetch rejection (offline, DNS, CORS) — not an
+            // HTTP error status — still needs to surface the same failure
+            // state instead of leaving the pane blank/stale.
+            if (requestId === this._collectionReqId) this._renderCollectionEmpty(body, 'Failed to load collection.');
         } finally {
             if (requestId === this._collectionReqId && loading) loading.classList.remove('active');
         }
@@ -115,6 +120,11 @@ class UserPanes {
             }
             this._wantlistTotal = data.total;
             this._renderWantlistList(body, data);
+        } catch {
+            // A network-level fetch rejection (offline, DNS, CORS) — not an
+            // HTTP error status — still needs to surface the same failure
+            // state instead of leaving the pane blank/stale.
+            if (requestId === this._wantlistReqId) this._renderWantlistEmpty(body, 'Failed to load wantlist.');
         } finally {
             if (requestId === this._wantlistReqId && loading) loading.classList.remove('active');
         }
@@ -174,6 +184,10 @@ class UserPanes {
         try {
             const data = await window.apiClient.getUserRecommendations(token, 50);
             this._renderRecommendations(body, data);
+        } catch {
+            // A network-level fetch rejection — _renderRecommendations already
+            // renders the "failed to load" state for a null/falsy data value.
+            this._renderRecommendations(body, null);
         } finally {
             if (loading) loading.classList.remove('active');
         }
@@ -266,8 +280,14 @@ class UserPanes {
     async loadCollectionStats() {
         const token = window.authManager.getToken();
         if (!token) return;
-        const stats = await window.apiClient.getUserCollectionStats(token);
-        this._renderCollectionStats(stats);
+        try {
+            const stats = await window.apiClient.getUserCollectionStats(token);
+            this._renderCollectionStats(stats);
+        } catch {
+            // A network-level fetch rejection — _renderCollectionStats already
+            // no-ops on a falsy stats value, leaving whatever was last rendered.
+            this._renderCollectionStats(null);
+        }
     }
 
     _renderCollectionStats(stats) {
@@ -771,7 +791,14 @@ class UserPanes {
         btn.disabled = true;
         btn.textContent = 'Downloading...';
 
-        const blob = await window.apiClient.getTasteCard(token);
+        let blob;
+        try {
+            blob = await window.apiClient.getTasteCard(token);
+        } catch {
+            // A network-level fetch rejection — treat exactly like the
+            // null-return failure path below so the button always recovers.
+            blob = null;
+        }
         if (!blob) {
             btn.textContent = 'Download failed';
             setTimeout(resetBtn, 2000);
@@ -853,6 +880,11 @@ class UserPanes {
             }
             this._gapTotal = data.pagination?.total || 0;
             this._renderGaps(body, data);
+        } catch {
+            // A network-level fetch rejection (offline, DNS, CORS) — not an
+            // HTTP error status — still needs to surface the same failure
+            // state instead of leaving the pane blank/stale.
+            if (requestId === this._gapReqId) this._renderGapsEmpty(body, 'Failed to load gap analysis.');
         } finally {
             if (requestId === this._gapReqId && loading) loading.classList.remove('active');
         }

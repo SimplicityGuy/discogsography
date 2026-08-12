@@ -391,7 +391,14 @@ class ExploreApp {
         window.authManager.onChange(() => this._updateAuthUI());
 
         this._bindEvents();
-        this._initAuth().then(() => this._restoreFromUrl());
+        // authManager.init() now catches its own network-level rejections
+        // (discogsography-ponr), but this .catch() is kept as a backstop so
+        // an unrelated failure in _updateAuthUI()/_initAuth() can never skip
+        // _restoreFromUrl() and strand any node/search state encoded in the URL.
+        this._initAuth().then(() => this._restoreFromUrl()).catch((err) => {
+            console.error('Auth initialisation failed:', err);
+            this._restoreFromUrl();
+        });
     }
 
     // ------------------------------------------------------------------ //
@@ -466,8 +473,17 @@ class ExploreApp {
         }
 
         // If we just logged out and were on a personal pane, switch to explore
-        if (!loggedIn && ['collection', 'wantlist', 'recommendations'].includes(this.activePane)) {
+        if (!loggedIn && ['collection', 'wantlist', 'recommendations', 'gaps', 'settings'].includes(this.activePane)) {
             this._switchPane('explore');
+        }
+
+        // Clear personal data rendered into login-gated panes so it isn't left
+        // on screen after logout (e.g. on a shared/kiosk machine).
+        if (!loggedIn) {
+            const settingsEmailEl = document.getElementById('settingsEmail');
+            if (settingsEmailEl) settingsEmailEl.textContent = '';
+            const gapsBodyEl = document.getElementById('gapsBody');
+            if (gapsBodyEl) gapsBodyEl.replaceChildren();
         }
     }
 
@@ -624,12 +640,19 @@ class ExploreApp {
             errorEl.textContent = '';
             successEl.classList.add('hidden');
             if (!email) { errorEl.textContent = 'Please enter your email'; return; }
-            const response = await window.apiClient.resetRequest(email);
-            if (response.ok) {
-                successEl.textContent = 'If an account exists for that email, a reset link has been sent.';
-                successEl.classList.remove('hidden');
-            } else {
-                errorEl.textContent = 'Something went wrong. Please try again.';
+            try {
+                const response = await window.apiClient.resetRequest(email);
+                if (response.ok) {
+                    successEl.textContent = 'If an account exists for that email, a reset link has been sent.';
+                    successEl.classList.remove('hidden');
+                } else {
+                    errorEl.textContent = 'Something went wrong. Please try again.';
+                }
+            } catch {
+                // A network-level fetch rejection — this handler has no try
+                // at all today, so a rejected fetch skips response.ok entirely
+                // and leaves both success/error elements untouched.
+                errorEl.textContent = 'Could not reach the server. Please try again.';
             }
         });
 
@@ -645,18 +668,24 @@ class ExploreApp {
             const params = new URLSearchParams(window.location.search);
             const token = params.get('reset_token');
             if (!token) { errorEl.textContent = 'Invalid reset link'; return; }
-            const response = await window.apiClient.resetConfirm(token, password);
-            if (response.ok) {
-                successEl.textContent = 'Password has been reset! You can now log in.';
-                successEl.classList.remove('hidden');
-                history.replaceState(null, '', window.location.pathname);
-                setTimeout(() => {
-                    const modal = document.getElementById('authModal');
-                    _alpineData(modal).tab = 'login';
-                }, 2000);
-            } else {
-                const data = await response.json().catch(() => ({}));
-                errorEl.textContent = data.detail || 'Reset failed. The link may have expired.';
+            try {
+                const response = await window.apiClient.resetConfirm(token, password);
+                if (response.ok) {
+                    successEl.textContent = 'Password has been reset! You can now log in.';
+                    successEl.classList.remove('hidden');
+                    history.replaceState(null, '', window.location.pathname);
+                    setTimeout(() => {
+                        const modal = document.getElementById('authModal');
+                        _alpineData(modal).tab = 'login';
+                    }, 2000);
+                } else {
+                    const data = await response.json().catch(() => ({}));
+                    errorEl.textContent = data.detail || 'Reset failed. The link may have expired.';
+                }
+            } catch {
+                // A network-level fetch rejection — same missing-try pattern
+                // as the reset-request handler above.
+                errorEl.textContent = 'Could not reach the server. Please try again.';
             }
         });
 
@@ -798,6 +827,10 @@ class ExploreApp {
             Alpine.store('modals').authOpen = false;
             document.getElementById('loginEmail').value = '';
             document.getElementById('loginPassword').value = '';
+        } catch {
+            // A network-level fetch rejection (server restart, dropped Wi-Fi,
+            // CORS/DNS) — surface feedback instead of a silent button reset.
+            if (errorEl) errorEl.textContent = 'Could not reach the server. Please try again.';
         } finally {
             submitBtn.disabled = false;
             const loginIcon = document.createElement('span');
@@ -846,6 +879,10 @@ class ExploreApp {
             } else {
                 if (errorEl) errorEl.textContent = 'Registration failed. Please try again.';
             }
+        } catch {
+            // A network-level fetch rejection — same missing-feedback pattern
+            // as _handleLogin.
+            if (errorEl) errorEl.textContent = 'Could not reach the server. Please try again.';
         } finally {
             submitBtn.disabled = false;
             const regIcon = document.createElement('span');

@@ -1426,4 +1426,62 @@ describe('ApiClient', () => {
             expect(fetchSpy.mock.calls[0][1].method).toBe('DELETE');
         });
     });
+
+    describe('_checkAuthResponse (regression discogsography-ponr)', () => {
+        beforeEach(() => {
+            window.authManager = {
+                isLoggedIn: vi.fn().mockReturnValue(true),
+                clear: vi.fn(),
+                notify: vi.fn(),
+            };
+        });
+
+        it('clears and notifies authManager on a 401 response', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 401, json: async () => ({}) }));
+
+            await window.apiClient.getUserCollection('expired-token');
+
+            expect(window.authManager.clear).toHaveBeenCalledTimes(1);
+            expect(window.authManager.notify).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not touch authManager on a non-401 error response', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 500, json: async () => ({}) }));
+
+            await window.apiClient.getUserCollection('some-token');
+
+            expect(window.authManager.clear).not.toHaveBeenCalled();
+            expect(window.authManager.notify).not.toHaveBeenCalled();
+        });
+
+        it('does not touch authManager on a successful response', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, json: async () => ({ releases: [], total: 0 }) }));
+
+            await window.apiClient.getUserCollection('valid-token');
+
+            expect(window.authManager.clear).not.toHaveBeenCalled();
+            expect(window.authManager.notify).not.toHaveBeenCalled();
+        });
+
+        it('does not throw when window.authManager is not yet set', async () => {
+            delete window.authManager;
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 401, json: async () => ({}) }));
+
+            await expect(window.apiClient.getUserCollection('expired-token')).resolves.toBeNull();
+        });
+
+        it('is applied across the other authenticated user-data/app-token methods too', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 401, json: async () => ({}) }));
+
+            await window.apiClient.getUserWantlist('expired-token');
+            await window.apiClient.getUserRecommendations('expired-token');
+            await window.apiClient.getUserCollectionStats('expired-token');
+            await window.apiClient.listAppTokens('expired-token');
+            await window.apiClient.getMe('expired-token');
+            await window.apiClient.getSyncStatus('expired-token');
+
+            expect(window.authManager.clear).toHaveBeenCalledTimes(6);
+            expect(window.authManager.notify).toHaveBeenCalledTimes(6);
+        });
+    });
 });

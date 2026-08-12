@@ -132,7 +132,16 @@
         const yearMin = yearMinEl.value ? parseInt(yearMinEl.value, 10) : null;
         const yearMax = yearMaxEl.value ? parseInt(yearMaxEl.value, 10) : null;
 
-        const data = await window.apiClient.search(q, types, selectedGenres, yearMin, yearMax, PAGE_SIZE, currentOffset);
+        let data;
+        try {
+            data = await window.apiClient.search(q, types, selectedGenres, yearMin, yearMax, PAGE_SIZE, currentOffset);
+        } catch {
+            // A network-level fetch rejection (offline, DNS, connection reset,
+            // CORS) — not an HTTP error status — falls through to the same
+            // null-data error rendering below instead of leaving the loading
+            // overlay stuck on-screen forever.
+            data = null;
+        }
 
         // A newer search has since been issued — discard this stale response
         // rather than let it overwrite results/pagination for the current one.
@@ -406,8 +415,8 @@
             window.exploreApp._loadExplore(name, type);
         } else if (window.exploreApp) {
             // For release/master — not directly explorable
-            if (window.app?.showToast) {
-                window.app.showToast(`${type} details are not explorable directly — try searching for the artist or label instead`, 'info');
+            if (window.exploreApp._showToast) {
+                window.exploreApp._showToast(`${type} details are not explorable directly — try searching for the artist or label instead`);
             }
         }
     }

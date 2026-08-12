@@ -636,6 +636,13 @@ class SettingsPane {
         }
         this._activeTokens = (res && Array.isArray(res.active)) ? res.active : [];
         this._revokedTokens = (res && Array.isArray(res.revoked)) ? res.revoked : [];
+        if (this._appTokensView === 'minting') {
+            // Preserve the in-progress mint form (and whatever the user has
+            // typed into it) instead of tearing it down via a re-render —
+            // mirrors the 'revealing' guard below. The refreshed token list
+            // renders once minting finishes and the view returns to 'list'.
+            return;
+        }
         if (this._appTokensView !== 'revealing') {
             this._appTokensView = 'list';
         }
@@ -971,7 +978,16 @@ class SettingsPane {
             return;
         }
 
-        const res = await window.apiClient.mintAppToken(token, name, scopes);
+        let res;
+        try {
+            res = await window.apiClient.mintAppToken(token, name, scopes);
+        } catch {
+            // A network-level fetch rejection — mirror the other settings
+            // handlers (_handleChangePassword, _confirmSetup, _handleDisable)
+            // instead of letting the rejection propagate unhandled.
+            if (errorEl) errorEl.textContent = 'Network error — please try again';
+            return;
+        }
         if (!res || !res.ok || !res.body || !res.body.token) {
             const detail = (res && res.body && res.body.detail) ? res.body.detail : 'Failed to mint token';
             if (errorEl) errorEl.textContent = detail;
@@ -1015,7 +1031,16 @@ class SettingsPane {
         const token = window.authManager && window.authManager.getToken && window.authManager.getToken();
         if (!token) return;
 
-        const ok = await window.apiClient.revokeAppToken(token, tokenId);
+        let ok;
+        try {
+            ok = await window.apiClient.revokeAppToken(token, tokenId);
+        } catch {
+            // A network-level fetch rejection — still surface feedback and
+            // refresh the list, matching the non-ok failure path below.
+            window.alert('Failed to revoke token. It may have already been revoked.');
+            this._loadAppTokens();
+            return;
+        }
         if (!ok) {
             window.alert('Failed to revoke token. It may have already been revoked.');
         }

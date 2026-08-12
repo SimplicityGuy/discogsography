@@ -868,6 +868,80 @@ describe('ExploreApp helper methods', () => {
 
             expect(app.activePane).toBe('explore');
         });
+
+        it('should switch to explore pane when logged out on the gaps pane', () => {
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            window.authManager.getUser.mockReturnValue(null);
+            window.authManager.getDiscogsStatus.mockReturnValue(null);
+
+            const app = new ExploreApp();
+            app.activePane = 'gaps';
+            app._updateAuthUI();
+
+            expect(app.activePane).toBe('explore');
+        });
+
+        it('should switch to explore pane when logged out on the settings pane', () => {
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            window.authManager.getUser.mockReturnValue(null);
+            window.authManager.getDiscogsStatus.mockReturnValue(null);
+
+            const app = new ExploreApp();
+            app.activePane = 'settings';
+            app._updateAuthUI();
+
+            expect(app.activePane).toBe('explore');
+        });
+
+        it('should clear rendered settings email on logout', () => {
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            window.authManager.getUser.mockReturnValue(null);
+            window.authManager.getDiscogsStatus.mockReturnValue(null);
+
+            const settingsEmailEl = document.createElement('div');
+            settingsEmailEl.id = 'settingsEmail';
+            settingsEmailEl.textContent = 'alice@example.com';
+            document.body.appendChild(settingsEmailEl);
+
+            const app = new ExploreApp();
+            app.activePane = 'settings';
+            app._updateAuthUI();
+
+            expect(document.getElementById('settingsEmail').textContent).toBe('');
+        });
+
+        it('should clear rendered gaps body content on logout', () => {
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            window.authManager.getUser.mockReturnValue(null);
+            window.authManager.getDiscogsStatus.mockReturnValue(null);
+
+            const gapsBodyEl = document.createElement('div');
+            gapsBodyEl.id = 'gapsBody';
+            gapsBodyEl.innerHTML = '<p>Some personal gap analysis</p>';
+            document.body.appendChild(gapsBodyEl);
+
+            const app = new ExploreApp();
+            app.activePane = 'gaps';
+            app._updateAuthUI();
+
+            expect(document.getElementById('gapsBody').textContent).toBe('');
+        });
+
+        it('should not touch settingsEmail/gapsBody while still logged in', () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            window.authManager.getUser.mockReturnValue({ email: 'alice@example.com' });
+            window.authManager.getDiscogsStatus.mockReturnValue({ connected: false });
+
+            const settingsEmailEl = document.createElement('div');
+            settingsEmailEl.id = 'settingsEmail';
+            settingsEmailEl.textContent = 'alice@example.com';
+            document.body.appendChild(settingsEmailEl);
+
+            const app = new ExploreApp();
+            app._updateAuthUI();
+
+            expect(document.getElementById('settingsEmail').textContent).toBe('alice@example.com');
+        });
     });
 
     describe('ExploreApp._updateAuthUI - Discogs connected', () => {
@@ -1748,6 +1822,18 @@ describe('ExploreApp helper methods', () => {
 
             expect(document.getElementById('loginSubmitBtn').disabled).toBe(false);
         });
+
+        it('should show network-error feedback and re-enable the button on a rejected fetch (regression discogsography-cmw0)', async () => {
+            document.getElementById('loginEmail').value = 'test@test.com';
+            document.getElementById('loginPassword').value = 'password123';
+            window.apiClient.login.mockRejectedValue(new TypeError('Failed to fetch'));
+
+            const app = new ExploreApp();
+            await expect(app._handleLogin()).resolves.toBeUndefined();
+
+            expect(document.getElementById('loginError').textContent).toContain('Could not reach the server');
+            expect(document.getElementById('loginSubmitBtn').disabled).toBe(false);
+        });
     });
 
     describe('ExploreApp._handleRegister - full flow', () => {
@@ -1782,6 +1868,18 @@ describe('ExploreApp helper methods', () => {
             const app = new ExploreApp();
             await app._handleRegister();
 
+            expect(document.getElementById('registerSubmitBtn').disabled).toBe(false);
+        });
+
+        it('should show network-error feedback and re-enable the button on a rejected fetch (regression discogsography-cmw0)', async () => {
+            document.getElementById('registerEmail').value = 'new@test.com';
+            document.getElementById('registerPassword').value = 'password123';
+            window.apiClient.register.mockRejectedValue(new TypeError('Failed to fetch'));
+
+            const app = new ExploreApp();
+            await expect(app._handleRegister()).resolves.toBeUndefined();
+
+            expect(document.getElementById('registerError').textContent).toContain('Could not reach the server');
             expect(document.getElementById('registerSubmitBtn').disabled).toBe(false);
         });
     });
@@ -1925,6 +2023,23 @@ describe('ExploreApp helper methods', () => {
 
             expect(window.authManager.init).toHaveBeenCalled();
             expect(result).toBe(true);
+        });
+
+        it('should still call _restoreFromUrl (not strand it) if _initAuth rejects for an unrelated reason (regression discogsography-ponr)', async () => {
+            history.replaceState(null, '', '/');
+            const restoreSpy = vi.spyOn(ExploreApp.prototype, '_restoreFromUrl').mockResolvedValue(undefined);
+            // authManager.init() itself now catches network rejections
+            // internally, but this exercises the app.js-level backstop for
+            // any other unexpected failure in the auth-init chain.
+            window.authManager.init.mockRejectedValue(new Error('unexpected failure'));
+
+            new ExploreApp();
+            // Let the unawaited constructor promise chain settle.
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(restoreSpy).toHaveBeenCalled();
+            restoreSpy.mockRestore();
         });
     });
 
@@ -2706,6 +2821,18 @@ describe('ExploreApp - password reset and 2FA UI handlers', () => {
 
             expect(document.getElementById('resetRequestError').textContent).toBeTruthy();
         });
+
+        it('should show error feedback (not throw unhandled) on a rejected fetch (regression discogsography-cmw0)', async () => {
+            new ExploreApp();
+            document.getElementById('resetEmail').value = 'user@example.com';
+            window.apiClient.resetRequest = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+
+            document.getElementById('resetRequestBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('resetRequestError').textContent).toBeTruthy();
+            expect(document.getElementById('resetRequestSuccess').classList.contains('hidden')).toBe(true);
+        });
     });
 
     describe('login with 2FA challenge response', () => {
@@ -2820,6 +2947,21 @@ describe('ExploreApp - password reset and 2FA UI handlers', () => {
             await new Promise(resolve => setTimeout(resolve, 0));
 
             expect(document.getElementById('resetConfirmError').textContent).toContain('Token expired');
+        });
+
+        it('should show error feedback (not throw unhandled) on a rejected fetch (regression discogsography-cmw0)', async () => {
+            new ExploreApp();
+            document.getElementById('newPassword').value = 'newpassword123';
+            document.getElementById('confirmNewPassword').value = 'newpassword123';
+            delete window.location;
+            window.location = { search: '?reset_token=abc123', pathname: '/', href: '' };
+            window.apiClient.resetConfirm = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+
+            document.getElementById('resetConfirmBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('resetConfirmError').textContent).toBeTruthy();
+            expect(document.getElementById('resetConfirmSuccess').classList.contains('hidden')).toBe(true);
         });
     });
 

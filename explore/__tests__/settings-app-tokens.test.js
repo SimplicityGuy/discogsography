@@ -196,6 +196,20 @@ describe('SettingsPane — App Tokens card', () => {
             expect(container.querySelector('#appTokenPlaintext')).toBeNull();
         });
 
+        it('shows a network-error message on a network-level fetch rejection (regression discogsography-cmw0)', async () => {
+            window.apiClient.mintAppToken.mockRejectedValue(new TypeError('Failed to fetch'));
+            window.settingsPane.init();
+            await flush();
+            container.querySelector('#appTokenMintBtn').click();
+            container.querySelector('#appTokenName').value = 'kiosk';
+            container.querySelector('#appTokenSubmitMint').click();
+            await flush();
+
+            expect(container.querySelector('#appTokenMintError').textContent).toContain('Network error');
+            // Stayed on the mint form, not the reveal screen
+            expect(container.querySelector('#appTokenPlaintext')).toBeNull();
+        });
+
         it('rejects when no permission scope is checked', async () => {
             window.settingsPane.init();
             await flush();
@@ -234,6 +248,29 @@ describe('SettingsPane — App Tokens card', () => {
             expect(container.querySelector('#appTokenName')).toBeNull();
             expect(container.querySelector('#appTokenMintBtn')).toBeTruthy();
             expect(window.apiClient.mintAppToken).not.toHaveBeenCalled();
+        });
+
+        it('preserves an in-progress mint form across pane re-activation (regression discogsography-3vz8)', async () => {
+            window.settingsPane.init();
+            await flush();
+            container.querySelector('#appTokenMintBtn').click();
+
+            const nameInput = container.querySelector('#appTokenName');
+            nameInput.value = 'GRUVAX kiosk';
+
+            // Simulate the Settings pane re-activating (app.js calls init()
+            // again on every activation) while the user has an in-progress
+            // mint form open.
+            window.settingsPane.init();
+            await flush();
+
+            expect(window.apiClient.listAppTokens).toHaveBeenCalledTimes(2);
+            // The mint form must still be showing — not torn down and
+            // replaced by the token list — and the typed name preserved.
+            const nameInputAfter = container.querySelector('#appTokenName');
+            expect(nameInputAfter).toBeTruthy();
+            expect(nameInputAfter.value).toBe('GRUVAX kiosk');
+            expect(container.querySelector('#appTokenMintBtn')).toBeNull();
         });
     });
 
@@ -367,6 +404,26 @@ describe('SettingsPane — App Tokens card', () => {
             await flush();
             expect(window.confirm).not.toHaveBeenCalled();
             expect(window.apiClient.revokeAppToken).not.toHaveBeenCalled();
+        });
+
+        it('alerts the user and still refreshes the list on a network-level fetch rejection (regression discogsography-cmw0)', async () => {
+            window.apiClient.listAppTokens.mockResolvedValue({
+                active: [{ id: 'tok-a', name: 'kiosk', scopes: ['collection:read'], created_at: null, last_used_at: null }],
+                revoked: [],
+            });
+            window.apiClient.revokeAppToken.mockRejectedValue(new TypeError('Failed to fetch'));
+            window.confirm = vi.fn().mockReturnValue(true);
+            const alertSpy = vi.fn();
+            window.alert = alertSpy;
+
+            window.settingsPane.init();
+            await flush();
+            container.querySelector('.app-token-revoke').click();
+            await flush();
+
+            expect(alertSpy).toHaveBeenCalled();
+            // Subsequent _loadAppTokens still runs, mirroring the non-ok path.
+            expect(window.apiClient.listAppTokens).toHaveBeenCalledTimes(2);
         });
 
         it('is a no-op when user is signed out at revoke time', async () => {

@@ -185,5 +185,92 @@ describe('AuthManager', () => {
             expect(window.authManager.isLoggedIn()).toBe(false);
             expect(localStorage.getItem('auth_token')).toBeNull();
         });
+
+        it('should not throw and should clear state on a network-level fetch rejection (regression discogsography-ponr)', async () => {
+            localStorage.setItem('auth_token', 'stale-token');
+            loadScript('auth.js');
+
+            window.apiClient = {
+                getMe: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')),
+                getDiscogsStatus: vi.fn(),
+            };
+
+            const result = await window.authManager.init();
+
+            expect(result).toBe(false);
+            expect(window.authManager.isLoggedIn()).toBe(false);
+            expect(localStorage.getItem('auth_token')).toBeNull();
+        });
+
+        it('should clear state on a network-level rejection from the second (getDiscogsStatus) call too (regression discogsography-ponr)', async () => {
+            localStorage.setItem('auth_token', 'stale-token');
+            loadScript('auth.js');
+
+            window.apiClient = {
+                getMe: vi.fn().mockResolvedValue({ id: 1, email: 'user@test.com' }),
+                getDiscogsStatus: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')),
+            };
+
+            const result = await window.authManager.init();
+
+            expect(result).toBe(false);
+            expect(window.authManager.isLoggedIn()).toBe(false);
+        });
+    });
+
+    describe('cross-tab sync (regression discogsography-ponr)', () => {
+        it('clears local state and notifies listeners when another tab removes auth_token', () => {
+            localStorage.setItem('auth_token', 'shared-token');
+            loadScript('auth.js');
+            expect(window.authManager.isLoggedIn()).toBe(true);
+
+            const listener = vi.fn();
+            window.authManager.onChange(listener);
+
+            window.dispatchEvent(new StorageEvent('storage', { key: 'auth_token', newValue: null, oldValue: 'shared-token' }));
+
+            expect(window.authManager.isLoggedIn()).toBe(false);
+            expect(window.authManager.getToken()).toBeNull();
+            expect(listener).toHaveBeenCalledWith(false);
+        });
+
+        it('adopts a new token set by another tab (e.g. login there)', () => {
+            loadScript('auth.js');
+            expect(window.authManager.isLoggedIn()).toBe(false);
+
+            const listener = vi.fn();
+            window.authManager.onChange(listener);
+
+            window.dispatchEvent(new StorageEvent('storage', { key: 'auth_token', newValue: 'new-token-from-other-tab', oldValue: null }));
+
+            expect(window.authManager.isLoggedIn()).toBe(true);
+            expect(window.authManager.getToken()).toBe('new-token-from-other-tab');
+            expect(listener).toHaveBeenCalledWith(true);
+        });
+
+        it('ignores storage events for unrelated keys', () => {
+            localStorage.setItem('auth_token', 'shared-token');
+            loadScript('auth.js');
+
+            const listener = vi.fn();
+            window.authManager.onChange(listener);
+
+            window.dispatchEvent(new StorageEvent('storage', { key: 'some_other_key', newValue: 'x', oldValue: 'y' }));
+
+            expect(window.authManager.isLoggedIn()).toBe(true);
+            expect(listener).not.toHaveBeenCalled();
+        });
+
+        it('does not re-notify when the storage event reports the same token already held', () => {
+            localStorage.setItem('auth_token', 'shared-token');
+            loadScript('auth.js');
+
+            const listener = vi.fn();
+            window.authManager.onChange(listener);
+
+            window.dispatchEvent(new StorageEvent('storage', { key: 'auth_token', newValue: 'shared-token', oldValue: 'shared-token' }));
+
+            expect(listener).not.toHaveBeenCalled();
+        });
     });
 });
