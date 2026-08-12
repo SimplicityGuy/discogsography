@@ -638,3 +638,52 @@ fn test_legacy_marker_json_without_checksums_loads() {
     assert!(marker.download_phase.downloads_by_file["discogs_20260101_artists.xml.gz"].checksum.is_none());
     assert!(marker.processing_phase.progress_by_file["discogs_20260101_artists.xml.gz"].source_checksum.is_none());
 }
+
+// ── durable save (discogsography-mm27) ──────────────────────────────
+
+/// tmp+rename gives readers atomicity but says nothing about durability: without an
+/// fsync of the temp file and of the parent directory, POSIX allows the rename's
+/// directory entry to hit stable storage while the file's data blocks are still in the
+/// page cache. A power loss there leaves a zero-length/truncated marker, `load` treats
+/// any parse failure as "start fresh", and the extractor re-downloads and re-publishes
+/// a whole multi-GB dump.
+#[tokio::test]
+async fn test_save_leaves_a_complete_readable_marker_and_no_temp_file() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let path = StateMarker::file_path(temp.path(), "20260101");
+
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_processing(1);
+    marker.start_file_processing("discogs_20260101_artists.xml.gz");
+    marker.complete_file_processing("discogs_20260101_artists.xml.gz", 1234);
+    marker.save(&path).await.unwrap();
+
+    // Fully written (not zero-length) and parseable.
+    let contents = std::fs::read_to_string(&path).unwrap();
+    assert!(!contents.is_empty(), "a zero-length marker is exactly the crash artifact this guards against");
+    let loaded = StateMarker::load(&path).await.unwrap().expect("marker must parse");
+    assert_eq!(loaded.current_version, "20260101");
+    assert_eq!(loaded.processing_phase.progress_by_file["discogs_20260101_artists.xml.gz"].records_extracted, 1234);
+
+    // The temp file must not survive the rename.
+    assert!(!path.with_extension("json.tmp").exists());
+}
+
+/// Repeated saves must keep overwriting the same path cleanly — the fsync path runs on
+/// every save, including when the target already exists.
+#[tokio::test]
+async fn test_repeated_saves_overwrite_the_marker_in_place() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let path = StateMarker::file_path(temp.path(), "20260101");
+
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.save(&path).await.unwrap();
+    marker.complete_processing();
+    marker.save(&path).await.unwrap();
+    marker.complete_extraction();
+    marker.save(&path).await.unwrap();
+
+    let loaded = StateMarker::load(&path).await.unwrap().unwrap();
+    assert_eq!(loaded.summary.overall_status, PhaseStatus::Completed);
+    assert!(!path.with_extension("json.tmp").exists());
+}

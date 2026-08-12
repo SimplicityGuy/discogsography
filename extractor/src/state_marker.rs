@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
+use tokio::io::AsyncWriteExt;
 use tracing::{debug, info, warn};
 
 /// Phase status for tracking progress
@@ -230,7 +231,22 @@ impl StateMarker {
         }
     }
 
-    /// Save state marker to file
+    /// Save state marker to file.
+    ///
+    /// Durability, not just atomicity. `write(tmp)` + `rename` alone guarantees that a
+    /// READER never observes a torn file, but says nothing about what survives a power
+    /// loss or kernel panic: `tokio::fs::write` is open+write+close with no fsync, and
+    /// `rename` issues no directory fsync, so POSIX allows the rename's directory entry
+    /// to reach stable storage while the file's data blocks are still in the page cache
+    /// (dirty writeback runs every ~5-30s). The marker then comes back zero-length or
+    /// truncated, `load` treats any parse failure as "start fresh", and the extractor
+    /// re-downloads and re-publishes a whole multi-GB dump — exactly what the
+    /// tmp+rename design was meant to prevent (discogsography-mm27).
+    ///
+    /// So: fsync the temp file's contents BEFORE the rename, then fsync the parent
+    /// directory AFTER it so the rename itself is durable. The downloader already does
+    /// the equivalent for the dump files it writes (`discogs_downloader.rs`'s
+    /// `sync_data`).
     pub async fn save(&mut self, path: &Path) -> Result<()> {
         self.last_updated = Utc::now();
 
@@ -238,8 +254,29 @@ impl StateMarker {
 
         // Write to temp file then atomic rename to prevent corruption on crash
         let tmp_path = path.with_extension("json.tmp");
-        fs::write(&tmp_path, json).await.context("Failed to write state marker temp file")?;
+        {
+            let mut tmp_file = fs::File::create(&tmp_path).await.context("Failed to create state marker temp file")?;
+            tmp_file.write_all(json.as_bytes()).await.context("Failed to write state marker temp file")?;
+            // Data blocks + metadata on stable storage before anything points at them.
+            tmp_file.sync_all().await.context("Failed to fsync state marker temp file")?;
+        }
         fs::rename(&tmp_path, path).await.context("Failed to rename state marker temp file")?;
+
+        // Persist the directory entry created by the rename. Without this the file
+        // contents are durable but the name pointing at them may not be.
+        if let Some(parent) = path.parent() {
+            match fs::File::open(parent).await {
+                // Best effort: some filesystems reject fsync on a directory handle, and
+                // a marker that is merely un-fsynced is still far better than failing
+                // the extraction over it.
+                Ok(dir) => {
+                    if let Err(e) = dir.sync_all().await {
+                        debug!("⚠️ Could not fsync state marker directory {}: {}", parent.display(), e);
+                    }
+                }
+                Err(e) => debug!("⚠️ Could not open state marker directory {} for fsync: {}", parent.display(), e),
+            }
+        }
 
         debug!("💾 Saved state marker to: {}", path.display());
         Ok(())
