@@ -1894,7 +1894,7 @@ class AdminDashboard {
                 chip.className = 'text-xs px-2 py-1 rounded border b-theme t-mid hover:t-high mono';
                 chip.textContent = item.record_id;
                 chip.title = item.reason || '';
-                chip.addEventListener('click', () => this._eaShowRecordDetail(version, item.record_id));
+                chip.addEventListener('click', () => this._eaShowRecordDetail(version, item.record_id, entityType));
                 list.appendChild(chip);
             }
 
@@ -2081,7 +2081,7 @@ class AdminDashboard {
                     const detailBtn = document.createElement('button');
                     detailBtn.className = 'text-[10px] px-2 py-0.5 rounded border b-theme t-dim hover:t-high';
                     detailBtn.textContent = 'View';
-                    detailBtn.addEventListener('click', () => this._eaShowRecordDetail(version, v.record_id));
+                    detailBtn.addEventListener('click', () => this._eaShowRecordDetail(version, v.record_id, v.entity_type));
                     tdDetail.appendChild(detailBtn);
 
                     tr.append(tdId, tdRule, tdSev, tdField, tdValue, tdDetail);
@@ -2110,12 +2110,13 @@ class AdminDashboard {
         }
     }
 
-    async _eaShowRecordDetail(version, recordId) {
+    async _eaShowRecordDetail(version, recordId, entityType) {
         const modal = document.getElementById('ea-modal');
         if (!modal) return;
         try {
+            const params = entityType ? `?entity_type=${encodeURIComponent(entityType)}` : '';
             const resp = await this.authFetch(
-                `/admin/api/extraction-analysis/${encodeURIComponent(version)}/violations/${encodeURIComponent(recordId)}`,
+                `/admin/api/extraction-analysis/${encodeURIComponent(version)}/violations/${encodeURIComponent(recordId)}${params}`,
             );
             if (!resp.ok) return;
             const data = await resp.json();

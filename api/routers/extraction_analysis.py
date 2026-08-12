@@ -591,8 +591,19 @@ async def get_violation_detail(
     version: str,
     record_id: str,
     _admin: Annotated[dict[str, Any], Depends(require_admin)],
+    entity_type: Annotated[str | None, Query(pattern=r"^[a-z-]+$")] = None,
 ) -> JSONResponse:
-    """Return all violations for a specific record, plus raw XML and parsed JSON (if available)."""
+    """Return all violations for a specific record, plus raw XML and parsed JSON (if available).
+
+    ``record_id`` alone is NOT a unique key over the version's violations —
+    Discogs record IDs are per-entity-type namespaces, so artist 123, label 123,
+    master 123, and release 123 are distinct records that commonly coexist.
+    Callers that know the entity type (the violations list already does) should
+    pass it to disambiguate; otherwise this deterministically scopes the
+    response to one entity type's violations and files instead of merging
+    violations from every colliding type under one entity's raw data
+    (discogsography-tre5).
+    """
     _validate_version(version)
     _validate_record_id(record_id)
 
@@ -604,13 +615,27 @@ async def get_violation_detail(
     flagged_version_dir = data_root / "flagged" / version
 
     all_violations = await _get_violations(flagged_version_dir)
-    record_violations = [v for v in all_violations if v.get("record_id") == record_id]
+    candidate_violations = [v for v in all_violations if v.get("record_id") == record_id]
 
-    if not record_violations:
+    if not candidate_violations:
         raise HTTPException(status_code=404, detail=f"No violations found for record_id: {record_id!r}")
 
-    # Determine the entity type (use the first match)
-    found_entity_type: str = record_violations[0].get("entity_type", "unknown")
+    if entity_type is not None:
+        record_violations = [v for v in candidate_violations if v.get("entity_type") == entity_type]
+        if not record_violations:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No violations found for record_id {record_id!r} with entity_type {entity_type!r}",
+            )
+        found_entity_type = entity_type
+    else:
+        # No entity_type given: scope to ONE entity type's violations rather than
+        # merging every colliding type together. Deterministic (sorted) choice
+        # of entity type, matching the prior "first match" behavior's
+        # determinism without the cross-type merge.
+        found_entity_type = sorted({v.get("entity_type", "unknown") for v in candidate_violations})[0]
+        record_violations = [v for v in candidate_violations if v.get("entity_type") == found_entity_type]
+
     raw_xml, parsed_json, truncated = await asyncio.to_thread(_load_record_files, flagged_version_dir, found_entity_type, record_id)
 
     return JSONResponse(

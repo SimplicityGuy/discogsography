@@ -498,6 +498,83 @@ class TestViolationDetailEndpoint:
         assert data["raw_xml"] is None
         assert data["parsed_json"] is None
 
+    def test_record_detail_scopes_to_one_entity_type_when_ids_collide(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Regression discogsography-tre5: record_id is a per-entity-type namespace,
+        not a global key — artist 1 and label 1 are distinct records that can both
+        be flagged. Without an entity_type filter, the response must NOT merge
+        violations from both types; it must deterministically pick one and load
+        that entity's files (never a random or cross-type blend)."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)  # writes artists/1 with a year-out-of-range violation
+
+        labels_dir = tmp_path / "flagged" / "20260101" / "labels"
+        labels_dir.mkdir(parents=True, exist_ok=True)
+        (labels_dir / "violations.jsonl").write_text(
+            json.dumps({"record_id": "1", "rule": "missing-field", "severity": "error", "field": "name", "field_value": ""}) + "\n"
+        )
+        (labels_dir / "1.xml").write_text("<label><id>1</id></label>")
+        (labels_dir / "1.json").write_text(json.dumps({"id": "1", "kind": "label"}))
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations/1",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # entity_type is "artists" (alphabetically first of {artists, labels}) —
+        # deterministic, matching the prior first-match determinism.
+        assert data["entity_type"] == "artists"
+        # Every violation returned must belong to the SAME entity_type as the
+        # loaded files — no cross-type merge.
+        assert all(v["rule"] == "year-out-of-range" for v in data["violations"])
+        assert not any(v["rule"] == "missing-field" for v in data["violations"])
+        assert "<year>1850</year>" in data["raw_xml"]
+
+    def test_record_detail_entity_type_param_disambiguates_collision(self, test_client: TestClient, tmp_path: Path) -> None:
+        """Regression discogsography-tre5: an explicit entity_type query parameter
+        selects the correct record when IDs collide across entity types."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        labels_dir = tmp_path / "flagged" / "20260101" / "labels"
+        labels_dir.mkdir(parents=True, exist_ok=True)
+        (labels_dir / "violations.jsonl").write_text(
+            json.dumps({"record_id": "1", "rule": "missing-field", "severity": "error", "field": "name", "field_value": ""}) + "\n"
+        )
+        (labels_dir / "1.xml").write_text("<label><id>1</id></label>")
+        (labels_dir / "1.json").write_text(json.dumps({"id": "1", "kind": "label"}))
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations/1?entity_type=labels",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["entity_type"] == "labels"
+        assert all(v["rule"] == "missing-field" for v in data["violations"])
+        assert "<label>" in data["raw_xml"]
+
+    def test_record_detail_entity_type_param_404_when_no_match(self, test_client: TestClient, tmp_path: Path) -> None:
+        """entity_type filter that matches no violation for this record_id is a 404,
+        not a silent fall-through to another entity type's data."""
+        import api.routers.extraction_analysis as ea
+
+        _make_flagged_version(tmp_path)
+
+        with patch.object(ea, "_discogs_data_root", tmp_path), patch.object(ea, "_musicbrainz_data_root", None):
+            resp = test_client.get(
+                "/api/admin/extraction-analysis/20260101/violations/1?entity_type=labels",
+                headers=_admin_auth_headers(),
+            )
+
+        assert resp.status_code == 404
+
 
 # ---------------------------------------------------------------------------
 # Task 5: Parsing Errors endpoint
