@@ -1151,7 +1151,10 @@ class TestDashboardAppDataCollection:
 
     @pytest.mark.asyncio
     async def test_get_database_info_neo4j_apoc_not_installed(self) -> None:
-        """Test that Neo4j reports 0 counts when APOC is not installed (lines 423-427)."""
+        """Regression discogsography-k3vu: when APOC is unavailable, Neo4j must
+        report an 'unknown' size marker — never a fabricated '0 nodes, 0
+        relationships', which a fully-populated graph cannot be distinguished
+        from and misleads operators into thinking ingestion is broken."""
         mock_config = Mock()
         mock_config.postgres_host = "localhost:5432"
         mock_config.postgres_database = "testdb"
@@ -1189,8 +1192,52 @@ class TestDashboardAppDataCollection:
 
             neo4j_db = next(d for d in databases if d.name == "Neo4j")
             assert neo4j_db.status == "healthy"
-            assert "0 nodes" in neo4j_db.size
-            assert "0 relationships" in neo4j_db.size
+            assert neo4j_db.size == "unknown (APOC unavailable)"
+            assert "0 nodes" not in neo4j_db.size
+            assert "0 relationships" not in neo4j_db.size
+
+    @pytest.mark.asyncio
+    async def test_get_database_info_neo4j_apoc_stats_returns_no_row(self) -> None:
+        """Regression discogsography-k3vu: apoc.meta.stats() succeeding but its
+        single() returning None (e.g. an empty result set) must also report
+        'unknown', not fabricate a 0-count via the `stats["x"] if stats else 0`
+        fallback."""
+        mock_config = Mock()
+        mock_config.postgres_host = "localhost:5432"
+        mock_config.postgres_database = "testdb"
+        mock_config.postgres_username = "test"
+        mock_config.postgres_password = "test"
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+            app.neo4j_driver = AsyncMock()
+            app.postgres_conn = None
+
+            mock_neo4j_result1 = AsyncMock()
+            mock_neo4j_result1.single = AsyncMock(return_value={"name": "neo4j", "versions": ["5.0"]})
+            mock_neo4j_result1.consume = AsyncMock()
+
+            mock_apoc_result = AsyncMock()
+            mock_apoc_result.single = AsyncMock(return_value=None)
+
+            mock_neo4j_session = AsyncMock()
+
+            async def mock_run(query: str, **_kwargs: object) -> AsyncMock:
+                if "dbms.components" in query:
+                    return mock_neo4j_result1
+                return mock_apoc_result
+
+            mock_neo4j_session.run = mock_run
+            mock_neo4j_session.__aenter__ = AsyncMock(return_value=mock_neo4j_session)
+            mock_neo4j_session.__aexit__ = AsyncMock(return_value=None)
+
+            app.neo4j_driver.session = MagicMock(return_value=mock_neo4j_session)
+
+            databases = await app.get_database_info()
+
+            neo4j_db = next(d for d in databases if d.name == "Neo4j")
+            assert neo4j_db.status == "healthy"
+            assert neo4j_db.size == "unknown (APOC unavailable)"
 
 
 class TestFastAPIEndpoints:
