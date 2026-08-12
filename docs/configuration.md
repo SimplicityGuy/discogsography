@@ -617,6 +617,7 @@ ENCRYPTION_MASTER_KEY="your-master-key-here"
 # as the X-Internal-Secret header; the insights service is configured with the same value.
 # When unset, the router fails closed (rejects every caller). Supply via
 # INSIGHTS_INTERNAL_SECRET_FILE (Docker secret) in production.
+# Full trust-model rationale: architecture.md § "Why insights needs a shared secret".
 INSIGHTS_INTERNAL_SECRET="change-me-in-production"
 
 # Optional — Resend transactional email for password reset notifications
@@ -824,6 +825,7 @@ REDIS_HOST="localhost"                        # Redis hostname for result cachin
 # through the explore proxy, so it is gated by this shared secret (sent as the
 # X-Internal-Secret header). When unset on the API, the router fails closed (rejects all
 # callers); when unset here, the insights service cannot fetch its computation data.
+# Full trust-model rationale: architecture.md § "Why insights needs a shared secret".
 INSIGHTS_INTERNAL_SECRET="change-me-in-production"
 
 # Optional - Scheduler
