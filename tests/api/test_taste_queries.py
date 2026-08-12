@@ -251,6 +251,28 @@ class TestGetObscurityScore:
         # the user owns of the same release.
         assert "WITH DISTINCT u, r" in collectors_cypher
 
+    @pytest.mark.asyncio
+    async def test_total_releases_matches_distinct_release_count_not_instance_count(self) -> None:
+        """Regression discogsography-omrb: total_releases must describe the same
+        distinct-release basis as score/median_collectors, not a separate
+        COLLECTED-edge (instance) count. A user owning 2 physical copies
+        (instance_ids) of a single release must report total_releases=1 —
+        matching the single distinct-release row the score is computed over —
+        not 2."""
+        from api.queries.taste_queries import get_obscurity_score
+
+        # One distinct release row (WITH DISTINCT u, r already collapsed the
+        # user's 2 owned copies of it into 1 row upstream in Cypher).
+        driver = _simple_driver(records=[{"collectors": 0}])
+
+        result = await get_obscurity_score(driver, "user-1")
+
+        assert result["total_releases"] == 1
+        # Exactly one Neo4j round trip — no separate count(r) query that could
+        # disagree with the distinct-release basis of the main query.
+        mock_session = driver.session.return_value
+        assert mock_session.run.await_count == 1
+
 
 # ---------------------------------------------------------------------------
 # get_taste_drift

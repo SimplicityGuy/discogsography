@@ -65,14 +65,7 @@ async def get_obscurity_score(
     RETURN collectors
     ORDER BY collectors
     """
-    count_cypher = """
-    MATCH (u:User {id: $user_id})-[:COLLECTED]->(r:Release)
-    RETURN count(r) AS total
-    """
-    rows, total = await asyncio.gather(
-        run_query(driver, cypher, timeout=120, user_id=user_id),
-        run_count(driver, count_cypher, timeout=120, user_id=user_id),
-    )
+    rows = await run_query(driver, cypher, timeout=120, user_id=user_id)
 
     if not rows:
         return {"score": 1.0, "median_collectors": 0.0, "total_releases": 0}
@@ -85,7 +78,15 @@ async def get_obscurity_score(
     max_collectors = max(collector_counts) if collector_counts else 0
     score = 1.0 if max_collectors == 0 else max(0.0, min(1.0, 1.0 - (median / max_collectors)))
 
-    return {"score": round(score, 4), "median_collectors": median, "total_releases": total}
+    # total_releases MUST match the distinct-release basis the score/median are
+    # computed on. `rows` is already one row per distinct release (the main
+    # query dedups via `WITH DISTINCT u, r`), so len(rows) is the correct
+    # count. A separate `count(r)` query (no DISTINCT) would count COLLECTED
+    # *edges* instead — inflated for any release owned in multiple physical
+    # copies (syncer.py keys the edge on instance_id) and internally
+    # inconsistent with the distinct-release score/median in the same
+    # response (discogsography-omrb).
+    return {"score": round(score, 4), "median_collectors": median, "total_releases": n}
 
 
 async def get_taste_drift(
