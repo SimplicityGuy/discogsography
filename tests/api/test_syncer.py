@@ -126,6 +126,30 @@ def mock_neo4j() -> MagicMock:
     return driver
 
 
+class TestSyncDelaySeconds:
+    """Regression discogsography-fnhk: SYNC_DELAY_SECONDS must actually respect
+    the Discogs 60 req/min rate limit its comment claims to honor, and must not
+    fork out of sync with its rate-limit sibling in insights_compute.py."""
+
+    def test_sync_delay_seconds_respects_60_req_per_minute(self) -> None:
+        from api.syncer import SYNC_DELAY_SECONDS
+
+        # 0.5s spacing is 2 req/s == 120 req/min — double the Discogs budget.
+        # The pacing interval must keep requests at or under 60/min.
+        assert SYNC_DELAY_SECONDS >= 1.0
+        assert 60 / SYNC_DELAY_SECONDS <= 60
+
+    def test_insights_compute_enrichment_delay_matches_syncer_constant(self) -> None:
+        """insights_compute._ENRICHMENT_DELAY_SECONDS must be the same constant as
+        api.syncer.SYNC_DELAY_SECONDS — not an independently-declared fork that can
+        silently drift (both share MAX_RATE_LIMIT_RETRIES against one Discogs
+        rate-limit budget)."""
+        from api.routers.insights_compute import _ENRICHMENT_DELAY_SECONDS
+        from api.syncer import SYNC_DELAY_SECONDS
+
+        assert _ENRICHMENT_DELAY_SECONDS == SYNC_DELAY_SECONDS
+
+
 class TestAuthHeader:
     """Tests for _auth_header."""
 
@@ -522,6 +546,61 @@ class TestSyncCollection:
         assert "sync_started" in reconcile_params
 
     @pytest.mark.asyncio
+    async def test_upsert_stamps_updated_at_with_sync_started_not_pg_now(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """Regression discogsography-vqr0: the PG upsert must stamp updated_at with
+        the same app-host sync_started clock the Neo4j half uses for synced_at
+        (and that _reconcile_stale_collection's DELETE cutoff compares against) —
+        not PostgreSQL's own NOW(). A DB-host clock lagging the API host would
+        otherwise make NOW() land before the reconciliation cutoff and delete the
+        row this very sync just wrote.
+        """
+        release = _make_release_item(123)
+        response_data = _make_collection_response([release], page=1, pages=1)
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = response_data
+
+        with patch("api.syncer.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            await sync_collection(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        # The upsert SQL must not rely on PG's own clock at all.
+        upsert_call = mock_pg_pool._mock_cur.executemany.await_args
+        upsert_sql, upsert_params = upsert_call.args[0], upsert_call.args[1]
+        assert "NOW()" not in upsert_sql
+        upserted_updated_at = upsert_params[0][-1]
+
+        # The Neo4j upsert's synced_at (first session.run call) must be the exact
+        # same value/clock source.
+        upsert_cypher_call = mock_neo4j._mock_session.run.await_args_list[0]
+        neo4j_synced_at = upsert_cypher_call[0][1]["synced_at"]
+        assert upserted_updated_at.isoformat() == neo4j_synced_at
+
+        # And the reconciliation DELETE cutoff (both PG and Neo4j) must be that
+        # exact same sync_started value — one clock, three consumers.
+        pg_delete_call = mock_pg_pool._mock_cur.execute.await_args
+        pg_cutoff = pg_delete_call.args[1][1]
+        assert pg_cutoff == upserted_updated_at
+
+        neo4j_reconcile_call = mock_neo4j._mock_session.run.await_args_list[-1]
+        assert neo4j_reconcile_call[0][1]["sync_started"] == neo4j_synced_at
+
+    @pytest.mark.asyncio
     async def test_no_reconciliation_when_rate_limit_exhausted(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
         """A raised sync (rate limit exhausted) must skip reconciliation entirely
         — deleting rows based on an incomplete fetch would destroy valid data.
@@ -826,6 +905,48 @@ class TestSyncWantlist:
         reconcile_call = mock_neo4j._mock_session.run.await_args_list[-1]
         assert "DELETE wnt" in reconcile_call[0][0]
         assert "WANTS" in reconcile_call[0][0]
+
+    @pytest.mark.asyncio
+    async def test_upsert_stamps_updated_at_with_sync_started_not_pg_now(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
+        """Regression discogsography-vqr0 — wantlist mirror of the collection fix:
+        the PG upsert must stamp updated_at with the same sync_started clock the
+        Neo4j half uses, not PostgreSQL's own NOW()."""
+        want = _make_want_item(456)
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = _make_wantlist_response([want])
+
+        with patch("api.syncer.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            await sync_wantlist(
+                TEST_USER_UUID,
+                TEST_DISCOGS_USERNAME,
+                TEST_CONSUMER_KEY,
+                TEST_CONSUMER_SECRET,
+                TEST_ACCESS_TOKEN,
+                TEST_TOKEN_SECRET,
+                TEST_USER_AGENT,
+                mock_pg_pool,
+                mock_neo4j,
+            )
+
+        upsert_call = mock_pg_pool._mock_cur.executemany.await_args
+        upsert_sql, upsert_params = upsert_call.args[0], upsert_call.args[1]
+        assert "NOW()" not in upsert_sql
+        upserted_updated_at = upsert_params[0][-1]
+
+        upsert_cypher_call = mock_neo4j._mock_session.run.await_args_list[0]
+        neo4j_synced_at = upsert_cypher_call[0][1]["synced_at"]
+        assert upserted_updated_at.isoformat() == neo4j_synced_at
+
+        pg_delete_call = mock_pg_pool._mock_cur.execute.await_args
+        pg_cutoff = pg_delete_call.args[1][1]
+        assert pg_cutoff == upserted_updated_at
 
 
 class TestRunFullSync:

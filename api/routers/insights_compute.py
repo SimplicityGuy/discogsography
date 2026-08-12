@@ -26,7 +26,7 @@ from api.queries.insights_neo4j_queries import (
 )
 from api.queries.insights_pg_queries import query_data_completeness
 from api.queries.rarity_queries import fetch_all_rarity_signals
-from api.syncer import DISCOGS_API_BASE, MAX_RATE_LIMIT_RETRIES, _auth_header
+from api.syncer import DISCOGS_API_BASE, MAX_RATE_LIMIT_RETRIES, SYNC_DELAY_SECONDS, _auth_header
 from common import describe_exception
 
 
@@ -70,7 +70,11 @@ router = APIRouter(
     dependencies=[Depends(require_internal_secret)],
 )
 
-_ENRICHMENT_DELAY_SECONDS = 1.0  # 1 req/sec to stay under 60 req/min
+# Reuse api.syncer's rate-limit pacing constant rather than forking a second copy
+# — the two are explicit rate-limit siblings (both share MAX_RATE_LIMIT_RETRIES
+# against the same Discogs 60 req/min budget) and a fork previously let this value
+# drift out of sync with syncer.py's (discogsography-fnhk).
+_ENRICHMENT_DELAY_SECONDS = SYNC_DELAY_SECONDS
 _STALENESS_DAYS = 7
 
 # Hard cap on releases enriched per invocation.

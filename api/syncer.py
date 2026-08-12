@@ -32,7 +32,7 @@ from common.query_debug import execute_sql, log_cypher_query
 logger = structlog.get_logger(__name__)
 
 DISCOGS_API_BASE = "https://api.discogs.com"
-SYNC_DELAY_SECONDS = 0.5  # 0.5s between requests to stay under 60 req/min
+SYNC_DELAY_SECONDS = 1.0  # 1 req/sec to stay under 60 req/min (discogsography-fnhk)
 PAGE_SIZE = 100
 MAX_RATE_LIMIT_RETRIES = 5
 
@@ -194,6 +194,14 @@ async def sync_collection(
                         item.get("rating", 0),
                         item.get("date_added"),
                         metadata_json,
+                        # Stamp with the app-host sync_started clock (not PG's NOW()) so
+                        # this write and _reconcile_stale_collection's DELETE cutoff share
+                        # ONE clock source — mirroring the Neo4j half of this same sync,
+                        # which already stamps synced_at=sync_started. A DB-host clock
+                        # lagging the API host would otherwise make NOW() land before the
+                        # cutoff and _reconcile_stale_collection would delete the row this
+                        # sync just wrote (discogsography-vqr0).
+                        sync_started,
                     )
                 )
 
@@ -209,7 +217,7 @@ async def sync_collection(
                             ) VALUES (
                                 %s::uuid, %s, %s, %s,
                                 %s, %s, %s, %s::jsonb, %s,
-                                %s, %s, %s::jsonb, NOW()
+                                %s, %s, %s::jsonb, %s
                             )
                             ON CONFLICT (user_id, release_id, instance_id) DO UPDATE SET
                                 folder_id = EXCLUDED.folder_id,
@@ -221,7 +229,7 @@ async def sync_collection(
                                 rating = EXCLUDED.rating,
                                 date_added = EXCLUDED.date_added,
                                 metadata = COALESCE(EXCLUDED.metadata, user_collections.metadata),
-                                updated_at = NOW()
+                                updated_at = EXCLUDED.updated_at
                         """,
                         batch_params,
                     )
@@ -430,6 +438,9 @@ async def sync_wantlist(
                         item.get("rating", 0),
                         item.get("notes"),
                         item.get("date_added"),
+                        # Same single-clock fix as sync_collection: stamp with the
+                        # app-host sync_started clock, not PG's NOW() (discogsography-vqr0).
+                        sync_started,
                     )
                 )
 
@@ -445,7 +456,7 @@ async def sync_wantlist(
                             ) VALUES (
                                 %s::uuid, %s,
                                 %s, %s, %s, %s,
-                                %s, %s, %s, NOW()
+                                %s, %s, %s, %s
                             )
                             ON CONFLICT (user_id, release_id) DO UPDATE SET
                                 title = EXCLUDED.title,
@@ -455,7 +466,7 @@ async def sync_wantlist(
                                 rating = EXCLUDED.rating,
                                 notes = EXCLUDED.notes,
                                 date_added = EXCLUDED.date_added,
-                                updated_at = NOW()
+                                updated_at = EXCLUDED.updated_at
                         """,
                         batch_params,
                     )

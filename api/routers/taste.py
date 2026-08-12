@@ -75,7 +75,16 @@ async def taste_heatmap(
     err = await _check_minimum(_neo4j_driver, user_id)
     if err:
         return err
-    cells, total = await get_taste_heatmap(_neo4j_driver, user_id)
+    try:
+        cells, total = await get_taste_heatmap(_neo4j_driver, user_id)
+    except Neo4jClientError as exc:
+        if "TransactionTimedOut" in str(exc):
+            logger.warning("⏱️ Taste heatmap query timed out", user_id=user_id)
+            return JSONResponse(
+                content={"error": "Taste heatmap query timed out — collection may be too large"},
+                status_code=504,
+            )
+        raise
     resp = HeatmapResponse(
         cells=[HeatmapCell(**c) for c in cells],
         total=total,
@@ -159,12 +168,21 @@ async def taste_card(
     if err:
         return err
 
-    heatmap_result, obscurity_result, drift_result, labels_result = await asyncio.gather(
-        get_taste_heatmap(_neo4j_driver, user_id),
-        get_obscurity_score(_neo4j_driver, user_id),
-        get_taste_drift(_neo4j_driver, user_id),
-        get_top_labels(_neo4j_driver, user_id, limit=5),
-    )
+    try:
+        heatmap_result, obscurity_result, drift_result, labels_result = await asyncio.gather(
+            get_taste_heatmap(_neo4j_driver, user_id),
+            get_obscurity_score(_neo4j_driver, user_id),
+            get_taste_drift(_neo4j_driver, user_id),
+            get_top_labels(_neo4j_driver, user_id, limit=5),
+        )
+    except Neo4jClientError as exc:
+        if "TransactionTimedOut" in str(exc):
+            logger.warning("⏱️ Taste card query timed out", user_id=user_id)
+            return JSONResponse(
+                content={"error": "Taste card query timed out — collection may be too large"},
+                status_code=504,
+            )
+        raise
 
     cells, _total = heatmap_result
     # Aggregate genre counts across all cells (decades) to find the true top genres

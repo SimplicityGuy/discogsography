@@ -207,6 +207,52 @@ class TestNLQEngineAuthTools:
         assert "search" in tool_names
 
 
+class TestNLQEngineCurrentEntityContext:
+    """Regression discogsography-xcsx: current_entity_id/current_entity_type were
+    plumbed from the client all the way to NLQContext but never read by the
+    engine — deictic references like "this artist" had no referent."""
+
+    @pytest.mark.asyncio
+    async def test_current_entity_context_injected_into_user_message(self) -> None:
+        config = _make_config()
+        client = _make_client()
+        runner = _make_tool_runner()
+
+        text_response = _make_text_response("Their main collaborators include Jonny Greenwood.")
+        client.messages.create.return_value = text_response
+
+        engine = NLQEngine(config=config, client=client, tool_runner=runner)
+        await engine.run(
+            "Who are this artist's main collaborators?",
+            NLQContext(current_entity_id="Radiohead", current_entity_type="artist"),
+        )
+
+        call_kwargs = client.messages.create.call_args
+        messages = call_kwargs.kwargs.get("messages") if call_kwargs.kwargs else call_kwargs[1].get("messages")
+        user_content = messages[0]["content"]
+        assert "Radiohead" in user_content
+        assert "artist" in user_content
+        assert "Who are this artist's main collaborators?" in user_content
+
+    @pytest.mark.asyncio
+    async def test_no_entity_context_leaves_message_unmodified(self) -> None:
+        """When no entity is focused, the user message must be the bare query —
+        no empty context preamble leaking through."""
+        config = _make_config()
+        client = _make_client()
+        runner = _make_tool_runner()
+
+        text_response = _make_text_response("Radiohead is a British rock band.")
+        client.messages.create.return_value = text_response
+
+        engine = NLQEngine(config=config, client=client, tool_runner=runner)
+        await engine.run("Tell me about Radiohead", NLQContext())
+
+        call_kwargs = client.messages.create.call_args
+        messages = call_kwargs.kwargs.get("messages") if call_kwargs.kwargs else call_kwargs[1].get("messages")
+        assert messages[0]["content"] == "Tell me about Radiohead"
+
+
 class TestNLQEngineGuardrails:
     """Test off-topic guardrails."""
 

@@ -461,24 +461,38 @@ class DashboardApp:
                     result = await session.run("CALL dbms.components() YIELD name, versions")
                     await result.single()
 
-                    # Get database size — fall back to basic count if APOC is not installed
+                    # Get database size — fall back to an "unknown" marker if APOC
+                    # is not installed. node_count/rel_count stay None (never a
+                    # fabricated 0) so a fully-populated graph can never render as
+                    # "0 nodes, 0 relationships" — a hard count for an unmeasured
+                    # quantity is indistinguishable from a genuinely empty graph
+                    # and misleads operators into thinking ingestion is broken
+                    # (discogsography-k3vu).
+                    node_count: int | None
+                    rel_count: int | None
                     try:
                         result = await session.run("CALL apoc.meta.stats() YIELD nodeCount, relCount")
                         stats = await result.single()
-                        node_count = stats["nodeCount"] if stats else 0
-                        rel_count = stats["relCount"] if stats else 0
+                        node_count = stats["nodeCount"] if stats else None
+                        rel_count = stats["relCount"] if stats else None
                     except Exception:
                         # APOC not installed — avoid full graph scan which is too
                         # expensive for the 2-second metrics loop on large datasets
-                        node_count = 0
-                        rel_count = 0
+                        node_count = None
+                        rel_count = None
+
+                    size = (
+                        f"{node_count:,} nodes, {rel_count:,} relationships"
+                        if node_count is not None and rel_count is not None
+                        else "unknown (APOC unavailable)"
+                    )
 
                 databases.append(
                     DatabaseInfo(
                         name="Neo4j",
                         status="healthy",
                         connection_count=1,  # Neo4j doesn't expose this easily
-                        size=f"{node_count:,} nodes, {rel_count:,} relationships",
+                        size=size,
                         error=None,
                     )
                 )

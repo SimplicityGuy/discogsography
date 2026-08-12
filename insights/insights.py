@@ -250,7 +250,14 @@ async def genre_trends(genre: str = Query(...)) -> JSONResponse:
     if not _pool:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
-    cache_key = f"insights:genre-trends:{genre.replace(':', '_')}"
+    # No sanitization here on purpose: InsightsCache.versioned_key only strips
+    # the fixed "insights:" literal prefix (removeprefix, not a split), and the
+    # invalidation scan matches the constant glob "insights:g*" — interior
+    # colons in `genre` are harmless. A prior `.replace(':', '_')` was a lossy,
+    # non-injective mapping ("A:B" and "A_B" collided onto one key) that
+    # defended against nothing while corrupting distinct genres' cached
+    # responses (discogsography-qjri).
+    cache_key = f"insights:genre-trends:{genre}"
     # Read the generation BEFORE the DB read — see insights/cache.py.
     generation = await _cache.generation() if _cache else 0
     if _cache:

@@ -76,10 +76,20 @@ async def _extract_user_id(request: Request) -> str | None:
         return None
 
 
-def _cache_key(query: str) -> str:
-    """Build a Redis cache key from a normalized query."""
+def _cache_key(query: str, context: dict[str, Any] | None = None) -> str:
+    """Build a Redis cache key from a normalized query and its entity context.
+
+    The engine now resolves deictic references ("this artist") using
+    ``current_entity_id``/``current_entity_type`` (discogsography-xcsx), so the
+    same query text can produce a different answer depending on which entity is
+    focused. The cache key MUST include that context — keying on query text
+    alone would serve one focused entity's cached answer to a different
+    anonymous user asking the identical question about a different entity.
+    """
     normalized = query.strip().lower()
-    digest = hashlib.sha256(normalized.encode()).hexdigest()[:16]
+    entity_id = (context or {}).get("entity_id") or ""
+    entity_type = (context or {}).get("entity_type") or ""
+    digest = hashlib.sha256(f"{normalized}\x00{entity_type}\x00{entity_id}".encode()).hexdigest()[:16]
     return f"nlq:{digest}"
 
 
@@ -148,7 +158,7 @@ async def nlq_query(request: Request, body: NLQQueryRequest) -> Any:
     # Check Redis cache for public (unauthenticated) queries
     cached_data: dict[str, Any] | None = None
     if user_id is None and _redis is not None:
-        cache_k = _cache_key(body.query)
+        cache_k = _cache_key(body.query, body.context)
         try:
             cached = await _redis.get(cache_k)
             if cached is not None:
@@ -186,7 +196,7 @@ async def nlq_query(request: Request, body: NLQQueryRequest) -> Any:
 
     # Cache public results
     if user_id is None and _redis is not None:
-        cache_k = _cache_key(body.query)
+        cache_k = _cache_key(body.query, body.context)
         try:
             await _redis.setex(cache_k, _nlq_config.cache_ttl, json.dumps(response_data))
         except Exception:
@@ -289,6 +299,21 @@ def _stream_response(
                 "actions": actions_payload,
                 "cached": False,
             }
+
+            # Cache public results — mirrors the non-streaming branch below.
+            # This is the only client the production UI uses (nlq.js always sends
+            # Accept: text/event-stream), so without this write the query cache and
+            # its cached-replay path above are permanently unpopulated. Written
+            # before the "result" yield: a client disconnect raises GeneratorExit
+            # at that yield, and a write placed after it would never run.
+            # See discogsography-c584.
+            if user_id is None and _redis is not None:
+                cache_k = _cache_key(query, context)
+                try:
+                    await _redis.setex(cache_k, _nlq_config.cache_ttl, json.dumps(response_data))
+                except Exception:
+                    logger.debug("⚠️ NLQ cache write failed", key=cache_k)
+
             yield {"event": "result", "data": json.dumps(response_data)}
         finally:
             # Client disconnect raises GeneratorExit at the current yield; cancel

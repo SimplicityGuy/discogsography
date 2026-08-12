@@ -133,7 +133,18 @@ class NLQEngine:
         if context.user_id is not None:
             tools.extend(get_authenticated_tool_schemas())
 
-        messages: list[dict[str, Any]] = [{"role": "user", "content": query}]
+        # Resolve references like "this artist"/"tell me more about them" to the
+        # entity the user is currently viewing in the Explore pane. Prepended to
+        # the user message (not appended to the static system prompt) so it reads
+        # naturally as query context. See discogsography-xcsx.
+        user_content = query
+        if context.current_entity_id is not None and context.current_entity_type is not None:
+            user_content = (
+                f'[Context: the user is currently viewing {context.current_entity_type} "{context.current_entity_id}" '
+                f'in the Explore pane. Resolve references like "this artist" or "them" to it.]\n\n{query}'
+            )
+
+        messages: list[dict[str, Any]] = [{"role": "user", "content": user_content}]
         tools_used: list[str] = []
         entities: list[dict[str, Any]] = []
         actions: list[Action] = []

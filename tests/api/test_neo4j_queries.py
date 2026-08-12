@@ -253,6 +253,29 @@ class TestExploreQueries:
         assert result == record
 
     @pytest.mark.asyncio
+    async def test_explore_artist_alias_count_dedups_across_categories(self) -> None:
+        """Regression (discogsography-1wiu): explore_artist's alias_count badge must
+        use the same cross-category DISTINCT dedup as count_artist_aliases /
+        expand_artist_aliases, not a plain per-category COUNT {} sum."""
+        from api.queries.neo4j_queries import explore_artist
+
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"id": "1", "name": "Radiohead", "release_count": 10, "label_count": 2, "alias_count": 1})
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=mock_session)
+
+        await explore_artist(driver, "Radiohead")
+
+        cypher = mock_session.run.call_args[0][0]
+        assert "alias_ids + group_ids + member_ids" in cypher
+        assert "DISTINCT related_id" in cypher
+        assert "COUNT { (a)-[:ALIAS_OF]->(:Artist) }" not in cypher
+
+    @pytest.mark.asyncio
     async def test_explore_artist_not_found(self) -> None:
         from api.queries.neo4j_queries import explore_artist
 
@@ -519,6 +542,24 @@ class TestCountQueries:
 
         driver = _make_driver(single={"total": 1})
         assert await count_artist_aliases(driver, "Radiohead") == 1
+
+    @pytest.mark.asyncio
+    async def test_count_artist_aliases_dedups_across_categories(self) -> None:
+        """Regression (discogsography-1wiu): count_artist_aliases must dedup a node
+        reachable through more than one category (e.g. both ALIAS_OF and MEMBER_OF)
+        the same way expand_artist_aliases's `RETURN DISTINCT item.id` does — a
+        plain per-category sum would double-count it and disagree with the
+        paginated row count."""
+        from api.queries.neo4j_queries import count_artist_aliases
+
+        driver, captured_cypher, _captured_params = _make_capturing_driver(total=1)
+        await count_artist_aliases(driver, "Radiohead")
+        cypher = captured_cypher[0]
+        # Must union the three category id lists and count DISTINCT non-null ids,
+        # not `alias_count + group_count + member_count`.
+        assert "alias_ids + group_ids + member_ids" in cypher
+        assert "DISTINCT related_id" in cypher
+        assert "alias_count + group_count + member_count" not in cypher
 
     @pytest.mark.asyncio
     async def test_count_genre_releases(self) -> None:
@@ -1351,3 +1392,66 @@ class TestExpandReleasesNullYearOrdering:
         await expand_style_releases(driver, "Art Rock", limit=50, offset=0)
         cypher, _params = calls[0]
         assert "ORDER BY year IS NULL ASC, year DESC" in cypher
+
+
+class TestExpandQueriesHaveUniqueOrderByTiebreaker:
+    """Regression discogsography-ypkc: SKIP/LIMIT pagination requires a TOTAL
+    order to stay stable across separate query executions. Every expand
+    ORDER BY previously sorted only by a non-unique key (release_count, or
+    year for releases) with no tiebreaker, so a tied group's ordering was not
+    guaranteed identical between page executions — rows could duplicate on one
+    page and never appear on any page, even though count_* reported the
+    correct total. expand_artist_aliases (ORDER BY id on unique item.id) was
+    already safe and is intentionally excluded here.
+    """
+
+    def _capture_driver(self) -> tuple[MagicMock, list[tuple[str, Any]]]:
+        calls: list[tuple[str, Any]] = []
+        mock_result = _MockResult(records=[])
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        async def _run_side_effect(cypher: str, params: Any, **_kwargs: Any) -> _MockResult:
+            calls.append((cypher, params))
+            return mock_result
+
+        mock_session.run = AsyncMock(side_effect=_run_side_effect)
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=mock_session)
+        return driver, calls
+
+    @pytest.mark.asyncio
+    async def test_expand_releases_orders_by_id_after_year(self) -> None:
+        from api.queries.neo4j_queries import expand_artist_releases
+
+        driver, calls = self._capture_driver()
+        await expand_artist_releases(driver, "Radiohead", limit=50, offset=0)
+        cypher, _params = calls[0]
+        assert "ORDER BY year IS NULL ASC, year DESC, id" in cypher
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "func_name, entity_arg",
+        [
+            ("expand_artist_labels", "Radiohead"),
+            ("expand_genre_artists", "Rock"),
+            ("expand_genre_labels", "Rock"),
+            ("expand_genre_styles", "Rock"),
+            ("expand_label_artists", "Warp Records"),
+            ("expand_label_genres", "Warp Records"),
+            ("expand_style_artists", "Art Rock"),
+            ("expand_style_labels", "Art Rock"),
+            ("expand_style_genres", "Art Rock"),
+        ],
+    )
+    async def test_aggregate_expand_orders_by_release_count_then_id(self, func_name: str, entity_arg: str) -> None:
+        import api.queries.neo4j_queries as nq
+
+        func = getattr(nq, func_name)
+        driver, calls = self._capture_driver()
+        await func(driver, entity_arg, limit=50, offset=0)
+        cypher, _params = calls[0]
+        assert "ORDER BY release_count DESC, id" in cypher
+        # Guard against regressing to the bare (non-unique) form.
+        assert "ORDER BY release_count DESC\n" not in cypher

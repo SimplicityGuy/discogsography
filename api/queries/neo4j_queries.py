@@ -169,15 +169,31 @@ async def autocomplete_style(driver: AsyncResilientNeo4jDriver, query: str, limi
 
 
 async def explore_artist(driver: AsyncResilientNeo4jDriver, name: str) -> dict[str, Any] | None:
-    """Get artist center node with category counts."""
+    """Get artist center node with category counts.
+
+    alias_count dedups across ALIAS_OF/MEMBER_OF categories the same way
+    count_artist_aliases and expand_artist_aliases do, so an artist reachable
+    through more than one category still contributes exactly one
+    (discogsography-1wiu).
+    """
     cypher = """
     MATCH (a:Artist {name: $name})
+    CALL {
+        WITH a
+        OPTIONAL MATCH (a)-[:ALIAS_OF]->(alias:Artist)
+        WITH a, collect(DISTINCT alias.id) AS alias_ids
+        OPTIONAL MATCH (a)-[:MEMBER_OF]->(grp:Artist)
+        WITH a, alias_ids, collect(DISTINCT grp.id) AS group_ids
+        OPTIONAL MATCH (m:Artist)-[:MEMBER_OF]->(a)
+        WITH alias_ids, group_ids, collect(DISTINCT m.id) AS member_ids
+        UNWIND (alias_ids + group_ids + member_ids) AS related_id
+        WITH DISTINCT related_id WHERE related_id IS NOT NULL
+        RETURN count(related_id) AS alias_count
+    }
     RETURN a.id AS id, a.name AS name,
            COUNT { MATCH (r:Release)-[:BY]->(a) RETURN DISTINCT r } AS release_count,
            COUNT { MATCH (r:Release)-[:BY]->(a), (r)-[:ON]->(l:Label) RETURN DISTINCT l } AS label_count,
-           COUNT { (a)-[:ALIAS_OF]->(:Artist) }
-               + COUNT { (a)-[:MEMBER_OF]->(:Artist) }
-               + COUNT { (:Artist)-[:MEMBER_OF]->(a) } AS alias_count
+           alias_count
     """
     return await run_single(driver, cypher, name=name)
 
@@ -287,6 +303,17 @@ async def explore_style(driver: AsyncResilientNeo4jDriver, name: str) -> dict[st
 
 
 # --- Expand (populate category children) ---
+#
+# Every ORDER BY below carries `id` (or, for _expand_releases, `id` after the
+# year sort) as a unique, index-backed tiebreaker. SKIP/LIMIT pagination
+# requires a TOTAL order to stay stable across separate query executions —
+# without one, Neo4j's ordering of a tied group (e.g. many artists all with
+# release_count=1) is not guaranteed identical between the offset=0 and
+# offset=50 requests, so pages can duplicate and drop rows even though
+# count_* reports the correct total. Same tiebreaker discipline the SQL side
+# already applies (search_queries.py's `data_id`, rarity_queries.py's
+# `release_id`) — expand_artist_aliases (ORDER BY id on unique item.id) was
+# already safe; these were not (discogsography-ypkc).
 
 
 async def _expand_releases(
@@ -298,7 +325,7 @@ async def _expand_releases(
     MATCH {match_clause}{year_filter}
     RETURN r.id AS id, r.title AS name, 'release' AS type,
            CASE WHEN r.year > 0 THEN r.year ELSE null END AS year
-    ORDER BY year IS NULL ASC, year DESC
+    ORDER BY year IS NULL ASC, year DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -323,7 +350,7 @@ async def expand_artist_labels(
     cypher = f"""
     MATCH (r:Release)-[:BY]->(a:Artist {{name: $name}}), (r)-[:ON]->(l:Label){year_filter}
     RETURN l.id AS id, l.name AS name, 'label' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -379,7 +406,7 @@ async def expand_genre_artists(
     cypher = f"""
     MATCH (r:Release)-[:IS]->(g:Genre {{name: $name}}), (r)-[:BY]->(a:Artist){year_filter}
     RETURN a.id AS id, a.name AS name, 'artist' AS type, count(r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -397,7 +424,7 @@ async def expand_genre_labels(
     cypher = f"""
     MATCH (r:Release)-[:IS]->(g:Genre {{name: $name}}), (r)-[:ON]->(l:Label){year_filter}
     RETURN l.id AS id, l.name AS name, 'label' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -415,7 +442,7 @@ async def expand_genre_styles(
     cypher = f"""
     MATCH (r:Release)-[:IS]->(g:Genre {{name: $name}}), (r)-[:IS]->(s:Style){year_filter}
     RETURN s.name AS id, s.name AS name, 'style' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -440,7 +467,7 @@ async def expand_label_artists(
     cypher = f"""
     MATCH (r:Release)-[:ON]->(l:Label {{name: $name}}), (r)-[:BY]->(a:Artist){year_filter}
     RETURN a.id AS id, a.name AS name, 'artist' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -458,7 +485,7 @@ async def expand_label_genres(
     cypher = f"""
     MATCH (r:Release)-[:ON]->(l:Label {{name: $name}}), (r)-[:IS]->(g:Genre){year_filter}
     RETURN g.name AS id, g.name AS name, 'genre' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -483,7 +510,7 @@ async def expand_style_artists(
     cypher = f"""
     MATCH (r:Release)-[:IS]->(s:Style {{name: $name}}), (r)-[:BY]->(a:Artist){year_filter}
     RETURN a.id AS id, a.name AS name, 'artist' AS type, count(r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -501,7 +528,7 @@ async def expand_style_labels(
     cypher = f"""
     MATCH (r:Release)-[:IS]->(s:Style {{name: $name}}), (r)-[:ON]->(l:Label){year_filter}
     RETURN l.id AS id, l.name AS name, 'label' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -519,7 +546,7 @@ async def expand_style_genres(
     cypher = f"""
     MATCH (r:Release)-[:IS]->(s:Style {{name: $name}}), (r)-[:IS]->(g:Genre){year_filter}
     RETURN g.name AS id, g.name AS name, 'genre' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -556,16 +583,25 @@ async def count_artist_labels(driver: AsyncResilientNeo4jDriver, artist_name: st
 
 
 async def count_artist_aliases(driver: AsyncResilientNeo4jDriver, artist_name: str, *, before_year: int | None = None) -> int:  # noqa: ARG001
-    """Count total aliases, group memberships, and members for an artist."""
+    """Count total distinct aliases, group memberships, and members for an artist.
+
+    Mirrors expand_artist_aliases's dedup: an artist reachable through more
+    than one category (e.g. both ALIAS_OF and MEMBER_OF the same node) must
+    contribute exactly one to this total, matching the one row expand_artist_aliases
+    returns for it — otherwise pagination's `total` disagrees with the
+    enumerable row count (discogsography-1wiu).
+    """
     cypher = """
     MATCH (a:Artist {name: $name})
     OPTIONAL MATCH (a)-[:ALIAS_OF]->(alias:Artist)
-    WITH a, count(DISTINCT alias) AS alias_count
+    WITH a, collect(DISTINCT alias.id) AS alias_ids
     OPTIONAL MATCH (a)-[:MEMBER_OF]->(grp:Artist)
-    WITH a, alias_count, count(DISTINCT grp) AS group_count
+    WITH a, alias_ids, collect(DISTINCT grp.id) AS group_ids
     OPTIONAL MATCH (m:Artist)-[:MEMBER_OF]->(a)
-    WITH alias_count, group_count, count(DISTINCT m) AS member_count
-    RETURN alias_count + group_count + member_count AS total
+    WITH alias_ids, group_ids, collect(DISTINCT m.id) AS member_ids
+    UNWIND (alias_ids + group_ids + member_ids) AS related_id
+    WITH DISTINCT related_id WHERE related_id IS NOT NULL
+    RETURN count(related_id) AS total
     """
     return await run_count(driver, cypher, name=artist_name)
 

@@ -155,6 +155,29 @@ class TestGenreTrendsCacheIntegration:
         assert response.json() == cached
         mock_cache.set.assert_not_called()
 
+    def test_cache_key_does_not_collide_genres_differing_only_by_colon_vs_underscore(
+        self,
+        test_client_with_cache: TestClient,
+        mock_cache: AsyncMock,
+    ) -> None:
+        """Regression discogsography-qjri: a prior `.replace(':', '_')` sanitization
+        was non-injective — genre="A:B" and genre="A_B" both produced cache key
+        "insights:genre-trends:A_B" and were served each other's cached response.
+        The cache key must preserve the raw genre value (interior colons are
+        harmless to InsightsCache.versioned_key, which only strips the fixed
+        "insights:" literal prefix via removeprefix, not a colon split)."""
+        mock_cache.get.return_value = None
+
+        response = test_client_with_cache.get("/api/insights/genre-trends?genre=A:B")
+        assert response.status_code == 200
+        mock_cache.get.assert_called_once_with("insights:genre-trends:A:B", TEST_CACHE_GENERATION)
+
+        mock_cache.reset_mock()
+        mock_cache.get.return_value = None
+        response = test_client_with_cache.get("/api/insights/genre-trends?genre=A_B")
+        assert response.status_code == 200
+        mock_cache.get.assert_called_once_with("insights:genre-trends:A_B", TEST_CACHE_GENERATION)
+
 
 class TestLabelLongevityCacheIntegration:
     def test_cache_miss_queries_pg_and_stores(

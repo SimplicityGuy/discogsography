@@ -174,6 +174,49 @@ class TestNLQQuery:
         assert response.status_code == 200
         mock_redis.setex.assert_called_once()
 
+    def test_cache_key_differs_by_focused_entity_context(self) -> None:
+        """Regression discogsography-xcsx: since the engine now conditions its
+        answer on current_entity_id/current_entity_type, the cache key must
+        include that context — otherwise two anonymous users asking the same
+        query text about different focused entities would collide onto one
+        cache entry and get served each other's answer."""
+        base = nlq_router._cache_key("who are their collaborators?", None)
+        artist_a = nlq_router._cache_key("who are their collaborators?", {"entity_id": "Radiohead", "entity_type": "artist"})
+        artist_b = nlq_router._cache_key("who are their collaborators?", {"entity_id": "Kraftwerk", "entity_type": "artist"})
+
+        assert len({base, artist_a, artist_b}) == 3
+        # Same context must be stable/idempotent.
+        assert nlq_router._cache_key("who are their collaborators?", {"entity_id": "Radiohead", "entity_type": "artist"}) == artist_a
+
+    def test_query_passes_entity_context_to_engine(self, test_client: TestClient) -> None:
+        """The router must forward current_entity_id/current_entity_type from the
+        request body's context into NLQContext so the engine can resolve
+        deictic references."""
+        original_config = nlq_router._nlq_config
+        original_engine = nlq_router._engine
+        original_redis = nlq_router._redis
+        try:
+            nlq_router._nlq_config = MagicMock(is_available=True, max_query_length=500)
+            mock_engine = MagicMock()
+            mock_result = NLQResult(summary="Their collaborators include Jonny Greenwood.", entities=[], tools_used=["search"])
+            mock_engine.run = AsyncMock(return_value=mock_result)
+            nlq_router._engine = mock_engine
+            nlq_router._redis = None
+
+            response = test_client.post(
+                "/api/nlq/query",
+                json={"query": "who are this artist's collaborators?", "context": {"entity_id": "Radiohead", "entity_type": "artist"}},
+            )
+        finally:
+            nlq_router._nlq_config = original_config
+            nlq_router._engine = original_engine
+            nlq_router._redis = original_redis
+
+        assert response.status_code == 200
+        ctx = mock_engine.run.call_args[0][1]
+        assert ctx.current_entity_id == "Radiohead"
+        assert ctx.current_entity_type == "artist"
+
     def test_query_with_auth_token_extracts_user_id(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
         """When a valid Bearer token is provided, user_id is extracted and passed to engine."""
         original_config = nlq_router._nlq_config
