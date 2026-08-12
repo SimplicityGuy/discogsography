@@ -303,6 +303,17 @@ async def explore_style(driver: AsyncResilientNeo4jDriver, name: str) -> dict[st
 
 
 # --- Expand (populate category children) ---
+#
+# Every ORDER BY below carries `id` (or, for _expand_releases, `id` after the
+# year sort) as a unique, index-backed tiebreaker. SKIP/LIMIT pagination
+# requires a TOTAL order to stay stable across separate query executions —
+# without one, Neo4j's ordering of a tied group (e.g. many artists all with
+# release_count=1) is not guaranteed identical between the offset=0 and
+# offset=50 requests, so pages can duplicate and drop rows even though
+# count_* reports the correct total. Same tiebreaker discipline the SQL side
+# already applies (search_queries.py's `data_id`, rarity_queries.py's
+# `release_id`) — expand_artist_aliases (ORDER BY id on unique item.id) was
+# already safe; these were not (discogsography-ypkc).
 
 
 async def _expand_releases(
@@ -314,7 +325,7 @@ async def _expand_releases(
     MATCH {match_clause}{year_filter}
     RETURN r.id AS id, r.title AS name, 'release' AS type,
            CASE WHEN r.year > 0 THEN r.year ELSE null END AS year
-    ORDER BY year IS NULL ASC, year DESC
+    ORDER BY year IS NULL ASC, year DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -339,7 +350,7 @@ async def expand_artist_labels(
     cypher = f"""
     MATCH (r:Release)-[:BY]->(a:Artist {{name: $name}}), (r)-[:ON]->(l:Label){year_filter}
     RETURN l.id AS id, l.name AS name, 'label' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -395,7 +406,7 @@ async def expand_genre_artists(
     cypher = f"""
     MATCH (r:Release)-[:IS]->(g:Genre {{name: $name}}), (r)-[:BY]->(a:Artist){year_filter}
     RETURN a.id AS id, a.name AS name, 'artist' AS type, count(r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -413,7 +424,7 @@ async def expand_genre_labels(
     cypher = f"""
     MATCH (r:Release)-[:IS]->(g:Genre {{name: $name}}), (r)-[:ON]->(l:Label){year_filter}
     RETURN l.id AS id, l.name AS name, 'label' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -431,7 +442,7 @@ async def expand_genre_styles(
     cypher = f"""
     MATCH (r:Release)-[:IS]->(g:Genre {{name: $name}}), (r)-[:IS]->(s:Style){year_filter}
     RETURN s.name AS id, s.name AS name, 'style' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -456,7 +467,7 @@ async def expand_label_artists(
     cypher = f"""
     MATCH (r:Release)-[:ON]->(l:Label {{name: $name}}), (r)-[:BY]->(a:Artist){year_filter}
     RETURN a.id AS id, a.name AS name, 'artist' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -474,7 +485,7 @@ async def expand_label_genres(
     cypher = f"""
     MATCH (r:Release)-[:ON]->(l:Label {{name: $name}}), (r)-[:IS]->(g:Genre){year_filter}
     RETURN g.name AS id, g.name AS name, 'genre' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -499,7 +510,7 @@ async def expand_style_artists(
     cypher = f"""
     MATCH (r:Release)-[:IS]->(s:Style {{name: $name}}), (r)-[:BY]->(a:Artist){year_filter}
     RETURN a.id AS id, a.name AS name, 'artist' AS type, count(r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -517,7 +528,7 @@ async def expand_style_labels(
     cypher = f"""
     MATCH (r:Release)-[:IS]->(s:Style {{name: $name}}), (r)-[:ON]->(l:Label){year_filter}
     RETURN l.id AS id, l.name AS name, 'label' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
@@ -535,7 +546,7 @@ async def expand_style_genres(
     cypher = f"""
     MATCH (r:Release)-[:IS]->(s:Style {{name: $name}}), (r)-[:IS]->(g:Genre){year_filter}
     RETURN g.name AS id, g.name AS name, 'genre' AS type, count(DISTINCT r) AS release_count
-    ORDER BY release_count DESC
+    ORDER BY release_count DESC, id
     SKIP $offset
     LIMIT $limit
     """
