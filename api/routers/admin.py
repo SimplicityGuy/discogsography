@@ -335,6 +335,39 @@ async def admin_health_history(
 
 _MAX_TRACKING_ITERATIONS = 8640  # 10s * 8640 = 24 hours max tracking time
 
+# How many 10s polls a triggered run gets to actually leave the parked "waiting" state
+# before the tracker gives up on it. The extractor picks the trigger flag up within
+# 500ms and sets Running as the first statement of process_*_data, so 5 minutes is
+# enormously generous; it exists only so a slow container start is not called a failure.
+_MAX_STARTUP_POLLS = 30
+
+
+def _run_has_started(health: dict[str, Any], tracked_seconds: float) -> bool:
+    """Decide, from a health payload alone, whether THIS run actually began.
+
+    A short run (e.g. a trigger on an already-processed version) can pass through
+    running → completed → waiting entirely between two 10s polls, so "never observed
+    running" is not by itself proof that nothing happened. Two signatures distinguish
+    it from a parked extractor whose trigger was consumed but never took effect:
+
+    * ``process_*_data`` clears ``extraction_progress`` and ``last_extraction_time`` as
+      its first act, so all-zero counters mean the run started (and had nothing to do).
+      A parked extractor still carries the PREVIOUS run's counts — which is what made
+      the phantom success so convincing.
+    * Any per-type activity timestamp newer than the tracking window belongs to this
+      run.
+    """
+    progress = health.get("extraction_progress") or {}
+    total = progress.get("total")
+    if total is None:
+        total = sum(v for v in progress.values() if isinstance(v, int | float))
+    if not total:
+        return True
+
+    last_times = [v for v in (health.get("last_extraction_time") or {}).values() if isinstance(v, int | float)]
+    # +30s of slack for the tracker's own scheduling jitter.
+    return any(elapsed <= tracked_seconds + 30 for elapsed in last_times)
+
 
 async def _track_extraction(extraction_id: str) -> None:
     """Background task: poll extractor /health and update extraction record."""
@@ -345,6 +378,15 @@ async def _track_extraction(extraction_id: str) -> None:
     consecutive_failures = 0
     max_failures = 5
     iterations = 0
+    # "waiting" is overloaded: it means both "finished, back on the periodic schedule"
+    # AND "parked, the trigger has not taken effect yet". Accepting it as terminal on
+    # the first poll recorded a run that never started as a success — and since
+    # extraction_progress is only reset INSIDE process_*_data, the phantom run was
+    # stamped with the PREVIOUS run's record counts, so nothing looked wrong. Only
+    # honor a terminal "waiting"/"completed" after the run was observed running
+    # (discogsography-exnk).
+    has_seen_running = False
+    startup_polls = 0
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -371,6 +413,32 @@ async def _track_extraction(extraction_id: str) -> None:
                                 "UPDATE extraction_history SET record_counts = %s WHERE id = %s",
                                 (json.dumps(record_counts), extraction_id),
                             )
+
+                        if extraction_status == "running":
+                            has_seen_running = True
+
+                        # A terminal-looking status that was never preceded by "running"
+                        # is ambiguous, because "waiting" means BOTH "finished, back on
+                        # the periodic schedule" and "parked, the trigger has not taken
+                        # effect". _run_has_started disambiguates from the health payload;
+                        # when it cannot, keep polling for a bounded grace period rather
+                        # than recording a run that never started as a success.
+                        if not has_seen_running and extraction_status != "failed" and not _run_has_started(data, iterations * 10):
+                            startup_polls += 1
+                            if startup_polls > _MAX_STARTUP_POLLS:
+                                async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+                                    await cur.execute(
+                                        "UPDATE extraction_history SET status = 'failed', completed_at = NOW(), error_message = %s WHERE id = %s",
+                                        ("Extraction never started (extractor never left the parked state)", extraction_id),
+                                    )
+                                logger.error(
+                                    "❌ Extraction never started",
+                                    extraction_id=extraction_id,
+                                    last_status=extraction_status,
+                                    polls=startup_polls,
+                                )
+                                return
+                            continue
 
                         # "completed" is the transient state set inside process_*_data at
                         # the end of a successful run. The surrounding run_*_loop immediately

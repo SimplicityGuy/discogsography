@@ -7,7 +7,7 @@ from typing import Any
 
 import requests
 
-from common.config import get_secret
+from common.config import DISCOGS_EXCHANGE_PREFIX, MUSICBRAINZ_EXCHANGE_PREFIX, get_secret
 
 
 def get_docker_stats() -> list[dict[str, Any]]:
@@ -153,8 +153,11 @@ def monitor_system() -> None:
     else:
         total_messages = 0
         for queue in queues:
-            if "discogsography" in queue["name"] or "musicbrainz" in queue["name"]:
-                name = queue["name"].replace("discogsography-discogs-", "").replace("discogsography-musicbrainz-", "mb-")
+            if queue["name"].startswith((DISCOGS_EXCHANGE_PREFIX, MUSICBRAINZ_EXCHANGE_PREFIX)):
+                # Shorten for display using the env-derived prefixes, not hardcoded
+                # literals — under a prefix override the labels stayed fully qualified
+                # and the filter above matched nothing at all (discogsography-dvmi).
+                name = queue["name"].replace(f"{DISCOGS_EXCHANGE_PREFIX}-", "").replace(f"{MUSICBRAINZ_EXCHANGE_PREFIX}-", "mb-")
                 ready = queue.get("messages_ready", 0)
                 unacked = queue.get("messages_unacknowledged", 0)
                 total = queue.get("messages", 0)

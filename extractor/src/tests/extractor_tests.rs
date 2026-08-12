@@ -950,6 +950,25 @@ async fn test_reset_status_after_failed_check_is_not_running() {
     }
 }
 
+/// discogsography-exnk: a triggered run whose downloader cannot be constructed is LOST —
+/// `wait_for_trigger` has already consumed the trigger flag — so the loop must record the
+/// failure rather than `continue` with the status untouched. Left at `Waiting`, the
+/// extractor is indistinguishable from "parked, finished, back on schedule", and the API's
+/// extraction tracker records the phantom run as a success (stamped with the PREVIOUS
+/// run's record counts, since extraction_progress is only reset inside process_*_data).
+#[tokio::test]
+async fn test_lost_trigger_leaves_a_terminal_failed_status_not_waiting() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    state.write().await.extraction_status = ExtractionStatus::Waiting;
+
+    // What the trigger arm now does when Downloader::new returns Err.
+    reset_status_after_failed_check(&state).await;
+
+    let got = state.read().await.extraction_status;
+    assert_eq!(got, ExtractionStatus::Failed);
+    assert_ne!(got, ExtractionStatus::Waiting, "a parked status is read as success by the API tracker");
+}
+
 // ── initial-run outcome tests (cu2.45) ──────────────────────────────
 
 /// Regression for cu2.45: a between-files shutdown makes `process_musicbrainz_data` return

@@ -951,6 +951,40 @@ class TestCheckFileCompletion:
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.batch_processor", None)
+    @patch("graphinator.graphinator.graph", None)
+    async def test_extraction_complete_marks_the_type_complete(self) -> None:
+        """discogsography-ewvh: extraction_complete is the type's terminal signal.
+
+        completed_files was written only by file_complete and erased by the recovery
+        path for any type whose queue still holds messages — and when the only pending
+        message IS this signal, nothing restored the flag, so the stall check logged at
+        ERROR every 30s forever and check_all_consumers_idle() could never return True.
+        """
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {"type": "extraction_complete", "version": "20260101"}
+        completed: set[str] = set()
+        mock_queue = MagicMock()
+
+        from graphinator.graphinator import check_file_completion
+
+        with (
+            patch("graphinator.graphinator.completed_files", completed),
+            patch("graphinator.graphinator.queues", {"artists": mock_queue}),
+            patch("graphinator.graphinator.CONSUMER_CANCEL_DELAY", 300),
+            patch("graphinator.graphinator.schedule_consumer_cancellation", new=AsyncMock()) as mock_schedule,
+            patch("graphinator.graphinator._sync_extraction_signals", new=AsyncMock()),
+            patch("graphinator.graphinator._persist_extraction_signals", new=AsyncMock()),
+            patch("graphinator.graphinator.extraction_complete_signals", set()),
+        ):
+            result = await check_file_completion(completion_data, "artists", mock_message)
+
+        assert result is True
+        assert completed == {"artists"}
+        mock_schedule.assert_awaited_once_with("artists", mock_queue)
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_extraction_complete_flushes_batches(self) -> None:
         """Test extraction_complete flushes batch processor before cleanup."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -1819,7 +1853,9 @@ class TestMasterTransactionLogic:
         # 5. Style relationships
         # No genre-style (PART_OF) connection: multiple genres make the style-belongs-to
         # -genre assertion ambiguous, so it is skipped (discogsography-sy5k).
-        assert mock_tx.run.call_count == 5
+        # Plus 3 prune queries (BY/Genre-IS/Style-IS) that drop associations the record's
+        # new version no longer asserts before the additive MERGEs (discogsography-bd0u).
+        assert mock_tx.run.call_count == 8
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1940,7 +1976,9 @@ class TestReleaseTransactionLogic:
         # 6. Genre relationships
         # 7. Style relationships
         # 8. Genre-style connections
-        assert mock_tx.run.call_count == 8
+        # ...plus 5 prune queries (BY/ON/DERIVED_FROM/Genre-IS/Style-IS) that drop
+        # associations the record's new version no longer asserts (discogsography-bd0u).
+        assert mock_tx.run.call_count == 13
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
@@ -2065,7 +2103,10 @@ class TestReleaseTransactionLogic:
         # 2. Create release node
         # 3. Person CREDITED_ON relationships
         # 4. Person SAME_AS relationships (for Bob Ludwig who has artist_id)
-        assert mock_tx.run.call_count == 4
+        # ...plus the 5 release prune queries (discogsography-bd0u), which run even when
+        # the record asserts no artists/labels/master/genres/styles — that is exactly the
+        # "every association was removed" case.
+        assert mock_tx.run.call_count == 9
         mock_message.ack.assert_called_once()
 
         # Verify credits cypher was called with correct data
@@ -3209,7 +3250,8 @@ class TestProcessMasterEdgeCases:
         result = await process_master(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
-        assert not any("BY" in c and "artist" in c for c in calls)
+        assert not any("MERGE (m)-[:BY]->" in c and "UNWIND $artists" in c for c in calls)
+        assert not any("MERGE (r)-[:BY]->" in c and "UNWIND $artists" in c for c in calls)
 
 
 class TestProcessLabelSublabelsString:
@@ -3261,7 +3303,8 @@ class TestProcessReleaseArtistNoId:
         result = await process_release(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
-        assert not any("BY" in c and "artist" in c for c in calls)
+        assert not any("MERGE (m)-[:BY]->" in c and "UNWIND $artists" in c for c in calls)
+        assert not any("MERGE (r)-[:BY]->" in c and "UNWIND $artists" in c for c in calls)
 
 
 class TestProcessReleaseLabelNoId:
@@ -3288,7 +3331,83 @@ class TestProcessReleaseLabelNoId:
         result = await process_release(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
-        assert not any(")-[:ON]->" in c for c in calls)
+        assert not any("MERGE (r)-[:ON]->" in c for c in calls)
+
+
+class TestNonBatchStaleEdgePruning:
+    """discogsography-bd0u (non-batch mirror): the single-record path uses the same
+    MERGE-only, additive relationship writes as the batch processor, so it needs the
+    same prune of associations the record's new version no longer asserts."""
+
+    @staticmethod
+    def _prunes(mock_tx: Any, rel_type: str, target: str) -> list[dict[str, Any]]:
+        return [
+            call.kwargs
+            for call in mock_tx.run.call_args_list
+            if "DELETE rel" in call.args[0] and f"[rel:{rel_type}]" in call.args[0] and f":{target})" in call.args[0]
+        ]
+
+    @pytest.mark.asyncio
+    async def test_release_prunes_associations_that_were_dropped(self) -> None:
+        from graphinator.graphinator import process_release
+
+        mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value={"hash": "oldhash"})
+
+        record = {
+            "id": "release-1",
+            "sha256": "newhash",
+            "title": "Retagged Release",
+            "artists": [{"id": "A1"}],
+            "labels": [{"id": "L1"}],
+            "master_id": "M1",
+            "genres": ["Jazz"],
+            "styles": ["Bebop"],
+        }
+
+        assert await process_release(mock_tx, record) is True
+
+        assert self._prunes(mock_tx, "IS", "Genre")[0]["keep"] == ["Jazz"]
+        assert self._prunes(mock_tx, "IS", "Style")[0]["keep"] == ["Bebop"]
+        assert self._prunes(mock_tx, "BY", "Artist")[0]["keep"] == ["A1"]
+        assert self._prunes(mock_tx, "ON", "Label")[0]["keep"] == ["L1"]
+        assert self._prunes(mock_tx, "DERIVED_FROM", "Master")[0]["keep"] == ["M1"]
+
+    @pytest.mark.asyncio
+    async def test_master_prunes_dropped_associations(self) -> None:
+        from graphinator.graphinator import process_master
+
+        mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value={"hash": "oldhash"})
+
+        record = {
+            "id": "master-1",
+            "sha256": "newhash",
+            "title": "Retagged Master",
+            "genres": ["Jazz"],
+            "styles": [],
+        }
+
+        assert await process_master(mock_tx, record) is True
+
+        assert self._prunes(mock_tx, "IS", "Genre")[0]["keep"] == ["Jazz"]
+        # Every style was dropped — the empty keep-list is what removes those edges.
+        assert self._prunes(mock_tx, "IS", "Style")[0]["keep"] == []
+
+    @pytest.mark.asyncio
+    async def test_unchanged_record_is_not_pruned(self) -> None:
+        """A hash match returns before any write; pruning there would delete edges
+        nothing is about to rewrite."""
+        from graphinator.graphinator import process_release
+
+        mock_tx = MagicMock()
+        mock_tx.run = AsyncMock()
+        mock_tx.run.return_value.single = AsyncMock(return_value={"hash": "samehash"})
+
+        assert await process_release(mock_tx, {"id": "r1", "sha256": "samehash", "genres": ["Rock"]}) is False
+        assert not [c for c in mock_tx.run.call_args_list if "DELETE rel" in c.args[0]]
 
 
 class TestProcessReleaseMasterNoId:
@@ -3312,7 +3431,9 @@ class TestProcessReleaseMasterNoId:
         result = await process_release(mock_tx, record)
         assert result is True
         calls = [str(c) for c in mock_tx.run.call_args_list]
-        assert not any("DERIVED_FROM" in c for c in calls)
+        # The prune query still mentions DERIVED_FROM (with an empty keep-list, which
+        # correctly removes any stale edge); only the MERGE must be absent.
+        assert not any("MERGE (r)-[:DERIVED_FROM]" in c for c in calls)
 
 
 class TestMainConfigError:
@@ -4520,6 +4641,30 @@ class TestStubCleanupBatchAndOrdering:
         assert "DETACH DELETE" in cypher
         assert "Artist" in cypher
         assert "n.sha256 IS NULL" in cypher
+
+    @pytest.mark.asyncio
+    async def test_cleanup_only_deletes_stubs_with_no_relationships(self) -> None:
+        """discogsography-64aw: a stub that still has relationships must survive.
+
+        Its edges (BY/ON/DERIVED_FROM/MEMBER_OF) were written by fully-imported records
+        that referenced an entity missing from this dump. DETACH DELETE destroyed those
+        edges with the stub, and the loss was permanent: sha256 is purely
+        content-derived, so when the entity appears in a later dump the referencing
+        record is byte-identical, the hash-skip returns before the relationship blocks,
+        and the edge is never rebuilt.
+        """
+        import graphinator.graphinator as g
+
+        graph_mock, run_calls = self._make_graph_mock()
+        with patch.object(g, "graph", graph_mock):
+            ok = await g.cleanup_stub_nodes("artists")
+
+        assert ok is True
+        cypher = run_calls[0]
+        assert "NOT (n)--()" in cypher, "connected stubs must be excluded from the sweep"
+        # ...while genuinely orphaned stubs are still collected.
+        assert "n.sha256 IS NULL" in cypher
+        assert "DETACH DELETE" in cypher
 
     @pytest.mark.asyncio
     async def test_cleanup_failure_returns_false_for_retry(self) -> None:

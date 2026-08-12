@@ -22,6 +22,8 @@ from pydantic import BaseModel
 import uvicorn
 
 from common import (
+    DISCOGS_EXCHANGE_PREFIX,
+    MUSICBRAINZ_EXCHANGE_PREFIX,
     AsyncResilientNeo4jDriver,
     AsyncResilientPostgreSQL,
     AsyncResilientRabbitMQ,
@@ -117,6 +119,12 @@ class SystemMetrics(BaseModel):
     timestamp: datetime
 
 
+# Queue prefixes are ALWAYS env-derived (common.config reads DISCOGS_EXCHANGE_PREFIX /
+# MUSICBRAINZ_EXCHANGE_PREFIX), exactly like the extractor and all four consumers.
+# Hardcoding the defaults here made the dashboard the only component that ignored a
+# prefix override: the management-API filter matched nothing, and get_queue_info logs
+# nothing on a zero-match 200, so both pipeline panes silently showed an empty,
+# healthy-looking pipeline while queues backed up (discogsography-dvmi).
 PIPELINE_CONFIGS: dict[str, dict] = {
     "discogs": {
         "services": [
@@ -124,7 +132,7 @@ PIPELINE_CONFIGS: dict[str, dict] = {
             ("graphinator", "http://graphinator:8001/health"),
             ("tableinator", "http://tableinator:8002/health"),
         ],
-        "queue_prefix": "discogsography-discogs",
+        "queue_prefix": DISCOGS_EXCHANGE_PREFIX,
         "entity_types": ["masters", "releases", "artists", "labels"],
     },
     "musicbrainz": {
@@ -133,7 +141,7 @@ PIPELINE_CONFIGS: dict[str, dict] = {
             ("brainzgraphinator", "http://brainzgraphinator:8011/health"),
             ("brainztableinator", "http://brainztableinator:8010/health"),
         ],
-        "queue_prefix": "discogsography-musicbrainz",
+        "queue_prefix": MUSICBRAINZ_EXCHANGE_PREFIX,
         "entity_types": ["release-groups", "releases", "artists", "labels"],
     },
 }
@@ -636,6 +644,19 @@ async def get_queues() -> JSONResponse:
         if queues:
             result[pipeline_name] = [q.model_dump(mode="json") for q in queues]
     return JSONResponse(content=result)
+
+
+@app.get("/api/queue-prefixes")
+async def get_queue_prefixes() -> JSONResponse:
+    """Expose the env-derived exchange/queue prefixes to the admin frontend.
+
+    admin.js builds DLQ names it POSTs to the API, which validates them against
+    _VALID_DLQ_NAMES (itself env-derived). Its compiled-in literals are only defaults;
+    under a DISCOGS_EXCHANGE_PREFIX / MUSICBRAINZ_EXCHANGE_PREFIX override every Purge
+    button would 404 without this (discogsography-dvmi).
+    """
+    API_REQUESTS.labels(endpoint="/api/queue-prefixes", method="GET").inc()
+    return JSONResponse(content={"discogs": DISCOGS_EXCHANGE_PREFIX, "musicbrainz": MUSICBRAINZ_EXCHANGE_PREFIX})
 
 
 @app.get("/api/databases")

@@ -929,6 +929,147 @@ class TestProcessMastersBatch:
         ]
 
 
+class TestStaleEdgePruning:
+    """discogsography-bd0u: relationship writes are MERGE-only and therefore additive,
+    but Discogs records are mutable. A release corrected from genres=["Rock"] to
+    genres=["Jazz"] gets a new sha256, passes the hash gate, MERGEs the Jazz edge — and
+    used to keep the Rock one forever. compute_genre_style_stats counts those stale
+    edges, so Genre/Style/Label counts were permanently over-stated and explore
+    endpoints listed the release under a genre it no longer has.
+    """
+
+    @staticmethod
+    def _tracking_session() -> tuple[Any, Any, list[tuple[str, dict[str, Any]]]]:
+        mock_driver, mock_session = create_async_session_mock()
+        mock_session.run = AsyncMock(return_value=create_async_result_mock([{"id": "1", "hash": "oldhash"}]))
+
+        executed: list[tuple[str, dict[str, Any]]] = []
+
+        async def track_query(query: str, **params: Any) -> None:
+            executed.append((query, params))
+
+        mock_tx = AsyncMock()
+        mock_tx.run.side_effect = track_query
+
+        async def execute_write_mock(tx_func: Any) -> None:
+            await tx_func(mock_tx)
+
+        mock_session.execute_write = AsyncMock(side_effect=execute_write_mock)
+        return mock_driver, mock_session, executed
+
+    @staticmethod
+    def _prunes(executed: list[tuple[str, dict[str, Any]]], rel_type: str, target: str) -> list[dict[str, Any]]:
+        return [params for query, params in executed if "DELETE rel" in query and f"[rel:{rel_type}]" in query and f":{target})" in query]
+
+    @pytest.mark.asyncio
+    async def test_release_prunes_dropped_genre_edges(self) -> None:
+        mock_driver, _session, executed = self._tracking_session()
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        await processor._process_releases_batch(
+            [
+                PendingMessage(
+                    "releases",
+                    {"id": "1", "title": "R", "sha256": "newhash", "genres": ["Jazz"], "styles": []},
+                    AsyncMock(),
+                    AsyncMock(),
+                )
+            ]
+        )
+
+        genre_prunes = self._prunes(executed, "IS", "Genre")
+        assert len(genre_prunes) == 1
+        # Only the genres the NEW version asserts are kept; "Rock" no longer matches
+        # the keep-list, so its edge is deleted.
+        assert genre_prunes[0]["records"] == [{"key": "1", "keep": ["Jazz"]}]
+
+    @pytest.mark.asyncio
+    async def test_release_prunes_every_managed_edge_type(self) -> None:
+        mock_driver, _session, executed = self._tracking_session()
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        await processor._process_releases_batch(
+            [
+                PendingMessage(
+                    "releases",
+                    {
+                        "id": "1",
+                        "title": "R",
+                        "sha256": "newhash",
+                        "artists": [{"id": "A1"}],
+                        "labels": [{"id": "L1"}],
+                        "master_id": "M1",
+                        "genres": ["Jazz"],
+                        "styles": ["Bebop"],
+                    },
+                    AsyncMock(),
+                    AsyncMock(),
+                )
+            ]
+        )
+
+        assert self._prunes(executed, "BY", "Artist")[0]["records"] == [{"key": "1", "keep": ["A1"]}]
+        assert self._prunes(executed, "ON", "Label")[0]["records"] == [{"key": "1", "keep": ["L1"]}]
+        assert self._prunes(executed, "DERIVED_FROM", "Master")[0]["records"] == [{"key": "1", "keep": ["M1"]}]
+        assert self._prunes(executed, "IS", "Style")[0]["records"] == [{"key": "1", "keep": ["Bebop"]}]
+
+    @pytest.mark.asyncio
+    async def test_release_with_no_associations_prunes_them_all(self) -> None:
+        """The "every association was removed" case: an empty keep-list must still run,
+        or the old edges survive with nothing to contradict them."""
+        mock_driver, _session, executed = self._tracking_session()
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        await processor._process_releases_batch(
+            [PendingMessage("releases", {"id": "1", "title": "R", "sha256": "newhash"}, AsyncMock(), AsyncMock())]
+        )
+
+        for rel_type, target in (("BY", "Artist"), ("ON", "Label"), ("DERIVED_FROM", "Master"), ("IS", "Genre"), ("IS", "Style")):
+            prunes = self._prunes(executed, rel_type, target)
+            assert len(prunes) == 1, f"{rel_type}->{target} prune must run even with nothing to keep"
+            assert prunes[0]["records"] == [{"key": "1", "keep": []}]
+
+    @pytest.mark.asyncio
+    async def test_master_prunes_dropped_genre_and_style_edges(self) -> None:
+        mock_driver, _session, executed = self._tracking_session()
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        await processor._process_masters_batch(
+            [
+                PendingMessage(
+                    "masters",
+                    {"id": "1", "title": "M", "sha256": "newhash", "genres": ["Jazz"], "styles": ["Bebop"]},
+                    AsyncMock(),
+                    AsyncMock(),
+                )
+            ]
+        )
+
+        assert self._prunes(executed, "IS", "Genre")[0]["records"] == [{"key": "1", "keep": ["Jazz"]}]
+        assert self._prunes(executed, "IS", "Style")[0]["records"] == [{"key": "1", "keep": ["Bebop"]}]
+        assert self._prunes(executed, "BY", "Artist")[0]["records"] == [{"key": "1", "keep": []}]
+
+    @pytest.mark.asyncio
+    async def test_unchanged_records_are_not_pruned(self) -> None:
+        """A record whose hash matches is never reprocessed, so its edges must be left
+        strictly alone — pruning there would delete edges nothing is about to rewrite."""
+        mock_driver, _session, executed = self._tracking_session()
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        await processor._process_releases_batch(
+            [
+                PendingMessage(
+                    "releases",
+                    {"id": "1", "title": "R", "sha256": "oldhash", "genres": ["Rock"]},
+                    AsyncMock(),
+                    AsyncMock(),
+                )
+            ]
+        )
+
+        assert not [q for q, _ in executed if "DELETE rel" in q]
+
+
 class TestProcessReleasesBatch:
     """Test _process_releases_batch functionality."""
 

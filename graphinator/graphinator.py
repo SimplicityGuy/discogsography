@@ -676,6 +676,19 @@ async def check_file_completion(
             await message.nack(requeue=True)
             return True
 
+        # extraction_complete is this type's terminal signal, so it must also
+        # (re-)mark the type complete. completed_files is otherwise written only by
+        # file_complete and ERASED by the recovery path for any type whose queue still
+        # holds messages — and when the only pending message IS this signal, nothing
+        # ever restored the flag: "Stalled consumers detected" then logged at ERROR
+        # every 30s forever and check_all_consumers_idle() could never return True, so
+        # the connection and four idle consumers were held open until restart. A plain
+        # restart between the file_complete ack and this delivery reaches the same
+        # terminal state (discogsography-ewvh).
+        completed_files.add(data_type)
+        if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
+            await schedule_consumer_cancellation(data_type, queues[data_type])
+
         # Defer stub cleanup and stats until EVERY data type has signalled
         # extraction_complete. The four fanout queues drain at very different
         # rates (releases is by far the largest and finishes last), and every
@@ -766,16 +779,44 @@ async def run_post_import_maintenance() -> bool:
         try:
             maintenance_ok = True
 
+            # Drain EVERY batch queue first, not just the signalling type's. The
+            # extraction_complete branch flushes only its own data type, and a type
+            # whose signal was acked earlier can still hold pending messages:
+            # _flush_queue re-enqueues a transiently-failed batch at the front of that
+            # type's deque, so writes reappear after flush_queue already saw it empty.
+            # Cleanup then DETACH DELETEs sha256-less stubs of every label while those
+            # batches MERGE fresh stubs — the stubs survive forever with no sha256, or
+            # the sweep deletes a stub together with a just-written edge. The gate is
+            # "all four signals received"; this makes it "all four queues quiescent"
+            # too, which is the invariant the deferral comment actually claims
+            # (discogsography-fyxy). flush_all is a no-op on empty queues and waits out
+            # in-flight batches per type.
+            if batch_processor is not None and not await batch_processor.flush_all():
+                logger.error(
+                    "❌ Batch queues did not drain — deferring stub cleanup rather than "
+                    "sweeping while writers are still creating stubs",
+                )
+                maintenance_ok = False
+
             # Clean up stub nodes created by cross-type MERGE operations, across
             # EVERY entity label — not just one type's — because release batches
             # create Artist/Label/Master stubs regardless of which signal arrived
             # last.
-            if graph is not None and not await cleanup_all_stub_nodes():
+            if (
+                maintenance_ok
+                and graph is not None
+                and not await cleanup_all_stub_nodes()
+            ):
                 maintenance_ok = False
 
             # All releases are now imported — compute aggregate stats on
-            # Genre/Style/Label nodes.
-            if graph is not None and not await compute_genre_style_stats():
+            # Genre/Style/Label nodes. Skipped when the queues never drained: the
+            # counts would be computed over a graph that is still being written.
+            if (
+                maintenance_ok
+                and graph is not None
+                and not await compute_genre_style_stats()
+            ):
                 maintenance_ok = False
         except Exception as e:  # noqa: BLE001 - detached task: log and retry instead of dying silently
             logger.error(
@@ -1095,12 +1136,16 @@ async def cleanup_all_stub_nodes() -> bool:
 
 
 async def cleanup_stub_nodes(data_type: str) -> bool:
-    """Delete stub nodes that have no sha256 property.
+    """Delete ISOLATED stub nodes that have no sha256 property.
 
     During extraction, MERGE operations in relationship queries create
     skeleton nodes for cross-referenced entities (e.g., a release referencing
     an artist that hasn't been processed yet). Primary records always set
     sha256, so nodes without it are stubs that were never filled.
+
+    A stub that still has relationships is NOT collected: its edges belong to
+    fully-imported records and deleting them is unrecoverable under the
+    content-hash write-skip (discogsography-64aw).
 
     Returns:
         True if cleanup succeeded (or there is nothing to do), False if the
@@ -1135,10 +1180,21 @@ async def cleanup_stub_nodes(data_type: str) -> bool:
     # query: under transaction-memory pressure _run_maintenance_query re-runs
     # this with progressively smaller chunks. IN TRANSACTIONS commits per chunk,
     # so a retry only has to delete what the failed attempt did not.
+    # Only ISOLATED stubs are deleted. A stub that still carries relationships is a
+    # genuine dangling reference: a fully-imported release/artist MERGEd it plus a
+    # BY/ON/DERIVED_FROM/MEMBER_OF edge because the referenced entity was absent from
+    # this dump. DETACH DELETE destroyed those edges along with the stub — and the
+    # damage was permanent, because sha256 is purely content-derived: when the entity
+    # appears in a later dump the referencing record is byte-identical, the hash-skip
+    # in process_release/process_artist (and both batch processors) returns before the
+    # relationship blocks, and the edge is never rebuilt. Keeping the stub preserves
+    # both the edge and the id, and a later dump upgrades it in place — the fill-in
+    # path MERGEs on id, so the stub simply gains its properties and sha256
+    # (discogsography-64aw). Truly orphaned stubs still get collected here.
     def _build_cleanup_cypher(batch_size: int | None) -> str:
         return f"""
     MATCH (n:{label})
-    WHERE n.sha256 IS NULL
+    WHERE n.sha256 IS NULL AND NOT (n)--()
     CALL {{
         WITH n
         DETACH DELETE n
@@ -1296,6 +1352,38 @@ async def process_label(tx: Any, record: dict[str, Any]) -> bool:
     return True  # Updated successfully
 
 
+async def _prune_stale_edges(
+    tx: Any,
+    label: str,
+    node_id: Any,
+    *,
+    rel_type: str,
+    target_label: str,
+    target_key: str,
+    keep: list[Any],
+) -> None:
+    """Delete this record's managed edges that its NEW version no longer asserts.
+
+    Relationship writes are MERGE-only and therefore purely additive, but the
+    underlying Discogs records are mutable: a release retagged from Rock to Jazz gets a
+    new sha256, passes the hash gate, MERGEs the Jazz edge — and keeps the Rock one
+    forever. compute_genre_style_stats then counts those stale edges
+    (``MATCH (g)<-[:IS]-(r:Release) RETURN count(DISTINCT r)``), so Genre/Style/Label
+    release_count/artist_count are permanently over-stated and explore endpoints list
+    the release under a genre it no longer has (discogsography-bd0u).
+
+    Called with an EMPTY ``keep`` too — that is the "all associations removed" case.
+    Mirrors Neo4jBatchProcessor._prune_stale_edges.
+    """
+    await tx.run(
+        f"MATCH (n:{label} {{id: $node_id}})-[rel:{rel_type}]->(t:{target_label}) "
+        f"WHERE NOT t.{target_key} IN $keep "
+        "DELETE rel",
+        node_id=node_id,
+        keep=keep,
+    )
+
+
 async def process_master(tx: Any, record: dict[str, Any]) -> bool:
     """Process master within a single transaction for atomicity."""
     existing_result = await tx.run(
@@ -1314,6 +1402,36 @@ async def process_master(tx: Any, record: dict[str, Any]) -> bool:
         title=record.get("title", "Unknown Master"),
         year=record.get("year"),
         sha256=record["sha256"],
+    )
+
+    # Prune managed edges this record's NEW version no longer asserts, before the
+    # additive MERGEs below re-create the current set (discogsography-bd0u).
+    await _prune_stale_edges(
+        tx,
+        "Master",
+        record["id"],
+        rel_type="BY",
+        target_label="Artist",
+        target_key="id",
+        keep=[a["id"] for a in (record.get("artists") or []) if a.get("id")],
+    )
+    await _prune_stale_edges(
+        tx,
+        "Master",
+        record["id"],
+        rel_type="IS",
+        target_label="Genre",
+        target_key="name",
+        keep=[g for g in (record.get("genres") or []) if g],
+    )
+    await _prune_stale_edges(
+        tx,
+        "Master",
+        record["id"],
+        rel_type="IS",
+        target_label="Style",
+        target_key="name",
+        keep=[st for st in (record.get("styles") or []) if st],
     )
 
     # Handle artist relationships (normalized to list of {"id": ...} dicts)
@@ -1395,6 +1513,54 @@ async def process_release(tx: Any, record: dict[str, Any]) -> bool:
         year=record.get("year"),
         formats=formats,
         sha256=record["sha256"],
+    )
+
+    # Prune managed edges this record's NEW version no longer asserts, before the
+    # additive MERGEs below re-create the current set (discogsography-bd0u).
+    await _prune_stale_edges(
+        tx,
+        "Release",
+        record["id"],
+        rel_type="BY",
+        target_label="Artist",
+        target_key="id",
+        keep=[a["id"] for a in (record.get("artists") or []) if a.get("id")],
+    )
+    await _prune_stale_edges(
+        tx,
+        "Release",
+        record["id"],
+        rel_type="ON",
+        target_label="Label",
+        target_key="id",
+        keep=[lbl["id"] for lbl in (record.get("labels") or []) if lbl.get("id")],
+    )
+    await _prune_stale_edges(
+        tx,
+        "Release",
+        record["id"],
+        rel_type="DERIVED_FROM",
+        target_label="Master",
+        target_key="id",
+        keep=[record["master_id"]] if record.get("master_id") else [],
+    )
+    await _prune_stale_edges(
+        tx,
+        "Release",
+        record["id"],
+        rel_type="IS",
+        target_label="Genre",
+        target_key="name",
+        keep=[g for g in (record.get("genres") or []) if g],
+    )
+    await _prune_stale_edges(
+        tx,
+        "Release",
+        record["id"],
+        rel_type="IS",
+        target_label="Style",
+        target_key="name",
+        keep=[st for st in (record.get("styles") or []) if st],
     )
 
     # Handle artist relationships (normalized to list of {"id": ...} dicts)
@@ -1928,12 +2094,19 @@ async def main() -> None:
         active_channel = channel
 
         # Set QoS to allow concurrent batch processing for better throughput
-        # prefetch_count must be >= batch_size to allow batches to fill before flushing
+        # prefetch_count must be >= batch_size to allow batches to fill before flushing.
+        # QoS is deliberately per-consumer (aio-pika's global_=False default) so each
+        # data type can fill its own batch; the resulting channel-wide ceiling is
+        # prefetch_count x len(DATA_TYPES) and is logged so the multiplier is explicit
+        # rather than silent (discogsography-4fio). Unlike tableinator's non-batch mode,
+        # graphinator writes through the Neo4j driver's own pool, so there is no small
+        # fixed connection budget to couple the prefetch to.
         prefetch_count = max(200, BATCH_SIZE * 2) if BATCH_MODE else 200
         await channel.set_qos(prefetch_count=prefetch_count)
         logger.info(
             "🔧 QoS prefetch configured",
             prefetch_count=prefetch_count,
+            channel_wide_max=prefetch_count * len(DATA_TYPES),
             batch_size=BATCH_SIZE if BATCH_MODE else "N/A",
         )
 

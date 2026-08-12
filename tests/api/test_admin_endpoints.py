@@ -649,6 +649,14 @@ class TestTrackExtraction:
             patch("api.routers.admin.asyncio.sleep", new_callable=AsyncMock),
             patch("api.routers.admin.httpx.AsyncClient") as mock_client_cls,
         ):
+            # discogsography-exnk: a run that produced records was necessarily observed
+            # running first — the tracker only accepts a terminal status after that.
+            running_response = MagicMock()
+            running_response.status_code = 200
+            running_response.json.return_value = {
+                "extraction_status": "running",
+                "extraction_progress": {"artists": 10, "labels": 0, "masters": 0, "releases": 0},
+            }
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = {
@@ -656,7 +664,7 @@ class TestTrackExtraction:
                 "extraction_progress": {"artists": 100, "labels": 50, "masters": 25, "releases": 200},
             }
             mock_client_instance = AsyncMock()
-            mock_client_instance.get = AsyncMock(return_value=mock_response)
+            mock_client_instance.get = AsyncMock(side_effect=[running_response, mock_response])
             mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
             mock_client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client_instance
@@ -708,6 +716,14 @@ class TestTrackExtraction:
             patch("api.routers.admin.asyncio.sleep", new_callable=AsyncMock),
             patch("api.routers.admin.httpx.AsyncClient") as mock_client_cls,
         ):
+            # discogsography-exnk: a run that produced records was necessarily observed
+            # running first — the tracker only accepts a terminal status after that.
+            running_response = MagicMock()
+            running_response.status_code = 200
+            running_response.json.return_value = {
+                "extraction_status": "running",
+                "extraction_progress": {"artists": 10, "labels": 0, "masters": 0, "releases": 0},
+            }
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = {
@@ -715,7 +731,7 @@ class TestTrackExtraction:
                 "extraction_progress": {"artists": 100, "labels": 50, "masters": 25, "releases": 200},
             }
             mock_client_instance = AsyncMock()
-            mock_client_instance.get = AsyncMock(return_value=mock_response)
+            mock_client_instance.get = AsyncMock(side_effect=[running_response, mock_response])
             mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
             mock_client_instance.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client_instance
@@ -732,6 +748,145 @@ class TestTrackExtraction:
 
         admin_mod._pool = original_pool
         admin_mod._config = original_config
+
+    @pytest.mark.asyncio
+    async def test_parked_waiting_is_not_recorded_as_success(self) -> None:
+        """discogsography-exnk: "waiting" is also the PARKED state before a trigger
+        takes effect. If the extractor consumes the trigger and then fails before the
+        run starts, status stays "waiting" forever — and because extraction_progress is
+        only reset inside process_*_data, the phantom run carries the PREVIOUS run's
+        counts, so the false success looks entirely convincing."""
+        import api.routers.admin as admin_mod
+
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        mock_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=conn_ctx)
+
+        mock_config = MagicMock()
+        mock_config.extractor_host = "localhost"
+        mock_config.extractor_health_port = 8000
+
+        original_pool = admin_mod._pool
+        original_config = admin_mod._config
+        admin_mod._pool = mock_pool
+        admin_mod._config = mock_config
+
+        extraction_id = str(uuid4())
+
+        with (
+            patch("api.routers.admin.asyncio.sleep", new_callable=AsyncMock),
+            patch("api.routers.admin.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "extraction_status": "waiting",
+                # A previous run's counters, never cleared because this run never started.
+                "extraction_progress": {"artists": 100, "labels": 50, "masters": 25, "releases": 200, "total": 375},
+                # ...and stale activity timestamps to match (hours old).
+                "last_extraction_time": {"artists": 7200.0, "labels": 7300.0, "masters": None, "releases": 7100.0},
+            }
+            mock_client_instance = AsyncMock()
+            mock_client_instance.get = AsyncMock(return_value=mock_response)
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client_instance
+
+            await admin_mod._track_extraction(extraction_id)
+
+        executed = [call.args for call in mock_cur.execute.await_args_list]
+        terminal_calls = [args for args in executed if "completed_at = NOW()" in args[0]]
+        assert terminal_calls, "expected a terminal UPDATE with completed_at"
+        terminal_sql, terminal_params = terminal_calls[-1]
+        assert "status = 'failed'" in terminal_sql
+        assert "never started" in terminal_params[0]
+
+        admin_mod._pool = original_pool
+        admin_mod._config = original_config
+
+    @pytest.mark.asyncio
+    async def test_short_run_with_cleared_counters_is_still_success(self) -> None:
+        """The gate must not false-alarm on a legitimate short run. A trigger against an
+        already-processed version passes running → completed → waiting entirely between
+        two 10s polls; process_*_data cleared the counters as its first act, which is
+        what proves the run actually began."""
+        import api.routers.admin as admin_mod
+
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        mock_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=conn_ctx)
+
+        mock_config = MagicMock()
+        mock_config.extractor_host = "localhost"
+        mock_config.extractor_health_port = 8000
+
+        original_pool = admin_mod._pool
+        original_config = admin_mod._config
+        admin_mod._pool = mock_pool
+        admin_mod._config = mock_config
+
+        extraction_id = str(uuid4())
+
+        with (
+            patch("api.routers.admin.asyncio.sleep", new_callable=AsyncMock),
+            patch("api.routers.admin.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "extraction_status": "waiting",
+                "extraction_progress": {"artists": 0, "labels": 0, "masters": 0, "releases": 0, "total": 0},
+                "last_extraction_time": {"artists": None, "labels": None, "masters": None, "releases": None},
+            }
+            mock_client_instance = AsyncMock()
+            mock_client_instance.get = AsyncMock(return_value=mock_response)
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client_instance
+
+            await admin_mod._track_extraction(extraction_id)
+
+        executed = [call.args for call in mock_cur.execute.await_args_list]
+        terminal_calls = [args for args in executed if "completed_at = NOW()" in args[0]]
+        terminal_sql, terminal_params = terminal_calls[-1]
+        assert "SET status = %s" in terminal_sql
+        assert terminal_params[0] == "waiting"
+
+        admin_mod._pool = original_pool
+        admin_mod._config = original_config
+
+    def test_run_has_started_accepts_fresh_activity_timestamps(self) -> None:
+        """Activity newer than the tracking window belongs to THIS run, even when the
+        counters are non-zero."""
+        from api.routers.admin import _run_has_started
+
+        health = {
+            "extraction_progress": {"total": 375},
+            "last_extraction_time": {"artists": 12.0, "labels": None},
+        }
+        assert _run_has_started(health, tracked_seconds=20) is True
+        # Hours-old activity with stale counters is a parked extractor, not a run.
+        stale = {
+            "extraction_progress": {"total": 375},
+            "last_extraction_time": {"artists": 7200.0},
+        }
+        assert _run_has_started(stale, tracked_seconds=20) is False
 
     @pytest.mark.asyncio
     async def test_failed_extraction(self) -> None:

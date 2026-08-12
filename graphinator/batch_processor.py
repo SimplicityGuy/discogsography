@@ -789,6 +789,50 @@ class Neo4jBatchProcessor:
             await session.execute_write(batch_write)
         return nack_indices
 
+    @staticmethod
+    async def _prune_stale_edges(
+        tx: Any,
+        label: str,
+        records: list[dict[str, Any]],
+        *,
+        rel_type: str,
+        target_label: str,
+        target_key: str,
+        desired: Callable[[dict[str, Any]], list[Any]],
+        outgoing: bool = True,
+    ) -> None:
+        """Delete this record's managed edges that its NEW version no longer asserts.
+
+        Relationship writes are MERGE-only and therefore purely additive, but the
+        underlying Discogs records are mutable: a release retagged from Rock to Jazz
+        gets a new sha256, passes the hash gate, MERGEs the Jazz edge — and keeps the
+        Rock one forever. compute_genre_style_stats then counts those stale edges
+        (``MATCH (g)<-[:IS]-(r:Release) RETURN count(DISTINCT r)``), so Genre/Style/Label
+        release_count/artist_count are permanently over-stated and explore endpoints
+        list the release under a genre it no longer has (discogsography-bd0u).
+
+        Only edges of ``rel_type`` to ``target_label``, and only for the records in this
+        batch, are considered — an entity that is not being reprocessed is untouched.
+        Records whose new version asserts NO edges of the type are included too: that is
+        precisely the "all associations removed" case.
+        """
+        prune_data = [
+            {"key": record["id"], "keep": desired(record)} for record in records
+        ]
+        if not prune_data:
+            return
+
+        arrow = f"-[rel:{rel_type}]->" if outgoing else f"<-[rel:{rel_type}]-"
+        await tx.run(
+            f"""
+            UNWIND $records AS record
+            MATCH (n:{label} {{id: record.key}}){arrow}(t:{target_label})
+            WHERE NOT t.{target_key} IN record.keep
+            DELETE rel
+            """,
+            records=prune_data,
+        )
+
     async def _process_masters_batch(self, messages: list[PendingMessage]) -> set[int]:
         """Process a batch of master records.
 
@@ -847,6 +891,40 @@ class Neo4jBatchProcessor:
                         m.sha256 = master.sha256
                     """,
                     masters=masters_to_process,
+                )
+
+                # Prune managed edges the NEW version of each record no longer asserts.
+                # MERGE-only writes are additive, so without this a master retagged from
+                # Rock to Jazz keeps both edges forever and inflates every aggregate
+                # count computed off them (discogsography-bd0u).
+                await self._prune_stale_edges(
+                    tx,
+                    "Master",
+                    masters_to_process,
+                    rel_type="BY",
+                    target_label="Artist",
+                    target_key="id",
+                    desired=lambda m: [
+                        a["id"] for a in (m.get("artists") or []) if a.get("id")
+                    ],
+                )
+                await self._prune_stale_edges(
+                    tx,
+                    "Master",
+                    masters_to_process,
+                    rel_type="IS",
+                    target_label="Genre",
+                    target_key="name",
+                    desired=lambda m: [g for g in (m.get("genres") or []) if g],
+                )
+                await self._prune_stale_edges(
+                    tx,
+                    "Master",
+                    masters_to_process,
+                    rel_type="IS",
+                    target_label="Style",
+                    target_key="name",
+                    desired=lambda m: [st for st in (m.get("styles") or []) if st],
                 )
 
                 # Process artist relationships
@@ -1043,6 +1121,64 @@ class Neo4jBatchProcessor:
                         r += release.metadata
                     """,
                     releases=releases_to_process,
+                )
+
+                # Prune managed edges the NEW version of each record no longer asserts
+                # (discogsography-bd0u). MERGE-only writes never remove a dropped
+                # association, so a release corrected from genres=["Rock"] to
+                # genres=["Jazz"] kept (r)-[:IS]->(Rock) forever — permanently inflating
+                # Rock.release_count and listing the release under a genre it no longer
+                # has.
+                await self._prune_stale_edges(
+                    tx,
+                    "Release",
+                    releases_to_process,
+                    rel_type="BY",
+                    target_label="Artist",
+                    target_key="id",
+                    desired=lambda r: [
+                        a["id"] for a in (r.get("artists") or []) if a.get("id")
+                    ],
+                )
+                await self._prune_stale_edges(
+                    tx,
+                    "Release",
+                    releases_to_process,
+                    rel_type="ON",
+                    target_label="Label",
+                    target_key="id",
+                    desired=lambda r: [
+                        x["id"] for x in (r.get("labels") or []) if x.get("id")
+                    ],
+                )
+                await self._prune_stale_edges(
+                    tx,
+                    "Release",
+                    releases_to_process,
+                    rel_type="DERIVED_FROM",
+                    target_label="Master",
+                    target_key="id",
+                    desired=lambda r: (
+                        [str(r["master_id"])] if r.get("master_id") else []
+                    ),
+                )
+                await self._prune_stale_edges(
+                    tx,
+                    "Release",
+                    releases_to_process,
+                    rel_type="IS",
+                    target_label="Genre",
+                    target_key="name",
+                    desired=lambda r: [g for g in (r.get("genres") or []) if g],
+                )
+                await self._prune_stale_edges(
+                    tx,
+                    "Release",
+                    releases_to_process,
+                    rel_type="IS",
+                    target_label="Style",
+                    target_key="name",
+                    desired=lambda r: [st for st in (r.get("styles") or []) if st],
                 )
 
                 # Process artist relationships (Release)-[:BY]->(Artist)

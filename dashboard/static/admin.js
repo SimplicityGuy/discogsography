@@ -6,6 +6,11 @@
 // DISCOGS_EXCHANGE_PREFIX / MUSICBRAINZ_EXCHANGE_PREFIX / DATA_TYPES /
 // MUSICBRAINZ_DATA_TYPES defaults — a drift here reproduces the "every Purge
 // button 404s" bug (discogsography-cu2.35).
+// DEFAULTS ONLY. The live values are fetched from /api/queue-prefixes (which serves
+// the dashboard's env-derived DISCOGS_EXCHANGE_PREFIX / MUSICBRAINZ_EXCHANGE_PREFIX)
+// before the DLQ list is rendered. Under a prefix override, compiled-in literals would
+// make every Purge button 404 against the backend's env-derived _VALID_DLQ_NAMES —
+// the same failure shape as discogsography-cu2.35 (discogsography-dvmi).
 const DLQ_SOURCE_PREFIXES = {
     discogs: 'discogsography-discogs',
     musicbrainz: 'discogsography-musicbrainz',
@@ -21,15 +26,34 @@ const DLQ_CONSUMER_GROUPS = [
 // Structured items (queue/service/type) generated directly — NOT parsed back
 // out of the queue name string, which is brittle against multi-segment
 // prefixes (e.g. "discogsography-discogs-graphinator-artists.dlq").
-const DLQ_ITEMS = DLQ_CONSUMER_GROUPS.flatMap(({ source, consumer, types }) =>
-    types.map(type => ({
-        queue: `${DLQ_SOURCE_PREFIXES[source]}-${consumer}-${type}.dlq`,
-        service: consumer,
-        type,
-    }))
-);
+function buildDlqItems(prefixes) {
+    return DLQ_CONSUMER_GROUPS.flatMap(({ source, consumer, types }) =>
+        types.map(type => ({
+            queue: `${prefixes[source]}-${consumer}-${type}.dlq`,
+            service: consumer,
+            type,
+        }))
+    );
+}
 
-const DLQ_NAMES = DLQ_ITEMS.map(item => item.queue);
+let DLQ_ITEMS = buildDlqItems(DLQ_SOURCE_PREFIXES);
+
+let DLQ_NAMES = DLQ_ITEMS.map(item => item.queue);
+
+// Replace the compiled-in defaults with the server's env-derived prefixes. Best effort:
+// on any failure the defaults stand, which is exactly the pre-existing behavior.
+async function loadQueuePrefixes() {
+    try {
+        const response = await fetch('/api/queue-prefixes');
+        if (!response.ok) return;
+        const prefixes = await response.json();
+        if (!prefixes || !prefixes.discogs || !prefixes.musicbrainz) return;
+        DLQ_ITEMS = buildDlqItems(prefixes);
+        DLQ_NAMES = DLQ_ITEMS.map(item => item.queue);
+    } catch {
+        // Keep the defaults — a missing endpoint must not break the admin panel.
+    }
+}
 
 const QUEUE_CHART_COLORS = [
     '#818cf8', '#34d399', '#f59e0b', '#f87171',
@@ -304,6 +328,9 @@ class AdminDashboard {
     showPanel() {
         document.getElementById('login-view').style.display = 'none';
         document.getElementById('admin-view').style.display = 'block';
+        // Refresh the prefixes first so the rendered DLQ names match the backend's
+        // env-derived _VALID_DLQ_NAMES; re-render once they land.
+        loadQueuePrefixes().then(() => this.renderDlqList());
         this.renderDlqList();
         this.loadExtractions();
         this.startAutoRefresh();

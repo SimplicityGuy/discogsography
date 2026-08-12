@@ -224,15 +224,7 @@ class AsyncResilientRabbitMQ:
 
                 logger.info("✅ Robust RabbitMQ connection established")
 
-                # Notify reconnect callbacks
-                for callback in self._reconnect_callbacks:
-                    try:
-                        if asyncio.iscoroutinefunction(callback):
-                            await callback()
-                        else:
-                            callback()
-                    except Exception as e:
-                        logger.error(f"❌ Error in reconnect callback: {e}")
+                await self._notify_reconnect_callbacks("connect")
 
                 return self._connection
 
@@ -265,8 +257,31 @@ class AsyncResilientRabbitMQ:
             self._channel = await connection.channel()
             return self._channel
 
+    async def _notify_reconnect_callbacks(self, event: str) -> None:
+        """Invoke every registered callback, isolating failures.
+
+        Must be called with ``self._lock`` NOT held: a callback that re-establishes
+        state typically calls back into :meth:`channel`, which takes the same lock.
+        """
+        for callback in self._reconnect_callbacks:
+            try:
+                if asyncio.iscoroutinefunction(callback):
+                    await callback()
+                else:
+                    callback()
+            except Exception as e:
+                logger.error(f"❌ Error in reconnect callback ({event}): {e}")
+
     async def _on_reconnect(self, *_args: Any, **_kwargs: Any) -> None:
-        """Handle reconnection event."""
+        """Handle an aio-pika auto-reconnect: reset the channel, then notify callbacks.
+
+        RobustConnection reports ``is_closed == False`` across its own internal
+        reconnects, so :meth:`connect` early-returns and never re-runs its notify
+        block. This hook is the ONLY place a caller-visible reconnect is observable,
+        so it is where ``add_reconnect_callback`` subscribers have to be fired —
+        otherwise the API is a no-op exactly when re-registration is needed
+        (discogsography-6ino).
+        """
         logger.info("🔄 RabbitMQ connection re-established")
         if self._lock is None:
             self._lock = asyncio.Lock()
@@ -274,8 +289,17 @@ class AsyncResilientRabbitMQ:
             # Reset channel so it will be recreated
             self._channel = None
 
+        # Outside the lock: callbacks commonly call channel(), which acquires it.
+        await self._notify_reconnect_callbacks("reconnect")
+
     def add_reconnect_callback(self, callback: Callable) -> None:
-        """Add a callback to be called on reconnection."""
+        """Add a callback invoked on every connection establishment.
+
+        Fires both when :meth:`connect` establishes a connection and when aio-pika's
+        RobustConnection transparently re-establishes a dropped one. Callbacks must
+        therefore be idempotent. Exceptions are logged and swallowed so one bad
+        subscriber cannot break connection recovery for the others.
+        """
         self._reconnect_callbacks.append(callback)
 
     def remove_reconnect_callback(self, callback: Callable) -> None:

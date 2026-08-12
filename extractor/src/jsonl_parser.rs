@@ -47,6 +47,20 @@ fn extract_url_rels(relations: &[Value]) -> Vec<Value> {
     relations.iter().filter(|rel| rel["target-type"].as_str() == Some("url")).cloned().collect()
 }
 
+/// Canonicalize a MusicBrainz entity-type string to the project's vocabulary.
+///
+/// MusicBrainz spells multi-word entity types inconsistently across its
+/// serializers — `release_group` in ws/2 JSON dumps, `release-group` in the
+/// project's queue/exchange names and every consumer's hardcoded literals.
+/// Collapsing to the hyphenated form at the extractor boundary means all four
+/// consumers see exactly one spelling.
+pub fn canonical_entity_type(entity_type: &str) -> &str {
+    match entity_type {
+        "release_group" => "release-group",
+        other => other,
+    }
+}
+
 /// Extract entity-to-entity relationships from the unified `relations` array,
 /// normalizing to a flat format with `target_mbid` and `target_type` fields.
 ///
@@ -56,6 +70,14 @@ fn extract_url_rels(relations: &[Value]) -> Vec<Value> {
 /// The MusicBrainz dump stores the target entity under a key matching
 /// `target-type` (e.g., `rel["artist"]["id"]` for `target-type: "artist"`).
 /// This function normalizes that to `target_mbid` for downstream consumers.
+///
+/// The emitted `target_type` is canonicalized to the project's hyphenated
+/// vocabulary via [`canonical_entity_type`]: MusicBrainz's ws/2 JSON serializer
+/// spells release groups `release_group`, while every consumer (and
+/// [`enrich_relations`] below) keys off `release-group`. Emitting the raw
+/// spelling split the entity-type vocabulary in two and defeated the
+/// `(source_mbid, target_mbid, source_entity_type, target_entity_type,
+/// relationship_type)` dedup key in `musicbrainz.relationships`.
 fn extract_entity_rels(relations: &[Value]) -> Vec<Value> {
     relations
         .iter()
@@ -64,10 +86,13 @@ fn extract_entity_rels(relations: &[Value]) -> Vec<Value> {
             if target_type == "url" {
                 return None;
             }
-            let target_mbid = rel[target_type]["id"].as_str().unwrap_or("");
+            // The embedded entity object is keyed by the RAW target-type spelling,
+            // so look it up before canonicalizing. Dumps have been observed using
+            // both spellings for the nested key, so fall back to the alternate.
+            let target_mbid = rel[target_type]["id"].as_str().or_else(|| rel[canonical_entity_type(target_type)]["id"].as_str()).unwrap_or("");
             Some(serde_json::json!({
                 "type": rel["type"],
-                "target_type": target_type,
+                "target_type": canonical_entity_type(target_type),
                 "target_mbid": target_mbid,
                 "direction": rel["direction"],
                 "attributes": rel["attributes"],

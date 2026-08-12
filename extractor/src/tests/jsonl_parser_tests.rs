@@ -128,6 +128,68 @@ fn test_extract_entity_rels_empty() {
     assert!(entity_rels.is_empty());
 }
 
+#[test]
+fn test_extract_entity_rels_canonicalizes_underscore_release_group_target_type() {
+    // MusicBrainz's ws/2 JSON serializer spells release groups "release_group";
+    // the project's vocabulary (queues, PROCESSORS, consumer literals) is hyphenated.
+    // Emitting the raw spelling split the vocabulary and defeated the relationships
+    // natural-key dedup on the mirrored (backward-direction) row.
+    let relations = serde_json::json!([
+        {
+            "type": "tribute", "target-type": "release_group", "direction": "forward",
+            "release_group": {"id": "rg-mbid-1", "title": "Abbey Road"},
+            "attributes": [], "begin": null, "end": null, "ended": false
+        }
+    ]);
+    let entity_rels = extract_entity_rels(relations.as_array().unwrap());
+    assert_eq!(entity_rels.len(), 1);
+    assert_eq!(entity_rels[0]["target_type"], "release-group");
+    // The nested entity object is keyed by the RAW spelling; the MBID must still resolve.
+    assert_eq!(entity_rels[0]["target_mbid"], "rg-mbid-1");
+}
+
+#[test]
+fn test_extract_entity_rels_resolves_mbid_for_hyphenated_nested_release_group_key() {
+    // Dumps have been observed keying the nested object with the hyphenated spelling
+    // even when target-type uses the underscore form; the MBID must resolve either way.
+    let relations = serde_json::json!([
+        {
+            "type": "tribute", "target-type": "release_group", "direction": "forward",
+            "release-group": {"id": "rg-mbid-2", "title": "Revolver"}
+        }
+    ]);
+    let entity_rels = extract_entity_rels(relations.as_array().unwrap());
+    assert_eq!(entity_rels.len(), 1);
+    assert_eq!(entity_rels[0]["target_type"], "release-group");
+    assert_eq!(entity_rels[0]["target_mbid"], "rg-mbid-2");
+}
+
+#[test]
+fn test_canonical_entity_type_passes_through_single_word_types() {
+    assert_eq!(canonical_entity_type("artist"), "artist");
+    assert_eq!(canonical_entity_type("label"), "label");
+    assert_eq!(canonical_entity_type("release"), "release");
+    assert_eq!(canonical_entity_type("release-group"), "release-group");
+    assert_eq!(canonical_entity_type("release_group"), "release-group");
+}
+
+#[test]
+fn test_enrich_relations_matches_canonicalized_release_group_targets() {
+    // enrich_relations compares target_type against the hyphenated singular form,
+    // so canonicalization at extraction is what makes the match possible at all.
+    let relations = extract_entity_rels(
+        serde_json::json!([
+            {"type": "tribute", "target-type": "release_group", "release_group": {"id": "rg-mbid-3"}}
+        ])
+        .as_array()
+        .unwrap(),
+    );
+    let mut discogs_map = HashMap::new();
+    discogs_map.insert("rg-mbid-3".to_string(), 777i64);
+    let enriched = enrich_relations(relations, &discogs_map, "release-groups");
+    assert_eq!(enriched[0]["target_discogs_release_group_id"], 777);
+}
+
 // ─── parse_mb_artist_line ────────────────────────────────────────────────────
 
 #[test]

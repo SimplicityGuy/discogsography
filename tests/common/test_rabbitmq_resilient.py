@@ -371,6 +371,75 @@ class TestAsyncResilientRabbitMQ:
         # Channel should be reset
         assert conn._channel is None
 
+    @pytest.mark.asyncio
+    async def test_on_reconnect_invokes_registered_callbacks(self, connection_url: str) -> None:
+        """discogsography-6ino: _on_reconnect is the ONLY observable reconnect event.
+
+        RobustConnection reports is_closed == False across its own reconnects, so
+        connect() early-returns and never re-runs its notify block. Subscribers to
+        add_reconnect_callback must therefore be fired from here, or the documented
+        API is a silent no-op exactly when re-registration is needed.
+        """
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url)
+        sync_callback = Mock()
+        async_callback = AsyncMock()
+        conn.add_reconnect_callback(sync_callback)
+        conn.add_reconnect_callback(async_callback)
+
+        await conn._on_reconnect()
+
+        sync_callback.assert_called_once()
+        async_callback.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_on_reconnect_isolates_failing_callbacks(self, connection_url: str) -> None:
+        """One bad subscriber must not stop the others or break reconnect handling."""
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url)
+        failing = Mock(side_effect=RuntimeError("callback error"))
+        failing_async = AsyncMock(side_effect=RuntimeError("async callback error"))
+        good = Mock()
+        conn.add_reconnect_callback(failing)
+        conn.add_reconnect_callback(failing_async)
+        conn.add_reconnect_callback(good)
+        conn._channel = AsyncMock()
+
+        await conn._on_reconnect()
+
+        assert conn._channel is None
+        failing.assert_called_once()
+        failing_async.assert_awaited_once()
+        good.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_reconnect_notifies_without_holding_the_lock(self, connection_url: str) -> None:
+        """Callbacks routinely call back into channel(), which takes the same lock —
+        firing them under it would deadlock."""
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url)
+        lock_was_free: list[bool] = []
+
+        def callback() -> None:
+            assert conn._lock is not None
+            lock_was_free.append(not conn._lock.locked())
+
+        conn.add_reconnect_callback(callback)
+
+        await conn._on_reconnect()
+
+        assert lock_was_free == [True]
+
+    @pytest.mark.asyncio
+    @patch("common.rabbitmq_resilient.connect_robust", new_callable=AsyncMock)
+    async def test_reconnect_hook_is_registered_with_aio_pika(
+        self, mock_connect_robust: AsyncMock, connection_url: str, mock_async_connection: AsyncMock
+    ) -> None:
+        """The hook only fires if it is actually wired to RobustConnection."""
+        mock_connect_robust.return_value = mock_async_connection
+
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url)
+        await conn.connect()
+
+        mock_async_connection.reconnect_callbacks.add.assert_called_once_with(conn._on_reconnect)
+
     def test_add_reconnect_callback(self, connection_url: str) -> None:
         """Test adding reconnect callback."""
         conn = AsyncResilientRabbitMQ(connection_url=connection_url)

@@ -13,6 +13,7 @@ from aio_pika.abc import AbstractIncomingMessage
 import pytest
 
 from tableinator.tableinator import (
+    channel_prefetch,
     check_all_consumers_idle,
     close_rabbitmq_connection,
     get_connection,
@@ -48,6 +49,65 @@ class TestGetConnection:
             pytest.raises(RuntimeError, match="Connection pool not initialized"),
         ):
             get_connection()
+
+
+class TestChannelPrefetch:
+    """discogsography-4fio: QoS must be coupled to the PostgreSQL pool in non-batch mode.
+
+    In non-batch mode every in-flight handler holds a pooled connection for its upsert.
+    Per-consumer QoS of 200 across 4 consumers put 800 handlers in flight against a
+    12-connection pool; losers of that race raised out of the pool's bounded
+    exhausted-wait, were nacked with requeue=True, and burned the quorum queue's
+    x-delivery-limit until the message was silently dead-lettered.
+    """
+
+    def test_non_batch_prefetch_is_channel_global_and_matches_pool_max(self) -> None:
+        mock_config = MagicMock()
+        mock_config.postgres_pool_max_size = 12
+
+        with (
+            patch("tableinator.tableinator.BATCH_MODE", False),
+            patch("tableinator.tableinator.config", mock_config),
+        ):
+            prefetch, global_ = channel_prefetch()
+
+        assert prefetch == 12
+        # global_=True bounds the CHANNEL's total unacked deliveries, not each consumer's.
+        assert global_ is True
+
+    def test_non_batch_prefetch_falls_back_when_config_unset(self) -> None:
+        from tableinator.tableinator import _DEFAULT_POOL_MAX
+
+        with (
+            patch("tableinator.tableinator.BATCH_MODE", False),
+            patch("tableinator.tableinator.config", None),
+        ):
+            prefetch, global_ = channel_prefetch()
+
+        assert prefetch == _DEFAULT_POOL_MAX
+        assert global_ is True
+
+    def test_batch_prefetch_stays_per_consumer_and_scales_with_batch_size(self) -> None:
+        """Batch mode hands off to the batch processor rather than holding a connection
+        per message, and each queue needs BATCH_SIZE unacked deliveries of its OWN data
+        type for a batch to fill — so QoS deliberately stays per-consumer there."""
+        with (
+            patch("tableinator.tableinator.BATCH_MODE", True),
+            patch("tableinator.tableinator.BATCH_SIZE", 500),
+        ):
+            prefetch, global_ = channel_prefetch()
+
+        assert prefetch == 1000
+        assert global_ is False
+
+    def test_batch_prefetch_has_a_floor_of_200(self) -> None:
+        with (
+            patch("tableinator.tableinator.BATCH_MODE", True),
+            patch("tableinator.tableinator.BATCH_SIZE", 10),
+        ):
+            prefetch, _ = channel_prefetch()
+
+        assert prefetch == 200
 
 
 class TestMakeDataHandler:
@@ -820,6 +880,80 @@ class TestOnDataMessageExtended:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_extraction_complete_marks_the_type_complete(self) -> None:
+        """discogsography-ewvh: extraction_complete is the type's terminal signal.
+
+        completed_files was written only by file_complete and erased by
+        _recover_consumers for any type whose queue still holds messages — and when the
+        only pending message IS this signal, nothing restored the flag. The service then
+        logged "Stalled consumers detected" at ERROR every 30s forever and
+        check_all_consumers_idle() could never return True, holding the connection and
+        four idle consumers open until restart.
+        """
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"type": "extraction_complete", "version": "20260101", "started_at": "2026-01-01T00:00:00Z"}).encode()
+        completed: set[str] = set()  # as left by _recover_consumers' discard
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", None),
+            patch("tableinator.tableinator.connection_pool", None),
+            patch("tableinator.tableinator.completed_files", completed),
+            patch("tableinator.tableinator.queues", {}),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        assert completed == {"artists"}
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_extraction_complete_rearms_consumer_cancellation(self) -> None:
+        """The file_complete that originally scheduled cancellation was consumed in an
+        earlier session, so the terminal signal has to re-arm it or the consumer is
+        never released."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"type": "extraction_complete", "version": "20260101", "started_at": "2026-01-01T00:00:00Z"}).encode()
+        mock_queue = MagicMock()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", None),
+            patch("tableinator.tableinator.connection_pool", None),
+            patch("tableinator.tableinator.completed_files", set()),
+            patch("tableinator.tableinator.queues", {"artists": mock_queue}),
+            patch("tableinator.tableinator.CONSUMER_CANCEL_DELAY", 300),
+            patch("tableinator.tableinator.schedule_consumer_cancellation", new=AsyncMock()) as mock_schedule,
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_schedule.assert_awaited_once_with("artists", mock_queue)
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_extraction_complete_does_not_mark_complete_on_failed_purge(self) -> None:
+        """A requeued signal must not leave the type marked complete — the purge still
+        owes a retry."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"type": "extraction_complete", "version": "20260101", "started_at": "2026-01-01T00:00:00Z"}).encode()
+        completed: set[str] = set()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", None),
+            patch("tableinator.tableinator.connection_pool", MagicMock()),
+            patch("tableinator.tableinator.completed_files", completed),
+            patch("tableinator.tableinator.queues", {}),
+            patch("tableinator.tableinator.purge_stale_rows", side_effect=Exception("purge boom")),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        assert completed == set()
+        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_extraction_complete_flushes_batches(self) -> None:
         """Test extraction_complete flushes batch processor."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -915,6 +1049,33 @@ class TestOnDataMessageExtended:
 
         # Should nack without requeue
         mock_message.nack.assert_called_once_with(requeue=False)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad_id", [None, ""])
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_handles_falsy_id_field(self, bad_id: str | None) -> None:
+        """discogsography-ria1: a present-but-falsy id is just as invalid as a missing one.
+
+        Key-presence-only validation let `"id": null` reach an INSERT into a NOT NULL
+        PRIMARY KEY; the resulting deterministic IntegrityError fell to the generic
+        handler and was nacked with requeue=True, burning all 20 redeliveries before the
+        DLQ. `"id": ""` was worse — it upserted a junk row keyed on the empty string and
+        was acked as a success. Every sibling consumer already rejects falsy ids.
+        """
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"id": bad_id, "name": "Test Artist"}).encode()
+        mock_message.routing_key = "artists"
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.BATCH_MODE", False),
+            patch("tableinator.tableinator.connection_pool", MagicMock()),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        # Deterministic poison -> straight to the DLQ, no redelivery cycling, no write.
+        mock_message.nack.assert_called_once_with(requeue=False)
+        mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
@@ -1889,6 +2050,57 @@ class TestOnDataMessageDatabaseOperations:
         # Should nack with requeue
         mock_message.nack.assert_called_once_with(requeue=True)
         mock_logger.warning.assert_called()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    @patch("tableinator.tableinator.BATCH_MODE", False)
+    async def test_handles_integrity_error_without_requeue(self, sample_artist_data: dict[str, Any]) -> None:
+        """discogsography-yuyg (mirror): a constraint violation is deterministic.
+
+        IntegrityError (e.g. NotNullViolation) is not a subclass of DataError, so it
+        used to reach the generic handler and be nacked with requeue=True, spending all
+        20 of the quorum queue's redeliveries — each opening a pooled connection and
+        rolling back — before the broker dead-lettered it anyway."""
+        from psycopg.errors import NotNullViolation
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        mock_message.routing_key = "artists"
+
+        mock_pool = MagicMock()
+        mock_pool.connection.side_effect = NotNullViolation('null value in column "data_id"')
+
+        with (
+            patch("tableinator.tableinator.connection_pool", mock_pool),
+            patch("tableinator.tableinator.logger"),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_message.nack.assert_called_once_with(requeue=False)
+        mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    @patch("tableinator.tableinator.BATCH_MODE", False)
+    async def test_handles_data_error_without_requeue(self, sample_artist_data: dict[str, Any]) -> None:
+        """The cast-failure half of the same classification."""
+        from psycopg.errors import DataError
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        mock_message.routing_key = "artists"
+
+        mock_pool = MagicMock()
+        mock_pool.connection.side_effect = DataError("invalid input syntax")
+
+        with (
+            patch("tableinator.tableinator.connection_pool", mock_pool),
+            patch("tableinator.tableinator.logger"),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_message.nack.assert_called_once_with(requeue=False)
+        mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)

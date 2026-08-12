@@ -436,6 +436,80 @@ class TestInsertRelationships:
         assert row[2] == "source-mbid-1"
         assert row[3] == "artist"
 
+    @pytest.mark.asyncio
+    async def test_insert_relationships_canonicalizes_release_group_entity_type(self):
+        """discogsography-06gd: MusicBrainz spells release groups 'release_group'
+        while every call site here hardcodes 'release-group'. Passing the raw
+        spelling through wrote two vocabularies into the same table, so the
+        forward row and the mirrored backward row no longer collided on the
+        natural key and the same logical relationship was stored twice."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        rels = [
+            {
+                "target_mbid": "rg-mbid-1",
+                "target_type": "release_group",
+                "type": "tribute",
+            }
+        ]
+
+        await _insert_relationships(mock_conn, "source-mbid-1", "artist", rels)
+
+        row = mock_cursor.executemany.call_args[0][1][0]
+        assert row[3] == "release-group"
+
+    @pytest.mark.asyncio
+    async def test_insert_relationships_mirrored_rows_agree_on_entity_type(self):
+        """discogsography-06gd: the row written while processing endpoint A and the
+        swapped row written while processing endpoint B must be byte-identical in
+        their type columns, otherwise ON CONFLICT never fires."""
+        mock_conn_a, mock_cursor_a = _make_mock_conn()
+        # Endpoint A (the artist) sees the release group as a forward target,
+        # spelled with MusicBrainz's underscore.
+        await _insert_relationships(
+            mock_conn_a,
+            "artist-mbid-1",
+            "artist",
+            [{"target_mbid": "rg-mbid-1", "target_type": "release_group", "type": "tribute"}],
+        )
+        forward_row = mock_cursor_a.executemany.call_args[0][1][0]
+
+        mock_conn_b, mock_cursor_b = _make_mock_conn()
+        # Endpoint B (the release group) sees the mirror as a backward relation and
+        # is processed under the project's hyphenated literal.
+        await _insert_relationships(
+            mock_conn_b,
+            "rg-mbid-1",
+            "release-group",
+            [
+                {
+                    "target_mbid": "artist-mbid-1",
+                    "target_type": "artist",
+                    "type": "tribute",
+                    "direction": "backward",
+                }
+            ],
+        )
+        backward_row = mock_cursor_b.executemany.call_args[0][1][0]
+
+        # source_mbid, source_entity_type, target_mbid, target_entity_type, relationship_type
+        assert forward_row[:5] == backward_row[:5]
+
+    @pytest.mark.asyncio
+    async def test_insert_relationships_canonicalizes_the_processed_entity_type(self):
+        """discogsography-06gd: normalization must also cover source_type, so a caller
+        passing the underscore spelling cannot reintroduce the split vocabulary."""
+        mock_conn, mock_cursor = _make_mock_conn()
+
+        await _insert_relationships(
+            mock_conn,
+            "rg-mbid-1",
+            "release_group",
+            [{"target_mbid": "artist-mbid-1", "target_type": "artist", "type": "tribute"}],
+        )
+
+        row = mock_cursor.executemany.call_args[0][1][0]
+        assert row[1] == "release-group"
+
 
 class TestInsertExternalLinks:
     """Tests for _insert_external_links (batched executemany)."""
@@ -473,6 +547,137 @@ class TestInsertExternalLinks:
 
         mock_cursor.execute.assert_not_called()
         mock_cursor.executemany.assert_not_called()
+
+
+# ===========================================================================
+# Present-but-null field coalescing (discogsography-iud5)
+# ===========================================================================
+
+
+class TestNullFieldCoalescing:
+    """The extractor's json! macro always emits every key it knows about, so a field
+    the MusicBrainz dump omits arrives as an explicit null rather than an absent key.
+    dict.get(key, default) then returns None and the default is dead code — NULL was
+    written where FALSE/[] was intended, and ON CONFLICT DO UPDATE overwrote
+    previously-correct values with those nulls on reprocessing."""
+
+    @pytest.mark.asyncio
+    async def test_null_relationship_ended_stores_false(self):
+        mock_conn, mock_cursor = _make_mock_conn()
+        rels = [
+            {
+                "target_mbid": "target-mbid-1",
+                "target_type": "artist",
+                "type": "member of band",
+                "ended": None,
+                "attributes": None,
+            }
+        ]
+
+        await _insert_relationships(mock_conn, "source-mbid-1", "artist", rels)
+
+        row = mock_cursor.executemany.call_args[0][1][0]
+        # ended is the last bound column; a column DEFAULT does not apply to an
+        # explicitly supplied NULL, so WHERE NOT ended would have dropped this row.
+        assert row[-1] is False
+
+    @pytest.mark.asyncio
+    async def test_null_relationship_attributes_stores_empty_array(self):
+        mock_conn, mock_cursor = _make_mock_conn()
+        rels = [
+            {
+                "target_mbid": "target-mbid-1",
+                "target_type": "artist",
+                "type": "member of band",
+                "attributes": None,
+            }
+        ]
+
+        await _insert_relationships(mock_conn, "source-mbid-1", "artist", rels)
+
+        row = mock_cursor.executemany.call_args[0][1][0]
+        # Jsonb(None) dumps the jsonb SCALAR null, on which jsonb_array_length errors.
+        assert row[5].obj == []
+
+    @pytest.mark.asyncio
+    async def test_null_artist_life_span_ended_stores_false(self):
+        mock_conn, mock_cursor = _make_mock_conn()
+        record = {
+            "mbid": "artist-mbid-1",
+            "name": "Test Artist",
+            "life_span": {"begin": None, "end": None, "ended": None},
+            "aliases": None,
+            "tags": None,
+        }
+
+        await process_artist(mock_conn, record)
+
+        params = mock_cursor.execute.call_args[0][1]
+        # (mbid, name, sort_name, mb_type, gender, begin_date, end_date, ended, ...)
+        assert params[7] is False
+        assert params[13].obj == []  # aliases
+        assert params[14].obj == []  # tags
+
+    @pytest.mark.asyncio
+    async def test_null_label_life_span_ended_stores_false(self):
+        mock_conn, mock_cursor = _make_mock_conn()
+        record = {
+            "mbid": "label-mbid-1",
+            "name": "Test Label",
+            "life_span": {"begin": None, "end": None, "ended": None},
+        }
+
+        await process_label(mock_conn, record)
+
+        params = mock_cursor.execute.call_args[0][1]
+        # (mbid, name, mb_type, label_code, begin_date, end_date, ended, ...)
+        assert params[6] is False
+
+    @pytest.mark.asyncio
+    async def test_entirely_null_life_span_is_tolerated(self):
+        """A null life_span object itself must not raise (it is emitted as a dict today,
+        but the guard is what keeps a schema change from crashing the consumer)."""
+        mock_conn, mock_cursor = _make_mock_conn()
+
+        await process_artist(mock_conn, {"mbid": "artist-mbid-2", "name": "Test", "life_span": None})
+
+        params = mock_cursor.execute.call_args[0][1]
+        assert params[5] is None  # begin_date
+        assert params[6] is None  # end_date
+        assert params[7] is False  # ended
+
+    @pytest.mark.asyncio
+    async def test_null_release_group_secondary_types_stores_empty_array(self):
+        mock_conn, mock_cursor = _make_mock_conn()
+
+        await process_release_group(
+            mock_conn,
+            {"mbid": "rg-mbid-1", "name": "Test RG", "secondary_types": None},
+        )
+
+        params = mock_cursor.execute.call_args[0][1]
+        assert params[3].obj == []
+
+    @pytest.mark.asyncio
+    async def test_real_values_are_preserved(self):
+        """Coalescing must not flatten genuine values."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        record = {
+            "mbid": "artist-mbid-3",
+            "name": "Ended Artist",
+            "life_span": {"begin": "1960", "end": "1970", "ended": True},
+            "aliases": ["a"],
+            "tags": ["rock"],
+        }
+
+        await process_artist(mock_conn, record)
+
+        params = mock_cursor.execute.call_args[0][1]
+        assert params[5] == "1960"
+        assert params[6] == "1970"
+        assert params[7] is True
+        assert params[13].obj == ["a"]
+        assert params[14].obj == ["rock"]
 
 
 # ===========================================================================
@@ -554,15 +759,20 @@ class TestOnDataMessage:
         """extraction_complete message should be acked."""
         mock_message = AsyncMock()
         mock_message.body = b'{"type": "extraction_complete", "version": "2026-01-01"}'
+        completed: set[str] = set()
 
         with (
             patch("brainztableinator.brainztableinator.shutdown_requested", False),
-            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.completed_files", completed),
             patch("brainztableinator.brainztableinator.connection_pool", MagicMock()),
         ):
             await on_data_message(mock_message, "artists")
 
             mock_message.ack.assert_called_once()
+            # discogsography-ewvh: the terminal signal must also (re-)mark the type
+            # complete — _recover_consumers discards it for any type whose queue still
+            # holds messages, and this signal is often the only one left.
+            assert completed == {"artists"}
 
     @pytest.mark.asyncio
     async def test_valid_data_message_calls_processor(self):
@@ -724,6 +934,54 @@ class TestOnDataMessage:
         mock_pool.connection = MagicMock(return_value=mock_conn_cm)
 
         mock_processor = AsyncMock(side_effect=DataError("invalid input syntax for type uuid"))
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
+            patch(
+                "brainztableinator.brainztableinator.message_counts",
+                {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0},
+            ),
+            patch(
+                "brainztableinator.brainztableinator.last_message_time",
+                {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0},
+            ),
+            patch.dict(
+                "brainztableinator.brainztableinator.PROCESSORS",
+                {"artists": mock_processor},
+            ),
+        ):
+            await on_data_message(mock_message, "artists")
+
+            mock_message.nack.assert_called_once_with(requeue=False)
+            mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_integrity_error_nacks_without_requeue(self):
+        """discogsography-yuyg: a NOT NULL violation is deterministic, not transient.
+
+        NotNullViolation derives from psycopg's IntegrityError, NOT DataError, so it
+        used to fall through to the generic handler and be nacked with requeue=True —
+        20 futile redeliveries per bad record, each opening a pooled connection and
+        rolling back a transaction, before the broker dead-lettered it anyway. Reached
+        whenever a dump line carries no name/title: the extractor forwards it as
+        "name": null and the four musicbrainz tables all declare name TEXT NOT NULL.
+        """
+        from psycopg.errors import NotNullViolation
+
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "550e8400-e29b-41d4-a716-446655440000"}'
+
+        mock_pool = MagicMock()
+        mock_conn = AsyncMock()
+        mock_conn.transaction = MagicMock(return_value=AsyncMock())
+        mock_conn_cm = AsyncMock()
+        mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.connection = MagicMock(return_value=mock_conn_cm)
+
+        mock_processor = AsyncMock(side_effect=NotNullViolation('null value in column "name" violates not-null constraint'))
 
         with (
             patch("brainztableinator.brainztableinator.shutdown_requested", False),

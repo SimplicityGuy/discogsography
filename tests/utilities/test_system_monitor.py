@@ -142,6 +142,33 @@ def test_monitor_system_all_healthy(capsys) -> None:
     assert "No recent errors found" in out
 
 
+def test_monitor_system_honors_overridden_queue_prefixes(capsys) -> None:
+    """discogsography-dvmi: the queue filter and the display shortening must both follow
+    DISCOGS_EXCHANGE_PREFIX / MUSICBRAINZ_EXCHANGE_PREFIX. With the prefixes hardcoded,
+    an override made the filter match nothing and the monitor reported an empty broker."""
+    queues = [
+        {"name": "staging-discogs-graphinator-artists", "messages_ready": 2, "messages_unacknowledged": 1, "messages": 3},
+        {"name": "staging-musicbrainz-brainztableinator-releases", "messages_ready": 0, "messages_unacknowledged": 0, "messages": 4},
+    ]
+    with (
+        patch.object(system_monitor, "DISCOGS_EXCHANGE_PREFIX", "staging-discogs"),
+        patch.object(system_monitor, "MUSICBRAINZ_EXCHANGE_PREFIX", "staging-musicbrainz"),
+        patch.object(system_monitor, "get_docker_stats", return_value=[]),
+        patch.object(system_monitor, "get_queue_stats", return_value=queues),
+        patch.object(system_monitor, "check_neo4j_status", return_value="neo4j ok"),
+        patch.object(system_monitor, "check_postgres_status", return_value="pg ok"),
+        patch.object(system_monitor, "get_service_logs", return_value="INFO all good"),
+    ):
+        system_monitor.monitor_system()
+
+    out = capsys.readouterr().out
+    assert "Total messages: 7" in out
+    # Labels are shortened using the overridden prefixes, not left fully qualified.
+    assert "graphinator-artists" in out
+    assert "mb-brainztableinator-releases" in out
+    assert "staging-discogs-graphinator-artists" not in out
+
+
 def test_monitor_system_all_unavailable(capsys) -> None:
     def fake_logs(service: str, _lines: int = 20) -> str:
         return "ERROR something Failed badly" if service == "graphinator" else ""

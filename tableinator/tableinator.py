@@ -27,7 +27,7 @@ from common import (
 )
 from orjson import loads
 from psycopg import sql
-from psycopg.errors import InterfaceError, OperationalError
+from psycopg.errors import DataError, IntegrityError, InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
 
 from tableinator.batch_processor import BatchConfig, PostgreSQLBatchProcessor
@@ -167,6 +167,42 @@ batch_processor: PostgreSQLBatchProcessor | None = None
 BATCH_MODE = os.environ.get("POSTGRES_BATCH_MODE", "true").lower() == "true"
 BATCH_SIZE = int(os.environ.get("POSTGRES_BATCH_SIZE", "100"))
 BATCH_FLUSH_INTERVAL = float(os.environ.get("POSTGRES_BATCH_FLUSH_INTERVAL", "5.0"))
+
+# Fallback pool max when config is not yet loaded (matches TableinatorConfig default).
+_DEFAULT_POOL_MAX = 12
+
+
+def channel_prefetch() -> tuple[int, bool]:
+    """Resolve ``(prefetch_count, global_)`` for this channel's QoS.
+
+    Two different shapes, because the two modes hold PostgreSQL connections very
+    differently:
+
+    * **Batch mode** — handlers hand the message to :class:`PostgreSQLBatchProcessor`
+      and return immediately; only the flush task holds a pooled connection, and its
+      concurrency is bounded by the batch processor's own semaphore. Each queue needs
+      at least ``BATCH_SIZE`` unacked deliveries of its OWN data type for a batch to
+      fill, so QoS stays per-consumer (``global_=False``). The channel-wide ceiling is
+      therefore ``prefetch_count * len(DATA_TYPES)`` — logged explicitly so the 4x
+      multiplier is not a surprise.
+    * **Non-batch mode** (``POSTGRES_BATCH_MODE=false``) — every in-flight handler
+      holds a pooled connection for the duration of its upsert, exactly the shape
+      brainztableinator couples in ``_channel_prefetch``. Bound the channel's TOTAL
+      unacked deliveries (``global_=True``) to the pool max so the broker, not the
+      pool's ~15.5s exhausted-wait retry loop, applies backpressure. Without this,
+      4 x 200 = 800 concurrent handlers raced for 12 connections; the losers raised,
+      were nacked with ``requeue=True``, and burned the quorum queue's
+      ``x-delivery-limit: 20`` until the message was silently dead-lettered
+      (discogsography-4fio).
+    """
+    if BATCH_MODE:
+        # prefetch_count must be >= batch_size to allow batches to fill before flushing
+        return max(200, BATCH_SIZE * 2), False
+    pool_max = (
+        config.postgres_pool_max_size if config is not None else _DEFAULT_POOL_MAX
+    )
+    return pool_max, True
+
 
 # Global shutdown flag
 shutdown_requested = False
@@ -419,9 +455,12 @@ async def _recover_consumers() -> None:
             active_connection = temp_connection
             active_channel = temp_channel
 
-            # Set QoS - scale with batch_size for efficient batch processing
-            prefetch_count = max(200, BATCH_SIZE * 2) if BATCH_MODE else 200
-            await active_channel.set_qos(prefetch_count=prefetch_count)
+            # Set QoS - scale with batch_size in batch mode, couple to the PostgreSQL
+            # pool capacity in non-batch mode (see channel_prefetch).
+            prefetch_count, prefetch_global = channel_prefetch()
+            await active_channel.set_qos(
+                prefetch_count=prefetch_count, global_=prefetch_global
+            )
 
             # Declare per-data-type fanout exchanges and consumer-owned queues
             queues = {}
@@ -773,13 +812,37 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                     purge_ok = False
 
             if purge_ok:
+                # extraction_complete is this type's terminal signal, so it must also
+                # (re-)mark the type complete. completed_files is otherwise written
+                # only by file_complete and ERASED by _recover_consumers for any type
+                # whose queue still holds messages — and when the only pending message
+                # IS this signal, nothing ever restored the flag. The service then
+                # logged "Stalled consumers detected" at ERROR every 30s forever,
+                # check_all_consumers_idle() could never return True, and the
+                # connection plus four idle consumers were held open until restart.
+                # A plain restart between the file_complete ack and this delivery
+                # reaches the same terminal state (discogsography-ewvh).
+                completed_files.add(data_type)
+
+                # Re-arm cancellation: the file_complete that originally scheduled it
+                # was consumed in an earlier session or before recovery.
+                if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
+                    await schedule_consumer_cancellation(data_type, queues[data_type])
+
                 await message.ack()
             else:
                 await message.nack(requeue=True)
             return
 
-        # Normal message processing - require 'id' field
-        if "id" not in data:
+        # Normal message processing - require a non-empty 'id' field.
+        # Falsy (not just absent), matching every sibling site: graphinator.py's
+        # `if not record.get("id")`, both batch processors' `if not data_id`, and the
+        # brainz* consumers. Key-presence alone let `"id": null` through to an INSERT
+        # into a NOT NULL PRIMARY KEY, whose deterministic IntegrityError landed in the
+        # generic handler and was nacked with requeue=True — burning all 20 redeliveries
+        # before dead-lettering — while `"id": ""` silently wrote a junk row keyed on the
+        # empty string and acked it as success (discogsography-ria1).
+        if not data.get("id"):
             logger.error("❌ Message missing 'id' field", data=data)
             await message.nack(requeue=False)
             return
@@ -897,6 +960,22 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
         # minutes of a database outage (discogsography-rb05).
         await outage_backoff.wait()
         await message.nack(requeue=True)
+    except (DataError, IntegrityError) as e:
+        # Deterministic per-record faults: a failed column cast (DataError) or a
+        # violated constraint (IntegrityError, e.g. a NULL data_id). Retrying fails
+        # identically every time, so nack straight to the DLQ instead of spending all
+        # 20 of the quorum queue's redeliveries — each one opening a pooled connection
+        # and rolling back — before the broker dead-letters it anyway. Mirrors
+        # brainztableinator's branch (discogsography-yuyg).
+        logger.error(
+            "❌ Non-retryable data error, nacking without requeue",
+            data_type=data_type,
+            error=str(e),
+        )
+        try:
+            await message.nack(requeue=False)
+        except Exception as nack_error:  # noqa: BLE001 - the nack path itself is best-effort; the broker will redeliver
+            logger.warning("⚠️ Failed to nack message", error=str(nack_error))
     except Exception as e:  # noqa: BLE001 - per-message fault must nack rather than kill the consumer
         logger.error("❌ Failed to process message", data_type=data_type, error=str(e))
         try:
@@ -1183,13 +1262,18 @@ async def main() -> None:
         channel = await amqp_connection.channel()
         active_channel = channel
 
-        # Set QoS to allow concurrent batch processing for better throughput
-        # prefetch_count must be >= batch_size to allow batches to fill before flushing
-        prefetch_count = max(200, BATCH_SIZE * 2) if BATCH_MODE else 200
-        await channel.set_qos(prefetch_count=prefetch_count)
+        # Set QoS to allow concurrent batch processing for better throughput, or to
+        # couple in-flight deliveries to the PostgreSQL pool in non-batch mode.
+        prefetch_count, prefetch_global = channel_prefetch()
+        await channel.set_qos(prefetch_count=prefetch_count, global_=prefetch_global)
         logger.info(
             "🔧 QoS prefetch configured",
             prefetch_count=prefetch_count,
+            channel_global=prefetch_global,
+            # Per-consumer QoS means the real channel-wide ceiling is prefetch x consumers.
+            channel_wide_max=prefetch_count
+            if prefetch_global
+            else prefetch_count * len(DATA_TYPES),
             batch_size=BATCH_SIZE if BATCH_MODE else "N/A",
         )
 

@@ -26,7 +26,7 @@ from common import (
     setup_logging,
 )
 from orjson import loads
-from psycopg.errors import DataError, InterfaceError, OperationalError
+from psycopg.errors import DataError, IntegrityError, InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
 
 logger = structlog.get_logger(__name__)
@@ -502,6 +502,46 @@ async def _recover_consumers() -> None:
         consumer_tags.clear()
 
 
+# MusicBrainz's ws/2 JSON serializer spells multi-word entity types with an
+# underscore ("release_group") while this project — queue names, PROCESSORS keys,
+# and the hardcoded literals at every _insert_relationships call site — uses the
+# hyphenated form. The extractor now canonicalizes on the way out
+# (extractor/src/jsonl_parser.rs::canonical_entity_type), but messages published by
+# an older extractor may still be in flight or parked in a DLQ, so normalize
+# defensively at the write boundary too. Without this, the forward row written from
+# endpoint A and the swapped backward row written from endpoint B carry different
+# target_entity_type spellings, so the natural-key ON CONFLICT never fires and the
+# same logical relationship is stored twice under two vocabularies.
+_ENTITY_TYPE_ALIASES = {"release_group": "release-group"}
+
+
+def _get_or(record: dict[str, Any], key: str, default: Any) -> Any:
+    """``dict.get`` that treats a present-but-null value as absent.
+
+    The extractor's ``json!`` macro always emits every key it knows about — a source
+    field the MusicBrainz dump omits arrives as an explicit JSON ``null``, not as a
+    missing key. ``dict.get(key, default)`` therefore returns ``None`` and the default
+    is dead code, so ``ended`` landed as SQL NULL (a column DEFAULT does not apply to an
+    explicitly supplied NULL, and ``WHERE NOT ended`` silently drops those rows) and
+    ``attributes`` landed as the jsonb scalar ``null`` (on which ``jsonb_array_length``
+    errors outright). ON CONFLICT DO UPDATE then overwrote previously-correct values
+    with those nulls on reprocessing (discogsography-iud5).
+    """
+    value = record.get(key)
+    return default if value is None else value
+
+
+def _life_span(record: dict[str, Any]) -> dict[str, Any]:
+    """Return the record's ``life_span`` object, tolerating a null/absent one."""
+    life_span = record.get("life_span")
+    return life_span if isinstance(life_span, dict) else {}
+
+
+def _canonical_entity_type(entity_type: str) -> str:
+    """Map a MusicBrainz entity-type spelling onto the project's canonical vocabulary."""
+    return _ENTITY_TYPE_ALIASES.get(entity_type, entity_type)
+
+
 async def _insert_relationships(
     conn: Any, source_mbid: str, source_type: str, rels: list[dict[str, Any]]
 ) -> None:
@@ -528,12 +568,15 @@ async def _insert_relationships(
         if not (rel.get("target_mbid") and rel.get("target_type") and rel.get("type")):
             continue
 
+        rel_target_type = _canonical_entity_type(rel["target_type"])
+        canonical_source_type = _canonical_entity_type(source_type)
+
         if rel.get("direction") == "backward":
-            row_source_mbid, row_source_type = rel["target_mbid"], rel["target_type"]
-            row_target_mbid, row_target_type = source_mbid, source_type
+            row_source_mbid, row_source_type = rel["target_mbid"], rel_target_type
+            row_target_mbid, row_target_type = source_mbid, canonical_source_type
         else:
-            row_source_mbid, row_source_type = source_mbid, source_type
-            row_target_mbid, row_target_type = rel["target_mbid"], rel["target_type"]
+            row_source_mbid, row_source_type = source_mbid, canonical_source_type
+            row_target_mbid, row_target_type = rel["target_mbid"], rel_target_type
 
         params.append(
             (
@@ -542,10 +585,10 @@ async def _insert_relationships(
                 row_target_mbid,
                 row_target_type,
                 rel.get("type", ""),
-                Jsonb(rel.get("attributes", [])),
+                Jsonb(_get_or(rel, "attributes", [])),
                 rel.get("begin_date"),
                 rel.get("end_date"),
-                rel.get("ended", False),
+                _get_or(rel, "ended", False),
             )
         )
     if not params:
@@ -626,18 +669,16 @@ async def process_artist(conn: Any, record: dict[str, Any]) -> None:
                 record.get("sort_name", ""),
                 record.get("mb_type", ""),
                 record.get("gender", ""),
-                record.get("begin_date", (record.get("life_span") or {}).get("begin")),
-                record.get("end_date", (record.get("life_span") or {}).get("end")),
-                record.get(
-                    "ended", (record.get("life_span") or {}).get("ended", False)
-                ),
+                _get_or(record, "begin_date", _life_span(record).get("begin")),
+                _get_or(record, "end_date", _life_span(record).get("end")),
+                _get_or(record, "ended", _get_or(_life_span(record), "ended", False)),
                 record.get("area", ""),
                 record.get("begin_area", ""),
                 record.get("end_area", ""),
                 record.get("disambiguation", ""),
                 record.get("discogs_artist_id"),
-                Jsonb(record.get("aliases", [])),
-                Jsonb(record.get("tags", [])),
+                Jsonb(_get_or(record, "aliases", [])),
+                Jsonb(_get_or(record, "tags", [])),
                 Jsonb(record),
             ),
         )
@@ -669,11 +710,9 @@ async def process_label(conn: Any, record: dict[str, Any]) -> None:
                 record.get("name", ""),
                 record.get("mb_type", ""),
                 record.get("label_code"),
-                record.get("begin_date", (record.get("life_span") or {}).get("begin")),
-                record.get("end_date", (record.get("life_span") or {}).get("end")),
-                record.get(
-                    "ended", (record.get("life_span") or {}).get("ended", False)
-                ),
+                _get_or(record, "begin_date", _life_span(record).get("begin")),
+                _get_or(record, "end_date", _life_span(record).get("end")),
+                _get_or(record, "ended", _get_or(_life_span(record), "ended", False)),
                 record.get("area", ""),
                 record.get("disambiguation", ""),
                 record.get("discogs_label_id"),
@@ -738,7 +777,7 @@ async def process_release_group(conn: Any, record: dict[str, Any]) -> None:
                 mbid,
                 record.get("name", ""),
                 record.get("mb_type", ""),
-                Jsonb(record.get("secondary_types", [])),
+                Jsonb(_get_or(record, "secondary_types", [])),
                 record.get("first_release_date"),
                 record.get("disambiguation", ""),
                 record.get("discogs_master_id"),
@@ -816,6 +855,20 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                 data_type=data_type,
                 version=data.get("version"),
             )
+
+            # extraction_complete is this type's terminal signal, so it must also
+            # (re-)mark the type complete. completed_files is otherwise written only by
+            # file_complete and ERASED by _recover_consumers for any type whose queue
+            # still holds messages — and when the only pending message IS this signal,
+            # nothing ever restored the flag: the stall check then logged at ERROR
+            # every 30s forever and check_all_consumers_idle() could never return True,
+            # so the connection and idle consumers were held open until restart. A
+            # plain restart between the file_complete ack and this delivery reaches the
+            # same terminal state (discogsography-ewvh).
+            completed_files.add(data_type)
+            if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
+                await schedule_consumer_cancellation(data_type, queues[data_type])
+
             await message.ack()
             return
 
@@ -909,11 +962,16 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
         # database maintenance window (discogsography-rb05).
         await outage_backoff.wait()
         await message.nack(requeue=True)
-    except DataError as e:
-        # Malformed data that deterministically fails a column cast (e.g. a
-        # non-UUID mbid that slipped past validation above). Retrying would
-        # fail identically every time, so nack without requeue instead of
-        # churning through the quorum queue's redelivery limit.
+    except (DataError, IntegrityError) as e:
+        # Malformed data that deterministically fails a column cast (DataError, e.g. a
+        # non-UUID mbid that slipped past validation above) or a constraint
+        # (IntegrityError, e.g. NotNullViolation when the dump line carried no
+        # name/title, which the extractor forwards as "name": null). Retrying would
+        # fail identically every time, so nack without requeue instead of churning
+        # through the quorum queue's redelivery limit — 20 futile redeliveries, each
+        # opening a pooled connection and rolling back a transaction, per bad record
+        # (discogsography-yuyg). None of the musicbrainz tables declare a foreign key,
+        # so no IntegrityError here is order-dependent/transient.
         logger.error(
             "❌ Non-retryable data error, nacking without requeue",
             data_type=data_type,
