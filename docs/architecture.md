@@ -341,6 +341,15 @@ See [MusicBrainz Sync Guide](musicbrainz-sync.md) for operational instructions.
 - Data completeness scores (`/api/insights/data-completeness`)
 - Computation status monitoring (`/api/insights/status`)
 
+**Why insights needs a shared secret** (`INSIGHTS_INTERNAL_SECRET`):
+
+Insights holds no database credentials — it never connects to Neo4j. Every request involving it makes two hops through the API service:
+
+1. **Public hop** — a user calls `/api/insights/*` on the API, which proxies to the insights container.
+2. **Internal hop** — insights computes its analytics by calling back to `/api/internal/insights/*` on the API, which runs the actual Neo4j aggregate queries.
+
+The `internal` prefix on hop 2 is only a URL path: those routes live on the **same listener** as the public API, and the API is the one service intentionally exposed outside the stack. Without a credential, any internet client — or any other container on the compose network — could invoke the internal endpoints directly and run heavy, unauthenticated Neo4j aggregates, bypassing the public API's auth and rate limits. `INSIGHTS_INTERNAL_SECRET` is the service-to-service password that closes this: the API requires it on every `/api/internal/insights/*` call, and insights is the only other holder. Both services must therefore see the **same value** (in production, one Docker secret file mounted into both — see [configuration.md](configuration.md)). Network isolation alone was rejected as the boundary because a single compromised container would otherwise get unrestricted graph access; the shared secret is the defense-in-depth layer, provisioned like every other credential via `scripts/create-secrets.sh`.
+
 **Explore Service** (static frontend):
 
 - Serves the D3.js force-directed graph UI and Plotly.js trends frontend
