@@ -220,7 +220,7 @@ jobs:
 
       - name: 📊 E2E Coverage Report
         if: github.event_name == 'pull_request' && steps.coverage-setup.outputs.coverage-exists == 'true'
-        uses: slavcodev/coverage-monitor-action@398c4cbbb710e549a8407fdef96ae8b9454d0463  # v1.10.0
+        uses: slavcodev/coverage-monitor-action@a7fb808726aa317c2df392b585bb7b7700587df5  # v1.11.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           coverage_path: "coverage-summary.json"
