@@ -86,6 +86,8 @@ COPY --from=builder --chown=discogsography:discogsography /app/.venv /app/.venv
 COPY --from=builder --chown=discogsography:discogsography /app/common /app/common
 COPY --from=builder --chown=discogsography:discogsography /app/schema-init /app/schema-init
 
+# UID/GID build arguments resolve to numeric IDs; DL3066 cannot infer their values.
+# hadolint ignore=DL3066
 USER ${UID}:${GID}
 
 # Environment variables

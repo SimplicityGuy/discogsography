@@ -56,6 +56,8 @@ RUN mkdir -p /discogs-data /musicbrainz-data /logs && \
 COPY --from=builder /app/target/release/extractor /usr/local/bin/extractor
 
 # Switch to non-root user
+# UID/GID build arguments resolve to numeric IDs; DL3066 cannot infer their values.
+# hadolint ignore=DL3066
 USER ${UID}:${GID}
 
 # Set environment variables

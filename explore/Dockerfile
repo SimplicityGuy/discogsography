@@ -131,6 +131,8 @@ RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD ["curl", "-f", "http://localhost:8007/health"]
 
+# UID/GID build arguments resolve to numeric IDs; DL3066 cannot infer their values.
+# hadolint ignore=DL3066
 USER ${UID}:${GID}
 
 # Environment variables

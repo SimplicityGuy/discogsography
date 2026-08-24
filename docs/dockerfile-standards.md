@@ -112,6 +112,8 @@ COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/uv
 # Health check
 # [Health check section - see below]
 
+# UID/GID build arguments resolve to numeric IDs; DL3066 cannot infer their values.
+# hadolint ignore=DL3066
 USER ${UID}:${GID}
 
 # Environment variables
