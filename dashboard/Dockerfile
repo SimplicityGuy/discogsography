@@ -33,7 +33,7 @@ RUN npm install @tailwindcss/cli@^4 @tailwindcss/forms --save-dev && \
 FROM python:${PYTHON_VERSION}-slim AS builder
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/uv
 
 # Set environment for build
 ENV UV_SYSTEM_PYTHON=1 \
@@ -132,9 +132,11 @@ RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8003/health || exit 1
+    CMD ["curl", "-f", "http://localhost:8003/health"]
 
-USER discogsography:discogsography
+# UID/GID build arguments resolve to numeric IDs; DL3066 cannot infer their values.
+# hadolint ignore=DL3066
+USER ${UID}:${GID}
 
 # Environment variables
 ENV HOME=/home/discogsography \
@@ -144,9 +146,7 @@ ENV HOME=/home/discogsography \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
     NEO4J_HOST="" \
-    NEO4J_USERNAME="" \
     POSTGRES_HOST="" \
-    POSTGRES_USERNAME="" \
     POSTGRES_DATABASE=""
 
 EXPOSE 8003

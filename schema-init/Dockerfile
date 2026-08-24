@@ -8,7 +8,7 @@ ARG GID=1000
 FROM python:${PYTHON_VERSION}-slim AS builder
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.12.1 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/uv
 
 # Set environment for build
 ENV UV_SYSTEM_PYTHON=1 \
@@ -86,7 +86,9 @@ COPY --from=builder --chown=discogsography:discogsography /app/.venv /app/.venv
 COPY --from=builder --chown=discogsography:discogsography /app/common /app/common
 COPY --from=builder --chown=discogsography:discogsography /app/schema-init /app/schema-init
 
-USER discogsography:discogsography
+# UID/GID build arguments resolve to numeric IDs; DL3066 cannot infer their values.
+# hadolint ignore=DL3066
+USER ${UID}:${GID}
 
 # Environment variables
 ENV HOME=/home/discogsography \
@@ -97,11 +99,7 @@ ENV HOME=/home/discogsography \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
     NEO4J_HOST="" \
-    NEO4J_USERNAME="" \
-    NEO4J_PASSWORD="" \
     POSTGRES_HOST="" \
-    POSTGRES_USERNAME="" \
-    POSTGRES_PASSWORD="" \
     POSTGRES_DATABASE=""
 
 # No EXPOSE — one-shot service, no listening ports

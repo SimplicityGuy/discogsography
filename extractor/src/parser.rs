@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
+use encoding_rs_io::DecodeReaderBytesBuilder;
 use flate2::read::GzDecoder;
-use quick_xml::encoding::Decoder;
 use quick_xml::events::Event;
 use quick_xml::{Reader, XmlVersion};
 use serde_json::{Map, Value};
@@ -19,14 +19,6 @@ use crate::types::{DataMessage, DataType};
 /// record 0 on every restart. A large number of errors, on the other hand, means the
 /// file is genuinely unusable (wrong file, truncated download), so parsing aborts.
 const MAX_MALFORMED_RECORDS_PER_FILE: u64 = 100;
-
-/// Maximum number of per-chunk UTF-8 decode warnings emitted while parsing one file.
-///
-/// The crate is built without quick-xml's `encoding` feature, so `decode()` is exactly
-/// `str::from_utf8` and a dump that is not actually UTF-8 would fail on *every* text
-/// chunk. Warn about the first few (enough for an operator to notice and diagnose) and
-/// summarize the rest once at end-of-file instead of flooding the log.
-const MAX_DECODE_WARNINGS_PER_FILE: u64 = 10;
 
 /// Represents an element being parsed with its attributes and children
 #[derive(Debug)]
@@ -49,13 +41,13 @@ impl ElementContext {
     /// handling in `parse_file`). Falls back to a raw, non-unescaped decode
     /// if the escape sequence is malformed, so a single bad attribute cannot
     /// abort parsing of an otherwise-valid record.
-    fn with_attributes(e: &quick_xml::events::BytesStart<'_>, decoder: Decoder) -> Self {
+    fn with_attributes(e: &quick_xml::events::BytesStart<'_>) -> Self {
         let mut ctx = Self::new();
         for attr in e.attributes().flatten() {
-            let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
-            let value = attr.decoded_and_normalized_value(XmlVersion::Implicit1_0, decoder).map(|c| c.into_owned()).unwrap_or_else(|err| {
+            let key = attr.key.as_ref().to_owned();
+            let value = attr.normalized_value(XmlVersion::Implicit1_0).map(|c| c.into_owned()).unwrap_or_else(|err| {
                 warn!("⚠️ Failed to unescape XML attribute '{}': {}", key, err);
-                String::from_utf8_lossy(&attr.value).into_owned()
+                attr.value.as_ref().to_owned()
             });
             ctx.attributes.insert(key, Value::String(value));
         }
@@ -145,7 +137,11 @@ impl XmlParser {
         let file = File::open(file_path).context(format!("Failed to open file: {:?}", file_path))?; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
 
         let decoder = GzDecoder::new(file);
-        let buf_reader = BufReader::new(decoder);
+        // quick-xml 0.42 validates UTF-8 while reading and permanently ends the reader
+        // after an encoding error. Normalize the decompressed stream first so malformed
+        // source bytes remain visible as U+FFFD without buffering multi-GB dumps in memory.
+        let utf8_reader = DecodeReaderBytesBuilder::new().encoding(Some(encoding_rs::UTF_8)).build(decoder);
+        let buf_reader = BufReader::new(utf8_reader);
 
         let mut reader = Reader::from_reader(buf_reader);
 
@@ -170,10 +166,6 @@ impl XmlParser {
         let mut malformed_records = 0u64;
         let mut resyncing = false;
         let mut last_error_position = u64::MAX;
-
-        // Count of text/entity chunks that failed a strict UTF-8 decode and were preserved
-        // lossily instead of being dropped.
-        let mut decode_failures = 0u64;
 
         // Determine the target element based on data type
         let target_element = match self.data_type {
@@ -225,7 +217,7 @@ impl XmlParser {
             // depth is unreliable after an error, so it is re-anchored here.
             if resyncing {
                 match &event {
-                    Event::Start(e) | Event::Empty(e) if e.name().as_ref() == target_element.as_bytes() => {
+                    Event::Start(e) | Event::Empty(e) if e.name().as_ref() == target_element => {
                         debug!("🔄 Resynchronized on <{}> at position {}", target_element, reader.buffer_position());
                         resyncing = false;
                         depth = 1;
@@ -240,7 +232,7 @@ impl XmlParser {
 
             match event {
                 Event::Start(e) => {
-                    let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    let name = e.name().as_ref().to_owned();
                     depth += 1;
 
                     if name == target_element && depth == 2 {
@@ -250,13 +242,13 @@ impl XmlParser {
                     }
 
                     if in_target_element {
-                        element_stack.push(ElementContext::with_attributes(&e, reader.decoder()));
+                        element_stack.push(ElementContext::with_attributes(&e));
                     }
                 }
 
                 Event::Empty(e) => {
                     // Self-closing element like <artist id="123" />
-                    let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    let name = e.name().as_ref().to_owned();
                     depth += 1;
 
                     if name == target_element && depth == 2 {
@@ -264,7 +256,7 @@ impl XmlParser {
                         element_stack.clear();
 
                         // Send immediately since it's self-closing
-                        let record = ElementContext::with_attributes(&e, reader.decoder()).into_value();
+                        let record = ElementContext::with_attributes(&e).into_value();
                         if let Value::Object(ref obj) = record {
                             let id = obj.get("@id").or_else(|| obj.get("id")).and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
                             let raw_xml = if self.capture_raw_xml {
@@ -284,7 +276,7 @@ impl XmlParser {
                         in_target_element = false;
                     } else if in_target_element {
                         // Self-closing child element
-                        let child_value = ElementContext::with_attributes(&e, reader.decoder()).into_value();
+                        let child_value = ElementContext::with_attributes(&e).into_value();
 
                         // Add to parent if we have one
                         if let Some(parent) = element_stack.last_mut() {
@@ -296,7 +288,7 @@ impl XmlParser {
                 }
 
                 Event::End(e) => {
-                    let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    let name = e.name().as_ref().to_owned();
 
                     if in_target_element && let Some(context) = element_stack.pop() {
                         let element_value = context.into_value();
@@ -351,24 +343,7 @@ impl XmlParser {
 
                 Event::Text(e) => {
                     if in_target_element && let Some(context) = element_stack.last_mut() {
-                        match e.decode() {
-                            Ok(text) => context.text_content.push_str(&text),
-                            Err(err) => {
-                                // Degrade lossily rather than dropping the chunk: a silent drop
-                                // publishes the record with the field's text missing, and the
-                                // sha256 computed over that corrupted shape becomes the canonical
-                                // value downstream, so the loss is never re-detected.
-                                let position = reader.buffer_position();
-                                decode_failures += 1;
-                                if decode_failures <= MAX_DECODE_WARNINGS_PER_FILE {
-                                    warn!(
-                                        "⚠️ Failed to decode XML text at position {} ({}), preserving it lossily: {}",
-                                        position, self.data_type, err
-                                    );
-                                }
-                                context.text_content.push_str(&String::from_utf8_lossy(e.as_ref()));
-                            }
-                        }
+                        context.text_content.push_str(e.as_ref());
                     }
                 }
 
@@ -389,26 +364,13 @@ impl XmlParser {
                                 }
                             }
                         } else {
-                            // Same lossy-degradation contract as Event::Text: an undecodable
-                            // entity name is preserved verbatim rather than dropped silently.
-                            let name = e.decode().map(|n| n.into_owned()).unwrap_or_else(|err| {
-                                let position = reader.buffer_position();
-                                decode_failures += 1;
-                                if decode_failures <= MAX_DECODE_WARNINGS_PER_FILE {
-                                    warn!(
-                                        "⚠️ Failed to decode XML entity reference at position {} ({}), preserving it lossily: {}",
-                                        position, self.data_type, err
-                                    );
-                                }
-                                String::from_utf8_lossy(e.as_ref()).into_owned()
-                            });
-                            match name.as_str() {
+                            match e.as_ref() {
                                 "amp" => context.text_content.push('&'),
                                 "lt" => context.text_content.push('<'),
                                 "gt" => context.text_content.push('>'),
                                 "apos" => context.text_content.push('\''),
                                 "quot" => context.text_content.push('"'),
-                                _ => context.text_content.push_str(&format!("&{};", name)),
+                                name => context.text_content.push_str(&format!("&{};", name)),
                             }
                         }
                     }
@@ -416,7 +378,7 @@ impl XmlParser {
 
                 Event::CData(e) => {
                     if in_target_element && let Some(context) = element_stack.last_mut() {
-                        context.text_content.push_str(&String::from_utf8_lossy(&e));
+                        context.text_content.push_str(e.as_ref());
                     }
                 }
 
@@ -430,13 +392,6 @@ impl XmlParser {
 
         if malformed_records > 0 {
             warn!("⚠️ Skipped {} malformed XML record(s) while parsing {:?} ({} records parsed)", malformed_records, file_path, record_count);
-        }
-
-        if decode_failures > 0 {
-            warn!(
-                "⚠️ Recovered {} non-UTF-8 text chunk(s) lossily while parsing {:?} — the source dump is not valid UTF-8 and affected fields contain replacement characters",
-                decode_failures, file_path
-            );
         }
 
         debug!("✅ Finished parsing {} records from {:?}", record_count, file_path);

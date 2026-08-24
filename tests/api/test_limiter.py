@@ -1,5 +1,9 @@
 """Tests for rate limiter singleton."""
 
+import warnings
+
+from fastapi import Request
+
 from api.limiter import limiter
 
 
@@ -14,3 +18,23 @@ class TestLimiter:
         from api.limiter import limiter as limiter2
 
         assert limiter is limiter2
+
+    def test_limit_decorator_avoids_asyncio_coroutine_deprecation(self) -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+
+            @limiter.limit("1/minute")
+            async def endpoint(request: Request) -> None:
+                pass
+
+        assert endpoint is not None
+
+    def test_exempt_decorator_avoids_asyncio_coroutine_deprecation(self) -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+
+            @limiter.exempt
+            async def endpoint(request: Request) -> None:
+                pass
+
+        assert endpoint is not None

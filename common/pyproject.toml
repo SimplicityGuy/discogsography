@@ -20,7 +20,7 @@ license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
     "aio-pika>=10.0.1",
     "neo4j-rust-ext>=6.2.0.0",
-    "pika>=1.4.2",
+    "pika>=1.4.4",
     "prometheus-client>=0.26.0",
     "psycopg[binary]>=3.3.4",
     "pulp>=3.3.2",
