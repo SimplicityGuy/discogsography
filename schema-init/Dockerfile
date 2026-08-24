@@ -86,7 +86,7 @@ COPY --from=builder --chown=discogsography:discogsography /app/.venv /app/.venv
 COPY --from=builder --chown=discogsography:discogsography /app/common /app/common
 COPY --from=builder --chown=discogsography:discogsography /app/schema-init /app/schema-init
 
-USER discogsography:discogsography
+USER ${UID}:${GID}
 
 # Environment variables
 ENV HOME=/home/discogsography \
@@ -97,11 +97,7 @@ ENV HOME=/home/discogsography \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
     NEO4J_HOST="" \
-    NEO4J_USERNAME="" \
-    NEO4J_PASSWORD="" \
     POSTGRES_HOST="" \
-    POSTGRES_USERNAME="" \
-    POSTGRES_PASSWORD="" \
     POSTGRES_DATABASE=""
 
 # No EXPOSE — one-shot service, no listening ports

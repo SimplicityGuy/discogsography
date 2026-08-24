@@ -132,9 +132,9 @@ RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8003/health || exit 1
+    CMD ["curl", "-f", "http://localhost:8003/health"]
 
-USER discogsography:discogsography
+USER ${UID}:${GID}
 
 # Environment variables
 ENV HOME=/home/discogsography \
@@ -144,9 +144,7 @@ ENV HOME=/home/discogsography \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
     NEO4J_HOST="" \
-    NEO4J_USERNAME="" \
     POSTGRES_HOST="" \
-    POSTGRES_USERNAME="" \
     POSTGRES_DATABASE=""
 
 EXPOSE 8003

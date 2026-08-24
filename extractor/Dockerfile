@@ -56,7 +56,7 @@ RUN mkdir -p /discogs-data /musicbrainz-data /logs && \
 COPY --from=builder /app/target/release/extractor /usr/local/bin/extractor
 
 # Switch to non-root user
-USER extractor:extractor
+USER ${UID}:${GID}
 
 # Set environment variables
 ENV LOG_LEVEL=INFO
@@ -64,7 +64,7 @@ ENV RUST_EXTRACTOR_CONFIG=/config.toml
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD ["curl", "-f", "http://localhost:8000/health"]
 
 # Expose health port
 EXPOSE 8000

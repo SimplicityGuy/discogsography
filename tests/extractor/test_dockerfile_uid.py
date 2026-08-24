@@ -78,12 +78,11 @@ def test_extractor_dockerfile_useradd_uses_explicit_uid() -> None:
 
 
 def test_extractor_dockerfile_final_user_matches_created_account() -> None:
-    """USER must select the account whose UID/GID we just pinned (not a bare
-    username that could resolve differently across stages)."""
+    """USER must select the numeric UID/GID pinned by the build arguments."""
     text = EXTRACTOR_DOCKERFILE.read_text(encoding="utf-8")
 
-    assert re.search(r"^USER extractor:extractor\s*$", text, re.MULTILINE), (
-        "extractor/Dockerfile must `USER extractor:extractor` to match the chowned data/log dirs"
+    assert re.search(r"^USER \$\{UID\}:\$\{GID\}\s*$", text, re.MULTILINE), (
+        "extractor/Dockerfile must use the numeric UID/GID that own the data/log directories"
     )
 
 

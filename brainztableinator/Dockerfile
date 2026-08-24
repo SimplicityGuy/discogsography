@@ -105,9 +105,9 @@ EXPOSE 8010
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8010/health || exit 1
+    CMD ["curl", "-f", "http://localhost:8010/health"]
 
-USER discogsography:discogsography
+USER ${UID}:${GID}
 
 # Environment variables
 ENV HOME=/home/discogsography \
@@ -117,7 +117,6 @@ ENV HOME=/home/discogsography \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
     POSTGRES_HOST="" \
-    POSTGRES_USERNAME="" \
     POSTGRES_DATABASE=""
 
 # Declare volume for logs

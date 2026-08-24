@@ -87,9 +87,9 @@ RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/
     chmod +x /app/start.sh
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8009/health || exit 1
+    CMD ["curl", "-f", "http://localhost:8009/health"]
 
-USER discogsography:discogsography
+USER ${UID}:${GID}
 
 ENV HOME=/home/discogsography \
     PYTHONUNBUFFERED=1 \

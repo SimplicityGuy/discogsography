@@ -129,9 +129,9 @@ RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/
 
 # Health check on health port 8007
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8007/health || exit 1
+    CMD ["curl", "-f", "http://localhost:8007/health"]
 
-USER discogsography:discogsography
+USER ${UID}:${GID}
 
 # Environment variables
 ENV HOME=/home/discogsography \

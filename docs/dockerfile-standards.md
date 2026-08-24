@@ -112,7 +112,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/uv
 # Health check
 # [Health check section - see below]
 
-USER discogsography:discogsography
+USER ${UID}:${GID}
 
 # Environment variables
 # [Environment section - see below]
@@ -221,7 +221,7 @@ HTTP-based (all services, including graphinator, tableinator, brainzgraphinator,
 
 ```dockerfile
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:<port>/health || exit 1
+    CMD ["curl", "-f", "http://localhost:<port>/health"]
 ```
 
 ### 7. Environment Variables
@@ -235,17 +235,20 @@ ENV HOME=/home/discogsography \
     UV_SYSTEM_PYTHON=1 \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
-    RABBITMQ_HOST="" \
-    RABBITMQ_USERNAME="" \
-    RABBITMQ_PASSWORD=""
+    RABBITMQ_HOST=""
 ```
+
+Only non-sensitive defaults belong in an image's `ENV` instructions. Inject usernames,
+passwords, tokens, and secret keys at runtime through Compose environment values or the
+project's supported `*_FILE` secret variables; do not persist even empty credential
+placeholders in image metadata.
 
 Service-specific additions:
 
-- **dashboard**: All database connections
+- **dashboard**: Database hosts as image defaults; credentials injected at runtime
 - **extractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
-- **graphinator**: Neo4j connections
-- **tableinator**: PostgreSQL connections
+- **graphinator**: Neo4j host as an image default; credentials injected at runtime
+- **tableinator**: PostgreSQL host/database as image defaults; credentials injected at runtime
 
 ### 8. Port Exposure
 
@@ -279,7 +282,7 @@ Additional volumes:
 
 - One-shot init container — no health check port, no `restart: unless-stopped`
 - Docker Compose `restart: "no"` so it exits after completing
-- Neo4j and PostgreSQL connection environment variables
+- Non-sensitive Neo4j and PostgreSQL defaults; credentials injected at runtime
 - Read-only filesystem with `/tmp` tmpfs mount
 - `cap_drop: ALL` (no Linux capabilities needed)
 
@@ -288,12 +291,12 @@ Additional volumes:
 - Three-stage build: `css-builder` (Node) → `builder` (Python) → final
 - `css-builder` stage runs Tailwind v4 CLI to produce `dashboard/static/tailwind.css`
 - Expose port 8003
-- All database connections in environment
+- Database hosts/defaults in the image; credentials injected at runtime
 
 ### API
 
 - Expose ports 8004 (service) and 8005 (health)
-- All database connections in environment
+- Database hosts/defaults in the image; credentials injected at runtime
 
 ### Extractor
 
@@ -305,12 +308,12 @@ Additional volumes:
 ### Graphinator
 
 - HTTP health check on port 8001
-- Neo4j connection environment variables
+- Neo4j host in the image; credentials injected at runtime
 
 ### Tableinator
 
 - Install libpq5 for PostgreSQL
-- PostgreSQL connection environment variables
+- PostgreSQL host/database in the image; credentials injected at runtime
 
 ### Insights
 
@@ -322,14 +325,14 @@ Additional volumes:
 ### Brainzgraphinator
 
 - MusicBrainz data enrichment into Neo4j
-- Neo4j and RabbitMQ connection environment variables
+- Neo4j and RabbitMQ hosts in the image; credentials injected at runtime
 - Health check on port 8011
 
 ### Brainztableinator
 
 - MusicBrainz data into PostgreSQL `musicbrainz` schema
 - Install libpq5 for PostgreSQL
-- PostgreSQL and RabbitMQ connection environment variables
+- PostgreSQL and RabbitMQ hosts in the image; credentials injected at runtime
 - Health check on port 8010
 
 ### MCP Server
@@ -346,7 +349,7 @@ Before committing any Dockerfile:
 1. **Labels**: All OCI labels present with correct values
 1. **Security**: Security comment present at bottom
 1. **Health Check**: Appropriate health check for service type
-1. **Environment**: All required environment variables defined
+1. **Environment**: Non-sensitive defaults defined; credentials injected only at runtime
 1. **Volumes**: /logs volume declared (plus service-specific)
 1. **User**: Runs as discogsography user
 1. **Caching**: Uses BuildKit cache mounts
@@ -354,7 +357,8 @@ Before committing any Dockerfile:
 
 ## 🛡️ Security Standards
 
-1. **Non-root execution**: All containers run as UID/GID 1000
+1. **Non-root execution**: All containers use `USER ${UID}:${GID}` (default UID/GID 1000)
+1. **Runtime secrets**: Credentials are injected at runtime, never declared with Dockerfile `ARG` or `ENV`
 1. **Minimal packages**: Only install what's needed
 1. **Security updates**: Always run `apt-get upgrade`
 1. **Clean up**: Remove apt lists after installation

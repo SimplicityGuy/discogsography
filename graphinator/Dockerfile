@@ -105,9 +105,9 @@ EXPOSE 8001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8001/health || exit 1
+    CMD ["curl", "-f", "http://localhost:8001/health"]
 
-USER discogsography:discogsography
+USER ${UID}:${GID}
 
 # Environment variables
 ENV HOME=/home/discogsography \
@@ -116,8 +116,7 @@ ENV HOME=/home/discogsography \
     UV_SYSTEM_PYTHON=1 \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
-    NEO4J_HOST="" \
-    NEO4J_USERNAME=""
+    NEO4J_HOST=""
 
 # Declare volume for logs
 VOLUME ["/logs"]
