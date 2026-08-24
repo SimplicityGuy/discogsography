@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+import inspect
 import logging
 import random
 from threading import Lock
@@ -131,7 +132,7 @@ class CircuitBreaker:
         if is_trial:
             # Execute trial call outside the lock, then update state under lock
             try:
-                if asyncio.iscoroutinefunction(func):
+                if inspect.iscoroutinefunction(func):
                     result = await func(*args, **kwargs)
                 else:
                     result = func(*args, **kwargs)
@@ -151,7 +152,7 @@ class CircuitBreaker:
                 raise
 
         try:
-            if asyncio.iscoroutinefunction(func):
+            if inspect.iscoroutinefunction(func):
                 result = await func(*args, **kwargs)
             else:
                 result = func(*args, **kwargs)
@@ -375,7 +376,7 @@ class AsyncResilientConnection[T]:
             if hasattr(connection, "aclose"):
                 await connection.aclose()
             elif hasattr(connection, "close"):
-                if asyncio.iscoroutinefunction(connection.close):
+                if inspect.iscoroutinefunction(connection.close):
                     await connection.close()
                 else:
                     connection.close()
@@ -536,11 +537,11 @@ class AsyncResilientConnection[T]:
                 logger.info(f"🔄 {self.name}: Creating new connection (attempt {retry_count + 1}/{self.max_retries})")
 
                 async def create_connection() -> T:
-                    if asyncio.iscoroutinefunction(self.connection_factory):
+                    if inspect.iscoroutinefunction(self.connection_factory):
                         conn = await self.connection_factory()
                     else:
                         conn = self.connection_factory()
-                    if asyncio.iscoroutinefunction(self.connection_test):
+                    if inspect.iscoroutinefunction(self.connection_test):
                         test_ok = await self.connection_test(conn)
                     else:
                         test_ok = self.connection_test(conn)
@@ -583,7 +584,7 @@ class AsyncResilientConnection[T]:
     async def _test_connection(self, connection: T) -> bool:
         """Test if connection is healthy."""
         try:
-            if asyncio.iscoroutinefunction(self.connection_test):
+            if inspect.iscoroutinefunction(self.connection_test):
                 result = await self.connection_test(connection)
                 return bool(result)
             else:

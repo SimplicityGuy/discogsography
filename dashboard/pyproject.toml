@@ -22,14 +22,14 @@ dependencies = [
     "fastapi>=0.141.1",
     "httpx>=0.28.1",
     "neo4j-rust-ext>=6.2.0.0",
-    "orjson>=3.11.9",
-    "pika>=1.4.2",
+    "orjson>=3.12.0",
+    "pika>=1.4.4",
     "prometheus-client>=0.26.0",
     "psycopg[binary]>=3.3.4",
     "pydantic>=2.13.4",
     "python-multipart>=0.0.32",
     "structlog>=26.1.0",
-    "uvicorn[standard]>=0.52.1",
+    "uvicorn[standard]>=0.52.4",
     "websockets>=17.0.1",
 ]
 

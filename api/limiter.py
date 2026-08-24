@@ -1,10 +1,21 @@
 """Rate limiter singleton for the API service."""
 
 import hashlib
+import inspect
 
 from fastapi import Request
 from slowapi import Limiter
+import slowapi.extension as slowapi_extension
 from slowapi.util import get_remote_address
+
+
+# SlowAPI 0.1.10 still delegates its coroutine checks to the deprecated
+# asyncio.iscoroutinefunction. Point its private module binding at inspect until
+# https://github.com/laurentS/slowapi/pull/264 is released. Both modules expose
+# the only attribute SlowAPI reads through that binding, so this stays local to
+# SlowAPI instead of monkey-patching asyncio process-wide.
+if hasattr(slowapi_extension, "asyncio"):
+    slowapi_extension.asyncio = inspect
 
 
 # headers_enabled=True so 429 responses carry `Retry-After` (in seconds) — required

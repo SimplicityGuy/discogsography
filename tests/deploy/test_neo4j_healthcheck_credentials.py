@@ -21,7 +21,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-import yaml
+from tests.deploy.test_docker_compose_prod import _load_compose
 
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -32,8 +32,7 @@ NEO4J_PASSWORD_SECRET_PATH = "/run/secrets/neo4j_password"
 
 
 def _compose(path: Path) -> dict[str, Any]:
-    data: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return data
+    return _load_compose(path)
 
 
 def _healthcheck_test(service: dict[str, Any]) -> list[str] | str | None:

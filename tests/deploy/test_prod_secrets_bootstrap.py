@@ -21,7 +21,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-import yaml
+from tests.deploy.test_docker_compose_prod import _load_compose
 
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -31,8 +31,7 @@ SECRETS_EXAMPLE = REPO_ROOT / "secrets.example"
 
 
 def _prod_compose() -> dict[str, Any]:
-    data: dict[str, Any] = yaml.safe_load(PROD_COMPOSE.read_text(encoding="utf-8"))
-    return data
+    return _load_compose(PROD_COMPOSE)
 
 
 def _declared_file_secrets() -> dict[str, str]:

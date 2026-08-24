@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Callable
 import contextlib
+import inspect
 import logging
 import re
 from typing import Any
@@ -265,7 +266,7 @@ class AsyncResilientRabbitMQ:
         """
         for callback in self._reconnect_callbacks:
             try:
-                if asyncio.iscoroutinefunction(callback):
+                if inspect.iscoroutinefunction(callback):
                     await callback()
                 else:
                     callback()
@@ -349,7 +350,7 @@ async def process_message_with_retry(
     while retry_count < max_retries:
         try:
             # Process the message
-            if asyncio.iscoroutinefunction(handler):
+            if inspect.iscoroutinefunction(handler):
                 await handler(message)
             else:
                 handler(message)

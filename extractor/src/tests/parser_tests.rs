@@ -894,8 +894,8 @@ fn gzip_bytes_to_temp(raw: &[u8]) -> NamedTempFile {
 
 #[tokio::test]
 async fn test_invalid_utf8_text_kept_lossily() {
-    // A stray latin-1 byte (0xE9) inside a text node makes `e.decode()` fail.
-    // The chunk must degrade to a lossy decode, NOT vanish from the record — a silent
+    // A stray latin-1 byte (0xE9) inside a UTF-8 text node must be replaced, NOT
+    // vanish from the record — a silent
     // drop would publish an empty field and lock the corrupted shape in via sha256.
     let mut raw: Vec<u8> = Vec::new();
     raw.extend_from_slice(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<artists>\n<artist id=\"1\">\n<name>Beyonc");
