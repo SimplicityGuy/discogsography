@@ -358,3 +358,10 @@ perftest-results/
 # Repowise codebase index
 ###
 .repowise/
+
+# Beadhive gate lock — transient, written per-session. Untracked, it makes the
+# working tree dirty, which `bh hive sync` treats as unsafe-to-sync and skips.
+/.beads.gate.lock
+
+# Codex agent state (sibling of .claude/, machine-local)
+/.codex/
