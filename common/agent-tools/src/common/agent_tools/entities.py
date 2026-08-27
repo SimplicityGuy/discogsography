@@ -1,4 +1,4 @@
-"""Entity detail tools."""
+"""GrooveMap entity detail tools."""
 
 from __future__ import annotations
 

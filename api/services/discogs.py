@@ -17,7 +17,7 @@ import urllib.parse
 import httpx
 import structlog
 
-from common.oauth import _build_oauth_header, _hmac_sha1_signature
+from api.oauth import _build_oauth_header, _hmac_sha1_signature
 
 
 logger = structlog.get_logger(__name__)

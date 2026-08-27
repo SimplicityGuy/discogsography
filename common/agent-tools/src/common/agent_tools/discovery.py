@@ -1,4 +1,4 @@
-"""Discovery tools — search, collaborators, trends."""
+"""GrooveMap discovery tools — search, collaborators, trends."""
 
 from __future__ import annotations
 

@@ -656,7 +656,7 @@ class TestConfig:
 
     def test_config_from_env_valid(self) -> None:
         """Config loads successfully with all required env vars."""
-        from common.config import BrainzgraphinatorConfig
+        from brainzgraphinator.config import BrainzgraphinatorConfig
 
         env = {
             "NEO4J_HOST": "neo4j",
@@ -676,7 +676,7 @@ class TestConfig:
 
     def test_config_from_env_missing_raises(self) -> None:
         """Config raises ValueError when required env vars missing."""
-        from common.config import BrainzgraphinatorConfig
+        from brainzgraphinator.config import BrainzgraphinatorConfig
 
         env = {
             "NEO4J_HOST": "",

@@ -1,4 +1,4 @@
-"""Stats tools — graph_stats, genre_tree."""
+"""GrooveMap stats tools — graph_stats, genre_tree."""
 
 from __future__ import annotations
 

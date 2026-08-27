@@ -1,4 +1,4 @@
-"""Shared agent tool registry.
+"""Shared GrooveMap agent tool registry.
 
 Pure async data-fetching functions shared between the NLQ engine and the
 MCP server. No framework coupling — just typed params in, typed dicts out.

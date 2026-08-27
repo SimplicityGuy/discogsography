@@ -5,15 +5,9 @@ from pathlib import Path
 import pytest
 import structlog
 
-from common import (
-    BrainzgraphinatorConfig,
-    BrainztableinatorConfig,
-    ExtractorConfig,
-    GraphinatorConfig,
-    TableinatorConfig,
-    neo4j_security_kwargs,
-    setup_logging,
-)
+from brainzgraphinator.config import BrainzgraphinatorConfig
+from brainztableinator.config import BrainztableinatorConfig
+from common import neo4j_security_kwargs, setup_logging
 from common.config import (
     _build_neo4j_uri,
     _build_postgres_connstr,
@@ -21,55 +15,8 @@ from common.config import (
     parse_postgres_host_port,
     resolve_postgres_pool_sizes,
 )
-
-
-class TestExtractorConfig:
-    """Test ExtractorConfig class."""
-
-    def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test configuration loading with all environment variables set."""
-        monkeypatch.setenv("RABBITMQ_USERNAME", "user")
-        monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
-        monkeypatch.setenv("RABBITMQ_HOST", "host")
-        monkeypatch.setenv("RABBITMQ_PORT", "5672")
-        monkeypatch.setenv("DISCOGS_ROOT", "/custom/path")
-        monkeypatch.setenv("PERIODIC_CHECK_DAYS", "30")
-
-        config = ExtractorConfig.from_env()
-
-        assert config.amqp_connection == "amqp://user:pass@host:5672/%2F"
-        assert config.discogs_root == Path("/custom/path")
-        assert config.periodic_check_days == 30
-        assert config.max_temp_size == int(1e9)  # Default value
-
-    def test_from_env_uses_credential_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test AMQP URL is built from defaults when credentials not set."""
-        monkeypatch.delenv("RABBITMQ_USERNAME", raising=False)
-        monkeypatch.delenv("RABBITMQ_PASSWORD", raising=False)
-        monkeypatch.delenv("RABBITMQ_HOST", raising=False)
-        monkeypatch.delenv("RABBITMQ_PORT", raising=False)
-
-        config = ExtractorConfig.from_env()
-
-        assert config.amqp_connection == "amqp://discogsography:discogsography@rabbitmq:5672/%2F"
-
-    def test_from_env_with_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test configuration loading with default values."""
-        monkeypatch.delenv("DISCOGS_ROOT", raising=False)
-        monkeypatch.delenv("PERIODIC_CHECK_DAYS", raising=False)
-
-        config = ExtractorConfig.from_env()
-
-        assert config.discogs_root == Path("/discogs-data")
-        assert config.periodic_check_days == 15
-
-    def test_from_env_invalid_periodic_days(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test configuration with invalid periodic check days."""
-        monkeypatch.setenv("PERIODIC_CHECK_DAYS", "not-a-number")
-
-        # Should use default value, not raise exception
-        config = ExtractorConfig.from_env()
-        assert config.periodic_check_days == 15
+from graphinator.config import GraphinatorConfig
+from tableinator.config import TableinatorConfig
 
 
 class TestGraphinatorConfig:
@@ -356,24 +303,6 @@ class TestSetupLogging:
             setup_logging("test_service")
 
 
-class TestExtractorConfigEdgeCases:
-    """Test ExtractorConfig edge cases for PERIODIC_CHECK_DAYS validation."""
-
-    def test_periodic_check_days_zero_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test PERIODIC_CHECK_DAYS=0 is invalid and defaults to 15 (lines 46-49)."""
-        monkeypatch.setenv("PERIODIC_CHECK_DAYS", "0")
-
-        config = ExtractorConfig.from_env()
-        assert config.periodic_check_days == 15
-
-    def test_periodic_check_days_negative_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test negative PERIODIC_CHECK_DAYS defaults to 15 (lines 46-49)."""
-        monkeypatch.setenv("PERIODIC_CHECK_DAYS", "-5")
-
-        config = ExtractorConfig.from_env()
-        assert config.periodic_check_days == 15
-
-
 class TestGraphinatorConfigMissingVars:
     """Test GraphinatorConfig individual missing variable branches."""
 
@@ -444,7 +373,7 @@ class TestDashboardConfig:
 
     def test_cors_origins_parsed_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test CORS_ORIGINS is parsed as a comma-separated list (lines 326-328)."""
-        from common import DashboardConfig
+        from dashboard.config import DashboardConfig
 
         monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3000, https://example.com, https://app.example.com")
 
@@ -454,7 +383,7 @@ class TestDashboardConfig:
 
     def test_cache_warming_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test CACHE_WARMING_ENABLED=false disables cache warming (line 331)."""
-        from common import DashboardConfig
+        from dashboard.config import DashboardConfig
 
         monkeypatch.setenv("CACHE_WARMING_ENABLED", "false")
 
@@ -464,7 +393,7 @@ class TestDashboardConfig:
 
     def test_cache_webhook_secret_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test CACHE_WEBHOOK_SECRET is read from environment (line 334)."""
-        from common import DashboardConfig
+        from dashboard.config import DashboardConfig
 
         monkeypatch.setenv("CACHE_WEBHOOK_SECRET", "mysecret123")
 
@@ -474,7 +403,7 @@ class TestDashboardConfig:
 
     def test_cache_webhook_secret_from_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """Test CACHE_WEBHOOK_SECRET supports _FILE variant for Docker secrets."""
-        from common import DashboardConfig
+        from dashboard.config import DashboardConfig
 
         secret_file = tmp_path / "webhook_secret"
         secret_file.write_text("file-secret-value")
@@ -487,7 +416,7 @@ class TestDashboardConfig:
 
     def test_redis_host_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test custom REDIS_HOST is read from environment (line 317)."""
-        from common import DashboardConfig
+        from dashboard.config import DashboardConfig
 
         monkeypatch.setenv("REDIS_HOST", "myredis")
 
@@ -498,7 +427,7 @@ class TestDashboardConfig:
     def test_rabbitmq_management_host_defaults_to_rabbitmq_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """RABBITMQ_MANAGEMENT_HOST falls back to RABBITMQ_HOST — regression for the
         dashboard's management-API call ignoring RABBITMQ_HOST and hardcoding 'rabbitmq'."""
-        from common import DashboardConfig
+        from dashboard.config import DashboardConfig
 
         monkeypatch.delenv("RABBITMQ_MANAGEMENT_HOST", raising=False)
         monkeypatch.setenv("RABBITMQ_HOST", "mq.internal")
@@ -510,7 +439,7 @@ class TestDashboardConfig:
 
     def test_rabbitmq_management_host_explicit_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """RABBITMQ_MANAGEMENT_HOST/_PORT take precedence over RABBITMQ_HOST."""
-        from common import DashboardConfig
+        from dashboard.config import DashboardConfig
 
         monkeypatch.setenv("RABBITMQ_HOST", "rabbitmq-amqp")
         monkeypatch.setenv("RABBITMQ_MANAGEMENT_HOST", "rabbitmq-mgmt")
@@ -527,7 +456,7 @@ class TestDashboardConfig:
         Regression: a bare int() previously raised ValueError and aborted Dashboard startup;
         it must now fail-to-default like every other numeric env in this module.
         """
-        from common import DashboardConfig
+        from dashboard.config import DashboardConfig
 
         monkeypatch.setenv("RABBITMQ_MANAGEMENT_PORT", "15672/tcp")
 
@@ -541,7 +470,7 @@ class TestExploreConfig:
 
     def test_from_env_with_defaults(self) -> None:
         """Test ExploreConfig uses default API base URL."""
-        from common import ExploreConfig
+        from explore.config import ExploreConfig
 
         config = ExploreConfig.from_env()
 
@@ -549,7 +478,7 @@ class TestExploreConfig:
 
     def test_from_env_with_custom_api_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test ExploreConfig reads API_BASE_URL from environment."""
-        from common import ExploreConfig
+        from explore.config import ExploreConfig
 
         monkeypatch.setenv("API_BASE_URL", "http://custom-api:9000")
         config = ExploreConfig.from_env()
@@ -558,7 +487,7 @@ class TestExploreConfig:
 
     def test_no_neo4j_vars_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test ExploreConfig does not require Neo4j env vars (explore serves static files only)."""
-        from common import ExploreConfig
+        from explore.config import ExploreConfig
 
         monkeypatch.delenv("NEO4J_HOST", raising=False)
         monkeypatch.delenv("NEO4J_USERNAME", raising=False)
@@ -573,7 +502,7 @@ class TestGetConfig:
 
     def test_get_config_returns_dashboard_config(self) -> None:
         """Test that get_config() returns a DashboardConfig instance (line 396)."""
-        from common import DashboardConfig, get_config
+        from dashboard.config import DashboardConfig, get_config
 
         config = get_config()
 
@@ -585,7 +514,7 @@ class TestApiConfig:
 
     def test_from_env_with_all_required_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test ApiConfig with all required environment variables."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("POSTGRES_HOST", "pghost")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
@@ -603,7 +532,7 @@ class TestApiConfig:
 
     def test_from_env_optional_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test ApiConfig optional fields have correct defaults."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.delenv("REDIS_HOST", raising=False)
@@ -620,7 +549,7 @@ class TestApiConfig:
 
     def test_from_env_custom_optional_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test ApiConfig reads optional env vars."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("REDIS_HOST", "myredis")
@@ -636,7 +565,7 @@ class TestApiConfig:
 
     def test_discogs_oauth_callback_url_defaults_to_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """When DISCOGS_OAUTH_CALLBACK_URL is unset, the field is None (OOB fallback)."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.delenv("DISCOGS_OAUTH_CALLBACK_URL", raising=False)
@@ -647,7 +576,7 @@ class TestApiConfig:
 
     def test_insights_internal_secret_defaults_to_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """cu2.8: without INSIGHTS_INTERNAL_SECRET the field is None (router fails closed)."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.delenv("INSIGHTS_INTERNAL_SECRET", raising=False)
@@ -658,7 +587,7 @@ class TestApiConfig:
 
     def test_insights_internal_secret_read_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """cu2.8: INSIGHTS_INTERNAL_SECRET is read into ApiConfig for the internal-router gate."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("INSIGHTS_INTERNAL_SECRET", "shared-internal-secret")
@@ -672,7 +601,7 @@ class TestApiConfig:
         runs split as extractor-discogs / extractor-musicbrainz); the default must resolve
         to a real hostname so the admin extractor status/trigger panel works out of the box.
         """
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.delenv("EXTRACTOR_HOST", raising=False)
@@ -684,7 +613,7 @@ class TestApiConfig:
 
     def test_extractor_host_read_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """discogsography-cu2.32: EXTRACTOR_HOST remains overridable."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("EXTRACTOR_HOST", "extractor-musicbrainz")
@@ -695,7 +624,7 @@ class TestApiConfig:
 
     def test_discogs_oauth_callback_url_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """DISCOGS_OAUTH_CALLBACK_URL is read into the config."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("DISCOGS_OAUTH_CALLBACK_URL", "https://example.com/oauth-discogs-callback.html")
@@ -706,7 +635,7 @@ class TestApiConfig:
 
     def test_discogs_oauth_callback_url_empty_string_treated_as_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """An empty DISCOGS_OAUTH_CALLBACK_URL collapses to None, preserving OOB fallback."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("DISCOGS_OAUTH_CALLBACK_URL", "")
@@ -717,7 +646,7 @@ class TestApiConfig:
 
     def test_redis_password_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """REDIS_PASSWORD is embedded in the redis_host URL for authenticated Redis."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("REDIS_HOST", "myredis")
@@ -729,7 +658,7 @@ class TestApiConfig:
 
     def test_redis_password_from_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """REDIS_PASSWORD_FILE is read via the _FILE secret convention (Docker secrets)."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         pass_file = tmp_path / "redis_password"
         pass_file.write_text("file-secret\n")
@@ -744,7 +673,7 @@ class TestApiConfig:
 
     def test_redis_password_url_encoded(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Special characters in REDIS_PASSWORD are URL-encoded so the URL stays valid."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("REDIS_HOST", "myredis")
@@ -756,7 +685,7 @@ class TestApiConfig:
 
     def test_redis_port_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """REDIS_PORT overrides the default 6379."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("REDIS_HOST", "myredis")
@@ -769,7 +698,7 @@ class TestApiConfig:
 
     def test_redis_no_password_omits_auth(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Without REDIS_PASSWORD the URL has no auth segment (password-less local Redis)."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("REDIS_HOST", "myredis")
@@ -782,7 +711,7 @@ class TestApiConfig:
 
     def test_from_env_invalid_jwt_expire_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that invalid JWT_EXPIRE_MINUTES falls back to 30."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("JWT_EXPIRE_MINUTES", "not-a-number")
@@ -793,7 +722,7 @@ class TestApiConfig:
 
     def test_from_env_missing_postgres_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test missing POSTGRES_HOST raises ValueError."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.delenv("POSTGRES_HOST", raising=False)
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
@@ -803,7 +732,7 @@ class TestApiConfig:
 
     def test_from_env_missing_jwt_secret(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test missing JWT_SECRET_KEY raises ValueError."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
 
@@ -812,7 +741,7 @@ class TestApiConfig:
 
     def test_from_env_missing_multiple_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test missing multiple vars lists them all."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.delenv("POSTGRES_USERNAME", raising=False)
         monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
@@ -890,7 +819,7 @@ class TestApiConfigFromEnv:
         monkeypatch.delenv("NEO4J_USERNAME", raising=False)
         monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
 
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         with pytest.raises(ValueError, match="NEO4J_HOST"):
             ApiConfig.from_env()
@@ -906,7 +835,7 @@ class TestApiConfigFromEnv:
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
 
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         config = ApiConfig.from_env()
         assert config.neo4j_host == "bolt://neo4j:7687"
@@ -921,7 +850,7 @@ class TestApiConfigFromEnv:
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
 
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         with pytest.raises(ValueError, match="JWT_SECRET_KEY"):
             ApiConfig.from_env()
@@ -943,7 +872,7 @@ class TestApiConfigFromEnv:
         monkeypatch.setenv("EXTRACTOR_HEALTH_PORT", "8000/tcp")
         monkeypatch.setenv("RABBITMQ_MANAGEMENT_PORT", "# 15672")
 
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         config = ApiConfig.from_env()
         assert config.extractor_health_port == 8000
@@ -964,7 +893,7 @@ class TestApiConfigFromEnv:
         monkeypatch.delenv("RABBITMQ_USERNAME", raising=False)
         monkeypatch.delenv("RABBITMQ_PASSWORD", raising=False)
 
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         config = ApiConfig.from_env()
         assert config.rabbitmq_username == "discogsography"
@@ -985,7 +914,7 @@ class TestApiConfigFromEnv:
         monkeypatch.setenv("RABBITMQ_USERNAME", "")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "")
 
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         config = ApiConfig.from_env()
         # Both pass an explicitly empty value through unchanged — same behavior,
@@ -998,63 +927,63 @@ class TestApiConfigNewFields:
     """Tests for new ApiConfig fields added in the security hardening."""
 
     def test_snapshot_ttl_days_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.delenv("SNAPSHOT_TTL_DAYS", raising=False)
         assert ApiConfig.from_env().snapshot_ttl_days == 28
 
     def test_snapshot_ttl_days_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("SNAPSHOT_TTL_DAYS", "14")
         assert ApiConfig.from_env().snapshot_ttl_days == 14
 
     def test_snapshot_ttl_days_invalid_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("SNAPSHOT_TTL_DAYS", "not-a-number")
         assert ApiConfig.from_env().snapshot_ttl_days == 28
 
     def test_snapshot_max_nodes_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.delenv("SNAPSHOT_MAX_NODES", raising=False)
         assert ApiConfig.from_env().snapshot_max_nodes == 100
 
     def test_snapshot_max_nodes_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("SNAPSHOT_MAX_NODES", "50")
         assert ApiConfig.from_env().snapshot_max_nodes == 50
 
     def test_snapshot_max_nodes_invalid_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("SNAPSHOT_MAX_NODES", "bad")
         assert ApiConfig.from_env().snapshot_max_nodes == 100
 
     def test_encryption_master_key_none_when_not_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.delenv("ENCRYPTION_MASTER_KEY", raising=False)
         assert ApiConfig.from_env().encryption_master_key is None
 
     def test_encryption_master_key_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("ENCRYPTION_MASTER_KEY", "my-master-key")
         assert ApiConfig.from_env().encryption_master_key == "my-master-key"
 
     def test_jwt_algorithm_non_hs256_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("JWT_ALGORITHM", "RS256")
@@ -1062,7 +991,7 @@ class TestApiConfigNewFields:
             ApiConfig.from_env()
 
     def test_cors_origins_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.setenv("CORS_ORIGINS", "https://app.example.com,https://other.example.com")
@@ -1070,7 +999,7 @@ class TestApiConfigNewFields:
         assert config.cors_origins == ["https://app.example.com", "https://other.example.com"]
 
     def test_cors_origins_none_when_not_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
         monkeypatch.delenv("CORS_ORIGINS", raising=False)
@@ -1082,7 +1011,7 @@ class TestConfigMissingVars:
 
     def test_api_config_missing_postgres_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """config.py:390 — POSTGRES_PASSWORD missing fires the append."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME", "user")
@@ -1094,7 +1023,7 @@ class TestConfigMissingVars:
 
     def test_api_config_missing_postgres_database(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """config.py:392 — POSTGRES_DATABASE missing fires the append."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME", "user")
@@ -1172,7 +1101,7 @@ class TestGetSecretViaFromEnv:
         monkeypatch.setenv("NEO4J_PASSWORD_FILE", str(password_file))
         monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
 
-        from common.config import GraphinatorConfig
+        from graphinator.config import GraphinatorConfig
 
         config = GraphinatorConfig.from_env()
         assert config.neo4j_username == "graph_user"
@@ -1189,7 +1118,7 @@ class TestGetSecretViaFromEnv:
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
         monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
 
-        from common.config import TableinatorConfig
+        from tableinator.config import TableinatorConfig
 
         config = TableinatorConfig.from_env()
         assert config.postgres_username == "table_user"
@@ -1217,7 +1146,7 @@ class TestGetSecretViaFromEnv:
         monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
         monkeypatch.delenv("ENCRYPTION_MASTER_KEY", raising=False)
 
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         config = ApiConfig.from_env()
         assert config.postgres_username == "api_user"
@@ -1229,7 +1158,7 @@ class TestGetSecretViaFromEnv:
         """ExploreConfig reads API_BASE_URL from environment (no Neo4j vars needed)."""
         monkeypatch.setenv("API_BASE_URL", "http://custom:9000")
 
-        from common.config import ExploreConfig
+        from explore.config import ExploreConfig
 
         config = ExploreConfig.from_env()
         assert config.api_base_url == "http://custom:9000"
@@ -1243,7 +1172,7 @@ class TestGetSecretViaFromEnv:
         monkeypatch.setenv("RABBITMQ_PASSWORD_FILE", str(pass_file))
         monkeypatch.delenv("RABBITMQ_PASSWORD", raising=False)
 
-        from common.config import DashboardConfig
+        from dashboard.config import DashboardConfig
 
         config = DashboardConfig.from_env()
         assert config.rabbitmq_username == "dash_rmq_user"
@@ -1266,7 +1195,7 @@ class TestInsightsConfig:
         monkeypatch.setenv("INSIGHTS_SCHEDULE_HOURS", "12")
         monkeypatch.setenv("API_BASE_URL", "http://api:8004")
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.api_base_url == "http://api:8004"
@@ -1276,7 +1205,7 @@ class TestInsightsConfig:
     def test_from_env_default_schedule(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _set_insights_env(monkeypatch)
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.schedule_hours == 24
@@ -1287,7 +1216,7 @@ class TestInsightsConfig:
         monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
         monkeypatch.delenv("POSTGRES_DATABASE", raising=False)
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         with pytest.raises(ValueError, match="Missing required environment variables"):
             InsightsConfig.from_env()
@@ -1296,7 +1225,7 @@ class TestInsightsConfig:
         _set_insights_env(monkeypatch)
         monkeypatch.delenv("API_BASE_URL", raising=False)
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.api_base_url == "http://api:8004"
@@ -1306,7 +1235,7 @@ class TestInsightsConfig:
         _set_insights_env(monkeypatch)
         monkeypatch.setenv("INSIGHTS_INTERNAL_SECRET", "shared-internal-secret")
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.internal_secret == "shared-internal-secret"
@@ -1316,7 +1245,7 @@ class TestInsightsConfig:
         _set_insights_env(monkeypatch)
         monkeypatch.delenv("INSIGHTS_INTERNAL_SECRET", raising=False)
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.internal_secret is None
@@ -1324,7 +1253,7 @@ class TestInsightsConfig:
     def test_default_milestone_years(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _set_insights_env(monkeypatch)
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.milestone_years == (25, 30, 40, 50, 75, 100)
@@ -1333,7 +1262,7 @@ class TestInsightsConfig:
         _set_insights_env(monkeypatch)
         monkeypatch.setenv("INSIGHTS_MILESTONE_YEARS", "10,20,50")
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.milestone_years == (10, 20, 50)
@@ -1342,7 +1271,7 @@ class TestInsightsConfig:
         _set_insights_env(monkeypatch)
         monkeypatch.setenv("INSIGHTS_MILESTONE_YEARS", "50,25,50,10")
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.milestone_years == (10, 25, 50)
@@ -1351,7 +1280,7 @@ class TestInsightsConfig:
         _set_insights_env(monkeypatch)
         monkeypatch.setenv("INSIGHTS_MILESTONE_YEARS", "abc,def")
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.milestone_years == (25, 30, 40, 50, 75, 100)
@@ -1360,7 +1289,7 @@ class TestInsightsConfig:
         _set_insights_env(monkeypatch)
         monkeypatch.setenv("INSIGHTS_MILESTONE_YEARS", "")
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.milestone_years == (25, 30, 40, 50, 75, 100)
@@ -1369,7 +1298,7 @@ class TestInsightsConfig:
         _set_insights_env(monkeypatch)
         monkeypatch.delenv("REDIS_HOST", raising=False)
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.redis_host == "redis://localhost:6379/0"
@@ -1378,7 +1307,7 @@ class TestInsightsConfig:
         _set_insights_env(monkeypatch)
         monkeypatch.setenv("REDIS_HOST", "my-redis")
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.redis_host == "redis://my-redis:6379/0"
@@ -1387,7 +1316,7 @@ class TestInsightsConfig:
         _set_insights_env(monkeypatch)
         monkeypatch.setenv("INSIGHTS_SCHEDULE_HOURS", "0")
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.schedule_hours == 24
@@ -1396,7 +1325,7 @@ class TestInsightsConfig:
         _set_insights_env(monkeypatch)
         monkeypatch.setenv("INSIGHTS_SCHEDULE_HOURS", "-5")
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.schedule_hours == 24
@@ -1405,7 +1334,7 @@ class TestInsightsConfig:
         _set_insights_env(monkeypatch)
         monkeypatch.setenv("INSIGHTS_SCHEDULE_HOURS", "abc")
 
-        from common.config import InsightsConfig
+        from insights.config import InsightsConfig
 
         config = InsightsConfig.from_env()
         assert config.schedule_hours == 24

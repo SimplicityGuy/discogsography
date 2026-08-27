@@ -25,13 +25,13 @@ from common import (
     AsyncResilientNeo4jDriver,
     AsyncResilientPostgreSQL,
     AsyncResilientRabbitMQ,
-    get_config,
     neo4j_security_kwargs,
     parse_postgres_host_port,
     setup_logging,
 )
 from dashboard.admin_proxy import configure as configure_admin_proxy, router as admin_router
 from dashboard.catalog_contract import DISCOGS_EXCHANGE_PREFIX, MUSICBRAINZ_EXCHANGE_PREFIX
+from dashboard.config import get_config
 
 
 # Suppress per-request httpx INFO logs (health checks every 2s are too noisy)

@@ -3,16 +3,16 @@ revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.15' and platform_machine == 'x86_64' and sys_platform == 'linux'",
-    "python_full_version == '3.14.*' and platform_machine == 'x86_64' and sys_platform == 'linux'",
-    "python_full_version < '3.14' and platform_machine == 'x86_64' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version == '3.14.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "python_full_version < '3.14' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "python_full_version >= '3.15' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
-    "python_full_version == '3.14.*' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
-    "python_full_version < '3.14' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
     "python_full_version >= '3.15' and platform_machine == 'arm64' and sys_platform == 'darwin'",
+    "python_full_version == '3.14.*' and platform_machine == 'x86_64' and sys_platform == 'linux'",
+    "python_full_version == '3.14.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "python_full_version == '3.14.*' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
     "python_full_version == '3.14.*' and platform_machine == 'arm64' and sys_platform == 'darwin'",
+    "python_full_version < '3.14' and platform_machine == 'x86_64' and sys_platform == 'linux'",
+    "python_full_version < '3.14' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "python_full_version < '3.14' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
     "python_full_version < '3.14' and platform_machine == 'arm64' and sys_platform == 'darwin'",
 ]
 supported-markers = [
@@ -32,13 +32,15 @@ members = [
     "discogsography-api",
     "discogsography-brainzgraphinator",
     "discogsography-brainztableinator",
-    "discogsography-common",
     "discogsography-dashboard",
     "discogsography-explore",
     "discogsography-graphinator",
     "discogsography-mcp",
     "discogsography-schema-init",
     "discogsography-tableinator",
+    "groovemap-agent-tools",
+    "groovemap-operations-toolkit",
+    "groovemap-runtime",
     "insights",
 ]
 
@@ -448,6 +450,8 @@ source = { editable = "." }
 dependencies = [
     { name = "aio-pika" },
     { name = "dict-hash" },
+    { name = "groovemap-agent-tools" },
+    { name = "groovemap-runtime", extra = ["all"] },
     { name = "multidict" },
     { name = "neo4j-rust-ext" },
     { name = "orjson" },
@@ -618,6 +622,8 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'dashboard'", specifier = ">=0.141.1" },
     { name = "fastapi", marker = "extra == 'explore'", specifier = ">=0.141.1" },
     { name = "fastapi", marker = "extra == 'insights'", specifier = ">=0.141.1" },
+    { name = "groovemap-agent-tools", editable = "common/agent-tools" },
+    { name = "groovemap-runtime", extras = ["all"], editable = "common" },
     { name = "httpx", marker = "extra == 'api'", specifier = ">=0.28.1" },
     { name = "httpx", marker = "extra == 'dashboard'", specifier = ">=0.28.1" },
     { name = "httpx", marker = "extra == 'explore'", specifier = ">=0.28.1" },
@@ -712,6 +718,8 @@ dependencies = [
     { name = "anthropic" },
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "groovemap-agent-tools" },
+    { name = "groovemap-runtime", extra = ["neo4j", "postgres"] },
     { name = "httpx" },
     { name = "neo4j-rust-ext" },
     { name = "orjson" },
@@ -729,6 +737,8 @@ requires-dist = [
     { name = "anthropic", specifier = ">=1.0.0" },
     { name = "cryptography", specifier = ">=50.0.0" },
     { name = "fastapi", specifier = ">=0.141.1" },
+    { name = "groovemap-agent-tools", editable = "common/agent-tools" },
+    { name = "groovemap-runtime", extras = ["neo4j", "postgres"], editable = "common" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "neo4j-rust-ext", specifier = ">=6.2.0.0" },
     { name = "orjson", specifier = ">=3.12.0" },
@@ -747,6 +757,7 @@ version = "0.1.0"
 source = { editable = "brainzgraphinator" }
 dependencies = [
     { name = "aio-pika" },
+    { name = "groovemap-runtime", extra = ["neo4j", "rabbitmq"] },
     { name = "neo4j-rust-ext" },
     { name = "orjson" },
     { name = "structlog" },
@@ -755,6 +766,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "aio-pika", specifier = ">=10.0.1" },
+    { name = "groovemap-runtime", extras = ["neo4j", "rabbitmq"], editable = "common" },
     { name = "neo4j-rust-ext", specifier = ">=6.2.0.0" },
     { name = "orjson", specifier = ">=3.12.0" },
     { name = "structlog", specifier = ">=26.1.0" },
@@ -766,6 +778,7 @@ version = "0.1.0"
 source = { editable = "brainztableinator" }
 dependencies = [
     { name = "aio-pika" },
+    { name = "groovemap-runtime", extra = ["postgres", "rabbitmq"] },
     { name = "orjson" },
     { name = "psycopg", extra = ["binary"] },
     { name = "structlog" },
@@ -774,32 +787,10 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "aio-pika", specifier = ">=10.0.1" },
+    { name = "groovemap-runtime", extras = ["postgres", "rabbitmq"], editable = "common" },
     { name = "orjson", specifier = ">=3.12.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "structlog", specifier = ">=26.1.0" },
-]
-
-[[package]]
-name = "discogsography-common"
-version = "0.1.0"
-source = { editable = "common" }
-dependencies = [
-    { name = "aio-pika" },
-    { name = "neo4j-rust-ext" },
-    { name = "pika" },
-    { name = "prometheus-client" },
-    { name = "psycopg", extra = ["binary"] },
-    { name = "pulp" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aio-pika", specifier = ">=10.0.1" },
-    { name = "neo4j-rust-ext", specifier = ">=6.2.0.0" },
-    { name = "pika", specifier = ">=1.4.4" },
-    { name = "prometheus-client", specifier = ">=0.26.0" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
-    { name = "pulp", specifier = ">=3.3.2" },
 ]
 
 [[package]]
@@ -809,6 +800,7 @@ source = { editable = "dashboard" }
 dependencies = [
     { name = "aio-pika" },
     { name = "fastapi" },
+    { name = "groovemap-runtime", extra = ["neo4j", "postgres", "rabbitmq"] },
     { name = "httpx" },
     { name = "neo4j-rust-ext" },
     { name = "orjson" },
@@ -826,6 +818,7 @@ dependencies = [
 requires-dist = [
     { name = "aio-pika", specifier = ">=10.0.1" },
     { name = "fastapi", specifier = ">=0.141.1" },
+    { name = "groovemap-runtime", extras = ["neo4j", "postgres", "rabbitmq"], editable = "common" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "neo4j-rust-ext", specifier = ">=6.2.0.0" },
     { name = "orjson", specifier = ">=3.12.0" },
@@ -845,6 +838,7 @@ version = "0.1.0"
 source = { editable = "explore" }
 dependencies = [
     { name = "fastapi" },
+    { name = "groovemap-runtime" },
     { name = "httpx" },
     { name = "orjson" },
     { name = "pydantic" },
@@ -856,6 +850,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.141.1" },
+    { name = "groovemap-runtime", editable = "common" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "orjson", specifier = ">=3.12.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
@@ -871,6 +866,7 @@ source = { editable = "graphinator" }
 dependencies = [
     { name = "aio-pika" },
     { name = "dict-hash" },
+    { name = "groovemap-runtime", extra = ["neo4j", "rabbitmq"] },
     { name = "neo4j-rust-ext" },
     { name = "orjson" },
     { name = "pika" },
@@ -881,6 +877,7 @@ dependencies = [
 requires-dist = [
     { name = "aio-pika", specifier = ">=10.0.1" },
     { name = "dict-hash", specifier = ">=1.3.7" },
+    { name = "groovemap-runtime", extras = ["neo4j", "rabbitmq"], editable = "common" },
     { name = "neo4j-rust-ext", specifier = ">=6.2.0.0" },
     { name = "orjson", specifier = ">=3.12.0" },
     { name = "pika", specifier = ">=1.4.4" },
@@ -892,6 +889,7 @@ name = "discogsography-mcp"
 version = "0.1.0"
 source = { editable = "mcp-server" }
 dependencies = [
+    { name = "groovemap-agent-tools" },
     { name = "httpx" },
     { name = "mcp", extra = ["cli"] },
     { name = "structlog" },
@@ -899,6 +897,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "groovemap-agent-tools", editable = "common/agent-tools" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", extras = ["cli"], specifier = ">=2.0.0" },
     { name = "structlog", specifier = ">=26.1.0" },
@@ -909,6 +908,7 @@ name = "discogsography-schema-init"
 version = "0.1.0"
 source = { editable = "schema-init" }
 dependencies = [
+    { name = "groovemap-runtime", extra = ["neo4j", "postgres"] },
     { name = "neo4j-rust-ext" },
     { name = "psycopg", extra = ["binary"] },
     { name = "structlog" },
@@ -916,6 +916,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "groovemap-runtime", extras = ["neo4j", "postgres"], editable = "common" },
     { name = "neo4j-rust-ext", specifier = ">=6.2.0.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "structlog", specifier = ">=26.1.0" },
@@ -928,6 +929,7 @@ source = { editable = "tableinator" }
 dependencies = [
     { name = "aio-pika" },
     { name = "dict-hash" },
+    { name = "groovemap-runtime", extra = ["postgres", "rabbitmq"] },
     { name = "orjson" },
     { name = "pika" },
     { name = "psycopg", extra = ["binary"] },
@@ -938,6 +940,7 @@ dependencies = [
 requires-dist = [
     { name = "aio-pika", specifier = ">=10.0.1" },
     { name = "dict-hash", specifier = ">=1.3.7" },
+    { name = "groovemap-runtime", extras = ["postgres", "rabbitmq"], editable = "common" },
     { name = "orjson", specifier = ">=3.12.0" },
     { name = "pika", specifier = ">=1.4.4" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
@@ -1041,6 +1044,82 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/9a/07/da554b71ab88e649da146e1065d86a48a5c5d92e50ab74ef41b504aa7f56/greenlet-3.5.5-cp315-cp315t-musllinux_1_2_aarch64.whl", hash = "sha256:a1eaccf5c3a1d3e46dead602c72e6836731e8e245c9de6a27764567b6b62d4c0", size = 1642735, upload-time = "2026-08-10T14:15:11.92Z" },
     { url = "https://files.pythonhosted.org/packages/78/76/26a3782a051677668af9d92beaa47cd87ba9dd5072f762961144a03dd4c6/greenlet-3.5.5-cp315-cp315t-musllinux_1_2_x86_64.whl", hash = "sha256:19e4e026fe20691f333b8eb1a3bc9625eceba8c3f9d62ec5a6f8581afbc6b5a5", size = 1700925, upload-time = "2026-08-10T13:40:37.656Z" },
 ]
+
+[[package]]
+name = "groovemap-agent-tools"
+version = "0.1.0"
+source = { editable = "common/agent-tools" }
+dependencies = [
+    { name = "groovemap-runtime" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "groovemap-runtime", specifier = "==0.1.0" }]
+
+[[package]]
+name = "groovemap-operations-toolkit"
+version = "0.1.0"
+source = { editable = "utilities" }
+dependencies = [
+    { name = "groovemap-runtime", extra = ["rabbitmq"] },
+    { name = "psutil" },
+    { name = "requests" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "groovemap-runtime", extras = ["rabbitmq"], editable = "common" },
+    { name = "psutil", specifier = ">=7.2.2" },
+    { name = "requests", specifier = ">=2.34.2" },
+]
+
+[[package]]
+name = "groovemap-runtime"
+version = "0.1.0"
+source = { editable = "common" }
+dependencies = [
+    { name = "orjson" },
+    { name = "structlog" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "aio-pika" },
+    { name = "neo4j-rust-ext" },
+    { name = "pika" },
+    { name = "prometheus-client" },
+    { name = "psycopg", extra = ["binary"] },
+]
+metrics = [
+    { name = "prometheus-client" },
+]
+neo4j = [
+    { name = "neo4j-rust-ext" },
+]
+postgres = [
+    { name = "psycopg", extra = ["binary"] },
+]
+rabbitmq = [
+    { name = "aio-pika" },
+    { name = "pika" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aio-pika", marker = "extra == 'all'", specifier = ">=10.0.1" },
+    { name = "aio-pika", marker = "extra == 'rabbitmq'", specifier = ">=10.0.1" },
+    { name = "neo4j-rust-ext", marker = "extra == 'all'", specifier = ">=6.2.0.0" },
+    { name = "neo4j-rust-ext", marker = "extra == 'neo4j'", specifier = ">=6.2.0.0" },
+    { name = "orjson", specifier = ">=3.12.0" },
+    { name = "pika", marker = "extra == 'all'", specifier = ">=1.4.4" },
+    { name = "pika", marker = "extra == 'rabbitmq'", specifier = ">=1.4.4" },
+    { name = "prometheus-client", marker = "extra == 'all'", specifier = ">=0.26.0" },
+    { name = "prometheus-client", marker = "extra == 'metrics'", specifier = ">=0.26.0" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'all'", specifier = ">=3.3.4" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.3.4" },
+    { name = "structlog", specifier = ">=26.1.0" },
+]
+provides-extras = ["metrics", "neo4j", "postgres", "rabbitmq", "all"]
 
 [[package]]
 name = "h11"
@@ -1235,6 +1314,12 @@ wheels = [
 name = "insights"
 version = "0.1.0"
 source = { editable = "insights" }
+dependencies = [
+    { name = "groovemap-runtime", extra = ["postgres"] },
+]
+
+[package.metadata]
+requires-dist = [{ name = "groovemap-runtime", extras = ["postgres"], editable = "common" }]
 
 [[package]]
 name = "jiter"
@@ -1945,15 +2030,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/15/af/b7151776cc08d5935d45c833ec818a9beb417cf7c08239af1aafbdae78ee/psycopg_binary-3.3.4-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:2c09aad7051326e7603c14e50636db9c01f78272dc54b3accff03d46370461e6", size = 6761486, upload-time = "2026-05-01T23:31:14.511Z" },
     { url = "https://files.pythonhosted.org/packages/a2/23/ccadfd0de416aa188356daa199453af24087b042e296088706d190ae0295/psycopg_binary-3.3.4-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:46893c26858be12cc49ca4226ed6a60b4bfccadd946b3bebb783a60b38788228", size = 4533549, upload-time = "2026-05-01T23:31:26.204Z" },
     { url = "https://files.pythonhosted.org/packages/c4/b1/f6670f00fa7ea601584623f6c11602ab92117d83eaff885e0210f6de7418/psycopg_binary-3.3.4-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:47c656a8a7ba6eb0cff1801a4caaa9c8bdc12d03080e273aff1c8ac39971a77e", size = 4255811, upload-time = "2026-05-01T23:31:44.986Z" },
-]
-
-[[package]]
-name = "pulp"
-version = "3.3.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/4e/70/69be07a67621ad804d6cf347965eb4e0d7786a97330d99c31d735aaa6c5a/pulp-3.3.2.tar.gz", hash = "sha256:d0904700c207ac11e25e3b1213b70eae1d6fb25faa719d75f3f15054901258c0", size = 16305346, upload-time = "2026-05-25T09:41:26.207Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/dd/6e/d674f1dde91c71e2ac19e5e5cf1ee6d5845e3aefecd9c39ed9c4b0c9a696/pulp-3.3.2-py3-none-any.whl", hash = "sha256:631b166f72086971a9597f7a0233ababa99bb8d50a01cd543f7758be5a9f86c0", size = 16391742, upload-time = "2026-05-25T09:41:22.2Z" },
 ]
 
 [[package]]

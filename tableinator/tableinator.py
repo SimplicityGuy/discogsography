@@ -16,7 +16,6 @@ from common import (
     DatabaseUnavailableError,
     HealthServer,
     OutageBackoff,
-    TableinatorConfig,
     normalize_record,
     parse_postgres_host_port,
     setup_logging,
@@ -43,6 +42,7 @@ from tableinator.catalog_contract import (
 from tableinator.catalog_contract import (
     queue_name as catalog_queue_name,
 )
+from tableinator.config import TableinatorConfig
 
 logger = structlog.get_logger(__name__)
 

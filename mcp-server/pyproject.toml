@@ -17,6 +17,7 @@ classifiers = [
 ]
 license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
+    "groovemap-agent-tools==0.1.0",
     "httpx>=0.28.1",
     "mcp[cli]>=2.0.0",
     "structlog>=26.1.0",

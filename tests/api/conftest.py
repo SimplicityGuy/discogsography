@@ -29,7 +29,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-from common.config import ApiConfig
+from api.config import ApiConfig
 
 
 _TEST_MASTER_KEY = base64.urlsafe_b64encode(b"test-master-key-padded-to-32!!").decode("ascii")

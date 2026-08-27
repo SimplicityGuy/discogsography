@@ -1,4 +1,4 @@
-"""Graph data tools — find_path, collaborators, stats."""
+"""GrooveMap graph data tools — find_path, collaborators, stats."""
 
 from __future__ import annotations
 
