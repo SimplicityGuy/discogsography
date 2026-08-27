@@ -1,0 +1,105 @@
+{
+  "$defs": {
+    "data": {
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "type": {
+          "const": "data"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "extraction_complete": {
+      "additionalProperties": false,
+      "properties": {
+        "record_counts": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "started_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "type": {
+          "const": "extraction_complete"
+        },
+        "version": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "version",
+        "timestamp",
+        "started_at",
+        "record_counts"
+      ],
+      "type": "object"
+    },
+    "file_complete": {
+      "additionalProperties": false,
+      "properties": {
+        "data_type": {
+          "type": "string"
+        },
+        "file": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "total_processed": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "file_complete"
+        }
+      },
+      "required": [
+        "type",
+        "data_type",
+        "timestamp",
+        "total_processed",
+        "file"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://groovemap.music/contracts/catalog-events/v1/event.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/data"
+    },
+    {
+      "$ref": "#/$defs/file_complete"
+    },
+    {
+      "$ref": "#/$defs/extraction_complete"
+    }
+  ],
+  "title": "GrooveMap catalog event v1"
+}

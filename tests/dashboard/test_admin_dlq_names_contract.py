@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 
 from api.routers.admin import _VALID_DLQ_NAMES
-from common.config import DISCOGS_EXCHANGE_PREFIX, MUSICBRAINZ_EXCHANGE_PREFIX
+from dashboard.catalog_contract import DISCOGS_EXCHANGE_PREFIX, MUSICBRAINZ_EXCHANGE_PREFIX
 
 
 ADMIN_JS_PATH = Path(__file__).parent.parent.parent / "dashboard" / "static" / "admin.js"

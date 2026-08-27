@@ -722,6 +722,31 @@ class TestRunAllComputations:
         mock_anniv.assert_called_once_with(mock_client, mock_pool, milestone_years=custom_milestones)
 
 
+class TestComputeAndStoreCommunityEnrichment:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("payload", "expected"),
+        [
+            ({"enriched": 7, "skipped": 2, "errors": 1, "remaining": 3}, 7),
+            ({"enriched": 0, "skipped": 4, "errors": 0, "remaining": 2, "error": "no_credentials"}, 0),
+        ],
+    )
+    async def test_consumes_versioned_counter_response(self, payload: dict[str, object], expected: int) -> None:
+        from insights.catalog_api_contract import COMMUNITY_ENRICHMENT_PATH
+        from insights.computations import compute_and_store_community_enrichment
+
+        response = MagicMock()
+        response.raise_for_status = MagicMock()
+        response.json.return_value = payload
+        client = AsyncMock()
+        client.get.return_value = response
+
+        result = await compute_and_store_community_enrichment(client, _make_mock_pool())
+
+        assert result == expected
+        assert client.get.await_args.args == (COMMUNITY_ENRICHMENT_PATH,)
+
+
 class TestEndpointTimeouts:
     """Regression for ReadTimeout failures on the heavy endpoints (discogsography-1cxi)."""
 

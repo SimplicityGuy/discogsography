@@ -20,9 +20,9 @@ class TestServiceIntegration:
 
     def test_service_configs_consistent(self) -> None:
         """Test that all services use consistent configuration."""
-        from common.config import AMQP_EXCHANGE_TYPE, DATA_TYPES, DISCOGS_EXCHANGE_PREFIX
+        from graphinator.catalog_contract import AMQP_EXCHANGE_TYPE, DATA_TYPES, DISCOGS_EXCHANGE_PREFIX
 
-        # Verify shared constants
+        # Verify the pinned producer-owned contract artifact.
         assert DISCOGS_EXCHANGE_PREFIX == "discogsography-discogs"
         assert AMQP_EXCHANGE_TYPE == "fanout"
         assert DATA_TYPES == ["artists", "labels", "masters", "releases"]

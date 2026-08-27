@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "consumers": {
+    "brainzgraphinator": {
+      "source": "musicbrainz"
+    },
+    "brainztableinator": {
+      "source": "musicbrainz"
+    },
+    "graphinator": {
+      "source": "discogs"
+    },
+    "tableinator": {
+      "source": "discogs"
+    }
+  },
+  "contract": "groovemap.catalog-events",
+  "event_schema": "schemas/event.schema.json",
+  "exchange": {
+    "kind": "fanout",
+    "name_template": "{exchange_prefix}-{entity}"
+  },
+  "extraction_rules": "../../../extraction-rules.yaml",
+  "fixture_payloads": {
+    "discogs": {
+      "artists": {
+        "name": "Contract Artist"
+      },
+      "labels": {
+        "name": "Contract Label"
+      },
+      "masters": {
+        "title": "Contract Master",
+        "year": 2000
+      },
+      "releases": {
+        "released": "2000-01-01",
+        "title": "Contract Release"
+      }
+    },
+    "musicbrainz": {
+      "artists": {
+        "mb_type": "Person",
+        "name": "Contract Artist",
+        "sort_name": "Artist, Contract"
+      },
+      "labels": {
+        "mb_type": "Original Production",
+        "name": "Contract Label"
+      },
+      "release-groups": {
+        "mb_type": "Album",
+        "name": "Contract Release Group"
+      },
+      "releases": {
+        "name": "Contract Release"
+      }
+    }
+  },
+  "queue": {
+    "dead_letter_exchange_template": "{queue}.dlx",
+    "dead_letter_queue_template": "{queue}.dlq",
+    "name_template": "{exchange_prefix}-{consumer}-{entity}"
+  },
+  "sources": {
+    "discogs": {
+      "default_exchange_prefix": "discogsography-discogs",
+      "entities": [
+        "artists",
+        "labels",
+        "masters",
+        "releases"
+      ],
+      "exchange_prefix_env": "DISCOGS_EXCHANGE_PREFIX"
+    },
+    "musicbrainz": {
+      "default_exchange_prefix": "discogsography-musicbrainz",
+      "entities": [
+        "artists",
+        "labels",
+        "release-groups",
+        "releases"
+      ],
+      "exchange_prefix_env": "MUSICBRAINZ_EXCHANGE_PREFIX"
+    }
+  },
+  "version": 1
+}

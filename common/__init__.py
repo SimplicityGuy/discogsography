@@ -1,15 +1,6 @@
 """Common utilities and configuration for discogsography services."""
 
 from common.config import (
-    AMQP_EXCHANGE_TYPE,
-    AMQP_QUEUE_PREFIX_BRAINZGRAPHINATOR,
-    AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR,
-    AMQP_QUEUE_PREFIX_GRAPHINATOR,
-    AMQP_QUEUE_PREFIX_TABLEINATOR,
-    DATA_TYPES,
-    DISCOGS_EXCHANGE_PREFIX,
-    MUSICBRAINZ_DATA_TYPES,
-    MUSICBRAINZ_EXCHANGE_PREFIX,
     ApiConfig,
     BrainzgraphinatorConfig,
     BrainztableinatorConfig,
@@ -82,15 +73,6 @@ from common.state_marker import (
 
 
 __all__ = [
-    "AMQP_EXCHANGE_TYPE",
-    "AMQP_QUEUE_PREFIX_BRAINZGRAPHINATOR",
-    "AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR",
-    "AMQP_QUEUE_PREFIX_GRAPHINATOR",
-    "AMQP_QUEUE_PREFIX_TABLEINATOR",
-    "DATA_TYPES",
-    "DISCOGS_EXCHANGE_PREFIX",
-    "MUSICBRAINZ_DATA_TYPES",
-    "MUSICBRAINZ_EXCHANGE_PREFIX",
     "ApiConfig",
     "AsyncPostgreSQLPool",
     "AsyncResilientConnection",

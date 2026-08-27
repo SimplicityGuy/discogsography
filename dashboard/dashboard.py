@@ -22,8 +22,6 @@ from pydantic import BaseModel
 import uvicorn
 
 from common import (
-    DISCOGS_EXCHANGE_PREFIX,
-    MUSICBRAINZ_EXCHANGE_PREFIX,
     AsyncResilientNeo4jDriver,
     AsyncResilientPostgreSQL,
     AsyncResilientRabbitMQ,
@@ -33,6 +31,7 @@ from common import (
     setup_logging,
 )
 from dashboard.admin_proxy import configure as configure_admin_proxy, router as admin_router
+from dashboard.catalog_contract import DISCOGS_EXCHANGE_PREFIX, MUSICBRAINZ_EXCHANGE_PREFIX
 
 
 # Suppress per-request httpx INFO logs (health checks every 2s are too noisy)
@@ -119,8 +118,8 @@ class SystemMetrics(BaseModel):
     timestamp: datetime
 
 
-# Queue prefixes are ALWAYS env-derived (common.config reads DISCOGS_EXCHANGE_PREFIX /
-# MUSICBRAINZ_EXCHANGE_PREFIX), exactly like the extractor and all four consumers.
+# Queue prefixes are ALWAYS env-derived by the generated catalog contract, exactly like
+# the extractor and all four consumers.
 # Hardcoding the defaults here made the dashboard the only component that ignored a
 # prefix override: the management-API filter matched nothing, and get_queue_info logs
 # nothing on a zero-match 200, so both pipeline panes silently showed an empty,

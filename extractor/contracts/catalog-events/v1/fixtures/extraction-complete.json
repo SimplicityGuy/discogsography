@@ -1,0 +1,9 @@
+{
+  "record_counts": {
+    "artists": 1
+  },
+  "started_at": "2000-01-01T00:00:00Z",
+  "timestamp": "2000-01-01T00:00:01Z",
+  "type": "extraction_complete",
+  "version": "contract-fixture"
+}

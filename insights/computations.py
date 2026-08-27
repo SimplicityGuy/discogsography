@@ -14,6 +14,15 @@ import httpx
 import structlog
 
 from common import describe_exception
+from insights.catalog_api_contract import (
+    ANNIVERSARIES_PATH,
+    ARTIST_CENTRALITY_PATH,
+    COMMUNITY_ENRICHMENT_PATH,
+    DATA_COMPLETENESS_PATH,
+    GENRE_TRENDS_PATH,
+    LABEL_LONGEVITY_PATH,
+    RARITY_SCORES_PATH,
+)
 
 
 if TYPE_CHECKING:
@@ -50,9 +59,9 @@ _POOL_TIMEOUT_SECONDS = 60.0
 DEFAULT_READ_TIMEOUT_SECONDS = 900.0
 
 ENDPOINT_READ_TIMEOUTS: dict[str, float] = {
-    "/api/internal/insights/data-completeness": 1800.0,
-    "/api/internal/insights/rarity-scores": 1800.0,
-    "/api/internal/insights/community-enrichment": 3600.0,
+    DATA_COMPLETENESS_PATH: 1800.0,
+    RARITY_SCORES_PATH: 1800.0,
+    COMMUNITY_ENRICHMENT_PATH: 3600.0,
 }
 
 
@@ -125,7 +134,7 @@ async def compute_and_store_artist_centrality(client: httpx.AsyncClient, pool: A
     """Compute artist centrality and store results."""
     started_at = datetime.now(UTC)
     try:
-        results = await _fetch_from_api(client, "/api/internal/insights/artist-centrality", {"limit": limit})
+        results = await _fetch_from_api(client, ARTIST_CENTRALITY_PATH, {"limit": limit})
         if not results:
             logger.info("📊 No artist centrality results to store")
             await _log_computation(pool, "artist_centrality", "completed", started_at, 0)
@@ -167,7 +176,7 @@ async def compute_and_store_genre_trends(client: httpx.AsyncClient, pool: Any) -
     """Compute genre trends and store results."""
     started_at = datetime.now(UTC)
     try:
-        results = await _fetch_from_api(client, "/api/internal/insights/genre-trends")
+        results = await _fetch_from_api(client, GENRE_TRENDS_PATH)
         if not results:
             await _log_computation(pool, "genre_trends", "completed", started_at, 0)
             return 0
@@ -201,7 +210,7 @@ async def compute_and_store_label_longevity(client: httpx.AsyncClient, pool: Any
     """Compute label longevity and store results."""
     started_at = datetime.now(UTC)
     try:
-        results = await _fetch_from_api(client, "/api/internal/insights/label-longevity", {"limit": limit})
+        results = await _fetch_from_api(client, LABEL_LONGEVITY_PATH, {"limit": limit})
         if not results:
             await _log_computation(pool, "label_longevity", "completed", started_at, 0)
             return 0
@@ -265,7 +274,7 @@ async def compute_and_store_anniversaries(
         milestones_str = ",".join(str(m) for m in milestone_years)
         results = await _fetch_from_api(
             client,
-            "/api/internal/insights/anniversaries",
+            ANNIVERSARIES_PATH,
             {"year": year, "month": month, "milestones": milestones_str},
         )
         if not results:
@@ -321,7 +330,7 @@ async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: A
         # Full sequential scans whose duration varies widely (~230s warm, over
         # 600s on bad days). The endpoint caches in Redis for 6h, so only the
         # cold path is slow — see ENDPOINT_READ_TIMEOUTS for the budget.
-        results = await _fetch_from_api(client, "/api/internal/insights/data-completeness")
+        results = await _fetch_from_api(client, DATA_COMPLETENESS_PATH)
         if not results:
             await _log_computation(pool, "data_completeness", "completed", started_at, 0)
             return 0
@@ -365,7 +374,7 @@ async def compute_and_store_community_enrichment(client: httpx.AsyncClient, pool
     """Trigger community enrichment via the API internal endpoint."""
     started_at = datetime.now(UTC)
     try:
-        path = "/api/internal/insights/community-enrichment"
+        path = COMMUNITY_ENRICHMENT_PATH
         response = await client.get(path, timeout=endpoint_timeout(path))
         response.raise_for_status()
         data: dict[str, Any] = response.json()
@@ -388,7 +397,7 @@ async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
     try:
         # The API runs the rarity signal scans chunked and sequentially (to cap
         # transaction memory) — see ENDPOINT_READ_TIMEOUTS for the budget.
-        results = await _fetch_from_api(client, "/api/internal/insights/rarity-scores")
+        results = await _fetch_from_api(client, RARITY_SCORES_PATH)
         if not results:
             logger.info("📊 No rarity score results to store")
             await _log_computation(pool, "release_rarity", "completed", started_at, 0)

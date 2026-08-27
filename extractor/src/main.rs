@@ -9,6 +9,10 @@ use tracing::{error, info};
 use rules::RulesConfig;
 
 mod config;
+#[allow(dead_code)]
+mod generated {
+    pub mod catalog_contract;
+}
 mod discogs_downloader;
 mod extractor;
 mod health;

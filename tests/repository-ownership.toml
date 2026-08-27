@@ -1,0 +1,38 @@
+# Explicit disposition for tests whose present location crosses a future repository seam.
+
+[[assignment]]
+paths = ["tests/test_file_completion.py", "tests/test_integration.py"]
+owner = "deployment"
+reason = "Exercises multiple independently deployed consumers."
+
+[[assignment]]
+paths = [
+  "tests/test_batch_performance.py",
+  "tests/test_batch_transient_classification.py",
+  "tests/test_flush_queue_drain_contract.py",
+]
+owner = "deployment"
+reason = "Compares both graph and SQL consumer implementations."
+
+[[assignment]]
+paths = [
+  "tests/dashboard/test_admin_dlq_names_contract.py",
+  "tests/dashboard/test_queue_prefix_wiring.py",
+]
+owner = "deployment"
+reason = "Pins API, console, toolkit, and catalog-ingestion naming together."
+
+[[assignment]]
+paths = [
+  "tests/explore/test_collaborators_api.py",
+  "tests/explore/test_explore_api.py",
+  "tests/explore/test_genre_tree_api.py",
+  "tests/explore/test_snapshot.py",
+]
+owner = "deployment"
+reason = "Mixed Catalog API and Graph Explorer proxy coverage must be split into API contract and proxy integration suites during extraction."
+
+[[assignment]]
+paths = ["tests/insights/test_pg_queries.py"]
+owner = "catalog-api"
+reason = "Directly tests Catalog API query source; it is not an Analytics Engine unit test."

@@ -3954,7 +3954,6 @@ class TestProgressReporterFunction:
     @pytest.mark.asyncio
     async def test_progress_reporter_skip_when_all_files_complete(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test progress reporter skips when all files are complete."""
-        from common import DATA_TYPES
         import graphinator.graphinator as gm
 
         monkeypatch.setattr(gm, "shutdown_requested", False)
@@ -3963,7 +3962,7 @@ class TestProgressReporterFunction:
             "message_counts",
             {"artists": 100, "labels": 50, "masters": 25, "releases": 200},
         )
-        monkeypatch.setattr(gm, "completed_files", set(DATA_TYPES))
+        monkeypatch.setattr(gm, "completed_files", set(gm.DATA_TYPES))
         monkeypatch.setattr(gm, "idle_mode", False)
         monkeypatch.setattr(
             gm,

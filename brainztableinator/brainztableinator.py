@@ -12,10 +12,6 @@ from typing import Any
 import structlog
 from aio_pika.abc import AbstractIncomingMessage
 from common import (
-    AMQP_EXCHANGE_TYPE,
-    AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR,
-    MUSICBRAINZ_DATA_TYPES,
-    MUSICBRAINZ_EXCHANGE_PREFIX,
     AsyncPostgreSQLPool,
     AsyncResilientRabbitMQ,
     BrainztableinatorConfig,
@@ -28,6 +24,23 @@ from common import (
 from orjson import loads
 from psycopg.errors import DataError, IntegrityError, InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
+
+from brainztableinator.catalog_contract import (
+    AMQP_EXCHANGE_TYPE,
+    MUSICBRAINZ_DATA_TYPES,
+)
+from brainztableinator.catalog_contract import (
+    dead_letter_exchange_name as catalog_dead_letter_exchange_name,
+)
+from brainztableinator.catalog_contract import (
+    dead_letter_queue_name as catalog_dead_letter_queue_name,
+)
+from brainztableinator.catalog_contract import (
+    exchange_name as catalog_exchange_name,
+)
+from brainztableinator.catalog_contract import (
+    queue_name as catalog_queue_name,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -378,7 +391,7 @@ async def _recover_consumers() -> None:
         # Check each queue for pending messages
         queues_with_messages = []
         for data_type in MUSICBRAINZ_DATA_TYPES:
-            queue_name = f"{AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR}-{data_type}"
+            queue_name = catalog_queue_name("brainztableinator", data_type)
 
             declared_queue = await temp_channel.declare_queue(
                 name=queue_name, passive=True
@@ -408,10 +421,14 @@ async def _recover_consumers() -> None:
             # Declare per-data-type fanout exchanges and consumer-owned queues
             queues = {}
             for data_type in MUSICBRAINZ_DATA_TYPES:
-                exchange_name = f"{MUSICBRAINZ_EXCHANGE_PREFIX}-{data_type}"
-                queue_name = f"{AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR}-{data_type}"
-                dlx_name = f"{queue_name}.dlx"
-                dlq_name = f"{queue_name}.dlq"
+                exchange_name = catalog_exchange_name("musicbrainz", data_type)
+                queue_name = catalog_queue_name("brainztableinator", data_type)
+                dlx_name = catalog_dead_letter_exchange_name(
+                    "brainztableinator", data_type
+                )
+                dlq_name = catalog_dead_letter_queue_name(
+                    "brainztableinator", data_type
+                )
 
                 exchange = await active_channel.declare_exchange(
                     exchange_name,
@@ -1263,10 +1280,10 @@ async def main() -> None:
         # Declare per-data-type fanout exchanges and consumer-owned queues
         queues = {}
         for data_type in MUSICBRAINZ_DATA_TYPES:
-            exchange_name = f"{MUSICBRAINZ_EXCHANGE_PREFIX}-{data_type}"
-            queue_name = f"{AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR}-{data_type}"
-            dlx_name = f"{queue_name}.dlx"
-            dlq_name = f"{queue_name}.dlq"
+            exchange_name = catalog_exchange_name("musicbrainz", data_type)
+            queue_name = catalog_queue_name("brainztableinator", data_type)
+            dlx_name = catalog_dead_letter_exchange_name("brainztableinator", data_type)
+            dlq_name = catalog_dead_letter_queue_name("brainztableinator", data_type)
 
             # Declare fanout exchange (must match extractor)
             exchange = await channel.declare_exchange(
