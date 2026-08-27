@@ -1,0 +1,72 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="About GrooveMap"
+  description="Learn how GrooveMap connects open music catalog data into a navigable knowledge graph."
+  path="/about/"
+>
+  <article class="article shell">
+    <header class="article-heading">
+      <p class="eyebrow">About GrooveMap</p>
+      <h1>Music discovery starts between the rows.</h1>
+      <p class="lede">
+        Catalogs tell us what exists. GrooveMap is being built to reveal how
+        those records, people, labels, and creative histories connect.
+      </p>
+    </header>
+
+    <div class="article-grid">
+      <section aria-labelledby="mission-heading">
+        <h2 id="mission-heading">The mission</h2>
+        <p>
+          GrooveMap combines structured music data from Discogs and MusicBrainz
+          into graph and analytical models. The goal is a transparent foundation
+          for exploration, recommendations, catalog research, and questions that
+          are difficult to answer one record at a time.
+        </p>
+      </section>
+      <section aria-labelledby="method-heading">
+        <h2 id="method-heading">The method</h2>
+        <p>
+          Dedicated ingestion and enrichment services preserve source context
+          while building explicit contracts between catalog data, graph
+          relationships, analytical tables, APIs, and public experiences.
+        </p>
+      </section>
+      <section aria-labelledby="principles-heading">
+        <h2 id="principles-heading">The principles</h2>
+        <ul class="principles">
+          <li>
+            <strong>Traceable:</strong> keep provenance and source identities visible.
+          </li>
+          <li>
+            <strong>Composable:</strong> publish clear interfaces instead of hidden
+            monorepo coupling.
+          </li>
+          <li>
+            <strong>Respectful:</strong> treat access, licensing, and privacy as real
+            architecture boundaries.
+          </li>
+          <li>
+            <strong>Useful:</strong> turn catalog structure into routes for genuine
+            discovery.
+          </li>
+        </ul>
+      </section>
+    </div>
+
+    <aside class="callout" aria-labelledby="status-heading">
+      <div>
+        <p class="eyebrow">Project status</p>
+        <h2 id="status-heading">A private-first foundation</h2>
+      </div>
+      <p>
+        GrooveMap is decomposing its original platform into independently owned
+        repositories. Public surfaces are introduced deliberately after their
+        code, data, licensing, and deployment boundaries pass review.
+      </p>
+    </aside>
+  </article>
+</BaseLayout>

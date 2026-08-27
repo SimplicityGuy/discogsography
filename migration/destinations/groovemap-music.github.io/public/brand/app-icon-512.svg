@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">GrooveMap constellation record mark</title>
+  <defs>
+    <linearGradient id="center" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#00e5ff"/><stop offset="1" stop-color="#7c4dff"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1024" height="1024" rx="128" fill="#060a12"/>
+  <circle cx="512" cy="512" r="438" fill="#0a1018" stroke="#1e3050" stroke-width="8"/>
+  <g fill="none" stroke="#1e3050" opacity=".55">
+    <circle cx="512" cy="512" r="350"/><circle cx="512" cy="512" r="290"/><circle cx="512" cy="512" r="230"/><circle cx="512" cy="512" r="170"/>
+  </g>
+  <g fill="none" stroke="#00bcd4" stroke-width="4" opacity=".6">
+    <path d="M610 215 798 454 664 758 350 780 220 466 410 238Z"/>
+    <path d="m610 215 54 543M798 454 350 780M220 466l444 292M410 238l388 216M220 466l390-251"/>
+    <path d="m610 215-30 258 218-19-286 58 152 246-196-196-118 218 62-268-192-46 260-16-80-212"/>
+  </g>
+  <g filter="url(#glow)">
+    <g fill="#00e5ff"><circle cx="610" cy="215" r="23"/><circle cx="798" cy="454" r="21"/><circle cx="220" cy="466" r="20"/><circle cx="490" cy="450" r="17"/></g>
+    <g fill="#b388ff"><circle cx="664" cy="758" r="22"/><circle cx="350" cy="780" r="21"/><circle cx="410" cy="238" r="19"/><circle cx="580" cy="473" r="17"/><circle cx="468" cy="562" r="16"/></g>
+  </g>
+  <circle cx="512" cy="512" r="58" fill="url(#center)"/><circle cx="512" cy="512" r="18" fill="#060a12"/>
+</svg>

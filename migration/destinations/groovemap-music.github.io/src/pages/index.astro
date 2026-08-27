@@ -1,0 +1,130 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const pillars = [
+  {
+    number: '01',
+    title: 'Follow the relationships',
+    copy: 'Move beyond isolated catalog records into the people, labels, releases, and scenes that connect them.',
+  },
+  {
+    number: '02',
+    title: 'Ask better questions',
+    copy: 'Explore a music knowledge graph built for discovery, research, recommendations, and natural-language questions.',
+  },
+  {
+    number: '03',
+    title: 'Trace the evidence',
+    copy: 'Keep source identities and catalog context visible as Discogs and MusicBrainz data become navigable connections.',
+  },
+];
+---
+
+<BaseLayout
+  title="GrooveMap — explore the connections behind music"
+  description="GrooveMap turns music catalogs into a connected knowledge graph for exploration, research, and discovery."
+  path="/"
+>
+  <section class="hero shell" aria-labelledby="hero-heading">
+    <div class="hero-copy">
+      <p class="eyebrow">Music is connected. Explore the map.</p>
+      <h1 id="hero-heading">Find the stories between the records.</h1>
+      <p class="lede">
+        GrooveMap connects artists, labels, releases, credits, and influences
+        across music catalogs—so you can explore what sits between a familiar
+        name and your next discovery.
+      </p>
+      <div class="actions">
+        <a class="button primary" href="#how-it-works">See how it works</a>
+        <a class="button secondary" href="https://github.com/groovemap-music"
+          >Follow the build on GitHub</a
+        >
+      </div>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <div class="orbit orbit-one"></div>
+      <div class="orbit orbit-two"></div>
+      <img
+        src="/brand/app-icon-512.svg"
+        alt=""
+        width="512"
+        height="512"
+        fetchpriority="high"
+      />
+      <span class="node node-one"></span>
+      <span class="node node-two"></span>
+      <span class="node node-three"></span>
+    </div>
+  </section>
+
+  <section class="signal" aria-label="GrooveMap data sources">
+    <div class="shell signal-line">
+      <span>Discogs</span><span aria-hidden="true">↗</span><span
+        >MusicBrainz</span
+      ><span aria-hidden="true">↗</span><span>Knowledge graph</span><span
+        aria-hidden="true">↗</span
+      ><span>Discovery</span>
+    </div>
+  </section>
+
+  <section
+    id="how-it-works"
+    class="section shell"
+    aria-labelledby="connections-heading"
+  >
+    <div class="section-heading">
+      <p class="eyebrow">A richer way through music</p>
+      <h2 id="connections-heading">
+        Catalog facts become paths worth following.
+      </h2>
+    </div>
+    <div class="card-grid">
+      {
+        pillars.map((pillar) => (
+          <article class="feature-card">
+            <p class="card-number" aria-hidden="true">
+              {pillar.number}
+            </p>
+            <h3>{pillar.title}</h3>
+            <p>{pillar.copy}</p>
+          </article>
+        ))
+      }
+    </div>
+  </section>
+
+  <section class="section shell split" aria-labelledby="built-heading">
+    <div>
+      <p class="eyebrow">Built in the open</p>
+      <h2 id="built-heading">One map, clear boundaries.</h2>
+    </div>
+    <div class="prose">
+      <p>
+        GrooveMap is a collection of focused services: ingestion, catalog APIs,
+        graph and analytical pipelines, exploration tools, and operator systems.
+        Each boundary can evolve and deploy on its own while sharing explicit
+        data contracts.
+      </p>
+      <p>
+        The organization is being prepared private-first. Public source and live
+        products will appear only after their security, licensing, and
+        operational boundaries have been reviewed.
+      </p>
+      <a class="text-link" href="/about/"
+        >Read about the project <span aria-hidden="true">→</span></a
+      >
+    </div>
+  </section>
+
+  <section class="cta shell" aria-labelledby="cta-heading">
+    <p class="eyebrow">The graph is taking shape</p>
+    <h2 id="cta-heading">Watch GrooveMap grow.</h2>
+    <p>
+      Follow the organization as the public explorer, documentation, and
+      integration surfaces come online.
+    </p>
+    <a class="button primary" href="https://github.com/groovemap-music"
+      >Visit groovemap-music on GitHub</a
+    >
+  </section>
+</BaseLayout>

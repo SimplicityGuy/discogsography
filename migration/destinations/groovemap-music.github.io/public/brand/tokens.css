@@ -1,0 +1,13 @@
+:root {
+  --groovemap-border: #1e3050;
+  --groovemap-cyan: #00bcd4;
+  --groovemap-cyan-glow: #00e5ff;
+  --groovemap-deep: #0a1018;
+  --groovemap-light-background: #f0f4f8;
+  --groovemap-light-text: #0d1b2a;
+  --groovemap-muted-text: #4a5e78;
+  --groovemap-purple: #7c4dff;
+  --groovemap-purple-light: #b388ff;
+  --groovemap-text: #f0f4f8;
+  --groovemap-void: #060a12;
+}

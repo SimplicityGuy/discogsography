@@ -1,0 +1,36 @@
+{
+  "exceptions": [
+    {
+      "license": "LGPL-3.0-or-later",
+      "name": "@img/sharp-libvips-darwin-arm64",
+      "obligations": {
+        "distributedInSite": false,
+        "licenseUrl": "https://www.gnu.org/licenses/lgpl-3.0.html",
+        "notice": "THIRD_PARTY_NOTICES.md",
+        "sourceUrl": "https://github.com/lovell/sharp-libvips",
+        "verification": "The license gate fails if dist contains libvips, a dynamic library, or a native Node module. Reassess notice/source-offer obligations before any workflow begins distributing the build tool or native library."
+      },
+      "owner": "@SimplicityGuy",
+      "rationale": "The locked dependency is present in the local build environment through Astro 7.2.8 -> Sharp 0.35.4. This site uses ordinary public SVG references rather than Astro image processing, and the static dist artifact contains no libvips library, Sharp binary, native module, or derivative. The exception is package- and version-specific; LGPL is not generally allowed.",
+      "reviewBy": "2027-08-27",
+      "role": "Platform-specific optional libvips binary used transitively by Astro's optional Sharp build/image toolchain on Apple silicon.",
+      "version": "1.3.3"
+    },
+    {
+      "license": "LGPL-3.0-or-later",
+      "name": "@img/sharp-libvips-linux-x64",
+      "obligations": {
+        "distributedInSite": false,
+        "licenseUrl": "https://www.gnu.org/licenses/lgpl-3.0.html",
+        "notice": "THIRD_PARTY_NOTICES.md",
+        "sourceUrl": "https://github.com/lovell/sharp-libvips",
+        "verification": "The license gate fails if dist contains libvips, a dynamic library, or a native Node module. Reassess notice/source-offer obligations before any workflow begins distributing the build tool or native library."
+      },
+      "owner": "@SimplicityGuy",
+      "rationale": "The locked dependency is installed on the CI platform through Astro 7.2.8 -> Sharp 0.35.4. This site uses ordinary public SVG references rather than Astro image processing, and the static dist artifact contains no libvips library, Sharp binary, native module, or derivative. The exception is package- and version-specific; LGPL is not generally allowed.",
+      "reviewBy": "2027-08-27",
+      "role": "Platform-specific optional libvips binary used transitively by Astro's optional Sharp build/image toolchain in the Ubuntu x64 CI gate.",
+      "version": "1.3.3"
+    }
+  ]
+}
