@@ -11,10 +11,6 @@ from typing import Any
 import structlog
 from aio_pika.abc import AbstractIncomingMessage
 from common import (
-    AMQP_EXCHANGE_TYPE,
-    AMQP_QUEUE_PREFIX_GRAPHINATOR,
-    DATA_TYPES,
-    DISCOGS_EXCHANGE_PREFIX,
     AsyncResilientNeo4jDriver,
     AsyncResilientRabbitMQ,
     GraphinatorConfig,
@@ -30,6 +26,22 @@ from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
 from orjson import loads
 
 from graphinator.batch_processor import BatchConfig, Neo4jBatchProcessor
+from graphinator.catalog_contract import (
+    AMQP_EXCHANGE_TYPE,
+    DATA_TYPES,
+)
+from graphinator.catalog_contract import (
+    dead_letter_exchange_name as catalog_dead_letter_exchange_name,
+)
+from graphinator.catalog_contract import (
+    dead_letter_queue_name as catalog_dead_letter_queue_name,
+)
+from graphinator.catalog_contract import (
+    exchange_name as catalog_exchange_name,
+)
+from graphinator.catalog_contract import (
+    queue_name as catalog_queue_name,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -392,7 +404,7 @@ async def _recover_consumers() -> None:
         # Check each queue for pending messages
         queues_with_messages = []
         for data_type in DATA_TYPES:
-            queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
+            queue_name = catalog_queue_name("graphinator", data_type)
 
             # Use queue.declare with passive=True to get message count without affecting the queue
             declared_queue = await temp_channel.declare_queue(
@@ -422,10 +434,10 @@ async def _recover_consumers() -> None:
             # Declare per-data-type fanout exchanges and consumer-owned queues
             queues = {}
             for data_type in DATA_TYPES:
-                exchange_name = f"{DISCOGS_EXCHANGE_PREFIX}-{data_type}"
-                queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
-                dlx_name = f"{queue_name}.dlx"
-                dlq_name = f"{queue_name}.dlq"
+                exchange_name = catalog_exchange_name("discogs", data_type)
+                queue_name = catalog_queue_name("graphinator", data_type)
+                dlx_name = catalog_dead_letter_exchange_name("graphinator", data_type)
+                dlq_name = catalog_dead_letter_queue_name("graphinator", data_type)
 
                 # Declare fanout exchange (must match extractor)
                 exchange = await active_channel.declare_exchange(
@@ -2113,10 +2125,10 @@ async def main() -> None:
         # Declare per-data-type fanout exchanges and consumer-owned queues
         queues = {}
         for data_type in DATA_TYPES:
-            exchange_name = f"{DISCOGS_EXCHANGE_PREFIX}-{data_type}"
-            queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
-            dlx_name = f"{queue_name}.dlx"
-            dlq_name = f"{queue_name}.dlq"
+            exchange_name = catalog_exchange_name("discogs", data_type)
+            queue_name = catalog_queue_name("graphinator", data_type)
+            dlx_name = catalog_dead_letter_exchange_name("graphinator", data_type)
+            dlq_name = catalog_dead_letter_queue_name("graphinator", data_type)
 
             # Declare fanout exchange (must match extractor)
             exchange = await channel.declare_exchange(

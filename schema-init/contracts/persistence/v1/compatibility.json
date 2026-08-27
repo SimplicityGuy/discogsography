@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "compatibility": {
+    "additive_changes": "compatible",
+    "consumer_rollout": "expand, migrate consumers, then contract",
+    "destructive_changes": "require a new major contract and an explicit migration",
+    "rollback": "every destructive migration requires a tested rollback or restore procedure"
+  },
+  "contract": "groovemap.persistence",
+  "owners": [
+    "database-schema"
+  ],
+  "sources": [
+    "neo4j_schema.py",
+    "postgres_schema.py",
+    "schema_init.py"
+  ],
+  "stores": [
+    "neo4j",
+    "postgresql"
+  ],
+  "version": 1
+}

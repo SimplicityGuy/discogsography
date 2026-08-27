@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::generated::catalog_contract::{DEFAULT_DISCOGS_EXCHANGE_PREFIX, DEFAULT_MUSICBRAINZ_EXCHANGE_PREFIX};
 use crate::types::Source;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,8 +40,8 @@ impl Default for ExtractorConfig {
             data_quality_rules: None,
             source: Source::Discogs,
             musicbrainz_root: PathBuf::from("/musicbrainz-data"),
-            discogs_exchange_prefix: "discogsography-discogs".to_string(),
-            musicbrainz_exchange_prefix: "discogsography-musicbrainz".to_string(),
+            discogs_exchange_prefix: DEFAULT_DISCOGS_EXCHANGE_PREFIX.to_string(),
+            musicbrainz_exchange_prefix: DEFAULT_MUSICBRAINZ_EXCHANGE_PREFIX.to_string(),
             musicbrainz_dump_url: "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string(),
             discogs_health_url: "http://extractor-discogs:8000/health".to_string(),
         }
@@ -93,8 +94,9 @@ impl ExtractorConfig {
 
         let musicbrainz_root = PathBuf::from(std::env::var("MUSICBRAINZ_ROOT").unwrap_or_else(|_| "/musicbrainz-data".to_string()));
 
-        let discogs_exchange_prefix = std::env::var("DISCOGS_EXCHANGE_PREFIX").unwrap_or_else(|_| "discogsography-discogs".to_string());
-        let musicbrainz_exchange_prefix = std::env::var("MUSICBRAINZ_EXCHANGE_PREFIX").unwrap_or_else(|_| "discogsography-musicbrainz".to_string());
+        let discogs_exchange_prefix = std::env::var("DISCOGS_EXCHANGE_PREFIX").unwrap_or_else(|_| DEFAULT_DISCOGS_EXCHANGE_PREFIX.to_string());
+        let musicbrainz_exchange_prefix =
+            std::env::var("MUSICBRAINZ_EXCHANGE_PREFIX").unwrap_or_else(|_| DEFAULT_MUSICBRAINZ_EXCHANGE_PREFIX.to_string());
 
         let musicbrainz_dump_url =
             std::env::var("MUSICBRAINZ_DUMP_URL").unwrap_or_else(|_| "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string());

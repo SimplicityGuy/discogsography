@@ -7,7 +7,8 @@ from typing import Any
 
 import requests
 
-from common.config import DISCOGS_EXCHANGE_PREFIX, MUSICBRAINZ_EXCHANGE_PREFIX, get_secret
+from common.config import get_secret
+from utilities.catalog_contract import DISCOGS_EXCHANGE_PREFIX, MUSICBRAINZ_EXCHANGE_PREFIX
 
 
 def get_docker_stats() -> list[dict[str, Any]]:
