@@ -1,0 +1,42 @@
+{
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": false
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "3.7.3",
+    "astro": "7.2.8"
+  },
+  "description": "The static GrooveMap organization website",
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@typescript-eslint/parser": "8.68.0",
+    "eslint": "10.9.1",
+    "eslint-plugin-astro": "3.1.0",
+    "html-validate": "11.10.0",
+    "prettier": "3.9.6",
+    "prettier-plugin-astro": "0.14.1",
+    "typescript": "6.0.3"
+  },
+  "engines": {
+    "node": ">=24.15.0 <25",
+    "npm": "12.0.2"
+  },
+  "name": "@groovemap-music/organization-site",
+  "packageManager": "npm@12.0.2",
+  "private": true,
+  "scripts": {
+    "build": "astro build",
+    "dev": "astro dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "licenses:check": "node scripts/check-licenses.mjs",
+    "lint": "eslint .",
+    "preview": "astro preview",
+    "test": "node --test tests/*.test.mjs",
+    "typecheck": "astro check",
+    "validate:site": "node scripts/validate-site.mjs"
+  },
+  "type": "module",
+  "version": "0.0.0-private"
+}

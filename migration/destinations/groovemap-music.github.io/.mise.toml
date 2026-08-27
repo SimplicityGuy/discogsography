@@ -1,0 +1,8 @@
+[tools]
+node = "24.20.0"
+"npm:npm" = "12.0.2"
+just = "1.57.0"
+
+[env]
+_.path = ["./node_modules/.bin"]
+ASTRO_TELEMETRY_DISABLED = "1"
