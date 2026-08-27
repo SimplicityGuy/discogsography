@@ -166,7 +166,7 @@ class TestResetRequest:
         mock_redis: AsyncMock,  # noqa: ARG002  # required so setex is stubbed
     ) -> None:
         """A trailing slash on the configured base must not produce a double slash."""
-        from common.config import ApiConfig
+        from api.config import ApiConfig
 
         mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
         channel = AsyncMock()

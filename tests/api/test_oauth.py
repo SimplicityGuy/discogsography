@@ -1,6 +1,6 @@
-"""Tests for common.oauth — OAuth 1.0a utility functions."""
+"""Tests for catalog-owned Discogs OAuth 1.0a utility functions."""
 
-from common.oauth import _build_oauth_header, _hmac_sha1_signature, _oauth_escape
+from api.oauth import _build_oauth_header, _hmac_sha1_signature, _oauth_escape
 
 
 class TestOAuthEscape:

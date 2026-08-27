@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "discogsography-common"
+name = "groovemap-runtime"
 version = "0.1.0"
-description = "Common utilities and configuration for discogsography services"
+description = "Runtime resilience, health, normalization, and observability primitives for GrooveMap services"
 authors = [{name = "Robert Wlodarczyk", email = "robert@simplicityguy.com"}]
 readme = "README.md"
 requires-python = ">=3.13"
@@ -16,15 +16,18 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.13",
 ]
-license = {text = "PolyForm-Noncommercial-1.0.0"}
+license = {text = "MIT"}
 dependencies = [
-    "aio-pika>=10.0.1",
-    "neo4j-rust-ext>=6.2.0.0",
-    "pika>=1.4.4",
-    "prometheus-client>=0.26.0",
-    "psycopg[binary]>=3.3.4",
-    "pulp>=3.3.2",
+    "orjson>=3.12.0",
+    "structlog>=26.1.0",
 ]
 
+[project.optional-dependencies]
+metrics = ["prometheus-client>=0.26.0"]
+neo4j = ["neo4j-rust-ext>=6.2.0.0"]
+postgres = ["psycopg[binary]>=3.3.4"]
+rabbitmq = ["aio-pika>=10.0.1", "pika>=1.4.4"]
+all = ["aio-pika>=10.0.1", "neo4j-rust-ext>=6.2.0.0", "pika>=1.4.4", "prometheus-client>=0.26.0", "psycopg[binary]>=3.3.4"]
+
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+packages = ["src/common"]

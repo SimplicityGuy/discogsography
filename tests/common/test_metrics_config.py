@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
-from common.config import ApiConfig
+from api.config import ApiConfig
 
 
 def _make_api_config(**overrides: str) -> ApiConfig:

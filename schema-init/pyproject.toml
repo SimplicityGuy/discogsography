@@ -18,6 +18,7 @@ classifiers = [
 ]
 license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
+    "groovemap-runtime[neo4j,postgres]==0.1.0",
     "neo4j-rust-ext>=6.2.0.0",
     "psycopg[binary]>=3.3.4",
     "structlog>=26.1.0",

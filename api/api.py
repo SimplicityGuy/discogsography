@@ -33,6 +33,7 @@ from api.auth import (
     get_oauth_encryption_key,
     token_revocation_reason,
 )
+from api.config import ApiConfig
 import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.metrics_collector import MetricsBuffer, normalize_path, run_collector
@@ -69,7 +70,6 @@ from api.services.discogs import (
 )
 from api.syncer import reconcile_stale_sync_history
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver, HealthServer, neo4j_security_kwargs, parse_postgres_host_port, setup_logging
-from common.config import ApiConfig
 from common.query_debug import execute_sql
 
 

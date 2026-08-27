@@ -13,7 +13,6 @@ from aio_pika.abc import AbstractIncomingMessage
 from common import (
     AsyncResilientNeo4jDriver,
     AsyncResilientRabbitMQ,
-    GraphinatorConfig,
     HealthServer,
     OutageBackoff,
     neo4j_security_kwargs,
@@ -42,6 +41,7 @@ from graphinator.catalog_contract import (
 from graphinator.catalog_contract import (
     queue_name as catalog_queue_name,
 )
+from graphinator.config import GraphinatorConfig
 
 logger = structlog.get_logger(__name__)
 

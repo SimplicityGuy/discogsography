@@ -20,6 +20,7 @@ from api.catalog_contract import (
     MUSICBRAINZ_DATA_TYPES,
     dead_letter_queue_name,
 )
+from api.config import ApiConfig
 from api.dependencies import require_admin
 from api.limiter import limiter
 from api.models import (
@@ -42,7 +43,6 @@ from api.queries.admin_queries import (
 )
 from api.queries.metrics_queries import get_health_history, get_queue_history
 from common import describe_exception
-from common.config import ApiConfig
 
 
 logger = structlog.get_logger(__name__)

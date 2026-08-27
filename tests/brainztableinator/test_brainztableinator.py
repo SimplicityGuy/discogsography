@@ -1144,7 +1144,7 @@ class TestBrainztableinatorConfig:
 
     def test_from_env_with_all_vars(self):
         """Config should load successfully when all required env vars are set."""
-        from common.config import BrainztableinatorConfig
+        from brainztableinator.config import BrainztableinatorConfig
 
         env_vars = {
             "RABBITMQ_USERNAME": "guest",
@@ -1166,7 +1166,7 @@ class TestBrainztableinatorConfig:
 
     def test_from_env_missing_vars_raises(self):
         """Config should raise ValueError when required env vars are missing."""
-        from common.config import BrainztableinatorConfig
+        from brainztableinator.config import BrainztableinatorConfig
 
         env_vars = {
             "RABBITMQ_USERNAME": "guest",

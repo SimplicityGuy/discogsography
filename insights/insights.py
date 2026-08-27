@@ -23,9 +23,9 @@ import structlog
 import uvicorn
 
 from common import AsyncPostgreSQLPool, HealthServer, parse_postgres_host_port, setup_logging
-from common.config import InsightsConfig
 from insights.cache import InsightsCache
 from insights.computations import endpoint_timeout, run_all_computations
+from insights.config import InsightsConfig
 from insights.models import (
     AnniversaryItem,
     ArtistCentralityItem,

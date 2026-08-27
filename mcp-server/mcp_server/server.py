@@ -126,7 +126,7 @@ async def _api_post(app: AppContext, path: str, json_data: dict[str, Any] | None
 
 async def _call_shared_find_path(app: AppContext, **kwargs: Any) -> dict[str, Any]:
     """Delegate to common.agent_tools.find_path using API-backed resolvers."""
-    from common import agent_tools  # noqa: PLC0415
+    import common.agent_tools as agent_tools  # noqa: PLC0415
 
     async def resolve_name(_driver: Any, name: str, _entity_type: str) -> dict[str, Any] | None:
         # The API uses names directly — return the name as the "id" so the path
