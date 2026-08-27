@@ -57,6 +57,7 @@
 | **[GitHub Actions Guide](github-actions-guide.md)** | 🔄 CI/CD workflows, automation & best practices      |
 | **[Task Automation](task-automation.md)**           | ⚡ Complete `just` and `uv` command reference        |
 | **[Monorepo Guide](monorepo-guide.md)**             | 📦 Managing Python monorepo with shared dependencies |
+| **[GrooveMap Repository Standards](design/groovemap-repository-standards.md)** | 🔐 Multi-repository validation, release, and supply-chain baseline |
 
 ### 📋 Reference Guides
 
