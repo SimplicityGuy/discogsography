@@ -1,62 +1,70 @@
-# GrooveMap SOPS Secure Enclave checkpoint
+# GrooveMap SOPS Secure Enclave evidence
 
 - Migration bead: `discogsography-2kpm.6`
 - Verification date: 2026-08-27 UTC
 - Infra pull request: [`groovemap-music/infra#2`](https://github.com/groovemap-music/infra/pull/2)
-- Infra revision: `80e6f73` (`feat(secrets): prepare Secure Enclave SOPS ceremony`)
-- Pull-request validation: [run 33032303617](https://github.com/groovemap-music/infra/actions/runs/33032303617), passed
-- Status: blocked before identity generation on two operator decisions
+- Infra ceremony revision: `2c2edb2f5ba579770aac87e01e1c311998006ca6`
+- Infra action-runtime revision: `582e8f010d4af692d4d70fbdfd56e4cc7704f088`
+- Merge commit: `a7ecb5ad390f22b8f3db6376c505871d65979d53`
+- Pull-request validation: [run 33037481893](https://github.com/groovemap-music/infra/actions/runs/33037481893), passed
+- Status: complete; primary and recovery paths independently verified
 
-## Verified behavior
+## Tooling and verified behavior
 
-The current upstream age-plugin-se documentation and the installed command help were
-inspected. The Mac runs macOS 26.6.2 on arm64 and has the pinned age-plugin-se 0.2.1,
-SOPS 3.13.3, and age 1.3.1 tools. No identity-generating command was run, and no identity
-payload, recovery key, public recipient, ciphertext, or plaintext example was created.
+The installed command help and current upstream sources were inspected before generation.
+The ceremony used age-plugin-se 0.2.1, SOPS 3.13.3, age 1.3.1, and 1Password CLI
+2.39.0. The GitHub validation workflow was also updated to the pinned Node-24-based
+actions/checkout v7.0.1 and jdx/mise-action v4.3.0 releases after GitHub reported the
+previous Node 20 runtimes as deprecated.
 
-age-plugin-se requires a compatible Mac with a Secure Enclave to generate an identity
-and decrypt. Its identity is machine-bound and cannot be copied to a replacement Mac.
-Version 0.2.1 defaults to `any-biometry-or-passcode`; biometric-only use is explicitly
-selected with `any-biometry`. Upstream warns that `current-biometry` has different
-enrollment-change behavior, so it will not be substituted implicitly.
+age-plugin-se generated the project identity with the explicit
+`any-biometry-or-passcode` access-control policy and `se` recipient type. The identity is
+bound to this Mac's Secure Enclave, remains outside all repositories at
+`~/.config/age/groovemap-music-infra.txt`, and has mode `0600`. Its private payload was
+not printed, pasted, uploaded, or committed. Only its public `age1se...` recipient is in
+`.sops.yaml`.
 
-SOPS commit
-[`6157d86`](https://github.com/getsops/sops/commit/6157d86d75242cea4edaa4e32f492bc4e2ba46f0)
-added generic age-plugin support and is an ancestor of v3.10.0. The installed SOPS 3.13.3
-therefore supports `age1se...` plugin recipients when age-plugin-se is on `PATH`.
-
-Authoritative sources:
+SOPS 3.13.3 supports the `age1se...` plugin recipient when age-plugin-se is on `PATH`.
+The relevant generic plugin support entered SOPS before v3.10.0. Authoritative sources:
 
 - <https://github.com/remko/age-plugin-se>
 - <https://github.com/getsops/sops>
 - <https://github.com/getsops/sops/releases/tag/v3.10.0>
+- <https://developer.1password.com/docs/cli/>
 
-## Prepared non-secret scaffold
+## Independent recovery
 
-Infra PR #2 restricts creation to top-level `secrets/*.sops.yaml`,
-`secrets/*.sops.json`, and `secrets/*.sops.env` files. It adds guarded recipes for
-creating and round-trip-checking a random dummy ciphertext, decrypting every ciphertext
-only to `/dev/null`, and running `sops updatekeys --yes` on every encrypted file.
+The recovery identity is an ordinary age identity held as a Document named
+`GrooveMap SOPS recovery identity` in the operator's existing 1Password `Private` vault.
+The identity streamed directly from `age-keygen` into 1Password through desktop-app CLI
+authorization. It was retrieved only through pipes for recipient and decryption checks;
+no persistent recovery identity file was written. Only the public `age1...` recovery
+recipient is committed.
 
-The readiness gate requires SOPS 3.10 or newer, a reviewed age key group with at least
-two distinct public recipients including one `age1se...` recipient, and an external
-identity file with mode `0600`. It does not inspect or print identity contents. Example
-generation currently exits with code 2 before creating a temporary file, because no
-reviewed key group exists. Local formatting, OpenTofu validation, deterministic branding,
-shell syntax, shellcheck, gitleaks, trufflehog, and the expected negative readiness tests
-passed.
+This recovery identity is protected by 1Password. It is not Secure Enclave-backed and is
+not misrepresented as having a separate age passphrase. Successful recovery depends on
+the 1Password account recovery process remaining usable from a replacement Mac.
 
-## Required operator decisions
+## Repository configuration and evidence
 
-1. Select Secure Enclave access control:
-   - `any-biometry-or-passcode` (upstream default; Touch ID with passcode fallback), or
-   - `any-biometry` (Touch-ID-only on this Mac; no passcode fallback).
-2. Select an independent recovery mechanism. The recommended default is a separately
-   passphrase-protected ordinary age identity stored offline and outside this Mac's
-   failure domain. A hardware-backed recovery recipient is an alternative but requires a
-   separately approved plugin and custody process.
+`.sops.yaml` restricts creation to top-level `secrets/*.sops.yaml`,
+`secrets/*.sops.json`, and `secrets/*.sops.env` files. One key group contains the public
+Secure Enclave and recovery recipients, so either identity can recover a SOPS data key.
+Readiness checks require SOPS 3.10 or newer, both public recipients, an `age1se...`
+recipient, and the external primary identity with mode `0600`.
 
-No recipient will be invented or committed. After the operator chooses both policies,
-the identity and recovery ceremony must occur outside every repository, only public
-recipients may be added to `.sops.yaml`, and the generated dummy ciphertext must pass a
-decrypt round trip and leak scan before PR #2 can be completed.
+The following checks passed without printing secret values or private identities:
+
+- random dummy data encrypted directly to `secrets/example.sops.yaml` and semantically
+  round-tripped without a tracked plaintext intermediate;
+- `sops filestatus` reported the example as encrypted;
+- the Secure Enclave identity decrypted every ciphertext to `/dev/null`;
+- `SOPS_AGE_KEY_CMD` streamed the 1Password Document into SOPS and independently
+  decrypted every ciphertext to `/dev/null`;
+- `sops updatekeys --yes` confirmed every ciphertext already used the reviewed recipients;
+- OpenTofu backend-disabled initialization and validation passed;
+- deterministic branding validation passed;
+- shellcheck, gitleaks, and TruffleHog passed with no leaks.
+
+No OpenTofu import, plan, or apply was run as part of this bead. No repository, team,
+ruleset, visibility, Pages, DNS, package, or release resource was changed.
