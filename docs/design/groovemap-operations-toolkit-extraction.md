@@ -16,12 +16,14 @@ The extraction used a disposable clone of the migration branch
 
 The filter retained 35 relevant commits. Destination commit
 `15be6ff42338d0895ef2f4b6c55b661a6da2f0e8` established the independent package and
-validation contract, for 36 commits total. No tags were copied or created. The original
+validation contract. The later, approved MIT conversion produced current commit
+`2d25ee1151db6d6c0fe6d7f3b048bd1aeee1460e`, for 37 commits total. No tags were copied
+or created. The original
 monorepo `main` remains clean and unchanged at
 `204f49e2429f074546dfc67e6354be2529a983ac`.
 
-The current tree retains the PolyForm Noncommercial License 1.0.0 and required notice;
-historical revisions retain their then-applicable license text.
+The current tree is MIT licensed as approved; historical revisions retain their
+then-applicable license text.
 
 ## Repository contract
 
@@ -47,13 +49,13 @@ historical revisions retain their then-applicable license text.
 - producer contract and generated binding digests: passed;
 - sdist/wheel build and isolated wheel installation/import/CLI check: passed;
 - current license and dependency-license policy: passed;
-- gitleaks history scan: 35 commits scanned, no leaks;
+- gitleaks history scan: 37 commits scanned, no leaks;
 - gitleaks current-tree scan: no leaks;
 - `pip-audit`: no known third-party vulnerabilities; the unpublished first-party package
   was correctly unavailable on PyPI;
 - Commitizen dry run: `0.1.0` to `0.2.0`, no files modified;
 - release dry run: checksums, CycloneDX SBOM, third-party notices, and build metadata
   generated locally; nothing published;
-- GitHub Actions CI run `33047727063`: passed;
+- GitHub Actions CI run `33120062536`: passed at the current MIT-licensed head;
 - remote default branch: `main`; remote visibility: private; remote tags: none;
 - destination working tree: clean and synchronized with remote `main`.
