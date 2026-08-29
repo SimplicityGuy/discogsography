@@ -4,6 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from api.oauth import (
+    _build_oauth_header,
+    _hmac_sha1_signature,
+    _oauth_escape,
+)
 from api.services.discogs import (
     DISCOGS_ACCESS_TOKEN_URL,
     DISCOGS_AUTHORIZE_URL,
@@ -15,11 +20,6 @@ from api.services.discogs import (
     exchange_oauth_verifier,
     fetch_discogs_identity,
     request_oauth_token,
-)
-from common.oauth import (
-    _build_oauth_header,
-    _hmac_sha1_signature,
-    _oauth_escape,
 )
 
 

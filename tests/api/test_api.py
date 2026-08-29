@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 import pytest
 
-from common.config import ApiConfig
+from api.config import ApiConfig
 from tests.api.conftest import (
     TEST_USER_EMAIL,
     TEST_USER_ID,

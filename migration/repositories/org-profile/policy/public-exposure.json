@@ -1,0 +1,20 @@
+{
+  "allowedExternalHosts": [
+    "github.com",
+    "groovemap.music"
+  ],
+  "canonicalWebsite": "https://groovemap.music",
+  "manualOwnerActions": [
+    "Review and approve the private-to-public repository transition.",
+    "Upload profile/assets/avatar.svg as the organization avatar only after separate approval."
+  ],
+  "repository": {
+    "currentVisibility": "private",
+    "githubPagesEnabled": false,
+    "intendedVisibility": "public",
+    "name": ".github",
+    "owner": "groovemap-music",
+    "publicTransitionApprovalRequired": true
+  },
+  "schemaVersion": 1
+}

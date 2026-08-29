@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from common import DashboardConfig
+from dashboard.config import DashboardConfig
 
 
 logger = logging.getLogger(__name__)

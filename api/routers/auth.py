@@ -26,6 +26,7 @@ from api.auth import (
     token_revocation_reason,
     verify_totp_code,
 )
+from api.config import ApiConfig
 from api.limiter import limiter
 from api.models import (
     ChangePasswordRequest,
@@ -39,7 +40,6 @@ from api.models import (
     TwoFactorSetupResponse,
     TwoFactorVerifyModel,
 )
-from common.config import ApiConfig
 from common.query_debug import execute_sql
 
 

@@ -128,6 +128,18 @@ repos:
   # Local hooks
   - repo: local
     hooks:
+      - id: catalog-contract-generation
+        name: catalog contract generation
+        entry: uv run python extractor/contracts/generate.py --check
+        language: system
+        files: '^(extractor/contracts/|extractor/src/generated/|[^/]+/catalog_contract\.py)'
+        pass_filenames: false
+      - id: api-contract-generation
+        name: API contract generation
+        entry: uv run python api/contracts/generate.py --check
+        language: system
+        files: '^(api/contracts/|insights/catalog_api_contract\.py)'
+        pass_filenames: false
       - id: mypy
         name: mypy
         entry: uv run mypy

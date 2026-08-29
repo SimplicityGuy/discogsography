@@ -1,4 +1,14 @@
 use super::*;
+use crate::generated::catalog_contract::{DISCOGS_ENTITY_TYPES, MUSICBRAINZ_ENTITY_TYPES};
+
+#[test]
+fn data_type_vocabulary_matches_versioned_contract() {
+    let discogs: Vec<&str> = DataType::discogs().iter().map(DataType::as_str).collect();
+    let musicbrainz: Vec<&str> = DataType::musicbrainz().iter().map(DataType::as_str).collect();
+
+    assert_eq!(discogs, DISCOGS_ENTITY_TYPES);
+    assert_eq!(musicbrainz, MUSICBRAINZ_ENTITY_TYPES);
+}
 use serde_json::{Map, json};
 
 #[test]

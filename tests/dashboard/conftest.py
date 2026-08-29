@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from common import DashboardConfig
+from dashboard.config import DashboardConfig
 
 
 @pytest.fixture(scope="session")

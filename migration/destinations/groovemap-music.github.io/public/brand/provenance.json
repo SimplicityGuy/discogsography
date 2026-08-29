@@ -1,0 +1,41 @@
+{
+  "assets": [
+    {
+      "destination": "public/brand/favicon.svg",
+      "sha256": "f255c72da3964db4a9b3674af5c3251748eddfb3b59c5266cea2cd0c25b774a2",
+      "source": "brand/assets/favicon.svg"
+    },
+    {
+      "destination": "public/brand/app-icon-192.svg",
+      "sha256": "7322f7c63ac5f3bb5663efc3d4fa97f1e4ec029cac1b597bbe2f9176c0241bb1",
+      "source": "brand/assets/app-icon-192.svg"
+    },
+    {
+      "destination": "public/brand/app-icon-512.svg",
+      "sha256": "70d1186bdd55bcdfb5dce76b36d858864ac7c26dd1af51ab153d6a70eec0a7b1",
+      "source": "brand/assets/app-icon-512.svg"
+    },
+    {
+      "destination": "public/brand/og-image.svg",
+      "sha256": "34e60c278c61a7f2b4378280befa17d6ac77250f9b68258318653fd99240e30c",
+      "source": "brand/assets/og-image.svg"
+    },
+    {
+      "destination": "public/brand/tokens.css",
+      "sha256": "2ad462b97badeab5bb2bc202270dcd0bf15b1823d340ee289573f50096ec7eda",
+      "source": "brand/assets/tokens.css"
+    },
+    {
+      "destination": "public/site.webmanifest",
+      "sha256": "903ec7b4fc6bb8576c16172b6a9ae2e74db88acdd888df69941871b0c861d574",
+      "source": "brand/assets/site.webmanifest"
+    }
+  ],
+  "canonicalRepository": "groovemap-music/infra",
+  "canonicalRevision": "33fd6d2647612cf32a9f2e69689b9c432204148d",
+  "editableSources": [
+    "brand/tokens.json",
+    "brand/templates/"
+  ],
+  "generatedBy": "brand/render.mjs"
+}

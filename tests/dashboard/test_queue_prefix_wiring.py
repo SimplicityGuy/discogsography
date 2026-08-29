@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from common.config import DISCOGS_EXCHANGE_PREFIX, MUSICBRAINZ_EXCHANGE_PREFIX
+from dashboard.catalog_contract import DISCOGS_EXCHANGE_PREFIX, MUSICBRAINZ_EXCHANGE_PREFIX
 from dashboard.dashboard import PIPELINE_CONFIGS
 
 

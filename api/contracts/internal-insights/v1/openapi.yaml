@@ -1,0 +1,115 @@
+---
+openapi: 3.1.0
+info:
+  title: GrooveMap internal insights API
+  version: 1.0.0
+  description: Catalog API-owned contract consumed by the analytics engine.
+security:
+  - InternalSecret: []
+paths:
+  /api/internal/insights/artist-centrality:
+    get:
+      operationId: artist_centrality
+      parameters:
+        - $ref: "#/components/parameters/ArtistCentralityLimit"
+      responses:
+        "200": {$ref: "#/components/responses/Items"}
+  /api/internal/insights/genre-trends:
+    get:
+      operationId: genre_trends
+      responses:
+        "200": {$ref: "#/components/responses/Items"}
+  /api/internal/insights/label-longevity:
+    get:
+      operationId: label_longevity
+      parameters:
+        - $ref: "#/components/parameters/LabelLongevityLimit"
+      responses:
+        "200": {$ref: "#/components/responses/Items"}
+  /api/internal/insights/anniversaries:
+    get:
+      operationId: anniversaries
+      parameters:
+        - $ref: "#/components/parameters/AnniversaryYear"
+        - $ref: "#/components/parameters/AnniversaryMonth"
+        - $ref: "#/components/parameters/AnniversaryMilestones"
+      responses:
+        "200": {$ref: "#/components/responses/Items"}
+  /api/internal/insights/data-completeness:
+    get:
+      operationId: data_completeness
+      responses:
+        "200": {$ref: "#/components/responses/Items"}
+  /api/internal/insights/community-enrichment:
+    get:
+      operationId: community_enrichment
+      responses:
+        "200": {$ref: "#/components/responses/CommunityEnrichment"}
+  /api/internal/insights/rarity-scores:
+    get:
+      operationId: rarity_scores
+      responses:
+        "200": {$ref: "#/components/responses/Items"}
+components:
+  securitySchemes:
+    InternalSecret:
+      type: apiKey
+      in: header
+      name: X-Internal-Secret
+  parameters:
+    ArtistCentralityLimit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 500, default: 100}
+    LabelLongevityLimit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 500, default: 50}
+    AnniversaryYear:
+      name: year
+      in: query
+      required: true
+      schema: {type: integer}
+    AnniversaryMonth:
+      name: month
+      in: query
+      required: true
+      schema: {type: integer, minimum: 1, maximum: 12}
+    AnniversaryMilestones:
+      name: milestones
+      in: query
+      required: false
+      schema: {type: string, default: "25,30,40,50,75,100"}
+  schemas:
+    CommunityEnrichmentResult:
+      type: object
+      required: [enriched, skipped, errors, remaining]
+      properties:
+        enriched: {type: integer, minimum: 0}
+        skipped: {type: integer, minimum: 0}
+        errors: {type: integer, minimum: 0}
+        remaining: {type: integer, minimum: 0}
+        error:
+          type: string
+          enum: [no_credentials]
+      additionalProperties: false
+  responses:
+    Items:
+      description: A successful computation input response.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items]
+            properties:
+              items:
+                type: array
+                items: {type: object, additionalProperties: true}
+            additionalProperties: false
+    CommunityEnrichment:
+      description: Community enrichment counters for the completed bounded batch.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/CommunityEnrichmentResult"}

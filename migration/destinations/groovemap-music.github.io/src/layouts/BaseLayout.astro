@@ -1,0 +1,88 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description: string;
+  path: string;
+}
+
+const { title, description, path } = Astro.props;
+const site = Astro.site ?? new URL('https://groovemap.music');
+const canonical = new URL(path, site);
+const socialImage = new URL('/brand/og-image.svg', site);
+const currentPath = Astro.url.pathname;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="theme-color" content="#060a12" />
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="GrooveMap" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={socialImage} />
+    <meta property="og:image:type" content="image/svg+xml" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="GrooveMap — explore the connections behind music"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={socialImage} />
+    <title>{title}</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="site-header">
+      <nav class="nav shell" aria-label="Primary navigation">
+        <a class="brand-link" href="/" aria-label="GrooveMap home">
+          <img src="/brand/favicon.svg" alt="" width="40" height="40" />
+          <span>GrooveMap</span>
+        </a>
+        <ul>
+          <li>
+            <a href="/" aria-current={currentPath === '/' ? 'page' : undefined}
+              >Home</a
+            >
+          </li>
+          <li>
+            <a
+              href="/about/"
+              aria-current={currentPath === '/about/' ? 'page' : undefined}
+              >About</a
+            >
+          </li>
+          <li><a href="https://github.com/groovemap-music">GitHub</a></li>
+        </ul>
+      </nav>
+    </header>
+    <main id="main-content">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <div class="shell footer-layout">
+        <p>
+          <strong>GrooveMap</strong><br />Explore the connections behind music.
+        </p>
+        <p>
+          <a href="https://github.com/groovemap-music">Source on GitHub</a>
+          <span aria-hidden="true"> · </span>
+          <a href="/about/">About the project</a>
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

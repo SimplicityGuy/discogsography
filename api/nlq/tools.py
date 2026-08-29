@@ -600,7 +600,7 @@ class NLQToolRunner:
 
     async def _handle_search(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import search_queries  # noqa: PLC0415
-        from common import agent_tools  # noqa: PLC0415
+        import common.agent_tools as agent_tools  # noqa: PLC0415
 
         return await agent_tools.search(
             pool=self._pool,
@@ -633,7 +633,7 @@ class NLQToolRunner:
 
     async def _handle_explore_entity(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import neo4j_queries  # noqa: PLC0415
-        from common import agent_tools  # noqa: PLC0415
+        import common.agent_tools as agent_tools  # noqa: PLC0415
 
         entity_type = params.get("type", "artist")
         handler = neo4j_queries.EXPLORE_DISPATCH.get(entity_type)
@@ -654,7 +654,7 @@ class NLQToolRunner:
 
     async def _handle_find_path(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import neo4j_queries  # noqa: PLC0415
-        from common import agent_tools  # noqa: PLC0415
+        import common.agent_tools as agent_tools  # noqa: PLC0415
 
         async def resolve_name(driver: Any, name: str, entity_type: str) -> dict[str, Any] | None:
             if name and name.isdigit():
@@ -694,7 +694,7 @@ class NLQToolRunner:
 
     async def _handle_get_collaborators(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import collaborator_queries  # noqa: PLC0415
-        from common import agent_tools  # noqa: PLC0415
+        import common.agent_tools as agent_tools  # noqa: PLC0415
 
         return await agent_tools.get_collaborators(
             driver=self._driver,
@@ -727,7 +727,7 @@ class NLQToolRunner:
 
     async def _handle_get_trends(self, params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import neo4j_queries  # noqa: PLC0415
-        from common import agent_tools  # noqa: PLC0415
+        import common.agent_tools as agent_tools  # noqa: PLC0415
 
         entity_type = params.get("type", "artist")
         handler = neo4j_queries.TRENDS_DISPATCH.get(entity_type)
@@ -740,13 +740,13 @@ class NLQToolRunner:
 
     async def _handle_get_genre_tree(self, _params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import genre_tree_queries  # noqa: PLC0415
-        from common import agent_tools  # noqa: PLC0415
+        import common.agent_tools as agent_tools  # noqa: PLC0415
 
         return await agent_tools.get_genre_tree(driver=self._driver, tree_fn=genre_tree_queries.get_genre_tree)
 
     async def _handle_get_graph_stats(self, _params: dict[str, Any], _user_id: str | None) -> dict[str, Any]:
         from api.queries import neo4j_queries  # noqa: PLC0415
-        from common import agent_tools  # noqa: PLC0415
+        import common.agent_tools as agent_tools  # noqa: PLC0415
 
         return await agent_tools.get_graph_stats(driver=self._driver, stats_fn=neo4j_queries.get_graph_stats)
 

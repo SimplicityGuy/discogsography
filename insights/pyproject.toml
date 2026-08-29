@@ -7,6 +7,7 @@ name = "insights"
 version = "0.1.0"
 description = "Precomputed analytics and music trends for Discogsography"
 requires-python = ">=3.13"
+dependencies = ["groovemap-runtime[postgres]==0.1.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["insights"]

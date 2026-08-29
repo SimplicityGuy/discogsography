@@ -1,6 +1,9 @@
 // Library exports for testing
 
 pub mod config;
+pub mod generated {
+    pub mod catalog_contract;
+}
 pub mod discogs_downloader;
 pub mod extractor;
 pub mod health;

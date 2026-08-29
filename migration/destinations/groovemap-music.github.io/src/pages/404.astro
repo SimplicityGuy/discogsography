@@ -1,0 +1,21 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Page not found — GrooveMap"
+  description="The requested GrooveMap page could not be found."
+  path="/404.html"
+>
+  <section class="not-found shell" aria-labelledby="not-found-heading">
+    <p class="error-code" aria-hidden="true">404</p>
+    <div>
+      <p class="eyebrow">Lost between nodes</p>
+      <h1 id="not-found-heading">That path does not connect.</h1>
+      <p class="lede">
+        The page may have moved, or the route may not exist yet.
+      </p>
+      <a class="button primary" href="/">Return to the map</a>
+    </div>
+  </section>
+</BaseLayout>
