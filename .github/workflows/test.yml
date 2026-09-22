@@ -53,7 +53,7 @@ jobs:
 
       - name: 📊 Upload coverage (api)
         if: always()
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -93,7 +93,7 @@ jobs:
 
       - name: 📊 Upload coverage (common)
         if: always()
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -138,7 +138,7 @@ jobs:
 
       - name: 📊 Upload coverage (dashboard)
         if: always()
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -178,7 +178,7 @@ jobs:
 
       - name: 📊 Upload coverage (explore)
         if: always()
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -218,7 +218,7 @@ jobs:
 
       - name: "📊 Upload coverage (insights)"
         if: always()
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -258,7 +258,7 @@ jobs:
 
       - name: "📊 Upload coverage (mcp-server)"
         if: always()
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -298,7 +298,7 @@ jobs:
 
       - name: "📊 Upload coverage (brainzgraphinator)"
         if: always()
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -338,7 +338,7 @@ jobs:
 
       - name: 📊 Upload coverage (graphinator)
         if: always()
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -378,7 +378,7 @@ jobs:
 
       - name: 📊 Upload coverage (schema-init)
         if: always()
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -418,7 +418,7 @@ jobs:
 
       - name: 📊 Upload coverage (tableinator)
         if: always()
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -458,7 +458,7 @@ jobs:
 
       - name: "📊 Upload coverage (brainztableinator)"
         if: always()
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -498,7 +498,7 @@ jobs:
 
       - name: "📊 Upload coverage (explore-js)"
         if: always()
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -552,7 +552,7 @@ jobs:
 
       - name: 📦 Install cargo-llvm-cov
         if: steps.check-rust.outputs.exists == 'true'
-        uses: taiki-e/install-action@5bf6ce016fd2e72eefc647cbca1e4213f65955b8  # v2.87.5
+        uses: taiki-e/install-action@4076c08d76dba979c11a7285295b0716c1d67908  # v2.87.15
         with:
           tool: cargo-llvm-cov
 
@@ -577,7 +577,7 @@ jobs:
 
       - name: 📊 Upload Rust coverage reports
         if: steps.check-rust.outputs.exists == 'true'
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
