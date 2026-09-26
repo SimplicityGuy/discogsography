@@ -66,18 +66,28 @@ ENV UV_SYSTEM_PYTHON=1 \
 
 WORKDIR /app
 
-# Copy dependency files first for better caching
+# Copy dependency files first for better caching (every workspace member the
+# sync resolves needs its manifest)
 COPY pyproject.toml uv.lock README.md ./
-COPY common/pyproject.toml ./common/
+COPY common/pyproject.toml common/README.md ./common/
+COPY common/agent-tools/pyproject.toml common/agent-tools/README.md ./common/agent-tools/
 COPY <service>/pyproject.toml ./<service>/
 
-# Install dependencies
+# Install third-party dependencies (cached layer)
 RUN --mount=type=cache,target=/tmp/.cache/uv \
-    uv sync --frozen --no-dev --extra <service>
+    uv sync --frozen --no-dev --extra <service> --no-install-workspace
 
 # Copy source files
 COPY common/ ./common/
 COPY <service>/ ./<service>/
+
+# Install workspace members. The sync must fail the build on error: never chain
+# it with `|| true` (`a && b || true` swallows a failing `a`). Only cleanup steps
+# may be best-effort.
+RUN --mount=type=cache,target=/tmp/.cache/uv \
+    set -e; \
+    uv sync --frozen --no-dev --extra <service>; \
+    find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 # === FINAL STAGE ===
 FROM python:${PYTHON_VERSION}-slim
@@ -102,6 +112,9 @@ WORKDIR /app
 
 # Copy from builder
 COPY --from=builder --chown=discogsography:discogsography /app /app
+
+# Fail the build if the shipped venv cannot import the service's dependencies
+RUN /app/.venv/bin/python -c "import <key deps>, common.config"
 
 # Install uv for runtime
 COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/uv
