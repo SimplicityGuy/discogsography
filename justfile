@@ -159,6 +159,10 @@ lint-python:
 typecheck:
     uv run mypy .
 
+# AGF validation gate for `bh work check` / `bh work submit`: lint, typecheck, unit tests
+[group('quality')]
+check: lint typecheck test
+
 # Format all Python code with ruff
 [group('quality')]
 format:
