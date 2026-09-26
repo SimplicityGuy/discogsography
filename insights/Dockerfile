@@ -9,7 +9,7 @@ ARG GID=1000
 FROM python:${PYTHON_VERSION}-slim AS builder
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.19 /uv /bin/uv
 
 # Set environment for build
 ENV UV_SYSTEM_PYTHON=1 \
@@ -20,26 +20,36 @@ ENV UV_SYSTEM_PYTHON=1 \
 
 WORKDIR /app
 
-# Copy dependency files first for better caching
-COPY pyproject.toml uv.lock ./
-COPY common/pyproject.toml ./common/
+# Copy dependency files first for better caching. Every workspace member the
+# sync resolves (groovemap-runtime in common/, groovemap-agent-tools in
+# common/agent-tools/) needs its manifest here, or `uv sync --frozen` fails.
+COPY pyproject.toml uv.lock README.md ./
+COPY common/pyproject.toml common/README.md ./common/
+COPY common/agent-tools/pyproject.toml common/agent-tools/README.md ./common/agent-tools/
 COPY insights/pyproject.toml ./insights/
 
-# Install dependencies and clean up
-# hadolint ignore=SC2015
+# Install third-party dependencies (cached layer); workspace members need their
+# sources, so they are installed after the COPY below
 RUN --mount=type=cache,target=/tmp/.cache/uv \
-    uv sync --frozen --no-dev --extra insights && \
-    find /app/.venv -type f -name "*.pyc" -delete && \
-    find /app/.venv -type f -name "*.pyo" -delete && \
-    find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
-    find /app/.venv -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true && \
-    find /app/.venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
-    find /app/.venv -name "py.typed" -delete 2>/dev/null || true && \
-    find /app/.venv -name "*.so" -exec strip --strip-unneeded {} \; 2>/dev/null || true
+    uv sync --frozen --no-dev --extra insights --no-install-workspace
 
 # Copy source files
 COPY common/ ./common/
 COPY insights/ ./insights/
+
+# Install workspace members, then clean up. The sync must fail the build on
+# error — a swallowed failure once shipped images with an empty .venv — so it
+# runs under `set -e` and only the cleanup steps are best-effort.
+RUN --mount=type=cache,target=/tmp/.cache/uv \
+    set -e; \
+    uv sync --frozen --no-dev --extra insights; \
+    find /app/.venv -type f -name "*.pyc" -delete || true; \
+    find /app/.venv -type f -name "*.pyo" -delete || true; \
+    find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true; \
+    find /app/.venv -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true; \
+    find /app/.venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true; \
+    find /app/.venv -name "py.typed" -delete 2>/dev/null || true; \
+    find /app/.venv -name "*.so" -exec strip --strip-unneeded {} \; 2>/dev/null || true
 
 # Final stage
 FROM python:${PYTHON_VERSION}-slim
@@ -81,6 +91,9 @@ WORKDIR /app
 COPY --from=builder --chown=discogsography:discogsography /app/.venv /app/.venv
 COPY --from=builder --chown=discogsography:discogsography /app/common /app/common
 COPY --from=builder --chown=discogsography:discogsography /app/insights /app/insights
+
+# Fail the build if the shipped venv cannot import the service's dependencies
+RUN /app/.venv/bin/python -c "import fastapi, uvicorn, httpx, psycopg, neo4j, redis, common.config"
 
 # hadolint ignore=SC2016
 RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/python -m insights.insights "$@"\n' > /app/start.sh && \

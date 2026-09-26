@@ -33,7 +33,7 @@ RUN npm install @tailwindcss/cli@^4 @tailwindcss/forms --save-dev && \
 FROM python:${PYTHON_VERSION}-slim AS builder
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.19 /uv /bin/uv
 
 # Set environment for build
 ENV UV_SYSTEM_PYTHON=1 \
@@ -44,30 +44,36 @@ ENV UV_SYSTEM_PYTHON=1 \
 
 WORKDIR /app
 
-# Copy dependency files first for better caching
+# Copy dependency files first for better caching. Every workspace member the
+# sync resolves (groovemap-runtime in common/, groovemap-agent-tools in
+# common/agent-tools/) needs its manifest here, or `uv sync --frozen` fails.
 COPY pyproject.toml uv.lock README.md ./
-COPY common/pyproject.toml ./common/
+COPY common/pyproject.toml common/README.md ./common/
+COPY common/agent-tools/pyproject.toml common/agent-tools/README.md ./common/agent-tools/
 COPY dashboard/pyproject.toml ./dashboard/
 
-# Install dependencies and clean up
-# hadolint ignore=SC2015
+# Install third-party dependencies (cached layer); workspace members need their
+# sources, so they are installed after the COPY below
 RUN --mount=type=cache,target=/tmp/.cache/uv \
-    uv sync --frozen --no-dev --extra dashboard && \
-    # Clean up cache and test files
-    find /app/.venv -type f -name "*.pyc" -delete && \
-    find /app/.venv -type f -name "*.pyo" -delete && \
-    find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
-    find /app/.venv -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true && \
-    find /app/.venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
-    # Remove type stubs and docs
-    find /app/.venv -type d -name "*.dist-info" -exec rm -rf {}/tests {} + 2>/dev/null || true && \
-    find /app/.venv -name "py.typed" -delete 2>/dev/null || true && \
-    # Strip compiled extensions
-    find /app/.venv -name "*.so" -exec strip --strip-unneeded {} \; 2>/dev/null || true
+    uv sync --frozen --no-dev --extra dashboard --no-install-workspace
 
 # Copy source files
 COPY common/ ./common/
 COPY dashboard/ ./dashboard/
+
+# Install workspace members, then clean up. The sync must fail the build on
+# error — a swallowed failure once shipped images with an empty .venv — so it
+# runs under `set -e` and only the cleanup steps are best-effort.
+RUN --mount=type=cache,target=/tmp/.cache/uv \
+    set -e; \
+    uv sync --frozen --no-dev --extra dashboard; \
+    find /app/.venv -type f -name "*.pyc" -delete || true; \
+    find /app/.venv -type f -name "*.pyo" -delete || true; \
+    find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true; \
+    find /app/.venv -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true; \
+    find /app/.venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true; \
+    find /app/.venv -name "py.typed" -delete 2>/dev/null || true; \
+    find /app/.venv -name "*.so" -exec strip --strip-unneeded {} \; 2>/dev/null || true
 
 # Final stage
 FROM python:${PYTHON_VERSION}-slim
@@ -119,6 +125,9 @@ WORKDIR /app
 COPY --from=builder --chown=discogsography:discogsography /app/.venv /app/.venv
 COPY --from=builder --chown=discogsography:discogsography /app/common /app/common
 COPY --from=builder --chown=discogsography:discogsography /app/dashboard /app/dashboard
+
+# Fail the build if the shipped venv cannot import the service's dependencies
+RUN /app/.venv/bin/python -c "import fastapi, uvicorn, psycopg, neo4j, aio_pika, prometheus_client, common.config"
 
 # Copy the pre-built Tailwind CSS (replaces the CDN script tag in index.html)
 COPY --from=css-builder --chown=discogsography:discogsography /build/tailwind.css /app/dashboard/static/tailwind.css
