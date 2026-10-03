@@ -941,7 +941,7 @@ class TestStaleEdgePruning:
     @staticmethod
     def _tracking_session() -> tuple[Any, Any, list[tuple[str, dict[str, Any]]]]:
         mock_driver, mock_session = create_async_session_mock()
-        mock_session.run = AsyncMock(return_value=create_async_result_mock([{"id": "1", "hash": "oldhash"}]))
+        mock_session.run = AsyncMock(return_value=create_async_result_mock([{"id": "1", "hash": "oldhash", "pair_version": 1}]))
 
         executed: list[tuple[str, dict[str, Any]]] = []
 
@@ -1051,7 +1051,7 @@ class TestStaleEdgePruning:
 
     @pytest.mark.asyncio
     async def test_unchanged_records_are_not_pruned(self) -> None:
-        """A record whose hash matches is never reprocessed, so its edges must be left
+        """A record whose hash and canonical pair version match is never reprocessed, so its edges must be left
         strictly alone — pruning there would delete edges nothing is about to rewrite."""
         mock_driver, _session, executed = self._tracking_session()
         processor = Neo4jBatchProcessor(mock_driver)
@@ -1613,7 +1613,7 @@ class TestBatchTransactionLogic:
         """Test early return when all releases already have matching hashes — acking is done by _flush_queue."""
         mock_driver, mock_session = create_async_session_mock()
 
-        mock_result = create_async_result_mock([{"id": "1", "hash": "hash1"}])
+        mock_result = create_async_result_mock([{"id": "1", "hash": "hash1", "pair_version": 1}])
         mock_session.run = AsyncMock(return_value=mock_result)
 
         processor = Neo4jBatchProcessor(mock_driver)
@@ -2285,11 +2285,17 @@ class TestReleaseCatalogNumber:
         # First tx.run is the MERGE on Release nodes
         first_cypher, first_kwargs = captured[0]
         assert "r += release.metadata" in first_cypher
-        assert first_kwargs["releases"][0]["metadata"] == {"catalog_number": "ABC-123"}
+        assert first_kwargs["releases"][0]["metadata"] == {
+            "canonical_pair_version": 1,
+            "canonical_pair_ingest_version": 1,
+            "canonical_pair_source": "first-label",
+            "canonical_label": "Some Label",
+            "catalog_number": "ABC-123",
+        }
 
     @pytest.mark.asyncio
     async def test_release_metadata_empty_when_labels_empty(self) -> None:
-        """labels=[] → metadata is {} on the payload (SET r += {} is a no-op)."""
+        """Absent labels record inspection without writing either pair member."""
         mock_driver, mock_session = create_async_session_mock()
         mock_result = create_async_result_mock([{"id": "R2", "hash": None}])
         mock_session.run = AsyncMock(return_value=mock_result)
@@ -2301,11 +2307,11 @@ class TestReleaseCatalogNumber:
         await processor._process_releases_batch([msg])
 
         _, first_kwargs = captured[0]
-        assert first_kwargs["releases"][0]["metadata"] == {}
+        assert first_kwargs["releases"][0]["metadata"] == {"canonical_pair_version": 1, "canonical_pair_ingest_version": 1}
 
     @pytest.mark.asyncio
     async def test_release_metadata_empty_when_labels_missing(self) -> None:
-        """`labels` key entirely absent → metadata is {} on the payload."""
+        """Absent labels record inspection without writing either pair member."""
         mock_driver, mock_session = create_async_session_mock()
         mock_result = create_async_result_mock([{"id": "R3", "hash": None}])
         mock_session.run = AsyncMock(return_value=mock_result)
@@ -2317,11 +2323,11 @@ class TestReleaseCatalogNumber:
         await processor._process_releases_batch([msg])
 
         _, first_kwargs = captured[0]
-        assert first_kwargs["releases"][0]["metadata"] == {}
+        assert first_kwargs["releases"][0]["metadata"] == {"canonical_pair_version": 1, "canonical_pair_ingest_version": 1}
 
     @pytest.mark.asyncio
     async def test_release_metadata_empty_when_first_label_lacks_catno(self) -> None:
-        """labels[0] without `catno` key → metadata is {} (no KeyError, catalog_number key absent)."""
+        """A name-only first label clears its missing catalog counterpart."""
         mock_driver, mock_session = create_async_session_mock()
         mock_result = create_async_result_mock([{"id": "R4", "hash": None}])
         mock_session.run = AsyncMock(return_value=mock_result)
@@ -2333,7 +2339,13 @@ class TestReleaseCatalogNumber:
         await processor._process_releases_batch([msg])
 
         _, first_kwargs = captured[0]
-        assert first_kwargs["releases"][0]["metadata"] == {}
+        assert first_kwargs["releases"][0]["metadata"] == {
+            "canonical_pair_version": 1,
+            "canonical_pair_ingest_version": 1,
+            "canonical_pair_source": "first-label",
+            "canonical_label": "Catno-less Label",
+            "catalog_number": None,
+        }
 
     @pytest.mark.asyncio
     async def test_release_uses_first_label_catno(self) -> None:
@@ -2355,7 +2367,13 @@ class TestReleaseCatalogNumber:
         await processor._process_releases_batch([msg])
 
         _, first_kwargs = captured[0]
-        assert first_kwargs["releases"][0]["metadata"] == {"catalog_number": "PRI-001"}
+        assert first_kwargs["releases"][0]["metadata"] == {
+            "canonical_pair_version": 1,
+            "canonical_pair_ingest_version": 1,
+            "canonical_pair_source": "first-label",
+            "canonical_label": "Primary",
+            "catalog_number": "PRI-001",
+        }
 
 
 class TestSameTypeFlushSerialization:
