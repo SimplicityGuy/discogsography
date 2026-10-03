@@ -1,0 +1,7 @@
+# This exception applies only to this directory's staged-site lockfile.
+# Checked 2026-10-03: the npm registry and reviewed advisory have no fixed release.
+# Recheck the advisory and installed Astro usage before renewing this exception.
+[[IgnoredVulns]]
+id = "GHSA-ch52-4w7c-c8xp"
+ignoreUntil = 2026-11-02
+reason = "No upstream fix for http-cache-semantics 4.2.0. Astro 7.2.8 uses storable()/timeToLive() for build-time remote-image TTLs, not the vulnerable satisfiesWithoutRevalidation()/client max-stale path. This credential-free static site has no shared HTTP cache or server runtime. See README.md security exception evidence; remove when a fixed release is available."
