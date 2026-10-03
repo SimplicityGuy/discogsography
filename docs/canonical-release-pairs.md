@@ -33,10 +33,13 @@ continue to update provenance and the paired values together.
 
 ## Real database controls
 
-`tests/api/test_canonical_pairs_integration.py` uses explicitly owned disposable
+`tests/integration/test_canonical_pairs.py` uses explicitly owned disposable
 Neo4j and PostgreSQL servers (`DGS_PAIRS_ISOLATED=1`, `DGS_PAIRS_NEO4J_URI`,
 `DGS_PAIRS_NEO4J_PASSWORD`, `DGS_PAIRS_POSTGRES_DSN`) and a fresh child PostgreSQL
-database per case. Run with `uv run pytest ... -m integration -n 0`. It proves
+database per case. Run with `just test-canonical-pairs-integration`. The Build workflow invokes
+the dedicated Test job with its own disposable PostgreSQL and Neo4j services.
+This job runs all 14 controls serially; ordinary API unit collection excludes
+them by directory, not by weakening their isolation guards. It proves
 unchanged-hash replay, reversed relationships through authenticated HTTP,
 partial/non-wipe behavior in both writers, wantlist parity, and a rejected SQL
 write retaining the old pair in both stores.
