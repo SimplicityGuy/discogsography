@@ -1911,6 +1911,7 @@ class TestChallengeSurvivesPasswordChange:
         self,
         test_client: TestClient,
         mock_cur: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """The login mint is stamped before hashed_password is read.
 
@@ -1919,16 +1920,32 @@ class TestChallengeSurvivesPasswordChange:
         """
         from api.auth import _hash_password, decode_token
 
-        before = int(datetime.now(UTC).timestamp())
-        mock_cur.fetchone = AsyncMock(
-            return_value={
+        hashed_password = _hash_password("testpassword")
+        before = int(datetime.now(UTC).timestamp()) - 10
+        clock = before
+
+        class CredentialClock:
+            @staticmethod
+            def now(tz: object) -> datetime:
+                assert tz is UTC
+                return datetime.fromtimestamp(clock, UTC)
+
+        async def read_password() -> dict[str, object]:
+            nonlocal clock
+            # A password change during the read/verification window must be
+            # able to invalidate the resulting token. Move only the route's
+            # clock; JWT expiry validation continues to use the real clock.
+            clock = before + 5
+            return {
                 "id": TEST_USER_ID,
                 "email": TEST_USER_EMAIL,
-                "hashed_password": _hash_password("testpassword"),
+                "hashed_password": hashed_password,
                 "is_active": True,
                 "totp_enabled": False,
             }
-        )
+
+        monkeypatch.setattr(auth_router, "datetime", CredentialClock)
+        mock_cur.fetchone = AsyncMock(side_effect=read_password)
 
         response = test_client.post(
             "/api/auth/login",
@@ -1937,4 +1954,6 @@ class TestChallengeSurvivesPasswordChange:
 
         assert response.status_code == 200
         minted = decode_token(response.json()["access_token"], TEST_JWT_SECRET)
-        assert minted["iat"] <= before
+        mock_cur.fetchone.assert_awaited_once()
+        assert clock == before + 5
+        assert minted["iat"] == before
