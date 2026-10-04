@@ -46,7 +46,15 @@ async def pair_store() -> AsyncIterator[tuple[AsyncResilientNeo4jDriver, AsyncPo
         async with pool.connection() as conn:
             assert await (await conn.execute("SELECT current_database()")).fetchone() == (name,)
             for table, ddl in _USER_TABLES:
-                if table in {"users table", "app_tokens table", "user_collections table", "user_wantlists table"}:
+                if table in {
+                    "users table",
+                    "app_tokens table",
+                    "user_collections table",
+                    "user_wantlists table",
+                    "collection_generations table",
+                    "collection_generation_items table",
+                    "collection_current table",
+                }:
                     await conn.execute(ddl)
             await conn.execute("INSERT INTO users(id,email,hashed_password) VALUES (%s,'pairs@example.invalid','synthetic')", (USER,))
         async with driver.session() as session:

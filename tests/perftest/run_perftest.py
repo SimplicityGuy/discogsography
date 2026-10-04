@@ -8,14 +8,21 @@ and writes results to JSON and human-readable report files.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from itertools import combinations
 import json
+import logging
 import math
+import os
 from pathlib import Path
 import sys
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 import httpx
 import yaml
@@ -811,6 +818,79 @@ def write_report(
 # ---------------------------------------------------------------------------
 
 
+@contextmanager
+def _quiet_snapshot_requests() -> Iterator[None]:
+    logger = logging.getLogger("httpx")
+    disabled = logger.disabled
+    logger.disabled = True
+    try:
+        yield
+    finally:
+        logger.disabled = disabled
+
+
+def run_collection_snapshot_perf(client: httpx.Client, base: str, config: dict[str, Any], iterations: int) -> list[dict[str, Any]]:
+    """Validate authenticated strict envelopes; never persist auth/cursor material."""
+    # This standalone Docker context does not ship the common package.
+    # Reports use safe metadata; request URLs are quiet only for this scenario.
+    if iterations < 1:
+        raise ValueError("Collection snapshot performance iterations must be positive")
+    settings = config.get("collection_snapshot", {})
+    token = os.getenv(settings.get("token_env", "DGS_PERF_COLLECTION_TOKEN"))
+    if not token:
+        raise ValueError("Collection snapshot performance requires an environment-supplied token")
+    headers = {"Authorization": "Bearer " + token}
+    limit = int(settings.get("limit", 200))
+    timings: dict[str, list[float]] = {"first": [], "continuation": []}
+    with _quiet_snapshot_requests():
+        for _ in range(iterations):
+            start = time.perf_counter()
+            try:
+                response = client.get(base + "/api/user/collection", params={"snapshot": "new", "limit": limit}, headers=headers)
+                response.raise_for_status()
+                first = response.json()
+                required = ("snapshot_token", "snapshot_generation", "snapshot_expires_at", "snapshot_source")
+                if (
+                    not all(isinstance(first.get(key), str) and first[key] for key in required)
+                    or first["snapshot_source"] != "completed_collection_sync"
+                    or not isinstance(first.get("total"), int)
+                    or first["total"] < 0
+                    or not isinstance(first.get("releases"), list)
+                ):
+                    raise ValueError("Missing strict snapshot envelope")
+                timings["first"].append(time.perf_counter() - start)
+                start = time.perf_counter()
+                response = client.get(
+                    base + "/api/user/collection",
+                    params={
+                        "snapshot": first["snapshot_token"],
+                        "snapshot_generation": first["snapshot_generation"],
+                        "offset": limit,
+                        "limit": limit,
+                    },
+                    headers=headers,
+                )
+                response.raise_for_status()
+                continuation = response.json()
+                if any(continuation.get(key) != first[key] for key in required) or continuation.get("total") != first.get("total"):
+                    raise ValueError("Mixed snapshot envelope")
+                timings["continuation"].append(time.perf_counter() - start)
+            except (httpx.HTTPError, ValueError, KeyError, TypeError):
+                # HTTPError reprs include the continuation URL. Safe constant only.
+                raise ValueError("Collection snapshot performance request or contract failed") from None
+    return [
+        {
+            "endpoint": "collection_snapshot/" + phase,
+            "url": base + "/api/user/collection",
+            "params": {"limit": limit},
+            "iterations": iterations,
+            "errors": 0,
+            "stats": compute_stats(values),
+        }
+        for phase, values in timings.items()
+    ]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Discogsography API Performance Test")
     parser.add_argument(
@@ -901,6 +981,10 @@ def main() -> None:
             )
             results.append(result)
             print()
+
+        settings = config.get("collection_snapshot", {})
+        if settings.get("enabled") or args.only == "collection_snapshot":
+            results.extend(run_collection_snapshot_perf(client, base_url, config, iterations))
 
     # Write results
     write_report(
