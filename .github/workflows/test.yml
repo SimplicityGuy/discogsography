@@ -141,6 +141,92 @@ jobs:
       - name: 🧪 Run all real canonical pair controls
         run: just test-canonical-pairs-integration
 
+  test-collection-snapshots-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: pairs
+          POSTGRES_PASSWORD: synthetic-pairs-password
+          POSTGRES_DB: pairs
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pairs -d pairs"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      neo4j:
+        # Exact version used by the owned local graph acceptance controls.
+        image: neo4j:2026.08.1
+        env:
+          NEO4J_AUTH: neo4j/synthetic-pairs-password
+          NEO4J_server_memory_heap_initial__size: 256M
+          NEO4J_server_memory_heap_max__size: 512M
+          NEO4J_server_memory_pagecache_size: 128M
+        ports:
+          - 7687:7687
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p synthetic-pairs-password 'RETURN 1'"
+          --health-interval 10s
+          --health-timeout 15s
+          --health-retries 12
+          --health-start-period 60s
+
+    env:
+      DGS_SNAPSHOTS_ISOLATED: "1"
+      DGS_SNAPSHOTS_NEO4J_URI: bolt://127.0.0.1:7687
+      DGS_SNAPSHOTS_NEO4J_PASSWORD: synthetic-pairs-password
+      DGS_SNAPSHOTS_POSTGRES_DSN: postgresql://pairs:synthetic-pairs-password@127.0.0.1:5432/pairs
+      NEO4J_HOST: bolt://127.0.0.1:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: synthetic-pairs-password
+      POSTGRES_HOST: 127.0.0.1:5432
+      POSTGRES_USERNAME: pairs
+      POSTGRES_PASSWORD: synthetic-pairs-password
+      POSTGRES_DATABASE: pairs
+      JWT_SECRET_KEY: synthetic-collection-snapshot-ci-secret
+      RABBITMQ_HOST: 127.0.0.1
+      RABBITMQ_PORT: "1"
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: "1"
+
+    steps:
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: 🔧 Setup Python and UV
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 🔧 Setup Just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3  # v4.0.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📦 Install dependencies
+        run: just install
+
+      - name: 🧪 Run all real collection snapshot controls
+        run: just test-collection-snapshots-integration
+
+      - name: 📊 Upload coverage (collection snapshots)
+        if: always()
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SimplicityGuy/discogsography
+          files: ./coverage.xml
+          flags: api,common,schema-init
+          name: collection-snapshot-integration
+          fail_ci_if_error: false
+          disable_search: true
+          verbose: false
+
   # ============================================================================
   # COMMON/SHARED LIBRARY TESTS - Runs in parallel with all other test jobs
   # ============================================================================

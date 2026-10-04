@@ -22,6 +22,7 @@ from common import (
     describe_exception,
     setup_logging,
 )
+from common.snapshot_logging import install_snapshot_log_redaction
 
 
 logger = structlog.get_logger(__name__)
@@ -46,6 +47,7 @@ def get_health_data() -> dict[str, Any]:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifecycle."""
+    install_snapshot_log_redaction()
     logger.info("🚀 Starting Explore service")
 
     # Start health server on separate port

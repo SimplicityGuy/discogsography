@@ -24,6 +24,7 @@ import structlog
 
 from api.auth import decrypt_oauth_token
 from api.cache import RecommendCache
+from api.collection_generations import get_store, transaction
 from api.oauth import _build_oauth_header, _hmac_sha1_signature as _hmac_sha1
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver
 from common.query_debug import execute_sql, log_cypher_query
@@ -100,200 +101,212 @@ async def sync_collection(
     Returns:
         Total number of items synced
     """
-    total_synced = 0
-    page = 1
-    rate_limit_retries = 0
-    # Captured once, before the loop — used both as the Neo4j synced_at stamp
-    # for every page of this run and as the reconciliation cutoff below, so
-    # rows/edges untouched by this run (removed on Discogs, or superseded by
-    # a duplicate instance_id) can be identified and deleted.
-    sync_started = datetime.now(UTC)
+    generations = get_store(pg_pool)
+    async with generations.producer(str(user_uuid)) as (conn, generation):
+        total_synced = 0
+        page = 1
+        rate_limit_retries = 0
+        # Captured once, before the loop — used both as the Neo4j synced_at stamp
+        # for every page of this run and as the reconciliation cutoff below, so
+        # rows/edges untouched by this run (removed on Discogs, or superseded by
+        # a duplicate instance_id) can be identified and deleted.
+        sync_started = datetime.now(UTC)
 
-    logger.info("📋 Starting collection sync", user=discogs_username)
+        logger.info("📋 Starting collection sync", user=discogs_username)
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        while True:
-            url = f"{DISCOGS_API_BASE}/users/{discogs_username}/collection/folders/0/releases"
-            params = {"page": str(page), "per_page": str(PAGE_SIZE), "sort": "added", "sort_order": "desc"}
-            full_url = f"{url}?{urllib.parse.urlencode(params)}"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            while True:
+                url = f"{DISCOGS_API_BASE}/users/{discogs_username}/collection/folders/0/releases"
+                params = {"page": str(page), "per_page": str(PAGE_SIZE), "sort": "added", "sort_order": "desc"}
+                full_url = f"{url}?{urllib.parse.urlencode(params)}"
 
-            auth = _auth_header("GET", url, consumer_key, consumer_secret, access_token, token_secret, query_params=params)
-            headers = {
-                "Authorization": auth,
-                "User-Agent": user_agent,
-                "Accept": "application/json",
-            }
+                auth = _auth_header("GET", url, consumer_key, consumer_secret, access_token, token_secret, query_params=params)
+                headers = {
+                    "Authorization": auth,
+                    "User-Agent": user_agent,
+                    "Accept": "application/json",
+                }
 
-            response = await client.get(full_url, headers=headers)
+                response = await client.get(full_url, headers=headers)
 
-            if response.status_code == 429:
-                rate_limit_retries += 1
-                if rate_limit_retries > MAX_RATE_LIMIT_RETRIES:
-                    logger.error("❌ Rate limit retries exhausted for collection sync", user=discogs_username, retries=rate_limit_retries)
-                    raise DiscogsSyncError(f"Discogs rate limit retries exhausted for collection sync (user={discogs_username})")
-                logger.warning("⚠️ Rate limited by Discogs, waiting 60s...", retry=rate_limit_retries, max_retries=MAX_RATE_LIMIT_RETRIES)
-                await asyncio.sleep(60)
-                continue
-            rate_limit_retries = 0
-
-            if response.status_code != 200:
-                logger.error(
-                    "❌ Collection API error",
-                    status=response.status_code,
-                    page=page,
-                )
-                raise DiscogsSyncError(f"Discogs collection API error: status={response.status_code} page={page} user={discogs_username}")
-
-            data = response.json()
-            releases = data.get("releases", [])
-
-            if not releases:
-                break
-
-            # Build batch params — skip items without a release_id
-            batch_params = []
-            for item in releases:
-                basic = item.get("basic_information", {})
-                release_id = basic.get("id")
-                if not release_id:
+                if response.status_code == 429:
+                    rate_limit_retries += 1
+                    if rate_limit_retries > MAX_RATE_LIMIT_RETRIES:
+                        logger.error("❌ Rate limit retries exhausted for collection sync", user=discogs_username, retries=rate_limit_retries)
+                        raise DiscogsSyncError(f"Discogs rate limit retries exhausted for collection sync (user={discogs_username})")
+                    logger.warning("⚠️ Rate limited by Discogs, waiting 60s...", retry=rate_limit_retries, max_retries=MAX_RATE_LIMIT_RETRIES)
+                    await asyncio.sleep(60)
                     continue
+                rate_limit_retries = 0
 
-                artists = basic.get("artists", [])
-                artist_name = artists[0]["name"] if artists else None
-                labels = basic.get("labels", [])
-                release_metadata = canonical_pair_metadata(labels)
-                label_name = release_metadata.get("canonical_label")
-                metadata_json = json.dumps(release_metadata)
-                formats_raw = basic.get("formats", [])
-                formats_json = json.dumps(formats_raw) if formats_raw else None
-
-                batch_params.append(
-                    (
-                        str(user_uuid),
-                        release_id,
-                        item.get("instance_id"),
-                        item.get("folder_id"),
-                        basic.get("title"),
-                        artist_name,
-                        basic.get("year"),
-                        formats_json,
-                        label_name,
-                        item.get("rating", 0),
-                        item.get("date_added"),
-                        metadata_json,
-                        # Stamp with the app-host sync_started clock (not PG's NOW()) so
-                        # this write and _reconcile_stale_collection's DELETE cutoff share
-                        # ONE clock source — mirroring the Neo4j half of this same sync,
-                        # which already stamps synced_at=sync_started. A DB-host clock
-                        # lagging the API host would otherwise make NOW() land before the
-                        # cutoff and _reconcile_stale_collection would delete the row this
-                        # sync just wrote (discogsography-vqr0).
-                        sync_started,
+                if response.status_code != 200:
+                    logger.error(
+                        "❌ Collection API error",
+                        status=response.status_code,
+                        page=page,
                     )
-                )
+                    raise DiscogsSyncError(f"Discogs collection API error: status={response.status_code} page={page} user={discogs_username}")
 
-            # Upsert to PostgreSQL — one executemany per page instead of N round-trips
-            if batch_params:
-                async with pg_pool.connection() as conn, conn.cursor() as cur:
-                    await cur.executemany(
-                        """
-                            INSERT INTO user_collections (
-                                user_id, release_id, instance_id, folder_id,
-                                title, artist, year, formats, label,
-                                rating, date_added, metadata, updated_at
-                            ) VALUES (
-                                %s::uuid, %s, %s, %s,
-                                %s, %s, %s, %s::jsonb, %s,
-                                %s, %s, %s::jsonb, %s
-                            )
-                            ON CONFLICT (user_id, release_id, instance_id) DO UPDATE SET
-                                folder_id = EXCLUDED.folder_id,
-                                title = EXCLUDED.title,
-                                artist = EXCLUDED.artist,
-                                year = EXCLUDED.year,
-                                formats = COALESCE(EXCLUDED.formats, user_collections.formats),
-                                label = CASE WHEN EXCLUDED.metadata->>'canonical_pair_source' = 'first-label'
-                                             THEN EXCLUDED.label ELSE user_collections.label END,
-                                rating = EXCLUDED.rating,
-                                date_added = EXCLUDED.date_added,
-                                metadata = COALESCE(user_collections.metadata, '{}'::jsonb) || EXCLUDED.metadata,
-                                updated_at = EXCLUDED.updated_at
-                        """,
-                        batch_params,
+                data = response.json()
+                releases = data.get("releases", [])
+
+                if not releases:
+                    break
+
+                # Build batch params — skip items without a release_id
+                batch_params = []
+                for item in releases:
+                    basic = item.get("basic_information", {})
+                    release_id = basic.get("id")
+                    if not release_id:
+                        continue
+
+                    artists = basic.get("artists", [])
+                    artist_name = artists[0]["name"] if artists else None
+                    labels = basic.get("labels", [])
+                    release_metadata = canonical_pair_metadata(labels)
+                    label_name = release_metadata.get("canonical_label")
+                    metadata_json = json.dumps(release_metadata)
+                    formats_raw = basic.get("formats", [])
+                    formats_json = json.dumps(formats_raw) if formats_raw else None
+
+                    batch_params.append(
+                        (
+                            str(user_uuid),
+                            release_id,
+                            item.get("instance_id"),
+                            item.get("folder_id"),
+                            basic.get("title"),
+                            artist_name,
+                            basic.get("year"),
+                            formats_json,
+                            label_name,
+                            item.get("rating", 0),
+                            item.get("date_added"),
+                            metadata_json,
+                            # Stamp with the app-host sync_started clock (not PG's NOW()) so
+                            # this write and _reconcile_stale_collection's DELETE cutoff share
+                            # ONE clock source — mirroring the Neo4j half of this same sync,
+                            # which already stamps synced_at=sync_started. A DB-host clock
+                            # lagging the API host would otherwise make NOW() land before the
+                            # cutoff and _reconcile_stale_collection would delete the row this
+                            # sync just wrote (discogsography-vqr0).
+                            sync_started,
+                        )
                     )
-                total_synced += len(batch_params)
 
-            # Upsert to Neo4j — ensure User node and COLLECTED relationships.
-            # `SET r += rel.metadata` merges only the keys present in the bag —
-            # absent source keys are untouched; a usable partial source clears
-            # its missing counterpart instead of retaining an unrelated value.
-            cypher = """
-            MERGE (u:User {id: $user_id})
-            ON CREATE SET u.discogs_username = $discogs_username
-            ON MATCH SET u.discogs_username = $discogs_username
-            WITH u
-            UNWIND $releases AS rel
-            MATCH (r:Release {id: toString(rel.release_id)})
-            MERGE (u)-[c:COLLECTED {instance_id: rel.instance_id}]->(r)
-            SET c.rating = rel.rating,
-                c.folder_id = rel.folder_id,
-                c.date_added = rel.date_added,
-                c.synced_at = $synced_at,
-                r += rel.metadata
-            """
+                # Upsert to PostgreSQL — one executemany per page instead of N round-trips
+                if batch_params:
+                    async with transaction(conn), conn.cursor(row_factory=dict_row) as cur:
+                        await generations.global_lock(conn)
+                        await cur.executemany(
+                            """
+                                INSERT INTO user_collections (
+                                    user_id, release_id, instance_id, folder_id,
+                                    title, artist, year, formats, label,
+                                    rating, date_added, metadata, updated_at
+                                ) VALUES (
+                                    %s::uuid, %s, %s, %s,
+                                    %s, %s, %s, %s::jsonb, %s,
+                                    %s, %s, %s::jsonb, %s
+                                )
+                                ON CONFLICT (user_id, release_id, instance_id) DO UPDATE SET
+                                    folder_id = EXCLUDED.folder_id,
+                                    title = EXCLUDED.title,
+                                    artist = EXCLUDED.artist,
+                                    year = EXCLUDED.year,
+                                    formats = COALESCE(EXCLUDED.formats, user_collections.formats),
+                                    label = CASE WHEN EXCLUDED.metadata->>'canonical_pair_source' = 'first-label'
+                                                 THEN EXCLUDED.label ELSE user_collections.label END,
+                                    rating = EXCLUDED.rating,
+                                    date_added = EXCLUDED.date_added,
+                                    metadata = COALESCE(user_collections.metadata, '{}'::jsonb) || EXCLUDED.metadata,
+                                    updated_at = EXCLUDED.updated_at
+                                RETURNING release_id,instance_id,folder_id,title,artist,year,formats,label,rating,date_added,metadata
+                            """,
+                            batch_params,
+                            returning=True,
+                        )
+                        stored = []
+                        while True:
+                            stored.extend(await cur.fetchall())
+                            if not cur.nextset():
+                                break
+                        await generations.stage(conn, generation, stored)
+                    total_synced += len(batch_params)
 
-            def _release_metadata(item: dict[str, Any]) -> dict[str, Any]:
-                return canonical_pair_metadata(item.get("basic_information", {}).get("labels"))
+                # Upsert to Neo4j — ensure User node and COLLECTED relationships.
+                # `SET r += rel.metadata` merges only the keys present in the bag —
+                # absent source keys are untouched; a usable partial source clears
+                # its missing counterpart instead of retaining an unrelated value.
+                cypher = """
+                MERGE (u:User {id: $user_id})
+                ON CREATE SET u.discogs_username = $discogs_username
+                ON MATCH SET u.discogs_username = $discogs_username
+                WITH u
+                UNWIND $releases AS rel
+                MATCH (r:Release {id: toString(rel.release_id)})
+                MERGE (u)-[c:COLLECTED {instance_id: coalesce(rel.instance_id, 'legacy-no-instance')}]->(r)
+                SET c.rating = rel.rating,
+                    c.folder_id = rel.folder_id,
+                    c.date_added = rel.date_added,
+                    c.synced_at = $synced_at,
+                    r += rel.metadata
+                """
 
-            neo4j_releases = [
-                {
-                    "release_id": item.get("basic_information", {}).get("id"),
-                    "instance_id": str(item["instance_id"]) if item.get("instance_id") else None,
-                    "rating": item.get("rating", 0),
-                    "folder_id": item.get("folder_id"),
-                    "date_added": item.get("date_added"),
-                    "metadata": _release_metadata(item),
-                }
-                for item in releases
-                if item.get("basic_information", {}).get("id")
-            ]
+                def _release_metadata(item: dict[str, Any]) -> dict[str, Any]:
+                    return canonical_pair_metadata(item.get("basic_information", {}).get("labels"))
 
-            if neo4j_releases:
-                cypher_params: dict[str, Any] = {
-                    "user_id": str(user_uuid),
-                    "discogs_username": discogs_username,
-                    "releases": neo4j_releases,
-                    "synced_at": sync_started.isoformat(),
-                }
-                log_cypher_query(
-                    cypher,
+                neo4j_releases = [
                     {
+                        "release_id": item.get("basic_information", {}).get("id"),
+                        "instance_id": str(item["instance_id"]) if item.get("instance_id") is not None else None,
+                        "rating": item.get("rating", 0),
+                        "folder_id": item.get("folder_id"),
+                        "date_added": item.get("date_added"),
+                        "metadata": _release_metadata(item),
+                    }
+                    for item in releases
+                    if item.get("basic_information", {}).get("id")
+                ]
+
+                if neo4j_releases:
+                    cypher_params: dict[str, Any] = {
                         "user_id": str(user_uuid),
                         "discogs_username": discogs_username,
-                        "releases": f"[{len(neo4j_releases)} items]",
-                        "synced_at": "...",
-                    },
-                )
-                async with neo4j_driver.session() as session:
-                    result = await session.run(cypher, cypher_params)
-                    await result.consume()
+                        "releases": neo4j_releases,
+                        "synced_at": sync_started.isoformat(),
+                    }
+                    log_cypher_query(
+                        cypher,
+                        {
+                            "user_id": str(user_uuid),
+                            "discogs_username": discogs_username,
+                            "releases": f"[{len(neo4j_releases)} items]",
+                            "synced_at": "...",
+                        },
+                    )
+                    async with neo4j_driver.session() as session:
+                        result = await session.run(cypher, cypher_params)
+                        await result.consume()
 
-            # Check if there are more pages
-            pagination = data.get("pagination", {})
-            if page >= pagination.get("pages", 1):
-                break
+                # Check if there are more pages
+                pagination = data.get("pagination", {})
+                if page >= pagination.get("pages", 1):
+                    break
 
-            page += 1
-            await asyncio.sleep(SYNC_DELAY_SECONDS)
+                page += 1
+                await asyncio.sleep(SYNC_DELAY_SECONDS)
 
-    # Reached only when the loop completed normally (no DiscogsSyncError raised
-    # above) — reconcile away rows/edges this run never touched: items removed
-    # from Discogs since the last sync, and stale duplicate instance_id rows
-    # left behind when an item was removed and re-added.
-    await _reconcile_stale_collection(user_uuid, pg_pool, neo4j_driver, sync_started)
+        # Reached only when the loop completed normally (no DiscogsSyncError raised
+        # above) — reconcile away rows/edges this run never touched: items removed
+        # from Discogs since the last sync, and stale duplicate instance_id rows
+        # left behind when an item was removed and re-added.
+        await _reconcile_stale_collection(user_uuid, pg_pool, neo4j_driver, sync_started, owner_conn=conn)
+        await generations.publish(conn, generation)
 
-    logger.info("✅ Collection sync complete", user=discogs_username, total=total_synced)
-    return total_synced
+        logger.info("✅ Collection sync complete", user=discogs_username, total=total_synced)
+        return total_synced
 
 
 async def _reconcile_stale_collection(
@@ -301,6 +314,7 @@ async def _reconcile_stale_collection(
     pg_pool: AsyncPostgreSQLPool,
     neo4j_driver: AsyncResilientNeo4jDriver,
     sync_started: datetime,
+    owner_conn: Any | None = None,
 ) -> None:
     """Delete collection rows/edges for this user untouched by the current sync run.
 
@@ -311,12 +325,11 @@ async def _reconcile_stale_collection(
     under a new instance_id (leaving the old instance_id row/edge orphaned).
     Only called after a fully successful pagination run (see sync_collection).
     """
-    async with pg_pool.connection() as conn, conn.cursor() as cur:
-        await execute_sql(
-            cur,
-            "DELETE FROM user_collections WHERE user_id = %s::uuid AND updated_at < %s",
-            (str(user_uuid), sync_started),
-        )
+    if owner_conn is None:
+        async with pg_pool.connection() as conn:
+            await _delete_stale_collection(conn, user_uuid, sync_started)
+    else:
+        await _delete_stale_collection(owner_conn, user_uuid, sync_started)
 
     cypher = """
     MATCH (u:User {id: $user_id})-[c:COLLECTED]->()
@@ -326,6 +339,11 @@ async def _reconcile_stale_collection(
     async with neo4j_driver.session() as session:
         result = await session.run(cypher, {"user_id": str(user_uuid), "sync_started": sync_started.isoformat()})
         await result.consume()
+
+
+async def _delete_stale_collection(conn: Any, user_uuid: UUID, sync_started: datetime) -> None:
+    async with conn.cursor() as cur:
+        await execute_sql(cur, "DELETE FROM user_collections WHERE user_id=%s::uuid AND updated_at<%s", (str(user_uuid), sync_started))
 
 
 async def sync_wantlist(

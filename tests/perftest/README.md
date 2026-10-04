@@ -200,3 +200,12 @@ The container must be on the same Docker network as the API service. The default
 ```bash
 docker network ls | grep discogsography
 ```
+
+## Authenticated collection snapshots
+
+Set `DGS_PERF_COLLECTION_TOKEN` in the runner environment to a synthetic/authorized user token with
+`collection:read`, after a completed collection sync. Run the script with `--only collection_snapshot`
+(or enable `collection_snapshot.enabled` in configuration). Missing credentials or a missing/mixed snapshot
+fail the scenario explicitly; there is no live-page fallback. Reports contain safe endpoint/timing metadata,
+not the PAT or opaque continuation token. The standalone runner suppresses HTTPX request logging during this
+scenario because request URLs contain cursor material. API/Explore separately redact their access logs.

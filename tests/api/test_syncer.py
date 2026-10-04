@@ -1,6 +1,7 @@
 """Tests for api/syncer.py — collection and wantlist sync logic."""
 
 import asyncio
+from contextlib import asynccontextmanager
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
@@ -90,7 +91,7 @@ def _make_want_item(release_id: int = 456, **overrides: object) -> dict:
 
 
 @pytest.fixture
-def mock_pg_pool() -> MagicMock:
+def mock_pg_pool(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """Mock AsyncPostgreSQLPool."""
     pool = MagicMock()
     mock_cur = AsyncMock()
@@ -99,7 +100,11 @@ def mock_pg_pool() -> MagicMock:
     mock_cur.fetchone = AsyncMock(return_value=None)
     mock_cur.fetchall = AsyncMock(return_value=[])
 
+    mock_cur.nextset = MagicMock(return_value=None)
     mock_conn = AsyncMock()
+    mock_conn.closed = False
+    tx_ctx = AsyncMock()
+    mock_conn.transaction = MagicMock(return_value=tx_ctx)
     cur_ctx = AsyncMock()
     cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
     cur_ctx.__aexit__ = AsyncMock(return_value=False)
@@ -110,6 +115,19 @@ def mock_pg_pool() -> MagicMock:
     conn_ctx.__aexit__ = AsyncMock(return_value=False)
     pool.connection = MagicMock(return_value=conn_ctx)
     pool._mock_cur = mock_cur
+    # Existing page/upsert unit tests isolate the new generation subsystem;
+    # actual ownership/quota/publication lives in dedicated DB integration tests.
+    generation_store = MagicMock()
+
+    @asynccontextmanager
+    async def producer(_owner: str):
+        yield mock_conn, TEST_USER_UUID
+
+    generation_store.producer = producer
+    generation_store.global_lock = AsyncMock()
+    generation_store.stage = AsyncMock()
+    generation_store.publish = AsyncMock()
+    monkeypatch.setattr("api.syncer.get_store", lambda _pool: generation_store)
     return pool
 
 

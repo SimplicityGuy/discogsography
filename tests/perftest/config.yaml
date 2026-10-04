@@ -72,3 +72,10 @@ nlq_scenarios:
     query_params:
       pane: "explore"
     target_p95_ms: 200
+
+# Authenticated collection snapshot performance (opt-in; never store a PAT here).
+# --only collection_snapshot requires the environment token and a completed sync.
+collection_snapshot:
+  enabled: false
+  token_env: DGS_PERF_COLLECTION_TOKEN
+  limit: 200

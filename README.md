@@ -260,3 +260,9 @@ Some other projects working with the monthly Discogs data dump.
 <div align="center">
 Made with ❤️ in the Pacific Northwest
 </div>
+
+### Stable collection pagination
+
+Strict collection consumers can use [immutable published collection generations](docs/collection-snapshots.md).
+Upgrade schema-init/API and complete a successful upstream collection sync before enabling strict GRUVAX sync;
+legacy credential probes and offset requests remain available. Generation producers require a pool of at least two connections.

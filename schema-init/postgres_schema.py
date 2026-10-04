@@ -355,6 +355,55 @@ _USER_TABLES: list[tuple[str, str]] = [
 
 # Insights tables — precomputed analytics stored in a dedicated schema.
 # All tables include computed_at for cache freshness checks.
+_USER_TABLES.extend(
+    [
+        (
+            "collection_generations table",
+            """CREATE TABLE IF NOT EXISTS collection_generations (
+        id UUID PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        status TEXT NOT NULL CHECK(status IN ('building','published')),
+        started_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+        published_at TIMESTAMPTZ,
+        retain_until TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+        total BIGINT NOT NULL DEFAULT 0 CHECK(total>=0),
+        payload_bytes BIGINT NOT NULL CHECK(payload_bytes>=0),
+        UNIQUE(user_id,id)
+    )""",
+        ),
+        (
+            "collection_generation_items table",
+            """CREATE TABLE IF NOT EXISTS collection_generation_items (
+        id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        generation_id UUID NOT NULL REFERENCES collection_generations(id) ON DELETE CASCADE,
+        release_id BIGINT NOT NULL,
+        instance_id BIGINT,
+        date_added TIMESTAMPTZ,
+        ordinal BIGINT,
+        payload JSONB NOT NULL,
+        UNIQUE NULLS NOT DISTINCT(generation_id,release_id,instance_id)
+    )""",
+        ),
+        (
+            "collection_current table",
+            """CREATE TABLE IF NOT EXISTS collection_current (
+        user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        generation_id UUID NOT NULL,
+        FOREIGN KEY(user_id,generation_id) REFERENCES collection_generations(user_id,id)
+    )""",
+        ),
+        (
+            "idx_collection_generation_page",
+            "CREATE INDEX IF NOT EXISTS idx_collection_generation_page ON collection_generation_items(generation_id,ordinal)",
+        ),
+        (
+            "idx_collection_generation_cleanup",
+            "CREATE INDEX IF NOT EXISTS idx_collection_generation_cleanup ON collection_generations(user_id,status,retain_until)",
+        ),
+    ]
+)
+
+
 _INSIGHTS_TABLES: list[tuple[str, str]] = [
     (
         "insights schema",

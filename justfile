@@ -212,6 +212,14 @@ test-canonical-pairs-integration:
     uv run pytest tests/integration/test_canonical_pairs.py -m integration \
         -n0 -v --timeout=60 --timeout-method=thread
 
+# Owned immutable-generation controls, exclusive PG/Neo4j and serial tests.
+[group('testing')]
+test-collection-snapshots-integration:
+    uv run pytest tests/integration/test_collection_snapshots.py -m integration \
+        -n0 -v --timeout=180 --timeout-method=thread \
+        --cov=api --cov=common --cov=schema-init \
+        --cov-report=xml --cov-report=json --cov-report=term-missing
+
 # Run JavaScript unit tests for Explore frontend
 [group('test')]
 test-js:

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 import structlog
 
+from api.collection_generations import get_store, snapshot_error
 from api.dependencies import UnifiedAuth, get_optional_user, require_user, require_user_or_app_token
 from api.limiter import bearer_token_key_func, limiter
 from api.queries.recommend_queries import (
@@ -26,6 +27,7 @@ from api.queries.user_queries import (
     get_user_recommendations,
     get_user_wantlist,
 )
+from common.snapshot_logging import install_snapshot_log_redaction
 
 
 logger = structlog.get_logger(__name__)
@@ -33,6 +35,8 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 _neo4j_driver: Any = None
+_collection_pool: Any = None
+_collection_secret: str | None = None
 
 # In-memory cache for timeline/evolution queries (keyed by user_id + params)
 _timeline_cache: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
@@ -41,9 +45,12 @@ _TIMELINE_CACHE_TTL = 300  # 5 minutes
 _timeline_cache_lock: asyncio.Lock | None = None  # lazy init to avoid binding to wrong event loop
 
 
-def configure(neo4j: Any, jwt_secret: str | None) -> None:  # noqa: ARG001
-    global _neo4j_driver
+def configure(neo4j: Any, jwt_secret: str | None, pool: Any = None) -> None:
+    global _neo4j_driver, _collection_pool, _collection_secret
     _neo4j_driver = neo4j
+    _collection_pool = pool
+    _collection_secret = jwt_secret
+    install_snapshot_log_redaction()
 
 
 def _get_cached(key: str) -> dict[str, Any] | None:
@@ -75,7 +82,16 @@ async def user_collection(
     auth: Annotated[UnifiedAuth, Depends(require_user_or_app_token(["collection:read"]))],
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    snapshot: str | None = Query(None),
+    snapshot_generation: str | None = Query(None),
 ) -> JSONResponse:
+    if snapshot is not None:
+        if _collection_pool is None or not _collection_secret:
+            return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+        envelope = await get_store(_collection_pool).page(auth.user_id, snapshot, snapshot_generation, limit, offset, _collection_secret)
+        return JSONResponse(content=envelope, headers={"Cache-Control": "no-store"})
+    if snapshot_generation is not None:
+        raise snapshot_error("snapshot_mismatch")
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     user_id = auth.user_id
