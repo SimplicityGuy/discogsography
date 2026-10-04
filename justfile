@@ -216,7 +216,9 @@ test-canonical-pairs-integration:
 [group('testing')]
 test-collection-snapshots-integration:
     uv run pytest tests/integration/test_collection_snapshots.py -m integration \
-        -n0 -v --timeout=180 --timeout-method=thread
+        -n0 -v --timeout=180 --timeout-method=thread \
+        --cov=api --cov=common --cov=schema-init \
+        --cov-report=xml --cov-report=json --cov-report=term-missing
 
 # Run JavaScript unit tests for Explore frontend
 [group('test')]

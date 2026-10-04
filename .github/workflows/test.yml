@@ -214,6 +214,19 @@ jobs:
       - name: 🧪 Run all real collection snapshot controls
         run: just test-collection-snapshots-integration
 
+      - name: 📊 Upload coverage (collection snapshots)
+        if: always()
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SimplicityGuy/discogsography
+          files: ./coverage.xml
+          flags: api,common,schema-init
+          name: collection-snapshot-integration
+          fail_ci_if_error: false
+          disable_search: true
+          verbose: false
+
   # ============================================================================
   # COMMON/SHARED LIBRARY TESTS - Runs in parallel with all other test jobs
   # ============================================================================
