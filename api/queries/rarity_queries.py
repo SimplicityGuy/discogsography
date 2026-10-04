@@ -230,10 +230,15 @@ RETURN count(r) AS total
 # master link", scoring it 90.0 (standalone) instead of 100.0 (unique pressing).
 # The +1 must therefore be applied INSIDE the non-null branch, to a plain
 # sibling_count, rather than folded into the aggregate.
+# Discogs uses master_id=0 for masterless releases. Legacy string "0" imports
+# formed an 8-million-release hub: reject it in the master lookup, before any
+# sibling expansion, and score those releases as standalone. The same guard
+# belongs on the temporal lookup below; filtering after expansion is too late.
 _PRESSING_QUERY = """
 UNWIND $ids AS rid
 MATCH (r:Release {id: rid})
 OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)
+WHERE NOT m.id IN ['0', 0]
 OPTIONAL MATCH (m)<-[:DERIVED_FROM]-(sibling:Release)
 WHERE sibling <> r
 WITH r, m, count(DISTINCT sibling) AS sibling_count
@@ -264,7 +269,9 @@ RETURN r.id AS release_id, r.formats AS formats
 _TEMPORAL_QUERY = """
 UNWIND $ids AS rid
 MATCH (r:Release {id: rid})
-OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)<-[:DERIVED_FROM]-(sibling:Release)
+OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)
+WHERE NOT m.id IN ['0', 0]
+OPTIONAL MATCH (m)<-[:DERIVED_FROM]-(sibling:Release)
 WHERE sibling.year IS NOT NULL AND sibling <> r
 WITH r.id AS release_id, r.year AS year,
      max(sibling.year) AS latest_sibling_year

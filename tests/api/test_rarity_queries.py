@@ -904,6 +904,50 @@ class TestFetchAllRaritySignals:
         assert results[0]["pressing_scarcity"] == 100.0
 
 
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_masterless_sentinels_do_not_expand_siblings_on_owned_graph() -> None:
+    """Exercise the actual Cypher against a disposable, explicitly owned Neo4j.
+
+    Sentinel neighbours must never become pressing or reissue evidence. Keep the
+    sole-pressing and duplicate-edge cases correct while excluding both zero types.
+    """
+    import os
+
+    from neo4j import AsyncGraphDatabase, Query
+
+    from api.queries.rarity_queries import _PRESSING_QUERY, _TEMPORAL_QUERY
+
+    if os.environ.get("DGS_RARITY_ISOLATED") != "1":
+        pytest.skip("requires an explicitly owned disposable Neo4j")
+    uri = os.environ["DGS_RARITY_NEO4J_URI"]
+    assert uri.startswith("bolt://127.0.0.1:"), "never run this fixture on production"
+    async with (
+        AsyncGraphDatabase.driver(uri, auth=("neo4j", os.environ["DGS_RARITY_NEO4J_PASSWORD"])) as driver,
+        driver.session(database="neo4j") as session,
+    ):
+        await (await session.run("MATCH (n) DETACH DELETE n")).consume()
+        await (
+            await session.run(
+                "CREATE (z:Master {id:'0'}), (nz:Master {id:0}), (u:Master {id:'u'}), (m:Master {id:'m'}), "
+                "(a:Release {id:'standalone',year:1999}), (b:Release {id:'zero',year:1999}), "
+                "(c:Release {id:'numeric-zero',year:1999}), (d:Release {id:'unique',year:1999}), "
+                "(e:Release {id:'multi',year:2000}), (f:Release {id:'sibling',year:2020}), "
+                "(g:Release {id:'false-reissue',year:2025}), "
+                "(b)-[:DERIVED_FROM]->(z), (g)-[:DERIVED_FROM]->(z), (c)-[:DERIVED_FROM]->(nz), "
+                "(d)-[:DERIVED_FROM]->(u), (e)-[:DERIVED_FROM]->(m), "
+                "(f)-[:DERIVED_FROM]->(m), (f)-[:DERIVED_FROM]->(m)"
+            )
+        ).consume()
+        ids = ["standalone", "zero", "numeric-zero", "unique", "multi", "sibling"]
+        result = await session.run(Query(_PRESSING_QUERY, timeout=5), ids=ids)
+        pressing = {row["release_id"]: row["pressing_count"] async for row in result}
+        assert pressing == {"standalone": 0, "zero": 0, "numeric-zero": 0, "unique": 1, "multi": 2, "sibling": 2}
+        result = await session.run(Query(_TEMPORAL_QUERY, timeout=5), ids=ids)
+        temporal = {row["release_id"]: row["latest_sibling_year"] async for row in result}
+        assert temporal == {"standalone": None, "zero": None, "numeric-zero": None, "unique": None, "multi": 2020, "sibling": 2000}
+
+
 class TestRarityPaginationTiebreaker:
     """discogsography-cu2.55: rarity_score / hidden_gem_score are heavily
     quantized (round(..., 1)), so OFFSET pagination without a unique tiebreaker
