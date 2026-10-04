@@ -31,17 +31,16 @@ async def get_user_collection(
     cypher = """
     MATCH (u:User {id: $user_id})-[c:COLLECTED]->(r:Release)
     OPTIONAL MATCH (r)-[:BY]->(a:Artist)
-    OPTIONAL MATCH (r)-[:ON]->(l:Label)
     OPTIONAL MATCH (r)-[:IS]->(g:Genre)
     OPTIONAL MATCH (r)-[:IS]->(s:Style)
     WITH r, c,
          collect(DISTINCT a.name)[0] AS artist_name,
-         collect(DISTINCT l.name)[0] AS label_name,
          collect(DISTINCT g.name) AS genres,
          collect(DISTINCT s.name) AS styles
     RETURN r.id AS id, r.title AS title, r.year AS year,
-           r.catalog_number AS catalog_number,
-           artist_name AS artist, label_name AS label,
+           CASE WHEN r.canonical_pair_source = 'first-label' THEN r.catalog_number ELSE null END AS catalog_number,
+           artist_name AS artist,
+           CASE WHEN r.canonical_pair_source = 'first-label' THEN r.canonical_label ELSE null END AS label,
            genres, styles,
            c.rating AS rating, c.date_added AS date_added,
            c.folder_id AS folder_id
@@ -72,17 +71,16 @@ async def get_user_wantlist(
     cypher = """
     MATCH (u:User {id: $user_id})-[w:WANTS]->(r:Release)
     OPTIONAL MATCH (r)-[:BY]->(a:Artist)
-    OPTIONAL MATCH (r)-[:ON]->(l:Label)
     OPTIONAL MATCH (r)-[:IS]->(g:Genre)
     OPTIONAL MATCH (r)-[:IS]->(s:Style)
     WITH r, w,
          collect(DISTINCT a.name)[0] AS artist_name,
-         collect(DISTINCT l.name)[0] AS label_name,
          collect(DISTINCT g.name) AS genres,
          collect(DISTINCT s.name) AS styles
     RETURN r.id AS id, r.title AS title, r.year AS year,
-           r.catalog_number AS catalog_number,
-           artist_name AS artist, label_name AS label,
+           CASE WHEN r.canonical_pair_source = 'first-label' THEN r.catalog_number ELSE null END AS catalog_number,
+           artist_name AS artist,
+           CASE WHEN r.canonical_pair_source = 'first-label' THEN r.canonical_label ELSE null END AS label,
            genres, styles,
            w.rating AS rating, w.date_added AS date_added
     ORDER BY w.date_added DESC, r.id

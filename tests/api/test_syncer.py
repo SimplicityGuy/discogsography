@@ -1,6 +1,7 @@
 """Tests for api/syncer.py — collection and wantlist sync logic."""
 
 import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
@@ -1459,11 +1460,16 @@ class TestCatalogNumberCapture:
         cypher_text = run_call[0][0]
         cypher_params = run_call[0][1]
         assert "r += rel.metadata" in cypher_text
-        assert cypher_params["releases"][0]["metadata"] == {"catalog_number": "ZYX-987"}
+        assert cypher_params["releases"][0]["metadata"] == {
+            "canonical_pair_version": 1,
+            "canonical_pair_source": "first-label",
+            "canonical_label": "Lbl",
+            "catalog_number": "ZYX-987",
+        }
 
     @pytest.mark.asyncio
     async def test_collection_empty_metadata_when_labels_empty(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
-        """labels=[] → metadata_json is None, cypher metadata is {} (SET r += {} is a no-op)."""
+        """Absent labels record inspection while preserving a previously known pair."""
         release = _make_release_item(123)
         release["basic_information"]["labels"] = []
         resp = _make_collection_response([release])
@@ -1491,13 +1497,13 @@ class TestCatalogNumberCapture:
             )
 
         batch_params = mock_pg_pool._mock_cur.executemany.await_args[0][1]
-        assert batch_params[0][11] is None
+        assert json.loads(batch_params[0][11]) == {"canonical_pair_version": 1}
         cypher_params = mock_neo4j._mock_session.run.await_args_list[0][0][1]
-        assert cypher_params["releases"][0]["metadata"] == {}
+        assert cypher_params["releases"][0]["metadata"] == {"canonical_pair_version": 1}
 
     @pytest.mark.asyncio
     async def test_collection_empty_metadata_when_label_lacks_catno(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
-        """labels[0] missing 'catno' key → metadata_json is None, cypher metadata is {}."""
+        """A name-only first label explicitly clears the missing catalog counterpart."""
         release = _make_release_item(123)
         release["basic_information"]["labels"] = [{"name": "No-Catno Label"}]
         resp = _make_collection_response([release])
@@ -1525,16 +1531,16 @@ class TestCatalogNumberCapture:
             )
 
         batch_params = mock_pg_pool._mock_cur.executemany.await_args[0][1]
-        assert batch_params[0][11] is None
+        assert json.loads(batch_params[0][11]) == {
+            "canonical_pair_version": 1,
+            "canonical_pair_source": "first-label",
+            "canonical_label": "No-Catno Label",
+            "catalog_number": None,
+        }
 
     @pytest.mark.asyncio
     async def test_collection_upsert_never_overwrites_metadata_or_formats_with_null(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
-        """discogsography-z7d3: a run with no catalog_number (or no formats) must not
-        wipe a previously-synced value. The PostgreSQL upsert's DO UPDATE SET must use
-        COALESCE(EXCLUDED.x, user_collections.x) for metadata AND formats — a bare
-        `metadata = EXCLUDED.metadata` full-column replace would overwrite a prior
-        value with NULL when EXCLUDED.metadata is NULL, diverging from the Neo4j side
-        (`SET r += rel.metadata`), which never wipes."""
+        """Absent source metadata merges only inspection; formats retain their non-wipe behavior."""
         release = _make_release_item(123)
         release["basic_information"]["labels"] = []
         release["basic_information"]["formats"] = []
@@ -1568,11 +1574,12 @@ class TestCatalogNumberCapture:
 
         # This run genuinely has no catalog_number/formats to report.
         assert batch_params[0][7] is None  # formats_json (tuple position 7)
-        assert batch_params[0][11] is None  # metadata_json (tuple position 11)
+        assert json.loads(batch_params[0][11]) == {"canonical_pair_version": 1}  # metadata_json (tuple position 11)
 
         # But the upsert must be told to preserve any prior value rather than
         # blindly assigning the column to EXCLUDED (which would be NULL here).
-        assert "metadata = COALESCE(EXCLUDED.metadata, user_collections.metadata)" in upsert_sql
+        assert "metadata = COALESCE(user_collections.metadata, '{}'::jsonb) || EXCLUDED.metadata" in upsert_sql
+        assert "THEN EXCLUDED.label ELSE user_collections.label END" in upsert_sql
         assert "formats = COALESCE(EXCLUDED.formats, user_collections.formats)" in upsert_sql
         assert "metadata = EXCLUDED.metadata," not in upsert_sql
         assert "formats = EXCLUDED.formats," not in upsert_sql
@@ -1610,11 +1617,16 @@ class TestCatalogNumberCapture:
         cypher_text = run_call[0][0]
         cypher_params = run_call[0][1]
         assert "r += w.metadata" in cypher_text
-        assert cypher_params["wants"][0]["metadata"] == {"catalog_number": "WNT-001"}
+        assert cypher_params["wants"][0]["metadata"] == {
+            "canonical_pair_version": 1,
+            "canonical_pair_source": "first-label",
+            "canonical_label": "Lbl",
+            "catalog_number": "WNT-001",
+        }
 
     @pytest.mark.asyncio
     async def test_wantlist_empty_metadata_when_labels_missing(self, mock_pg_pool: MagicMock, mock_neo4j: MagicMock) -> None:
-        """basic_information missing 'labels' entirely → metadata is {} on the cypher payload."""
+        """Absent labels record inspection without writing pair members."""
         want = _make_want_item(456)
         # basic_information.labels intentionally absent
         want["basic_information"].pop("labels", None)
@@ -1643,4 +1655,4 @@ class TestCatalogNumberCapture:
             )
 
         cypher_params = mock_neo4j._mock_session.run.await_args_list[0][0][1]
-        assert cypher_params["wants"][0]["metadata"] == {}
+        assert cypher_params["wants"][0]["metadata"] == {"canonical_pair_version": 1}

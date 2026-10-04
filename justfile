@@ -206,6 +206,12 @@ test-rabbitmq-integration:
     uv run pytest tests/common/test_rabbitmq_integration.py -m integration \
         -p no:randomly -n0 -s -v --timeout=45 --timeout-method=thread
 
+# Dedicated disposable PG/Neo4j only; fixture owns the entire graph, so no xdist.
+[group('testing')]
+test-canonical-pairs-integration:
+    uv run pytest tests/integration/test_canonical_pairs.py -m integration \
+        -n0 -v --timeout=60 --timeout-method=thread
+
 # Run JavaScript unit tests for Explore frontend
 [group('test')]
 test-js:

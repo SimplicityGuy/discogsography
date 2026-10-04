@@ -27,6 +27,7 @@ from api.cache import RecommendCache
 from api.oauth import _build_oauth_header, _hmac_sha1_signature as _hmac_sha1
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver
 from common.query_debug import execute_sql, log_cypher_query
+from common.release_metadata import canonical_pair_metadata
 
 
 logger = structlog.get_logger(__name__)
@@ -160,23 +161,9 @@ async def sync_collection(
                 artists = basic.get("artists", [])
                 artist_name = artists[0]["name"] if artists else None
                 labels = basic.get("labels", [])
-                label_name = labels[0]["name"] if labels else None
-                # Per-release metadata bag — only keys with non-null values are
-                # included so a missing field never wipes an existing value
-                # (in Neo4j, SET k = null deletes the property). Same shape is
-                # reused for both `user_collections.metadata` JSONB and the
-                # cypher `SET r += rel.metadata` write. Future fields just add
-                # a key here.
-                #
-                # When this run's fetch has no catalog_number (or no formats),
-                # metadata_json/formats_json is None — the PostgreSQL upsert below
-                # uses COALESCE(EXCLUDED.x, user_collections.x) so a NULL from this
-                # run can never overwrite a previously-synced value; Neo4j's `+=`
-                # merge already had that property (discogsography-z7d3).
-                release_metadata: dict[str, Any] = {}
-                if labels and labels[0].get("catno"):
-                    release_metadata["catalog_number"] = labels[0]["catno"]
-                metadata_json = json.dumps(release_metadata) if release_metadata else None
+                release_metadata = canonical_pair_metadata(labels)
+                label_name = release_metadata.get("canonical_label")
+                metadata_json = json.dumps(release_metadata)
                 formats_raw = basic.get("formats", [])
                 formats_json = json.dumps(formats_raw) if formats_raw else None
 
@@ -225,10 +212,11 @@ async def sync_collection(
                                 artist = EXCLUDED.artist,
                                 year = EXCLUDED.year,
                                 formats = COALESCE(EXCLUDED.formats, user_collections.formats),
-                                label = EXCLUDED.label,
+                                label = CASE WHEN EXCLUDED.metadata->>'canonical_pair_source' = 'first-label'
+                                             THEN EXCLUDED.label ELSE user_collections.label END,
                                 rating = EXCLUDED.rating,
                                 date_added = EXCLUDED.date_added,
-                                metadata = COALESCE(EXCLUDED.metadata, user_collections.metadata),
+                                metadata = COALESCE(user_collections.metadata, '{}'::jsonb) || EXCLUDED.metadata,
                                 updated_at = EXCLUDED.updated_at
                         """,
                         batch_params,
@@ -237,8 +225,8 @@ async def sync_collection(
 
             # Upsert to Neo4j — ensure User node and COLLECTED relationships.
             # `SET r += rel.metadata` merges only the keys present in the bag —
-            # absent keys are untouched, so a sync without catalog_number never
-            # wipes a value that the bulk graphinator pipeline may have written.
+            # absent source keys are untouched; a usable partial source clears
+            # its missing counterpart instead of retaining an unrelated value.
             cypher = """
             MERGE (u:User {id: $user_id})
             ON CREATE SET u.discogs_username = $discogs_username
@@ -255,13 +243,7 @@ async def sync_collection(
             """
 
             def _release_metadata(item: dict[str, Any]) -> dict[str, Any]:
-                labels_for_item = item.get("basic_information", {}).get("labels") or []
-                first = labels_for_item[0] if labels_for_item else {}
-                catno_value = first.get("catno") if isinstance(first, dict) else None
-                bag: dict[str, Any] = {}
-                if catno_value:
-                    bag["catalog_number"] = catno_value
-                return bag
+                return canonical_pair_metadata(item.get("basic_information", {}).get("labels"))
 
             neo4j_releases = [
                 {
@@ -490,13 +472,7 @@ async def sync_wantlist(
             """
 
             def _want_metadata(item: dict[str, Any]) -> dict[str, Any]:
-                labels_for_item = item.get("basic_information", {}).get("labels") or []
-                first = labels_for_item[0] if labels_for_item else {}
-                catno_value = first.get("catno") if isinstance(first, dict) else None
-                bag: dict[str, Any] = {}
-                if catno_value:
-                    bag["catalog_number"] = catno_value
-                return bag
+                return canonical_pair_metadata(item.get("basic_information", {}).get("labels"))
 
             neo4j_wants = [
                 {

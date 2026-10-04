@@ -16,6 +16,7 @@ import structlog
 from common import normalize_record
 from common.credit_roles import categorize_role
 from common.db_resilience import DatabaseUnavailableError
+from common.release_metadata import CANONICAL_PAIR_VERSION, canonical_pair_metadata
 from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
 
 logger = structlog.get_logger(__name__)
@@ -1054,14 +1055,16 @@ class Neo4jBatchProcessor:
         async with self.driver.session(database="neo4j") as session:
             ids = [m.data.get("id") for m in all_releases]
             existing_hashes: dict[str, str] = {}
+            existing_versions: dict[str, Any] = {}
             if ids:
                 result = await session.run(
                     "UNWIND $ids AS id "
                     "OPTIONAL MATCH (r:Release {id: id}) "
-                    "RETURN id, r.sha256 AS hash",
+                    "RETURN id, r.sha256 AS hash, r.canonical_pair_ingest_version AS pair_version",
                     ids=ids,
                 )
                 async for record in result:
+                    existing_versions[str(record["id"])] = record.get("pair_version")
                     if record["hash"]:
                         existing_hashes[str(record["id"])] = record["hash"]
 
@@ -1069,7 +1072,10 @@ class Neo4jBatchProcessor:
             for msg in all_releases:
                 rid = str(msg.data["id"])
                 release_hash = msg.data.get("sha256")
-                if existing_hashes.get(rid) != release_hash:
+                if (
+                    existing_hashes.get(rid) != release_hash
+                    or existing_versions.get(rid) != CANONICAL_PAIR_VERSION
+                ):
                     # Build a copy to avoid mutating the PendingMessage in case
                     # of re-enqueue on Neo4j failure
                     release_data = dict(msg.data)
@@ -1078,26 +1084,12 @@ class Neo4jBatchProcessor:
                         for f in msg.data.get("formats", [])
                         if isinstance(f, dict) and "name" in f
                     ]
-                    # Per-release metadata bag — populated only with non-null
-                    # keys. The cypher uses `SET r += release.metadata`, which
-                    # merges only the keys present, so absent fields don't wipe
-                    # an existing value (in Neo4j, SET k = null deletes the
-                    # property). Future per-release fields just add a key here.
-                    raw_labels = msg.data.get("labels") or []
-                    first_label = (
-                        raw_labels[0]
-                        if isinstance(raw_labels, list) and raw_labels
-                        else {}
+                    release_data["metadata"] = canonical_pair_metadata(
+                        msg.data.get("labels")
                     )
-                    catno = (
-                        first_label.get("catno")
-                        if isinstance(first_label, dict)
-                        else None
+                    release_data["metadata"]["canonical_pair_ingest_version"] = (
+                        CANONICAL_PAIR_VERSION
                     )
-                    release_metadata: dict[str, Any] = {}
-                    if catno:
-                        release_metadata["catalog_number"] = catno
-                    release_data["metadata"] = release_metadata
                     releases_to_process.append(release_data)
 
             if not releases_to_process:
@@ -1106,10 +1098,9 @@ class Neo4jBatchProcessor:
 
             async def batch_write(tx: Any) -> None:
                 # Create/update all release nodes. `r += release.metadata`
-                # merges the per-release metadata bag (catalog_number today,
-                # potentially more fields tomorrow). Only keys present in the
-                # bag are written — absent keys don't wipe existing values
-                # that the per-user sync pipeline may have set.
+                # writes both usable source members atomically, clearing a missing
+                # counterpart. Absent/unusable sources only record inspection
+                # and preserve any previously known pair.
                 await tx.run(
                     """
                     UNWIND $releases AS release
