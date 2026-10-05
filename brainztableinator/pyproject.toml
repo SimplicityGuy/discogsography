@@ -17,7 +17,7 @@ classifiers = [
 ]
 license = {text = "PolyForm-Noncommercial-1.0.0"}
 dependencies = [
-    "aio-pika>=10.0.1",
+    "aio-pika>=10.1.0",
     "groovemap-runtime[postgres,rabbitmq]==0.1.0",
     "orjson>=3.12.0",
     "psycopg[binary]>=3.3.6",

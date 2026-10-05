@@ -1,13 +1,13 @@
 {
   "dependencies": {
     "dompurify": "^3.4.16",
-    "marked": "^18.0.14"
+    "marked": "^18.1.0"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",
     "@vitest/coverage-v8": "^5.0.0",
     "istanbul-lib-instrument": "^6.0.3",
-    "jsdom": "^30.1.1",
+    "jsdom": "^30.1.2",
     "monocart-coverage-reports": "^2.13.0",
     "vitest": "^5.0.0"
   },
