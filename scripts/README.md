@@ -316,4 +316,3 @@ All scripts include safety measures:
 - Restore from backup if needed
 - Try updating packages individually
 - Check for conflicting dependency requirements
-
