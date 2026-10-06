@@ -4,19 +4,19 @@
     "fsevents@2.3.3": false
   },
   "dependencies": {
-    "@astrojs/sitemap": "3.7.3",
-    "astro": "7.2.8"
+    "@astrojs/sitemap": "3.7.4",
+    "astro": "7.3.5"
   },
   "description": "The static GrooveMap organization website",
   "devDependencies": {
     "@astrojs/check": "0.9.10",
-    "@typescript-eslint/parser": "8.68.0",
-    "eslint": "10.9.1",
-    "eslint-plugin-astro": "3.1.0",
-    "html-validate": "11.10.0",
-    "prettier": "3.9.6",
-    "prettier-plugin-astro": "0.14.1",
-    "typescript": "6.0.3"
+    "@typescript-eslint/parser": "8.71.0",
+    "eslint": "10.12.0",
+    "eslint-plugin-astro": "3.2.1",
+    "html-validate": "11.16.1",
+    "prettier": "3.9.9",
+    "prettier-plugin-astro": "1.1.0",
+    "typescript": "7.0.2"
   },
   "engines": {
     "node": ">=24.15.0 <25",
