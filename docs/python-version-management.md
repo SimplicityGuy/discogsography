@@ -63,8 +63,6 @@ The script will:
 1. Show a summary of changes
 1. Remind you to update `.env` if needed
 
-> **Note**: The `--python` flag is also available as a workflow dispatch parameter in the `update-dependencies.yml` GitHub Actions workflow.
-
 ### Method 2: Environment Variable
 
 Set in your `.env` file:
