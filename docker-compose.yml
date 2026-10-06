@@ -95,7 +95,7 @@ services:
 
   # Neo4j graph database
   neo4j:
-    image: neo4j:2026-community
+    image: neo4j:2026.08.1-community
     container_name: discogsography-neo4j
     hostname: neo4j
     ulimits:
@@ -146,7 +146,7 @@ services:
 
   # Redis cache
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: discogsography-redis
     hostname: redis
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
