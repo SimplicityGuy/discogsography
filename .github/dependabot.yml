@@ -16,7 +16,10 @@ updates:
   # GitHub Actions dependencies
   # nosemgrep: package_managers.dependabot.dependabot-missing-cooldown.dependabot-missing-cooldown
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/docker-build-cache"
+      - "/.github/actions/setup-python-uv"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -31,7 +34,12 @@ updates:
     assignees:
       - "SimplicityGuy"
     groups:
-      actions:
+      actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      actions-version:
+        applies-to: version-updates
         patterns:
           - "*"
 
@@ -40,6 +48,8 @@ updates:
   - package-ecosystem: "docker"
     directories:
       - "/api"
+      - "/brainzgraphinator"
+      - "/brainztableinator"
       - "/dashboard"
       - "/explore"
       - "/extractor"
@@ -47,6 +57,7 @@ updates:
       - "/insights"
       - "/schema-init"
       - "/tableinator"
+      - "/tests/perftest"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -61,14 +72,19 @@ updates:
     assignees:
       - "SimplicityGuy"
     groups:
-      docker-images:
+      docker-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      docker-version:
+        applies-to: version-updates
         patterns:
           - "*"
 
   # Rust dependencies for the extractor
   # nosemgrep: package_managers.dependabot.dependabot-missing-cooldown.dependabot-missing-cooldown
   - package-ecosystem: "cargo"
-    directory: "/"
+    directory: "/"  # workspace root; covers the extractor member
     schedule:
       interval: "weekly"
       day: "monday"
@@ -82,11 +98,22 @@ updates:
       - "rust"
     assignees:
       - "SimplicityGuy"
+    groups:
+      cargo-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      cargo-version:
+        applies-to: version-updates
+        patterns:
+          - "*"
 
   # Node.js dependencies for Explore frontend tests
   # nosemgrep: package_managers.dependabot.dependabot-missing-cooldown.dependabot-missing-cooldown
   - package-ecosystem: "npm"
-    directory: "/explore"
+    directories:
+      - "/explore"
+      - "/migration/destinations/groovemap-music.github.io"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -101,7 +128,12 @@ updates:
     assignees:
       - "SimplicityGuy"
     groups:
-      npm-dependencies:
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      npm-version:
+        applies-to: version-updates
         patterns:
           - "*"
 
@@ -112,13 +144,18 @@ updates:
     directories:
       - "/"  # Root project
       - "/api"
+      - "/brainzgraphinator"
+      - "/brainztableinator"
       - "/common"
+      - "/common/agent-tools"
       - "/dashboard"
       - "/explore"
       - "/graphinator"
       - "/insights"
+      - "/mcp-server"
       - "/schema-init"
       - "/tableinator"
+      - "/utilities"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -135,18 +172,63 @@ updates:
       - "SimplicityGuy"
     open-pull-requests-limit: 10
     groups:
-      # Production Python dependencies
-      python-production:
-        dependency-type: "production"
-        patterns:
-          - "*"
-      # Development Python dependencies
-      python-development:
-        dependency-type: "development"
-        patterns:
-          - "*"
-      # Security updates get their own group for immediate attention
-      python-security:
+      pip-security:
         applies-to: security-updates
+        patterns:
+          - "*"
+      pip-version:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  # Docker Compose service images
+  # nosemgrep: package_managers.dependabot.dependabot-missing-cooldown.dependabot-missing-cooldown
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    labels:
+      - "dependencies"
+    assignees:
+      - "SimplicityGuy"
+    groups:
+      docker-compose-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      docker-compose-version:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  # pre-commit hook revisions
+  # nosemgrep: package_managers.dependabot.dependabot-missing-cooldown.dependabot-missing-cooldown
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+    assignees:
+      - "SimplicityGuy"
+    groups:
+      pre-commit-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      pre-commit-version:
+        applies-to: version-updates
         patterns:
           - "*"
