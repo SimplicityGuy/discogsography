@@ -1613,7 +1613,7 @@ fn create_gzipped_xml_file(dir: &std::path::Path, filename: &str, xml_content: &
 }
 
 fn compile_test_rules(yaml: &str) -> Arc<CompiledRulesConfig> {
-    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let config: RulesConfig = yaml_serde::from_str(yaml).unwrap();
     Arc::new(CompiledRulesConfig::compile(config).unwrap())
 }
 
