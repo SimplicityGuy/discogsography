@@ -138,7 +138,7 @@ impl RulesConfig {
         // the path comes from operator config, not an HTTP request.
         let contents = std::fs::read_to_string(&canonical) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
             .with_context(|| format!("Failed to read rules file: {:?}", canonical))?;
-        serde_yaml_ng::from_str(&contents).with_context(|| format!("Failed to parse rules YAML: {:?}", canonical))
+        yaml_serde::from_str(&contents).with_context(|| format!("Failed to parse rules YAML: {:?}", canonical))
     }
 }
 

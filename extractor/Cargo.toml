@@ -36,7 +36,8 @@ futures = "0.3"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml_ng = "0.10"
+# YAML organization-maintained parser/backend; replaces unmaintained unsafe-libyaml.
+yaml_serde = "0.10.7"
 
 # Hashing
 sha2 = "0.11"

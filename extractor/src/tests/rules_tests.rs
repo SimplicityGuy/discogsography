@@ -1,12 +1,13 @@
 use crate::rules::{
-    CompiledFilterCondition, CompiledRulesConfig, QualityReport, RulesConfig, Severity, Violation, apply_filters, evaluate_rules, should_skip_record,
+    CompiledFilterCondition, CompiledRulesConfig, QualityReport, RuleCondition, RulesConfig, Severity, Violation, apply_filters, evaluate_rules,
+    should_skip_record,
 };
 use serde_json::json;
 
 // ── Helper ───────────────────────────────────────────────────────────
 
 fn compile_yaml(yaml: &str) -> CompiledRulesConfig {
-    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let config: RulesConfig = yaml_serde::from_str(yaml).unwrap();
     CompiledRulesConfig::compile(config).unwrap()
 }
 
@@ -97,7 +98,7 @@ rules:
         pattern: "[invalid("
       severity: error
 "#;
-    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let config: RulesConfig = yaml_serde::from_str(yaml).unwrap();
     let result = CompiledRulesConfig::compile(config);
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
@@ -114,7 +115,7 @@ rules:
       condition: {type: required}
       severity: error
 "#;
-    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let config: RulesConfig = yaml_serde::from_str(yaml).unwrap();
     let result = CompiledRulesConfig::compile(config);
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
@@ -622,10 +623,10 @@ rules:
       severity: error
 "#
         );
-        let result = serde_yaml_ng::from_str::<RulesConfig>(&yaml).map(|_| ()).is_ok();
+        let result = yaml_serde::from_str::<RulesConfig>(&yaml).map(|_| ()).is_ok();
         assert!(result, "Failed to parse config for data type: {data_type}");
 
-        let config: RulesConfig = serde_yaml_ng::from_str(&yaml).unwrap();
+        let config: RulesConfig = yaml_serde::from_str(&yaml).unwrap();
         let compiled = CompiledRulesConfig::compile(config);
         assert!(compiled.is_ok(), "Failed to compile config for data type: {data_type}");
     }
@@ -1111,7 +1112,7 @@ filters:
       remove_matching: "[invalid("
       reason: "bad regex"
 "#;
-    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let config: RulesConfig = yaml_serde::from_str(yaml).unwrap();
     let result = CompiledRulesConfig::compile(config);
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
@@ -1127,7 +1128,7 @@ skip_records:
       contains: "DO NOT USE"
       reason: "test"
 "#;
-    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let config: RulesConfig = yaml_serde::from_str(yaml).unwrap();
     let result = CompiledRulesConfig::compile(config);
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
@@ -1137,7 +1138,7 @@ skip_records:
 // ── Task 2: Skip Record Evaluation Logic ────────────────────────────
 
 fn compile_skip_yaml(yaml: &str) -> CompiledRulesConfig {
-    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let config: RulesConfig = yaml_serde::from_str(yaml).unwrap();
     CompiledRulesConfig::compile(config).unwrap()
 }
 
@@ -1228,7 +1229,7 @@ skip_records:
 // ── Task 3: Filter Evaluation Logic ─────────────────────────────────
 
 fn compile_filter_yaml(yaml: &str) -> CompiledRulesConfig {
-    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let config: RulesConfig = yaml_serde::from_str(yaml).unwrap();
     CompiledRulesConfig::compile(config).unwrap()
 }
 
@@ -1494,7 +1495,7 @@ filters:
       reason: "Bad type"
 rules: {}
 "#;
-    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let config: RulesConfig = yaml_serde::from_str(yaml).unwrap();
     let result = CompiledRulesConfig::compile(config);
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
@@ -1512,7 +1513,7 @@ filters:
       reason: "No bounds"
 rules: {}
 "#;
-    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let config: RulesConfig = yaml_serde::from_str(yaml).unwrap();
     let result = CompiledRulesConfig::compile(config);
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
@@ -2018,9 +2019,69 @@ filters:
       remove_matching: "^\\d+$"
       reason: "test"
 "#;
-    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let config: RulesConfig = yaml_serde::from_str(yaml).unwrap();
     let result = CompiledRulesConfig::compile(config);
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
     assert!(msg.contains("foobar"), "Expected unknown type name in error: {msg}");
+}
+
+// Preserve the YAML constructs used by operator-authored rules when replacing
+// the libyaml-backed parser: aliases, folded text, regex escapes and scalars.
+#[test]
+fn test_yaml_parser_preserves_rule_values_and_aliases() {
+    let temp_file = tempfile::NamedTempFile::with_suffix(".yaml").unwrap();
+    std::fs::write(
+        temp_file.path(),
+        r#"
+rules:
+  releases:
+    - name: &rule_name release_code
+      description: >-
+        Keep numeric-looking codes
+        and YAML keywords as strings
+      field: code
+      condition: {type: enum, values: [00123, NO, on, "null", "true"]}
+      severity: warning
+    - name: *rule_name
+      field: year
+      condition: {type: range, min: 1.86e3, max: 2100}
+      severity: error
+    - name: numeric_code
+      field: code
+      condition: {type: regex, pattern: '^\d+$'}
+      severity: info
+filters:
+  releases:
+    - field: year
+      nullify_when: {type: range, below: 1860}
+      reason: invalid year
+    - field: genres
+      remove_matching: '^\d+$'
+      reason: numeric genre
+"#,
+    )
+    .unwrap();
+    let config = RulesConfig::load(temp_file.path()).unwrap();
+    let rules = &config.rules["releases"];
+    assert_eq!(rules[0].name, rules[1].name);
+    assert_eq!(rules[0].description.as_deref(), Some("Keep numeric-looking codes and YAML keywords as strings"));
+    let RuleCondition::Enum { values } = &rules[0].condition else { panic!("expected enum condition") };
+    assert_eq!(values, &["00123", "NO", "on", "null", "true"]);
+    let RuleCondition::Range { min, max } = &rules[1].condition else { panic!("expected range condition") };
+    assert_eq!((*min, *max), (Some(1860.0), Some(2100.0)));
+    let compiled = CompiledRulesConfig::compile(config).unwrap();
+    assert_eq!(compiled.rules_for("releases").len(), 3);
+    assert_eq!(compiled.filters_for("releases").len(), 2);
+}
+
+#[test]
+fn test_yaml_parser_rejects_duplicate_rule_fields() {
+    let temp_file = tempfile::NamedTempFile::with_suffix(".yaml").unwrap();
+    std::fs::write(
+        temp_file.path(),
+        "rules:\n  releases:\n    - name: duplicate\n      field: year\n      field: title\n      condition: {type: required}\n      severity: error\n",
+    )
+    .unwrap();
+    assert!(RulesConfig::load(temp_file.path()).is_err());
 }

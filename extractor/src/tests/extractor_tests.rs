@@ -662,7 +662,7 @@ async fn test_message_batcher_empty_input() {
 // ── message_validator tests ─────────────────────────────────────────
 
 fn compile_test_rules(yaml: &str) -> Arc<CompiledRulesConfig> {
-    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let config: RulesConfig = yaml_serde::from_str(yaml).unwrap();
     Arc::new(CompiledRulesConfig::compile(config).unwrap())
 }
 
