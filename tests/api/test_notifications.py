@@ -6,6 +6,24 @@ import httpx
 import pytest
 
 
+@pytest.fixture
+def uncached_notification_logger(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep capture_logs attached after other tests reconfigure structlog.
+
+    A previously cached module logger retains the old processor list; a fresh,
+    uncached proxy uses the current processors installed by capture_logs.
+    """
+    import structlog
+
+    from api import notifications
+
+    monkeypatch.setattr(
+        notifications,
+        "logger",
+        structlog.wrap_logger(None, cache_logger_on_first_use=False, logger_factory_args=("api.notifications",)),
+    )
+
+
 class TestLogNotificationChannel:
     """Tests for LogNotificationChannel."""
 
@@ -24,6 +42,7 @@ class TestLogNotificationChannel:
         assert isinstance(channel, NotificationChannel)
 
     @pytest.mark.asyncio
+    @pytest.mark.usefixtures("uncached_notification_logger")
     async def test_send_password_reset_does_not_log_email(self) -> None:
         """discogsography-1385: the fallback log channel must never bind the
         recipient's email address into a structlog event (PII)."""
@@ -34,6 +53,33 @@ class TestLogNotificationChannel:
         channel = LogNotificationChannel()
         with capture_logs() as captured:
             await channel.send_password_reset("user@example.com", "https://example.com/reset?token=abc123")
+
+        assert captured
+        for entry in captured:
+            assert "email" not in entry
+            assert "user@example.com" not in str(entry.values())
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("uncached_notification_logger")
+    async def test_log_capture_survives_structlog_reconfiguration(self) -> None:
+        """A warm logger must follow capture_logs after global reconfiguration."""
+        import structlog
+        from structlog.testing import capture_logs
+
+        from api.notifications import LogNotificationChannel
+
+        original_config = structlog.get_config()
+        channel = LogNotificationChannel()
+        try:
+            # Reproduce the cross-test order: configure caching, emit a normal
+            # notification, then replace the global processors before capture.
+            structlog.configure(processors=list(original_config["processors"]), cache_logger_on_first_use=True)
+            await channel.send_password_reset("user@example.com", "https://example.com/reset?token=abc123")
+            structlog.configure(processors=list(original_config["processors"]))
+            with capture_logs() as captured:
+                await channel.send_password_reset("user@example.com", "https://example.com/reset?token=abc123")
+        finally:
+            structlog.configure(**original_config)
 
         assert captured
         for entry in captured:
@@ -198,6 +244,7 @@ class TestResendNotificationChannel:
             await channel.send_password_reset("user@example.com", "https://example.com/reset")
 
     @pytest.mark.asyncio
+    @pytest.mark.usefixtures("uncached_notification_logger")
     async def test_send_password_reset_success_does_not_log_email(self) -> None:
         """discogsography-1385: success-path log must not bind email either."""
         from structlog.testing import capture_logs
