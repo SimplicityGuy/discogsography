@@ -5,17 +5,17 @@
   },
   "dependencies": {
     "@astrojs/sitemap": "3.7.4",
-    "astro": "7.4.0"
+    "astro": "7.4.2"
   },
   "description": "The static GrooveMap organization website",
   "devDependencies": {
-    "@astrojs/check": "0.9.10",
-    "@typescript-eslint/parser": "8.71.2",
+    "@astrojs/check": "0.9.12",
+    "@typescript-eslint/parser": "8.72.0",
     "eslint": "10.13.0",
     "eslint-plugin-astro": "3.2.1",
-    "html-validate": "11.16.2",
+    "html-validate": "11.17.0",
     "prettier": "3.9.10",
-    "prettier-plugin-astro": "1.1.1",
+    "prettier-plugin-astro": "1.1.2",
     "typescript": "7.0.2"
   },
   "engines": {
