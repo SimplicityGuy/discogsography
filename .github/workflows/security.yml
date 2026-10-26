@@ -98,7 +98,7 @@ jobs:
         if: always()
 
       - name: 📤 Upload SARIF to GitHub Advanced Security
-        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370  # v4.39.1
         with:
           sarif_file: semgrep.sarif
         if: always()
@@ -175,7 +175,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: 📦 Install cargo-audit and cargo-deny
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283  # v2.87.29
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91  # v2.87.31
         with:
           tool: cargo-audit,cargo-deny
 
@@ -202,7 +202,7 @@ jobs:
           fetch-depth: 0 # Full history required for comprehensive secret scanning
 
       - name: 🔑 Run TruffleHog (secret detection)
-        uses: trufflesecurity/trufflehog@e76dff8a7e57d6df0c60ad8cbf5d5cba505a8fc9  # v3.99.2
+        uses: trufflesecurity/trufflehog@31ce31ee1abbcc7dc8eee5764c17121c3044c8b2  # v3.99.7
         with:
           path: ./
           extra_args: --only-verified
@@ -226,7 +226,7 @@ jobs:
           severity: HIGH,CRITICAL
 
       - name: 📤 Upload trivy SARIF results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee  # v4.39.0
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370  # v4.39.1
         if: always()
         with:
           sarif_file: trivy-results.sarif
