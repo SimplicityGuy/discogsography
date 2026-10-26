@@ -528,6 +528,19 @@ extractor-test:
     cd extractor && \
     cargo test
 
+# Run the extractor's broker integration tests against a scratch RabbitMQ (needs Docker)
+[group('rust')]
+extractor-test-broker:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    compose="docker compose -f {{ justfile_directory() }}/extractor/tests/broker/compose.yaml"
+    trap "$compose down -v" EXIT
+    $compose up -d --wait
+    EXTRACTOR_IT_AMQP_URL="amqp://extractor-it:extractor-it@127.0.0.1:${EXTRACTOR_IT_AMQP_PORT:-35672}/%2F" \
+    EXTRACTOR_IT_MGMT_URL="http://127.0.0.1:${EXTRACTOR_IT_MGMT_PORT:-45672}" \
+    EXTRACTOR_IT_BROKER_RESTART_CMD="$compose restart rabbitmq" \
+        cargo test --manifest-path extractor/Cargo.toml --test broker_backpressure_test -- --ignored --test-threads=1
+
 # Run Rust extractor benchmarks
 [group('rust')]
 extractor-bench:

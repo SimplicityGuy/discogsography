@@ -664,6 +664,75 @@ class TestDashboardAppDataCollection:
                 assert "Connection failed" in statuses[2].error
 
     @pytest.mark.asyncio
+    async def test_get_service_statuses_extractor_blocked_on_broker(self) -> None:
+        """An extractor retrying nacked publishes shows as blocked, with its broker detail (discogsography-5ow5)."""
+        mock_config = Mock()
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+
+            broker = {
+                "blocked": True,
+                "blocked_types": {"releases": {"blocked_for_secs": 42.0, "retries": 6, "last_reason": "nack"}},
+                "publish_nacks": 6,
+                "publish_confirm_timeouts": 0,
+                "publish_transport_errors": 0,
+                "publish_retries": 6,
+            }
+
+            async def mock_get(url: str) -> Mock:
+                response = Mock()
+                response.status_code = 200
+                if "extractor" in url:
+                    payload = {"status": "healthy", "extraction_status": "running", "current_task": "blocked on broker: releases", "broker": broker}
+                else:
+                    payload = {"status": "healthy", "broker": {"blocked": False}}
+                response.json = Mock(return_value=payload)
+                return response
+
+            with patch("httpx.AsyncClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client.get = mock_get
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                mock_client_class.return_value = mock_client
+
+                statuses = await app.get_service_statuses(PIPELINE_CONFIGS["discogs"]["services"])
+
+                extractor, *consumers = statuses
+                assert extractor.name == "extractor-discogs"
+                assert extractor.status == "blocked"
+                assert extractor.current_task == "blocked on broker: releases"
+                assert extractor.broker == broker
+                # A service that reports an unblocked broker (or none) keeps its own status.
+                assert [c.status for c in consumers] == ["healthy", "healthy"]
+
+    @pytest.mark.asyncio
+    async def test_get_service_statuses_unhealthy_extractor_not_masked_as_blocked(self) -> None:
+        """Blocked only refines a healthy extractor; an unhealthy one stays unhealthy."""
+        mock_config = Mock()
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+
+            async def mock_get(_url: str) -> Mock:
+                response = Mock()
+                response.status_code = 200
+                response.json = Mock(return_value={"status": "unhealthy", "broker": {"blocked": True}})
+                return response
+
+            with patch("httpx.AsyncClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client.get = mock_get
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                mock_client_class.return_value = mock_client
+
+                statuses = await app.get_service_statuses(PIPELINE_CONFIGS["discogs"]["services"])
+
+                assert all(s.status == "unhealthy" for s in statuses)
+
+    @pytest.mark.asyncio
     async def test_get_queue_info_success(self) -> None:
         """Test getting queue information successfully."""
         mock_config = Mock()

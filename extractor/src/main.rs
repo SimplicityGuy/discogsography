@@ -119,6 +119,7 @@ async fn main() -> Result<()> {
 
     // Initialize shared state
     let state = Arc::new(RwLock::new(extractor::ExtractorState::default()));
+    let broker = state.read().await.broker.clone();
     let trigger = Arc::new(Mutex::new(None::<bool>));
 
     // Start health server
@@ -130,10 +131,10 @@ async fn main() -> Result<()> {
     });
 
     // Set up signal handlers
-    let shutdown = setup_shutdown_handler();
+    let shutdown = setup_shutdown_handler(broker.clone());
 
     // Create factory for message queue connections
-    let mq_factory: Arc<dyn extractor::MessageQueueFactory> = Arc::new(extractor::DefaultMessageQueueFactory);
+    let mq_factory: Arc<dyn extractor::MessageQueueFactory> = Arc::new(extractor::DefaultMessageQueueFactory::new(broker));
 
     // Run the main extraction loop, branching on source
     let extraction_result = match config.source {
@@ -255,7 +256,9 @@ fn print_ascii_art(source: Option<&Source>) {
     println!("{banner}");
 }
 
-fn setup_shutdown_handler() -> Arc<tokio::sync::Notify> {
+/// Install the SIGTERM/SIGINT handler. On a signal it first ends any publish retry loop that is
+/// blocked on the broker (`broker.request_shutdown()`), then wakes the loops' shutdown waiters.
+fn setup_shutdown_handler(broker: Arc<message_queue::PublishBackpressure>) -> Arc<tokio::sync::Notify> {
     let shutdown = Arc::new(tokio::sync::Notify::new());
     let shutdown_clone = shutdown.clone();
 
@@ -277,6 +280,7 @@ fn setup_shutdown_handler() -> Arc<tokio::sync::Notify> {
             let _ = signal::ctrl_c().await;
             info!("🛑 Received shutdown signal");
         }
+        broker.request_shutdown();
         shutdown_clone.notify_waiters();
     });
 

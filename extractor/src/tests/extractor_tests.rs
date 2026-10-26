@@ -1503,3 +1503,20 @@ mod discogs_unreachable_backoff_tests {
         assert_eq!(capped, DISCOGS_UNREACHABLE_MAX_DELAY);
     }
 }
+
+#[tokio::test]
+async fn test_shutdown_observed_checks_both_the_flag_and_the_broker() {
+    // The signal handler cancels the broker's retry loops before the flag monitor runs, so a
+    // file abandoned while blocked on the broker must already read as a shutdown — not a
+    // failure that would send the initial run into the cooldown. (discogsography-5ow5)
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let flag = AtomicBool::new(false);
+    assert!(!shutdown_observed(&flag, &state).await);
+
+    state.read().await.broker.request_shutdown();
+    assert!(shutdown_observed(&flag, &state).await, "a broker shutdown alone counts");
+
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    flag.store(true, Ordering::SeqCst);
+    assert!(shutdown_observed(&flag, &state).await, "the flag alone counts");
+}

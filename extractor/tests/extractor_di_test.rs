@@ -372,7 +372,7 @@ async fn test_process_discogs_data_force_reprocess_bypasses_skip() {
 async fn test_default_mq_factory_create_fails_without_broker() {
     use extractor::extractor::MessageQueueFactory;
 
-    let factory = DefaultMessageQueueFactory;
+    let factory = DefaultMessageQueueFactory::default();
     // Invalid port so connection fails fast
     let result: anyhow::Result<Arc<dyn extractor::message_queue::MessagePublisher>> =
         factory.create("amqp://localhost:59999", "discogsography").await;
@@ -2500,4 +2500,181 @@ async fn test_musicbrainz_run_bails_under_shutdown() {
 
     let s = state.read().await;
     assert_ne!(s.extraction_status, ExtractionStatus::Running, "a run entered under shutdown must not announce itself as Running");
+}
+
+// ── In-place publish retry under broker backpressure (discogsography-5ow5) ─────
+
+/// A publisher whose broker nacks per a script, driven through the real retry loop
+/// (`publish_with_retry`) and the shared `ExtractorState::broker` that `/health` reads.
+struct NackingPublisher {
+    broker: Arc<extractor::message_queue::PublishBackpressure>,
+    /// Nacks still to hand out before the broker starts acking; `None` nacks forever.
+    nacks_left: std::sync::Mutex<Option<u32>>,
+    /// Record ids the broker acked, in order.
+    acked: std::sync::Mutex<Vec<String>>,
+    attempts: std::sync::atomic::AtomicU32,
+}
+
+impl NackingPublisher {
+    fn new(broker: Arc<extractor::message_queue::PublishBackpressure>, nacks: Option<u32>) -> Self {
+        Self { broker, nacks_left: std::sync::Mutex::new(nacks), acked: std::sync::Mutex::new(Vec::new()), attempts: Default::default() }
+    }
+
+    fn try_once(&self, id: &str) -> Result<(), extractor::message_queue::PublishError> {
+        self.attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let mut nacks_left = self.nacks_left.lock().unwrap();
+        match *nacks_left {
+            Some(0) => {
+                self.acked.lock().unwrap().push(id.to_string());
+                Ok(())
+            }
+            Some(ref mut n) => {
+                *n -= 1;
+                Err(extractor::message_queue::PublishError::Nacked { exchange: "ex".into() })
+            }
+            None => Err(extractor::message_queue::PublishError::Nacked { exchange: "ex".into() }),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl extractor::message_queue::MessagePublisher for NackingPublisher {
+    async fn setup_exchange(&self, _data_type: DataType) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn publish(&self, _message: extractor::types::Message, _data_type: DataType) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn publish_batch(&self, messages: Vec<DataMessage>, data_type: DataType) -> anyhow::Result<()> {
+        for message in messages {
+            extractor::message_queue::publish_with_retry(&self.broker, data_type, "ex", || std::future::ready(self.try_once(&message.id))).await?;
+        }
+        Ok(())
+    }
+    async fn send_file_complete(&self, _data_type: DataType, _file_name: &str, _total_processed: u64) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn send_extraction_complete(
+        &self,
+        _version: &str,
+        _started_at: chrono::DateTime<chrono::Utc>,
+        _record_counts: std::collections::HashMap<String, u64>,
+        _data_types: &[DataType],
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn close(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+fn write_artists_gz(path: &std::path::Path, count: usize) {
+    let artists: String = (1..=count).map(|i| format!("<artist><id>{i}</id><name>Artist {i}</name></artist>")).collect();
+    let xml_content = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<artists>{artists}</artists>");
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    std::fs::write(path, encoder.finish().unwrap()).unwrap();
+}
+
+fn file_status(marker: &StateMarker, file_name: &str) -> Option<PhaseStatus> {
+    marker.processing_phase.progress_by_file.get(file_name).map(|s| s.status)
+}
+
+#[tokio::test]
+async fn test_process_single_file_nacked_publish_is_retried_in_place_and_file_completes() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_name = "discogs_20260101_artists.xml.gz";
+    write_artists_gz(&temp_dir.path().join(file_name), 5);
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let broker = state.read().await.broker.clone();
+    let state_marker = Arc::new(Mutex::new(StateMarker::new("20260101".to_string())));
+    let marker_path = temp_dir.path().join("marker.json");
+
+    // The broker nacks twice (queue full), then drains and acks everything.
+    let publisher = Arc::new(NackingPublisher::new(broker.clone(), Some(2)));
+    let mq: Arc<dyn extractor::message_queue::MessagePublisher> = publisher.clone();
+
+    let result = process_single_file(file_name, config, state.clone(), state_marker.clone(), marker_path, mq, None).await;
+
+    assert!(result.is_ok(), "a nack is backpressure, not a failed file: {:?}", result.err());
+    assert_eq!(file_status(&*state_marker.lock().await, file_name), Some(PhaseStatus::Completed));
+    // Every record arrives exactly once and in order: the nacked one was retried in place,
+    // not the file from record 0.
+    assert_eq!(*publisher.acked.lock().unwrap(), ["1", "2", "3", "4", "5"]);
+    assert_eq!(publisher.attempts.load(std::sync::atomic::Ordering::SeqCst), 7);
+    let snapshot = broker.snapshot();
+    assert_eq!(snapshot.publish_nacks, 2);
+    assert_eq!(snapshot.publish_retries, 2);
+    assert!(!snapshot.is_blocked());
+    assert_eq!(state.read().await.error_count, 0);
+}
+
+#[tokio::test]
+async fn test_process_single_file_shutdown_while_blocked_on_broker_leaves_file_not_completed() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_name = "discogs_20260101_artists.xml.gz";
+    write_artists_gz(&temp_dir.path().join(file_name), 5);
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let broker = state.read().await.broker.clone();
+    let state_marker = Arc::new(Mutex::new(StateMarker::new("20260101".to_string())));
+    let marker_path = temp_dir.path().join("marker.json");
+
+    // The broker nacks forever: no consumer is draining the full queue.
+    let mq: Arc<dyn extractor::message_queue::MessagePublisher> = Arc::new(NackingPublisher::new(broker.clone(), None));
+
+    let task = tokio::spawn(process_single_file(file_name, config, state.clone(), state_marker.clone(), marker_path, mq, None));
+
+    // The file is held, not failed, while the broker pushes back.
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while !broker.snapshot().is_blocked() {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the publish should be reported blocked on broker");
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    assert!(!task.is_finished(), "a nacked publish must hold the file, not fail it");
+
+    broker.request_shutdown();
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), task)
+        .await
+        .expect("shutdown during a retry loop must exit promptly")
+        .unwrap();
+
+    assert!(result.is_err(), "the interrupted file must not report success");
+    assert_ne!(
+        file_status(&*state_marker.lock().await, file_name),
+        Some(PhaseStatus::Completed),
+        "a file interrupted while blocked on broker must stay pending so the next run republishes it"
+    );
+    let s = state.read().await;
+    assert_eq!(s.error_count, 0, "a shutdown is not a publish failure");
+    assert!(s.completed_files.is_empty());
+    assert!(s.active_connections.is_empty());
+    assert!(!broker.snapshot().is_blocked());
+}
+
+#[tokio::test]
+async fn test_message_publisher_shutdown_while_blocked_is_not_counted_as_error() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq
+        .expect_publish_batch()
+        .times(1)
+        .returning(|_, _| Err(extractor::message_queue::PublishError::ShutdownWhileBlocked { exchange: "ex".into(), retries: 4 }.into()));
+
+    let mq: Arc<dyn extractor::message_queue::MessagePublisher> = Arc::new(mock_mq);
+    let (sender, receiver) = tokio::sync::mpsc::channel::<Vec<DataMessage>>(10);
+    sender.send(vec![]).await.unwrap();
+    drop(sender);
+
+    let result = message_publisher(receiver, mq, DataType::Artists, state.clone()).await;
+
+    assert!(result.is_err(), "the file must still stop so it is not marked Completed");
+    assert_eq!(state.read().await.error_count, 0);
 }

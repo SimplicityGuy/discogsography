@@ -9,6 +9,7 @@ fn test_exchange_names_default_prefix() {
         url: String::new(),
         max_retries: 1,
         exchange_prefix: DEFAULT_EXCHANGE_PREFIX.to_string(),
+        backpressure: Arc::default(),
     };
     assert_eq!(mq.exchange_name(DataType::Artists), "discogsography-discogs-artists");
     assert_eq!(mq.exchange_name(DataType::Labels), "discogsography-discogs-labels");
@@ -25,6 +26,7 @@ fn test_exchange_names_custom_prefix() {
         url: String::new(),
         max_retries: 1,
         exchange_prefix: "discogsography-musicbrainz".to_string(),
+        backpressure: Arc::default(),
     };
     assert_eq!(mq.exchange_name(DataType::Artists), "discogsography-musicbrainz-artists");
     assert_eq!(mq.exchange_name(DataType::Labels), "discogsography-musicbrainz-labels");
@@ -160,7 +162,7 @@ fn test_message_properties_persistent_delivery() {
 #[tokio::test]
 async fn test_new_connection_failure() {
     // Use an invalid port so the connection will fail, with only 1 retry to keep the test fast
-    let result = MessageQueue::new("amqp://localhost:59999", 1, DEFAULT_EXCHANGE_PREFIX).await;
+    let result = MessageQueue::new("amqp://localhost:59999", 1, DEFAULT_EXCHANGE_PREFIX, Arc::default()).await;
     assert!(result.is_err());
     let err_msg = format!("{}", result.err().unwrap());
     assert!(err_msg.contains("Failed to connect to AMQP broker after retries"), "Unexpected error: {}", err_msg);
@@ -268,6 +270,7 @@ async fn test_get_channel_with_no_channel_triggers_reconnect() {
         url: "amqp://localhost:59999".to_string(),
         max_retries: 1,
         exchange_prefix: DEFAULT_EXCHANGE_PREFIX.to_string(),
+        backpressure: Arc::default(),
     };
 
     let result = mq.get_channel().await;
@@ -288,6 +291,7 @@ async fn test_close_with_no_channel_or_connection_is_ok() {
         url: String::new(),
         max_retries: 1,
         exchange_prefix: DEFAULT_EXCHANGE_PREFIX.to_string(),
+        backpressure: Arc::default(),
     };
 
     let result = mq.close().await;
@@ -302,7 +306,7 @@ async fn test_new_connection_failure_with_retries() {
     // Use 2 retries to exercise the retry backoff loop (lines 72-75):
     // - First attempt: try_connect fails, retry_count=1 < 2, warn + sleep(1s) + backoff doubled
     // - Second attempt: try_connect fails, retry_count=2 >= 2, return error
-    let result = MessageQueue::new("amqp://localhost:59999", 2, DEFAULT_EXCHANGE_PREFIX).await;
+    let result = MessageQueue::new("amqp://localhost:59999", 2, DEFAULT_EXCHANGE_PREFIX, Arc::default()).await;
     assert!(result.is_err());
     let err_msg = format!("{}", result.err().unwrap());
     assert!(err_msg.contains("Failed to connect to AMQP broker after retries"), "Unexpected error: {}", err_msg);
@@ -383,4 +387,278 @@ fn test_confirmation_nack_with_return() {
     // A nack that also carries a returned message reports the routing failure.
     let err = check_confirmation("discogsography-discogs-releases", false, Some((312, "NO_ROUTE".to_string()))).expect_err("must fail");
     assert!(err.to_string().contains("unroutable"), "unexpected error: {err}");
+}
+
+// ── In-place publish retry under broker backpressure (discogsography-5ow5) ─────
+
+/// A scripted publish attempt: pops the next outcome per call and counts calls.
+fn scripted_attempts(
+    outcomes: Vec<Result<(), PublishError>>,
+) -> (Arc<std::sync::atomic::AtomicU32>, impl FnMut() -> std::future::Ready<Result<(), PublishError>>) {
+    let calls = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let counter = calls.clone();
+    let mut outcomes = std::collections::VecDeque::from(outcomes);
+    let attempt = move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+        std::future::ready(outcomes.pop_front().expect("publish attempted more often than scripted"))
+    };
+    (calls, attempt)
+}
+
+fn nack() -> Result<(), PublishError> {
+    Err(PublishError::Nacked { exchange: "ex".to_string() })
+}
+
+#[test]
+fn test_publish_retry_backoff_schedule() {
+    // 0.5s doubling to a 30s cap.
+    let schedule: Vec<Duration> = (1..=9).map(publish_retry_backoff).collect();
+    let expected_ms = [500, 1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000];
+    assert_eq!(schedule, expected_ms.iter().map(|ms| Duration::from_millis(*ms)).collect::<Vec<_>>());
+    assert_eq!(PUBLISH_RETRY_INITIAL_BACKOFF, Duration::from_millis(500));
+    assert_eq!(PUBLISH_RETRY_MAX_BACKOFF, Duration::from_secs(30));
+    // Degenerate and huge retry numbers stay in range instead of overflowing.
+    assert_eq!(publish_retry_backoff(0), PUBLISH_RETRY_INITIAL_BACKOFF);
+    assert_eq!(publish_retry_backoff(1_000), PUBLISH_RETRY_MAX_BACKOFF);
+    assert_eq!(publish_retry_backoff(u32::MAX), PUBLISH_RETRY_MAX_BACKOFF);
+}
+
+#[test]
+fn test_publish_error_classification() {
+    // Backpressure: retried in place.
+    assert_eq!(PublishError::Nacked { exchange: "ex".into() }.backpressure_reason(), Some("nack"));
+    assert_eq!(PublishError::ConfirmTimeout(PUBLISH_CONFIRM_TIMEOUT).backpressure_reason(), Some("confirm_timeout"));
+    assert_eq!(PublishError::Transport(anyhow::anyhow!("connection reset")).backpressure_reason(), Some("transport"));
+    // Failures: a missing consumer queue is not a full one, and shutdown ends the loop.
+    let unroutable = PublishError::Unroutable { exchange: "ex".into(), reply_code: 312, reply_text: "NO_ROUTE".into() };
+    assert_eq!(unroutable.backpressure_reason(), None);
+    assert_eq!(PublishError::ShutdownWhileBlocked { exchange: "ex".into(), retries: 3 }.backpressure_reason(), None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_publish_with_retry_ack_publishes_once() {
+    let backpressure = PublishBackpressure::default();
+    let (calls, attempt) = scripted_attempts(vec![Ok(())]);
+    let start = tokio::time::Instant::now();
+
+    let result = publish_with_retry(&backpressure, DataType::Artists, "ex", attempt).await;
+
+    assert!(result.is_ok());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(start.elapsed(), Duration::ZERO, "an acked publish must not wait");
+    assert_eq!(backpressure.snapshot(), BackpressureSnapshot::default(), "an acked publish is not backpressure");
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_publish_with_retry_nack_then_ack_retries_same_message_with_backoff() {
+    let backpressure = PublishBackpressure::default();
+    let (calls, attempt) = scripted_attempts(vec![nack(), nack(), nack(), Ok(())]);
+    let start = tokio::time::Instant::now();
+
+    let result = publish_with_retry(&backpressure, DataType::Artists, "ex", attempt).await;
+
+    assert!(result.is_ok(), "a nack is backpressure, not a failure: {:?}", result.err());
+    assert_eq!(calls.load(Ordering::SeqCst), 4, "the same message is retried until the broker acks it");
+    assert_eq!(start.elapsed(), Duration::from_millis(500 + 1_000 + 2_000), "retries follow the backoff schedule");
+    let snapshot = backpressure.snapshot();
+    assert_eq!(snapshot.publish_nacks, 3);
+    assert_eq!(snapshot.publish_retries, 3);
+    assert_eq!(snapshot.publish_confirm_timeouts, 0);
+    assert!(!snapshot.is_blocked(), "an acked retry clears the blocked state");
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_publish_with_retry_confirm_timeout_then_ack() {
+    // Drive the real confirm path: the first confirm never resolves (broker under a resource
+    // alarm), so await_confirm times out; the retry is acked.
+    let backpressure = PublishBackpressure::default();
+    let calls = std::sync::atomic::AtomicU32::new(0);
+    let attempt = || {
+        let call = calls.fetch_add(1, Ordering::SeqCst);
+        async move {
+            if call == 0 {
+                MessageQueue::confirm_outcome("ex", std::future::pending::<lapin::Result<Confirmation>>()).await
+            } else {
+                MessageQueue::confirm_outcome("ex", async { Ok(Confirmation::Ack(None)) }).await
+            }
+        }
+    };
+    let start = tokio::time::Instant::now();
+
+    let result = publish_with_retry(&backpressure, DataType::Labels, "ex", attempt).await;
+
+    assert!(result.is_ok(), "a confirm timeout is backpressure, not a failure: {:?}", result.err());
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(start.elapsed(), PUBLISH_CONFIRM_TIMEOUT + PUBLISH_RETRY_INITIAL_BACKOFF);
+    let snapshot = backpressure.snapshot();
+    assert_eq!(snapshot.publish_confirm_timeouts, 1);
+    assert_eq!(snapshot.publish_nacks, 0);
+    assert_eq!(snapshot.publish_retries, 1);
+    assert!(!snapshot.is_blocked());
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_publish_with_retry_nack_confirmation_is_retried() {
+    // A real Nack confirmation (not just a scripted error) is classified as backpressure.
+    let backpressure = PublishBackpressure::default();
+    let calls = std::sync::atomic::AtomicU32::new(0);
+    let attempt = || {
+        let call = calls.fetch_add(1, Ordering::SeqCst);
+        async move {
+            let confirmation = if call == 0 { Confirmation::Nack(None) } else { Confirmation::Ack(None) };
+            MessageQueue::confirm_outcome("ex", async move { Ok(confirmation) }).await
+        }
+    };
+
+    let result = publish_with_retry(&backpressure, DataType::Masters, "ex", attempt).await;
+
+    assert!(result.is_ok());
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(backpressure.snapshot().publish_nacks, 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_publish_with_retry_transport_error_is_retried() {
+    // A broker restart drops the channel; the retry reconnects and publishes the same message.
+    let backpressure = PublishBackpressure::default();
+    let (calls, attempt) = scripted_attempts(vec![Err(PublishError::Transport(anyhow::anyhow!("channel closed"))), Ok(())]);
+
+    let result = publish_with_retry(&backpressure, DataType::Releases, "ex", attempt).await;
+
+    assert!(result.is_ok());
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(backpressure.snapshot().publish_transport_errors, 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_publish_with_retry_return_fails_without_retry() {
+    // basic.return means no consumer queue is bound: waiting cannot fix it, so the file fails.
+    let backpressure = PublishBackpressure::default();
+    let unroutable = || Err(PublishError::Unroutable { exchange: "ex".into(), reply_code: 312, reply_text: "NO_ROUTE".into() });
+    let (calls, attempt) = scripted_attempts(vec![unroutable()]);
+
+    let result = publish_with_retry(&backpressure, DataType::Artists, "ex", attempt).await;
+
+    assert!(matches!(result, Err(PublishError::Unroutable { reply_code: 312, .. })), "unexpected: {result:?}");
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "an unroutable publish must not be retried");
+    assert_eq!(backpressure.snapshot(), BackpressureSnapshot::default());
+
+    // The same holds after some backpressure: the return still fails, and the block clears.
+    let (calls, attempt) = scripted_attempts(vec![nack(), unroutable()]);
+    let result = publish_with_retry(&backpressure, DataType::Artists, "ex", attempt).await;
+    assert!(matches!(result, Err(PublishError::Unroutable { .. })), "unexpected: {result:?}");
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(!backpressure.snapshot().is_blocked());
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_publish_with_retry_reports_blocked_and_shutdown_mid_retry_exits_promptly() {
+    let backpressure = Arc::new(PublishBackpressure::default());
+    let calls = Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+    let task = tokio::spawn({
+        let backpressure = backpressure.clone();
+        let calls = calls.clone();
+        async move {
+            publish_with_retry(&backpressure, DataType::ReleaseGroups, "ex", || {
+                calls.fetch_add(1, Ordering::SeqCst);
+                std::future::ready(nack())
+            })
+            .await
+        }
+    });
+
+    // Let the broker nack long enough to reach the 30s backoff cap.
+    tokio::time::sleep(Duration::from_secs(120)).await;
+    let snapshot = backpressure.snapshot();
+    assert!(snapshot.is_blocked(), "a publish being retried must show as blocked on broker");
+    assert_eq!(snapshot.blocked.len(), 1);
+    let blocked = &snapshot.blocked[0];
+    assert_eq!(blocked.data_type, DataType::ReleaseGroups);
+    assert_eq!(blocked.last_reason, "nack");
+    assert!(blocked.retries >= 7, "expected the backoff to have ramped to the cap, got {} retries", blocked.retries);
+    assert!(blocked.blocked_for >= Duration::from_secs(60));
+    assert!(!task.is_finished(), "the publish keeps retrying while shutdown is not requested");
+
+    // Shutdown lands in the middle of a 30s backoff sleep and must cut it short.
+    let attempts_before = calls.load(Ordering::SeqCst);
+    let shutdown_at = tokio::time::Instant::now();
+    backpressure.request_shutdown();
+    let result = task.await.unwrap();
+
+    assert_eq!(shutdown_at.elapsed(), Duration::ZERO, "shutdown must not wait out the backoff");
+    assert!(matches!(result, Err(PublishError::ShutdownWhileBlocked { .. })), "unexpected: {result:?}");
+    assert_eq!(calls.load(Ordering::SeqCst), attempts_before, "no further attempt after shutdown");
+    assert!(!backpressure.snapshot().is_blocked(), "the blocked entry is cleared when the loop exits");
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_publish_with_retry_shutdown_interrupts_a_hung_retry_attempt() {
+    // The retry attempt itself can hang (broker blocking the connection); shutdown must not
+    // wait for it either.
+    let backpressure = Arc::new(PublishBackpressure::default());
+    let calls = Arc::new(std::sync::atomic::AtomicU32::new(0));
+
+    let task = tokio::spawn({
+        let backpressure = backpressure.clone();
+        let calls = calls.clone();
+        async move {
+            publish_with_retry(&backpressure, DataType::Artists, "ex", || {
+                let call = calls.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    if call == 0 {
+                        nack()
+                    } else {
+                        std::future::pending::<Result<(), PublishError>>().await
+                    }
+                }
+            })
+            .await
+        }
+    });
+
+    // Past the first 0.5s backoff, inside the hung second attempt.
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    backpressure.request_shutdown();
+
+    let result = task.await.unwrap();
+    assert!(matches!(result, Err(PublishError::ShutdownWhileBlocked { retries: 1, .. })), "unexpected: {result:?}");
+    assert!(!backpressure.snapshot().is_blocked());
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_publish_with_retry_after_shutdown_first_attempt_still_runs() {
+    // Files already publishing when SIGTERM arrives run to completion (cu2.44): an acked
+    // first attempt still succeeds after shutdown...
+    let backpressure = PublishBackpressure::default();
+    backpressure.request_shutdown();
+    let (calls, attempt) = scripted_attempts(vec![Ok(())]);
+    assert!(publish_with_retry(&backpressure, DataType::Artists, "ex", attempt).await.is_ok());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    // ...but a pushed-back one stops at once instead of entering the retry loop.
+    let (calls, attempt) = scripted_attempts(vec![nack()]);
+    let start = tokio::time::Instant::now();
+    let result = publish_with_retry(&backpressure, DataType::Artists, "ex", attempt).await;
+    assert!(matches!(result, Err(PublishError::ShutdownWhileBlocked { retries: 0, .. })), "unexpected: {result:?}");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(start.elapsed(), Duration::ZERO);
+    assert_eq!(backpressure.snapshot().publish_nacks, 1, "the nack is still counted");
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_publish_with_retry_dropped_future_clears_blocked_state() {
+    // If the publisher task is aborted mid-retry, /health must not keep reporting the block.
+    let backpressure = Arc::new(PublishBackpressure::default());
+    let task = tokio::spawn({
+        let backpressure = backpressure.clone();
+        async move { publish_with_retry(&backpressure, DataType::Labels, "ex", || std::future::ready(nack())).await }
+    });
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(backpressure.snapshot().is_blocked());
+
+    task.abort();
+    let _ = task.await;
+    assert!(!backpressure.snapshot().is_blocked());
 }
