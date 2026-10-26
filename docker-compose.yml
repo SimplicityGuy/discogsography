@@ -95,7 +95,7 @@ services:
 
   # Neo4j graph database
   neo4j:
-    image: neo4j:2026.09.0-community
+    image: neo4j:2026.10.0-community
     container_name: discogsography-neo4j
     hostname: neo4j
     ulimits:
