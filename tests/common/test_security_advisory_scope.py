@@ -6,7 +6,7 @@ import tomllib
 from packaging.version import Version
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 ADVISORY = "GHSA-qwgh-2vcv-g2f7"
 
 
