@@ -1,0 +1,36 @@
+{
+  "permissions": [
+    {
+      "configure": ".*",
+      "read": ".*",
+      "user": "extractor-it",
+      "vhost": "/",
+      "write": ".*"
+    }
+  ],
+  "policies": [
+    {
+      "apply-to": "quorum_queues",
+      "definition": {
+        "max-length-bytes": 268435456,
+        "overflow": "reject-publish"
+      },
+      "name": "homelab-quorum-cap",
+      "pattern": ".*",
+      "priority": 0,
+      "vhost": "/"
+    }
+  ],
+  "users": [
+    {
+      "name": "extractor-it",
+      "password": "extractor-it",
+      "tags": "administrator"
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ]
+}

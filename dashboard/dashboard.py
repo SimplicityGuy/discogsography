@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 import logging
 import os
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -72,13 +72,14 @@ class ServiceStatus(BaseModel):
     """Model for service status information."""
 
     name: str
-    status: str  # healthy, unhealthy, unknown, starting, extracting
+    status: str  # healthy, unhealthy, unknown, starting, extracting, blocked
     last_seen: datetime | None
     current_task: str | None
     progress: float | None  # 0.0 to 1.0
     error: str | None
     extraction_progress: dict[str, int] | None = None  # extractor only: per-type counts + total
     last_extraction_time: dict[str, float | None] | None = None  # extractor only: seconds since last activity
+    broker: dict[str, Any] | None = None  # extractor only: publish backpressure (blocked types, nack/retry counters)
 
 
 class QueueInfo(BaseModel):
@@ -309,6 +310,15 @@ class DashboardApp:
                         # Use actual status from service health response
                         # Valid statuses: healthy, unhealthy, starting
                         service_status = data.get("status", "healthy")
+                        # An extractor whose publishes the broker is nacking (a full
+                        # reject-publish queue) retries them in place and waits: show that
+                        # as "blocked" rather than a healthy-but-idle card. Its own status
+                        # stays "healthy" — it is backpressure, not a fault (discogsography-5ow5).
+                        broker = data.get("broker")
+                        if not isinstance(broker, dict):
+                            broker = None
+                        if service_status == "healthy" and broker is not None and broker.get("blocked"):
+                            service_status = "blocked"
                         services.append(
                             ServiceStatus(
                                 name=name,
@@ -319,6 +329,7 @@ class DashboardApp:
                                 error=None,
                                 extraction_progress=data.get("extraction_progress"),
                                 last_extraction_time=data.get("last_extraction_time"),
+                                broker=broker,
                             )
                         )
                     else:

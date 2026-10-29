@@ -284,33 +284,6 @@ Interactive test script that simulates database outages to verify resilience fea
 
 Requires all services to be running before starting. The script prompts for confirmation before proceeding.
 
-## 🤖 GitHub Actions Integration
-
-The project includes automated weekly dependency updates via GitHub Actions.
-
-### Workflow: `.github/workflows/update-dependencies.yml`
-
-- **Schedule**: Runs every Monday at 9:00 AM UTC
-- **Manual trigger**: Can be run manually with options
-- **Creates PR**: Opens a PR on the `automation/updates` branch
-- **Auto-assigns**: Assigns to repository owner for review
-
-### Manual Workflow Trigger
-
-You can manually trigger the workflow from the Actions tab with options:
-
-- **Update Python version**: Toggle to update Python
-- **Python version**: Specify version (if updating)
-- **Major upgrades**: Include major version updates
-
-### PR Review Process
-
-1. The bot creates a PR with detailed summary
-1. Review the changes in the Files tab
-1. Check that CI passes
-1. Test locally if needed
-1. Merge when satisfied
-
 ## 🛡️ Safety Features
 
 All scripts include safety measures:
@@ -343,9 +316,3 @@ All scripts include safety measures:
 - Restore from backup if needed
 - Try updating packages individually
 - Check for conflicting dependency requirements
-
-### GitHub Action fails
-
-- Check the workflow logs in the Actions tab
-- Ensure branch protection rules allow the bot to create PRs
-- Verify the GITHUB_TOKEN has appropriate permissions

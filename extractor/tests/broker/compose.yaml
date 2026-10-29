@@ -1,0 +1,23 @@
+---
+# Scratch RabbitMQ for the extractor's broker integration tests (`just extractor-test-broker`).
+#
+# Modeled on the homelab production broker (homelab-cr5k): rabbitmq 4.4.0, quorum as the
+# default queue type, the core `load_definitions` key, and the homelab-quorum-cap policy with
+# overflow reject-publish. The tests add their own higher-priority, much smaller cap on the
+# queues they declare, so they fill in milliseconds instead of at 256 MiB.
+name: extractor-broker-it
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.4.0-management
+    ports:
+      - "127.0.0.1:${EXTRACTOR_IT_AMQP_PORT:-35672}:5672"
+      - "127.0.0.1:${EXTRACTOR_IT_MGMT_PORT:-45672}:15672"
+    volumes:
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 2s
+      timeout: 5s
+      retries: 30

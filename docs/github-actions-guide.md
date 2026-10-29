@@ -90,22 +90,6 @@ on:
 - ⚡ Concurrent test limiting (max 3)
 - 💾 Browser caching for faster runs
 
-### 🔄 Update Dependencies (`update-dependencies.yml`)
-
-**Trigger**: Weekly schedule (Monday 9 AM UTC) or manual **Purpose**: Automated dependency updates with PR creation
-
-**Options**:
-
-- 🐍 Python version updates
-- 📦 Major version upgrades
-- 🔒 Security patch application
-
-**Process**:
-
-1. Runs update script
-1. Creates PR with detailed summary
-1. Assigns reviewers
-
 ### 🛡️ Security Workflow (`security.yml`)
 
 **Trigger**: Called by `build.yml` via `workflow_call` (no schedule of its own) **Purpose**: Comprehensive
@@ -146,24 +130,6 @@ security scanning across Python, Rust, secrets, and containers
 
 - 🔍 Dockerfile linting with Hadolint
 - 🏗️ Builder-stage Docker build test for all services
-
-### 🤖 Claude Code (`claude.yml`)
-
-**Trigger**: `issue_comment` (when mentioning @claude) **Purpose**: Enables AI-assisted development on issues and PRs
-
-**Features**:
-
-- 💬 Responds to @claude mentions in issue and PR comments
-- 🤖 Provides AI assistance for code questions and tasks
-
-### 🔍 Claude Code Review (`claude-code-review.yml`)
-
-**Trigger**: `pull_request` (open, synchronize, reopened) **Purpose**: Automated AI code review on pull requests
-
-**Features**:
-
-- 📝 Performs automated code review on new and updated PRs
-- 🔍 Analyzes code changes for quality, bugs, and best practices
 
 ### 🐳 Docker Compose Validation (`docker-compose-validate.yml`)
 

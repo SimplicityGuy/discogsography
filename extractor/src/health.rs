@@ -16,6 +16,7 @@ use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 
 use crate::extractor::{ExtractionStatus, ExtractorState};
+use crate::message_queue::BackpressureSnapshot;
 
 /// Shared state type for all health server handlers
 type AppState = (Arc<RwLock<ExtractorState>>, Arc<Mutex<Option<bool>>>);
@@ -58,13 +59,56 @@ impl HealthServer {
     }
 }
 
+/// The `/health` `broker` block and `current_task` for publishes blocked on the broker.
+///
+/// A full `reject-publish` queue (or a broker under a resource alarm) is backpressure that the
+/// extractor waits out, not a failure: `extraction_status` stays `running` — so `/trigger`, the
+/// MusicBrainz idle-wait and the API's run tracker keep treating the run as in progress — and
+/// this block says why it is not moving. Type keys match `extraction_progress`. (discogsography-5ow5)
+fn broker_health(snapshot: &BackpressureSnapshot) -> (Option<String>, serde_json::Value) {
+    let health_key = |data_type: crate::types::DataType| data_type.as_str().replace('-', "_");
+
+    let blocked_types: serde_json::Map<String, serde_json::Value> = snapshot
+        .blocked
+        .iter()
+        .map(|b| {
+            (
+                health_key(b.data_type),
+                json!({
+                    "blocked_for_secs": b.blocked_for.as_secs_f64(),
+                    "retries": b.retries,
+                    "last_reason": b.last_reason,
+                }),
+            )
+        })
+        .collect();
+
+    let current_task = snapshot
+        .is_blocked()
+        .then(|| format!("blocked on broker: {}", snapshot.blocked.iter().map(|b| health_key(b.data_type)).collect::<Vec<_>>().join(", ")));
+
+    let broker = json!({
+        "blocked": snapshot.is_blocked(),
+        "blocked_types": blocked_types,
+        "publish_nacks": snapshot.publish_nacks,
+        "publish_confirm_timeouts": snapshot.publish_confirm_timeouts,
+        "publish_transport_errors": snapshot.publish_transport_errors,
+        "publish_retries": snapshot.publish_retries,
+    });
+
+    (current_task, broker)
+}
+
 async fn health_handler(State((state, _)): State<AppState>) -> (StatusCode, Json<serde_json::Value>) {
     let state = state.read().await;
+    let (current_task, broker) = broker_health(&state.broker.snapshot());
 
     let health = json!({
         "status": "healthy",
         "service": "rust-extractor",
         "extraction_status": state.extraction_status.as_str(),
+        "current_task": current_task,
+        "broker": broker,
         "extraction_progress": {
             "artists": state.extraction_progress.artists,
             "labels": state.extraction_progress.labels,
@@ -88,6 +132,7 @@ async fn health_handler(State((state, _)): State<AppState>) -> (StatusCode, Json
 
 async fn metrics_handler(State((state, _)): State<AppState>) -> (StatusCode, Json<serde_json::Value>) {
     let state = state.read().await;
+    let broker = state.broker.snapshot();
 
     let metrics = json!({
         "extraction_progress_artists": state.extraction_progress.artists,
@@ -101,6 +146,11 @@ async fn metrics_handler(State((state, _)): State<AppState>) -> (StatusCode, Jso
         "completed_files": state.completed_files.len(),
         "active_connections": state.active_connections.len(),
         "error_count": state.error_count,
+        "broker_blocked": u8::from(broker.is_blocked()),
+        "publish_nacks": broker.publish_nacks,
+        "publish_confirm_timeouts": broker.publish_confirm_timeouts,
+        "publish_transport_errors": broker.publish_transport_errors,
+        "publish_retries": broker.publish_retries,
     });
 
     (StatusCode::OK, Json(metrics))

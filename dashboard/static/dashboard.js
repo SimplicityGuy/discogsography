@@ -106,6 +106,8 @@ class Dashboard {
         const anyUnhealthy = services.some(s => s.status === 'unhealthy');
 
         const allUnhealthy = services.length > 0 && services.every(s => s.status === 'unhealthy');
+        // An extractor waiting out broker backpressure (full queue) is not a fault.
+        const anyBlocked = services.some(s => s.status === 'blocked');
 
         if (allHealthy) {
             dot.className = 'w-3 h-3 rounded-full bg-emerald-500 animate-pulse';
@@ -119,6 +121,10 @@ class Dashboard {
             dot.className = 'w-3 h-3 rounded-full bg-yellow-500';
             text.className = 'text-[10px] text-yellow-500 font-bold uppercase tracking-widest';
             text.textContent = 'Degraded';
+        } else if (anyBlocked) {
+            dot.className = 'w-3 h-3 rounded-full bg-yellow-500 animate-pulse';
+            text.className = 'text-[10px] text-yellow-500 font-bold uppercase tracking-widest';
+            text.textContent = 'Backpressure';
         } else {
             dot.className = 'w-3 h-3 rounded-full bg-yellow-500 animate-pulse';
             text.className = 'text-[10px] text-yellow-500 font-bold uppercase tracking-widest';
@@ -188,6 +194,7 @@ class Dashboard {
             case 'healthy':    return 'Healthy';
             case 'unhealthy':  return 'Unhealthy';
             case 'extracting': return 'Active';
+            case 'blocked':    return 'Blocked on broker';
             case 'unknown':    return 'Unknown';
             default:           return status;
         }
@@ -212,14 +219,21 @@ class Dashboard {
             if (service.name.startsWith('extractor') && service.extraction_progress) {
                 const progress = service.extraction_progress;
                 const elapsed = service.last_extraction_time || {};
+                const blockedTypes = (service.broker && service.broker.blocked_types) || {};
 
                 types.forEach(type => {
                     const el = document.getElementById(`${prefix}-${type}-state`);
                     if (!el) return;
-                    const count = progress[type] || 0;
+                    // Health payload keys use underscores (release_groups); card ids use hyphens.
+                    const key = type.replace('-', '_');
+                    const count = progress[key] || 0;
                     // Active if last extraction was within 30 seconds
-                    const active = elapsed[type] != null && elapsed[type] < 30;
-                    if (active) {
+                    const active = elapsed[key] != null && elapsed[key] < 30;
+                    if (blockedTypes[key]) {
+                        // Publishes are being nacked and retried in place; the parser is held behind them.
+                        el.textContent = `Blocked on broker (${count.toLocaleString()})`;
+                        el.className = 'text-yellow-400';
+                    } else if (active) {
                         el.textContent = `Processing (${count.toLocaleString()})`;
                         el.className = 'text-blue-400';
                     } else {
