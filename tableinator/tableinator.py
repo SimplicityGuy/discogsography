@@ -183,6 +183,22 @@ BATCH_FLUSH_INTERVAL = float(os.environ.get("POSTGRES_BATCH_FLUSH_INTERVAL", "5.
 # Fallback pool max when config is not yet loaded (matches TableinatorConfig default).
 _DEFAULT_POOL_MAX = 12
 
+_write_slots: tuple[asyncio.AbstractEventLoop, int, asyncio.Semaphore] | None = None
+
+
+def _write_admission() -> asyncio.Semaphore:
+    """Bound database writers across all consumers before entering the pool wait."""
+    global _write_slots
+    loop = asyncio.get_running_loop()
+    capacity = (
+        config.postgres_pool_max_size if config is not None else _DEFAULT_POOL_MAX
+    )
+    # Settings are fixed for a running service; separate test/event loops must not
+    # reuse a semaphore bound by contention to a previous loop.
+    if _write_slots is None or _write_slots[:2] != (loop, capacity):
+        _write_slots = (loop, capacity, asyncio.Semaphore(capacity))
+    return _write_slots[2]
+
 
 def channel_prefetch() -> tuple[int, bool]:
     """Resolve ``(prefetch_count, global_)`` for this channel's QoS.
@@ -197,15 +213,10 @@ def channel_prefetch() -> tuple[int, bool]:
       fill, so QoS stays per-consumer (``global_=False``). The channel-wide ceiling is
       therefore ``prefetch_count * len(DATA_TYPES)`` — logged explicitly so the 4x
       multiplier is not a surprise.
-    * **Non-batch mode** (``POSTGRES_BATCH_MODE=false``) — every in-flight handler
-      holds a pooled connection for the duration of its upsert, exactly the shape
-      brainztableinator couples in ``_channel_prefetch``. Bound the channel's TOTAL
-      unacked deliveries (``global_=True``) to the pool max so the broker, not the
-      pool's ~15.5s exhausted-wait retry loop, applies backpressure. Without this,
-      4 x 200 = 800 concurrent handlers raced for 12 connections; the losers raised,
-      were nacked with ``requeue=True``, and burned the quorum queue's
-      ``x-delivery-limit: 20`` until the message was silently dead-lettered
-      (discogsography-4fio).
+    * **Non-batch mode** — each queue may fill the pool, but shared write admission
+      bounds actual database work to the pool max before acquiring a connection.
+      Supported per-consumer QoS bounds deliveries to prefetch times the number of
+      consumers, without the pool-exhaustion/requeue/dead-letter loop.
     """
     if BATCH_MODE:
         # prefetch_count must be >= batch_size to allow batches to fill before flushing
@@ -213,7 +224,7 @@ def channel_prefetch() -> tuple[int, bool]:
     pool_max = (
         config.postgres_pool_max_size if config is not None else _DEFAULT_POOL_MAX
     )
-    return pool_max, True
+    return pool_max, False
 
 
 # Global shutdown flag
@@ -627,7 +638,7 @@ async def purge_stale_rows(
         started_at_dt = started_at_dt.replace(tzinfo=UTC)
 
     try:
-        async with connection_pool.connection() as conn:
+        async with _write_admission(), connection_pool.connection() as conn:
             await conn.set_autocommit(False)
             async with conn.transaction(), conn.cursor() as cursor:
                 # Count the table and the would-be-deleted rows BEFORE deleting so a
@@ -920,7 +931,11 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
         if connection_pool is None:
             raise RuntimeError("Connection pool not initialized")
 
-        async with connection_pool.connection() as conn, conn.cursor() as cursor:
+        async with (
+            _write_admission(),
+            connection_pool.connection() as conn,
+            conn.cursor() as cursor,
+        ):
             # Conditional upsert: only rewrites hash and data when hash differs,
             # but always refreshes updated_at so post-extraction stale row
             # purge does not delete unchanged-but-still-present records.

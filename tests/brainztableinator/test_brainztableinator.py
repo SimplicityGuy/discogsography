@@ -2228,7 +2228,7 @@ class TestMain:
         mock_rabbitmq_instance.connect.return_value = mock_connection
 
         mock_channel = AsyncMock()
-        mock_rabbitmq_instance.channel.return_value = mock_channel
+        mock_connection.channel.return_value = mock_channel
 
         mock_queue = AsyncMock()
         mock_channel.declare_queue.return_value = mock_queue
@@ -2261,6 +2261,7 @@ class TestMain:
                         await task
 
         assert mock_pool_class.call_count == 1
+        assert mock_channel.set_qos.call_args.kwargs["global_"] is False
         call_args = mock_pool_class.call_args
         # Budget-aware defaults from BrainztableinatorConfig (resolve_postgres_pool_sizes).
         assert call_args[1]["max_connections"] == 12
@@ -3340,6 +3341,7 @@ class TestRecoverConsumersAllTypesBrainztableinator:
             await bt._recover_consumers()
 
         assert set(bt.consumer_tags.keys()) == expected
+        assert mock_channel.set_qos.call_args.kwargs["global_"] is False
 
         bt.consumer_tags = {}
         bt.active_connection = None
@@ -3495,3 +3497,88 @@ class TestOutageRequeueBackoff:
 
         mock_message.ack.assert_called_once()
         assert backoff.consecutive_failures == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service", ["brainztableinator", "tableinator"])
+async def test_shared_write_admission_bounds_handlers_and_releases_cancelled_slots(service, monkeypatch):
+    """All queue types share capacity; cancellation cannot leak a pool admission slot."""
+    import importlib
+    from uuid import uuid4
+
+    module = importlib.import_module(f"{service}.{service}")
+    cfg = MagicMock()
+    cfg.postgres_pool_max_size = 2
+    monkeypatch.setattr(module, "config", cfg)
+    monkeypatch.setattr(module, "shutdown_requested", False)
+    monkeypatch.setattr(module, "_write_slots", None)
+    if service == "tableinator":
+        monkeypatch.setattr(module, "BATCH_MODE", False)
+        monkeypatch.setattr(module, "normalize_record", lambda _, data: data)
+    active = 0
+    peak = 0
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def write(*_args, **_kwargs):
+        await release.wait()
+
+    conn = MagicMock()
+    conn.set_autocommit = AsyncMock()
+    transaction = AsyncMock()
+    conn.transaction.return_value = transaction
+    cursor = AsyncMock()
+    cursor.execute.side_effect = write
+    conn.cursor.return_value.__aenter__ = AsyncMock(return_value=cursor)
+    conn.cursor.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    @contextlib.asynccontextmanager
+    async def acquire():
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        if active == 2:
+            entered.set()
+        try:
+            yield conn
+        finally:
+            active -= 1
+
+    pool = MagicMock()
+    pool.connection.side_effect = acquire
+    monkeypatch.setattr(module, "connection_pool", pool)
+    if service == "brainztableinator":
+        monkeypatch.setattr(module, "PROCESSORS", {kind: AsyncMock(side_effect=write) for kind in module.PROCESSORS})
+        kinds = ["artists", "labels", "release-groups", "releases"]
+    else:
+        kinds = ["artists", "labels", "masters", "releases"]
+    messages = []
+    for _ in range(9):
+        message = MagicMock()
+        message.body = json.dumps({"id": str(uuid4()), "sha256": "hash", "name": "record"}).encode()
+        message.ack = AsyncMock()
+        message.nack = AsyncMock()
+        messages.append(message)
+    tasks = [asyncio.create_task(module.on_data_message(message, kinds[i % 4])) for i, message in enumerate(messages[:8])]
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        await asyncio.sleep(0)
+        assert active == peak == 2
+        # Cancel one waiting handler and one running writer. Neither delivery is
+        # falsely acknowledged/nacked; the broker can redeliver on connection close.
+        tasks[-1].cancel()
+        tasks[0].cancel()
+        cancelled = await asyncio.gather(tasks[-1], tasks[0], return_exceptions=True)
+        assert all(isinstance(result, asyncio.CancelledError) for result in cancelled)
+        release.set()
+        await asyncio.wait_for(asyncio.gather(*tasks[1:-1]), timeout=2)
+        await asyncio.wait_for(module.on_data_message(messages[-1], kinds[0]), timeout=2)
+        assert active == 0 and peak == 2
+        for i, message in enumerate(messages):
+            assert message.ack.await_count == (0 if i in (0, 7) else 1)
+            message.nack.assert_not_awaited()
+    finally:
+        release.set()
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
