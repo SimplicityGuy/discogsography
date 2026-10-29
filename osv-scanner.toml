@@ -4,4 +4,13 @@
 # The update-project.sh sweep_osv_scanner_ignores() function automatically
 # re-tests each entry after dependency upgrades and removes resolved ones.
 #
-# Only add entries when no fix is available upstream.
+# Only add entries when no fix is available upstream, or when upstream explicitly
+# excludes the locked version and a CI test guards that version-specific scope.
+
+# Upstream: https://github.com/RustCrypto/utils/security/advisories/GHSA-qwgh-2vcv-g2f7
+# Upstream affects >=0.11.0,<0.12.1; OSV incorrectly starts its range at zero.
+# 0.10.4 keeps pos outside the buffer, so the inline-cursor panic bug is absent.
+# tests/common/test_security_advisory_scope.py rejects affected or unreviewed lock versions.
+[[IgnoredVulns]]
+id = "GHSA-qwgh-2vcv-g2f7"
+reason = "Upstream excludes locked block-buffer 0.10.4; separate pos field cannot be overwritten by the inline-buffer panic described in this advisory. A lockfile test guards this exclusion against affected upgrades."
