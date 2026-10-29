@@ -36,9 +36,12 @@ fn test_build_tracing_filter_python_levels() {
 
 #[tokio::test]
 async fn test_setup_shutdown_handler() {
-    let shutdown = setup_shutdown_handler();
-    // Just verify it creates a valid Notify instance
+    let broker = Arc::new(crate::message_queue::PublishBackpressure::default());
+    let shutdown = setup_shutdown_handler(broker.clone());
+    // Just verify it creates a valid Notify instance, and that installing it does not by
+    // itself end publish retries
     assert!(Arc::strong_count(&shutdown) >= 1);
+    assert!(!broker.shutdown_requested());
 }
 
 #[test]

@@ -13,7 +13,7 @@ use async_trait::async_trait;
 
 use crate::config::ExtractorConfig;
 use crate::discogs_downloader::{DataSource, Downloader};
-use crate::message_queue::{MessagePublisher, MessageQueue};
+use crate::message_queue::{MessagePublisher, MessageQueue, PublishBackpressure, PublishError};
 use crate::parser::XmlParser;
 use crate::rules::{CompiledRulesConfig, FlaggedRecordWriter, QualityReport, Severity, apply_filters, evaluate_rules, should_skip_record};
 use crate::state_marker::{PhaseStatus, ProcessingDecision, StateMarker};
@@ -27,12 +27,24 @@ pub trait MessageQueueFactory: Send + Sync {
 }
 
 /// Default factory that creates real MessageQueue connections
-pub struct DefaultMessageQueueFactory;
+///
+/// Every connection it creates reports into the same [`PublishBackpressure`], which is the
+/// one `ExtractorState::broker` exposes on `/health` and the one shutdown cancels.
+#[derive(Default)]
+pub struct DefaultMessageQueueFactory {
+    backpressure: Arc<PublishBackpressure>,
+}
+
+impl DefaultMessageQueueFactory {
+    pub fn new(backpressure: Arc<PublishBackpressure>) -> Self {
+        Self { backpressure }
+    }
+}
 
 #[async_trait]
 impl MessageQueueFactory for DefaultMessageQueueFactory {
     async fn create(&self, url: &str, exchange_prefix: &str) -> Result<Arc<dyn MessagePublisher>> {
-        Ok(Arc::new(MessageQueue::new(url, 3, exchange_prefix).await?))
+        Ok(Arc::new(MessageQueue::new(url, 3, exchange_prefix, self.backpressure.clone()).await?))
     }
 }
 
@@ -45,6 +57,9 @@ pub struct ExtractorState {
     pub active_connections: HashMap<DataType, String>,
     pub error_count: u64,
     pub extraction_status: ExtractionStatus,
+    /// Broker backpressure shared with every publisher: nack / timeout counters and the
+    /// publishes currently blocked on the broker. Not reset between runs. (discogsography-5ow5)
+    pub broker: Arc<PublishBackpressure>,
 }
 
 /// Lifecycle status of the extraction process.
@@ -374,7 +389,7 @@ pub async fn process_discogs_data(
     // files (already past the per-task guard) finish, but files skipped by that guard stay pending.
     // Fold it into `success` so the completion/broadcast/status logic below does NOT finalize the
     // run — while logging it as a shutdown rather than an error. (cu2.44)
-    let shutdown_requested = shutdown_flag.load(Ordering::SeqCst);
+    let shutdown_requested = shutdown_observed(&shutdown_flag, &state).await;
     if shutdown_requested {
         warn!("🛑 Shutdown requested during Discogs processing — saving progress for resume, not finalizing this run");
         success = false;
@@ -836,10 +851,19 @@ pub async fn message_publisher(
     data_type: DataType,
     state: Arc<RwLock<ExtractorState>>,
 ) -> Result<()> {
+    // A nack or confirm timeout never reaches this loop as an error: publish_batch retries the
+    // message in place, and while it does this loop stops draining `receiver`, so the bounded
+    // channels stall the batcher and parser (backpressure, discogsography-5ow5).
     while let Some(batch) = receiver.recv().await {
         match mq.publish_batch(batch, data_type).await {
             Ok(_) => {
                 debug!("✅ Published batch to AMQP");
+            }
+            Err(e) if matches!(e.downcast_ref::<PublishError>(), Some(PublishError::ShutdownWhileBlocked { .. })) => {
+                // Not a publish failure: the file stops here and stays not Completed, so the
+                // next run republishes it.
+                info!("🛑 Publisher for {} stopped by shutdown while blocked on broker: {}", data_type, e);
+                return Err(e).context("Publishing interrupted by shutdown");
             }
             Err(e) => {
                 error!("❌ Failed to publish batch: {}", e);
@@ -872,19 +896,29 @@ async fn progress_reporter(state: Arc<RwLock<ExtractorState>>, shutdown: Arc<tok
 
         let s = state.read().await;
         let total = s.extraction_progress.total();
+        let broker = s.broker.snapshot();
 
-        // Check for stalled extractors
+        // Check for stalled extractors. A type blocked on the broker is waiting on purpose
+        // (backpressure), so it is reported as blocked rather than stalled.
         let mut stalled = Vec::new();
 
         for (data_type, last_time) in &s.last_extraction_time {
             let is_completed = s.completed_files.iter().any(|f| f.contains(data_type.as_str()));
-            if !is_completed && last_time.elapsed() > Duration::from_secs(120) {
+            let is_blocked = broker.blocked.iter().any(|b| b.data_type == *data_type);
+            if !is_completed && !is_blocked && last_time.elapsed() > Duration::from_secs(120) {
                 stalled.push(data_type.to_string());
             }
         }
 
         if !stalled.is_empty() {
             warn!("⚠️ Stalled extractors detected: {:?}", stalled);
+        }
+
+        for blocked in &broker.blocked {
+            warn!(
+                "⏸️ Blocked on broker: {} for {:?} ({} retries, last: {})",
+                blocked.data_type, blocked.blocked_for, blocked.retries, blocked.last_reason
+            );
         }
 
         // Log progress
@@ -976,6 +1010,16 @@ fn spawn_shutdown_flag_monitor(shutdown: Arc<tokio::sync::Notify>) -> Arc<Atomic
     flag
 }
 
+/// Whether shutdown has been requested, by either signal path.
+///
+/// The signal handler cancels the broker's retry loops before it wakes the monitor that sets
+/// `shutdown_flag`, so a file abandoned while blocked on the broker can finish failing before
+/// the flag is set. Checking both keeps that abandoned file a clean shutdown instead of a
+/// failure (which on the initial run means the 600s cooldown and exit 1). (discogsography-5ow5)
+async fn shutdown_observed(shutdown_flag: &AtomicBool, state: &Arc<RwLock<ExtractorState>>) -> bool {
+    shutdown_flag.load(Ordering::SeqCst) || state.read().await.broker.shutdown_requested()
+}
+
 /// Decide the outcome of an initial (first-run) extraction from whether processing succeeded and
 /// whether a shutdown was requested.
 ///
@@ -1033,7 +1077,7 @@ pub async fn run_extraction_loop(
 
     // A shutdown during the initial run is a clean exit, not a failure — returning Err would send
     // main into the failure cooldown + non-zero exit. Short-circuit shutdown to Ok. (cu2.44/cu2.45)
-    initial_run_outcome(success, shutdown_flag.load(Ordering::SeqCst), "Discogs")?;
+    initial_run_outcome(success, shutdown_observed(&shutdown_flag, &state).await, "Discogs")?;
 
     info!("✅ Initial data processing completed successfully");
 
@@ -1291,7 +1335,7 @@ pub async fn run_musicbrainz_loop(
     // `process_musicbrainz_data` returns Ok(false) for BOTH a real failure and a between-files
     // shutdown; only this initial path promoted Ok(false) to Err. Short-circuit shutdown to Ok(())
     // so an operator-requested SIGTERM does not trigger the 600s failure cooldown + exit(1). (cu2.45)
-    initial_run_outcome(success, shutdown_flag.load(Ordering::SeqCst), "MusicBrainz")?;
+    initial_run_outcome(success, shutdown_observed(&shutdown_flag, &state).await, "MusicBrainz")?;
 
     info!("✅ Initial MusicBrainz processing completed successfully");
 
@@ -1524,7 +1568,7 @@ pub async fn process_musicbrainz_data(
         // for the next (potentially multi-GB) file to finish processing.
         // Uses AtomicBool instead of Notify::notified() to avoid consuming the
         // notification permit that the outer select! in run_musicbrainz_loop needs.
-        if shutdown_flag.load(Ordering::SeqCst) {
+        if shutdown_observed(&shutdown_flag, &state).await {
             warn!("🛑 Shutdown requested, stopping MusicBrainz processing between files");
             success = false;
             break;

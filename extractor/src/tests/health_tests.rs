@@ -367,3 +367,70 @@ async fn test_metrics_and_health_report_same_types() {
         assert!(metrics_json.0.get(format!("extraction_progress_{data_type}")).is_some(), "/metrics is missing {data_type}");
     }
 }
+
+// ── Broker backpressure on /health and /metrics (discogsography-5ow5) ──────────
+
+#[tokio::test]
+async fn test_health_handler_broker_not_blocked_by_default() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let trigger = Arc::new(Mutex::new(None::<bool>));
+    let (_, json) = health_handler(State((state, trigger))).await;
+
+    let value = json.0;
+    assert_eq!(value["broker"]["blocked"], false);
+    assert_eq!(value["broker"]["publish_nacks"], 0);
+    assert_eq!(value["broker"]["publish_retries"], 0);
+    assert!(value["broker"]["blocked_types"].as_object().unwrap().is_empty());
+    assert!(value["current_task"].is_null());
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_health_handler_reports_blocked_on_broker_not_failed() {
+    use crate::message_queue::{PublishError, publish_with_retry};
+
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let broker = {
+        let mut s = state.write().await;
+        s.extraction_status = ExtractionStatus::Running;
+        s.broker.clone()
+    };
+
+    // A release-groups publish the broker keeps nacking (full reject-publish queue).
+    let publisher = tokio::spawn({
+        let broker = broker.clone();
+        async move {
+            publish_with_retry(&broker, DataType::ReleaseGroups, "discogsography-musicbrainz-release-groups", || {
+                std::future::ready(Err(PublishError::Nacked { exchange: "discogsography-musicbrainz-release-groups".into() }))
+            })
+            .await
+        }
+    });
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+    let trigger = Arc::new(Mutex::new(None::<bool>));
+    let (status, json) = health_handler(State((state.clone(), trigger.clone()))).await;
+    let value = json.0;
+
+    assert_eq!(status, StatusCode::OK, "backpressure is not unhealthiness");
+    assert_eq!(value["status"], "healthy");
+    // The run is still in progress — not Failed, and still busy for /trigger and the MB idle-wait.
+    assert_eq!(value["extraction_status"], "running");
+    assert_eq!(value["current_task"], "blocked on broker: release_groups");
+    assert_eq!(value["broker"]["blocked"], true);
+    let blocked = &value["broker"]["blocked_types"]["release_groups"];
+    assert_eq!(blocked["last_reason"], "nack");
+    assert!(blocked["retries"].as_u64().unwrap() >= 4);
+    assert!(blocked["blocked_for_secs"].as_f64().unwrap() >= 9.0);
+    assert!(value["broker"]["publish_nacks"].as_u64().unwrap() >= 4);
+
+    let (_, metrics) = metrics_handler(State((state.clone(), trigger))).await;
+    assert_eq!(metrics.0["broker_blocked"], 1);
+    assert!(metrics.0["publish_nacks"].as_u64().unwrap() >= 4);
+    assert_eq!(metrics.0["error_count"], 0, "a nack is not counted as an error");
+
+    broker.request_shutdown();
+    assert!(publisher.await.unwrap().is_err());
+    let trigger = Arc::new(Mutex::new(None::<bool>));
+    let (_, json) = health_handler(State((state, trigger))).await;
+    assert_eq!(json.0["broker"]["blocked"], false);
+}

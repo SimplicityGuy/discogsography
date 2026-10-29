@@ -484,6 +484,33 @@ stateDiagram-v2
   - The admin dashboard's `_track_extraction` polls `/health` every 10 seconds during a manually-triggered run and accepts both `completed` and `waiting` as terminal success — it writes whichever value it observed verbatim to `extraction_history.status` so operators can tell a freshly-finished run from one already back on the schedule.
 - `Failed` is **not** overwritten by the loop's `Completed → Waiting` transition. A failed run's status persists through the 5-day sleep window so operators can see the last attempt failed, and only flips back to `Running` when the next attempt begins.
 
+### Broker Backpressure (Blocked on Broker)
+
+Every publish uses publisher confirms and `mandatory`. When the broker pushes back, the extractor retries **the same message in place** instead of failing the file:
+
+| Broker answer | Meaning | Extractor behavior |
+|---|---|---|
+| `basic.ack` | delivered | next message |
+| `basic.nack` | a bound queue is full (`overflow: reject-publish`) | retry in place |
+| no confirm within 30s | resource alarm / blocked connection | retry in place |
+| channel or connection error | broker restarting | reconnect, retry in place |
+| `basic.return` | unroutable: no consumer queue is bound | fail the file (it stays pending) |
+
+Retries back off from 0.5s, doubling to a 30s cap (0.5, 1, 2, 4, 8, 16, 30, 30, ...), and continue for as long as shutdown is not requested. While a publish is held, the bounded pipeline channels stall the batcher and parser behind it, so a slow consumer slows the extractor down instead of livelocking a large file from record 0.
+
+While blocked, `extraction_status` stays `running` (the run is still in progress, so `/trigger`, the MusicBrainz idle-wait and the admin run tracker keep treating it as busy). `/health` explains the pause:
+
+```json
+"current_task": "blocked on broker: releases",
+"broker": {
+  "blocked": true,
+  "blocked_types": {"releases": {"blocked_for_secs": 42.0, "retries": 6, "last_reason": "nack"}},
+  "publish_nacks": 6, "publish_confirm_timeouts": 0, "publish_transport_errors": 0, "publish_retries": 6
+}
+```
+
+`/metrics` carries the same counters plus `broker_blocked` (0/1), and the dashboard shows the extractor card as **Blocked on broker**. A SIGTERM ends a retry loop at once; the file is left not Completed, so the next run republishes it.
+
 ## Integration
 
 Extractor integrates with the Discogsography platform:

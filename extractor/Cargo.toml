@@ -16,12 +16,12 @@ test-support = ["mockall"]
 
 [dependencies]
 # Core async runtime
-tokio = { version = "1.53", features = ["full"] }
+tokio = { version = "1.54", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io-util"] }
 
 # XML parsing (following disco-quick's approach)
 quick-xml = { version = "0.42", features = ["serialize"] }
-encoding_rs = "0.8.35"
+encoding_rs = "0.8.42"
 encoding_rs_io = "0.1.8"
 
 # Compression handling
@@ -30,13 +30,14 @@ xz2 = "0.1"
 tar = "0.4"
 
 # Message queue (AMQP) - latest
-lapin = "4.10"
+lapin = "4.12"
 futures = "0.3"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml_ng = "0.10"
+# YAML organization-maintained parser/backend; replaces unmaintained unsafe-libyaml.
+yaml_serde = "0.10.7"
 
 # Hashing
 sha2 = "0.11"
@@ -76,7 +77,7 @@ tower-http = { version = "0.7", features = ["cors", "trace"] }
 
 # Utilities
 once_cell = "1.21"
-parking_lot = "0.12"
+parking_lot = "0.13"
 num_cpus = "1.17"
 url = "2.5"  # URL parsing for AMQP connection normalization
 
@@ -89,9 +90,9 @@ mockall = { version = "0.15", optional = true }
 [dev-dependencies]
 extractor = { path = ".", features = ["test-support"] }
 tempfile = "3.27"
-tokio = { version = "1.53", features = ["test-util"] }
+tokio = { version = "1.54", features = ["test-util"] }
 mockito = "1.7"
-proptest = "1.11"
+proptest = "1.12"
 criterion = "0.8"
 serial_test = "4.0.1"
 
@@ -114,7 +115,7 @@ debug = true
 # Then install all tools: cargo bin --install
 # Run tools with: cargo bin <tool-name>
 [package.metadata.bin]
-cargo-outdated = { version = "0.17.0" }
+cargo-outdated = { version = "0.19.0" }
 
 # Lint configuration - treat all warnings as errors
 # This is equivalent to running: cargo clippy -- -D warnings
