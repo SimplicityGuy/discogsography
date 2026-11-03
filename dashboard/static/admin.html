@@ -9,7 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/luxon@3.5.0/build/global/luxon.min.js" integrity="sha384-CU0J6nu6GO5gWB5IqOOhPQsG0LKyjpotF5Gw502R+0zbkzKHjDWc6FKSZsNTJfLX" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js" integrity="sha384-7cWzHabR6ZyfMWzZgVssYaOQRTccHUWZ0F09AanlF3RAJ/JNyFnIma2JTYIVKEUP" crossorigin="anonymous"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=block" rel="stylesheet"/>
     <link rel="icon" type="image/x-icon" href="/brand/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/brand/favicon-16.png">
@@ -19,6 +19,17 @@
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <style>
+        /* Material Symbols are ligature icons: until the web font arrives, each span lays out its
+           ligature name ("hub") as fallback text, then collapses to a 1em glyph when the font swaps
+           in, reflowing everything beside it (discogsography-q4t6). Every glyph has a 1em advance,
+           so reserving that box keeps layout identical before and after the font loads; `clip-path`
+           hides the overflowing fallback text without touching layout; `overflow: hidden` or
+           `clip` would change flex min-size and, in WebKit, inline-block baseline alignment. */
+        .material-symbols-outlined {
+            width: 1em;
+            clip-path: inset(0);
+        }
+
         :root {
             --bg-void: #060a12;
             --bg-deep: #0a1018;

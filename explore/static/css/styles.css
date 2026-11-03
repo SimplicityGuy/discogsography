@@ -355,6 +355,19 @@
     font-size: 16px;
 }
 
+/* Material Symbols are ligature icons: until the web font arrives, each span lays out its
+   ligature name ("trending_up") as wide fallback text, then collapses to a 1em glyph when the
+   font swaps in. That reflow moved every nav tab after first paint, far enough that a click
+   pressed on one tab was released on its neighbour and lost (discogsography-q4t6). Every
+   Material Symbols glyph has a 1em advance, so reserving that box makes the layout identical
+   before and after the font loads; `clip-path` hides the
+   overflowing fallback text without touching layout; `overflow: hidden` or `clip` would
+   change flex min-size and, in WebKit, inline-block baseline alignment. */
+.material-symbols-outlined {
+    width: 1em;
+    clip-path: inset(0);
+}
+
 /* Material Symbols sizing helpers */
 .material-symbols-outlined.icon-2x { font-size: 2rem; }
 .material-symbols-outlined.icon-3x { font-size: 3rem; }

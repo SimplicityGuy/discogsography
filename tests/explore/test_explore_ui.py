@@ -7,22 +7,15 @@ import pytest
 
 
 def _switch_pane(page: Page, pane: str) -> None:
-    """Click a nav-link to switch panes, retrying if Firefox drops the click.
+    """Click a nav-link and wait for its pane to become active.
 
-    Firefox in CI occasionally acknowledges the Playwright click but does not
-    dispatch it to the JS handler, leaving the target pane without the
-    ``active`` class.  We detect this and retry once before giving up.
+    No retry: the "dropped" Firefox clicks this helper used to retry were the nav
+    tabs reflowing when the Material Symbols icon font swapped in between
+    mousedown and mouseup (discogsography-q4t6). The icon box is now fixed at
+    1em, so a single click must land; a miss here is a real regression.
     """
-    link = page.locator(f"[data-pane='{pane}']")
-    target = page.locator(f"#{pane}Pane")
-
-    link.click()
-    try:
-        expect(target).to_have_class(re.compile(r"\bactive\b"), timeout=2000)
-    except AssertionError:
-        # Retry — the first click was swallowed
-        link.click()
-        expect(target).to_have_class(re.compile(r"\bactive\b"), timeout=5000)
+    page.locator(f"[data-pane='{pane}']").click()
+    expect(page.locator(f"#{pane}Pane")).to_have_class(re.compile(r"\bactive\b"), timeout=5000)
 
 
 def _goto_ready(page: Page, url: str) -> None:
@@ -95,6 +88,30 @@ class TestExploreUI:
         explore_link = page.locator("[data-pane='explore']")
         explore_link.click()
         expect(explore_pane).to_have_class(re.compile("active"), timeout=5000)
+
+    def test_nav_tabs_do_not_reflow_before_icon_font_loads(self, page: Page, test_server: str) -> None:
+        """Nav icon boxes are 1em wide even before the Material Symbols font loads (discogsography-q4t6).
+
+        Until the icon font arrives, each icon renders its ligature name ("trending_up") as
+        fallback text several times wider than the 1em glyph. If the box tracks that text, every
+        tab reflows when the font swaps in, and a click pressed on one tab is released on its
+        neighbour and lost. Blocking the font file pins the page in that pre-swap state.
+        """
+        page.route("**/s/materialsymbolsoutlined/**", lambda route: route.abort())
+        _goto_ready(page, test_server)
+
+        widths = page.evaluate(
+            """() => [...document.querySelectorAll('.nav-link .material-symbols-outlined')]
+                .filter(el => el.getClientRects().length)
+                .map(el => [el.textContent.trim(), el.getBoundingClientRect().width, parseFloat(getComputedStyle(el).fontSize)])"""
+        )
+        assert widths, "no visible nav icons found"
+        for name, width, font_size in widths:
+            assert width == pytest.approx(font_size, abs=0.5), (
+                f"nav icon {name!r} is {width}px wide before the icon font loads, expected 1em ({font_size}px)"
+            )
+
+        _switch_pane(page, "trends")
 
     def test_graph_placeholder_visible(self, page: Page, test_server: str) -> None:
         """Test that the graph placeholder is shown before search."""
@@ -326,7 +343,7 @@ class TestExploreSearchInteraction:
         """Test searching on the Trends pane loads chart data."""
         _goto_ready(page, test_server)
 
-        # Switch to trends pane (with retry for Firefox)
+        # Switch to trends pane
         _switch_pane(page, "trends")
 
         # Type search query and select from autocomplete
@@ -357,7 +374,7 @@ class TestExploreSearchInteraction:
         """Test that the trends placeholder is visible before search."""
         _goto_ready(page, test_server)
 
-        # Switch to trends pane (with retry for Firefox)
+        # Switch to trends pane
         _switch_pane(page, "trends")
 
         placeholder = page.locator("#trendsPlaceholder")
