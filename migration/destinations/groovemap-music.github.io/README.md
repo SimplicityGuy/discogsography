@@ -47,17 +47,12 @@ build, generated HTML/accessibility/link/asset/metadata validation, and a locked
 dependency license policy check. `just audit` is separate because it intentionally
 contacts an advisory service.
 
-The lockfile still includes `http-cache-semantics` 4.2.0, which has no patched
-release for [GHSA-ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp)
-as checked on 2026-10-03. The advisory requires a shared cache that reuses
-security-sensitive responses through `satisfiesWithoutRevalidation()` when a client
-sends `max-stale`. Astro 7.2.8 instead uses `storable()` and `timeToLive()` in
-`dist/assets/build/remote.js` for build-time remote-image cache lifetimes; this
-credential-free static site has no server or shared response cache. The local
-`osv-scanner.toml` ignores only this advisory for this lockfile until 2026-11-02.
-Recheck the [upstream issue](https://github.com/kornelski/http-cache-semantics/issues/56),
-published package versions, and installed Astro usage before renewing; remove the
-exception when a fixed release is available. Other advisories remain enforced.
+`package.json` overrides `minimatch` to `^11.0.4`. ESLint 10, `@eslint/config-array`
+0.23, and `@typescript-eslint/typescript-estree` 8 still declare `^10`, but every
+10.x release is affected by
+[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249), fixed in
+11.0.1. Those packages use only `new Minimatch()`, `minimatch()`, `.match()`, and
+`.pattern`, which 11.x keeps. Remove the override once they accept `^11`.
 
 The generated site is written to ignored `dist/`. Local preview is a static-file check;
 it does not emulate GitHub Pages configuration or DNS.

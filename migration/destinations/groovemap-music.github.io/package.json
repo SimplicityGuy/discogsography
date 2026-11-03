@@ -23,6 +23,9 @@
     "npm": "12.0.2"
   },
   "name": "@groovemap-music/organization-site",
+  "overrides": {
+    "minimatch": "^11.0.4"
+  },
   "packageManager": "npm@12.0.2",
   "private": true,
   "scripts": {
