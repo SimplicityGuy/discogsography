@@ -272,42 +272,79 @@ def sample_trends_data() -> list[dict[str, Any]]:
 # E2E fixtures
 
 
+def _read_log_tail(log_path: Path, max_lines: int = 80) -> str:
+    """Return the last ``max_lines`` lines of a server log, for inclusion in failure messages."""
+    try:
+        lines = log_path.read_text(errors="replace").splitlines()
+    except OSError as exc:
+        return f"(could not read server log {log_path}: {exc})"
+    tail = lines[-max_lines:]
+    body = "\n".join(tail) if tail else "(empty)"
+    return f"--- last {len(tail)} line(s) of server log {log_path} ---\n{body}"
+
+
 @pytest.fixture(scope="session")
-def test_server() -> Generator[str]:
-    """Start explore test server for E2E tests."""
+def test_server(tmp_path_factory: pytest.TempPathFactory) -> Generator[str]:
+    """Start explore test server for E2E tests.
+
+    Server output goes to a per-session log file rather than an undrained pipe: an
+    unread ``PIPE`` fills its OS buffer and blocks the server on its next log write.
+    """
     port = 8006
     server_url = f"http://localhost:{port}"
+    log_path = tmp_path_factory.mktemp("explore-e2e-server") / "server.log"
 
-    process = subprocess.Popen(  # noqa: S603
-        [
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "tests.explore.explore_test_app:create_test_app",
-            "--factory",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
 
-    # Wait for server readiness
+    log_file = log_path.open("wb")
+    try:
+        process = subprocess.Popen(  # noqa: S603
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "tests.explore.explore_test_app:create_test_app",
+                "--factory",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ],
+            env=env,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+        )
+    finally:
+        # The child keeps its own copy of the descriptor; the parent handle is not needed.
+        log_file.close()
+
+    # Wait for server readiness, stopping early if the process exits.
     max_retries = 40
-    for _i in range(max_retries):
-        try:
-            response = httpx.get(f"{server_url}/health", timeout=2.0)
-            if response.status_code == 200:
+    ready = False
+    try:
+        for _i in range(max_retries):
+            if process.poll() is not None:
                 break
-        except (httpx.ConnectError, httpx.TimeoutException):
-            pass
-        time.sleep(0.5)
-    else:
-        process.terminate()
-        stdout, stderr = process.communicate(timeout=5)
-        raise RuntimeError(f"Test server failed to start.\nStdout: {stdout.decode()}\nStderr: {stderr.decode()}")
+            try:
+                response = httpx.get(f"{server_url}/health", timeout=2.0)
+                if response.status_code == 200:
+                    ready = True
+                    break
+            except (httpx.ConnectError, httpx.TimeoutException):
+                pass
+            time.sleep(0.5)
+    finally:
+        if not ready and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+
+    if not ready:
+        raise RuntimeError(f"Test server failed to become ready at {server_url} (exit code {process.returncode}).\n{_read_log_tail(log_path)}")
 
     yield server_url
 
