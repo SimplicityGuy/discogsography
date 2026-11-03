@@ -154,3 +154,26 @@ class TestDashboardUI:
         assert response.ok
         databases = response.json()
         assert isinstance(databases, list)
+
+    def test_icons_keep_1em_box_before_icon_font_loads(self, page: Page) -> None:
+        """Icon boxes are 1em wide even before the Material Symbols font loads (discogsography-q4t6).
+
+        Until the icon font arrives, each icon renders its ligature name ("grid_view") as
+        fallback text several times wider than the 1em glyph, so everything beside it reflows
+        when the font swaps in. Blocking the font file pins the page in that pre-swap state.
+        """
+        dashboard_url = "http://localhost:8003"
+        page.route("**/s/materialsymbolsoutlined/**", lambda route: route.abort())
+        page.goto(dashboard_url, wait_until="domcontentloaded")
+        expect(page.locator("#service-graphinator")).to_be_visible(timeout=10000)
+
+        widths = page.evaluate(
+            """() => [...document.querySelectorAll('.material-symbols-outlined')]
+                .filter(el => el.getClientRects().length)
+                .map(el => [el.textContent.trim(), el.getBoundingClientRect().width, parseFloat(getComputedStyle(el).fontSize)])"""
+        )
+        assert widths, "no visible icons found"
+        for name, width, font_size in widths:
+            assert width == pytest.approx(font_size, abs=0.5), (
+                f"icon {name!r} is {width}px wide before the icon font loads, expected 1em ({font_size}px)"
+            )
