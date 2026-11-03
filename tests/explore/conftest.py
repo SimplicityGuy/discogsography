@@ -11,6 +11,7 @@ from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 import json
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import time
@@ -272,6 +273,13 @@ def sample_trends_data() -> list[dict[str, Any]]:
 # E2E fixtures
 
 
+def _free_port() -> int:
+    """Return a TCP port that is currently free on 127.0.0.1."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
 def _read_log_tail(log_path: Path, max_lines: int = 80) -> str:
     """Return the last ``max_lines`` lines of a server log, for inclusion in failure messages."""
     try:
@@ -290,7 +298,8 @@ def test_server(tmp_path_factory: pytest.TempPathFactory) -> Generator[str]:
     Server output goes to a per-session log file rather than an undrained pipe: an
     unread ``PIPE`` fills its OS buffer and blocks the server on its next log write.
     """
-    port = 8006
+    # pytest-xdist (``-n auto``) starts one of these per worker, so each server gets its own free port.
+    port = _free_port()
     server_url = f"http://localhost:{port}"
     log_path = tmp_path_factory.mktemp("explore-e2e-server") / "server.log"
 
