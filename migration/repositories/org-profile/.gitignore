@@ -1,5 +1,0 @@
-.mise.local.toml
-.build/
-node_modules/
-.DS_Store
-*.log
