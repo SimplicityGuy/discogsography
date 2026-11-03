@@ -14,14 +14,29 @@ import pytest
 from dashboard.config import DashboardConfig
 
 
+def _read_log_tail(log_path: Path, max_lines: int = 80) -> str:
+    """Return the last ``max_lines`` lines of a server log, for inclusion in failure messages."""
+    try:
+        lines = log_path.read_text(errors="replace").splitlines()
+    except OSError as exc:
+        return f"(could not read server log {log_path}: {exc})"
+    tail = lines[-max_lines:]
+    body = "\n".join(tail) if tail else "(empty)"
+    return f"--- last {len(tail)} line(s) of server log {log_path} ---\n{body}"
+
+
 @pytest.fixture(scope="session")
-def test_server() -> Any:
+def test_server(tmp_path_factory: pytest.TempPathFactory) -> Any:
     """Start the test dashboard server for E2E tests.
+
+    Server output goes to a per-session log file rather than an undrained pipe: an
+    unread ``PIPE`` fills its OS buffer and blocks the server on its next log write.
 
     This fixture is only used when running E2E tests.
     """
     # Get project root directory
     project_root = str(Path(__file__).parent.parent.parent)
+    log_path = tmp_path_factory.mktemp("dashboard-e2e-server") / "server.log"
 
     # Start server as subprocess
     env = os.environ.copy()
@@ -29,26 +44,30 @@ def test_server() -> Any:
     # Ensure Python can find the project modules
     env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
 
-    server_process = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "tests.dashboard.dashboard_test_app:create_test_app",
-            "--factory",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            "8003",
-            "--log-level",
-            "info",  # Changed from warning to info for better debugging
-        ],
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        cwd=project_root,  # Set working directory to project root
-    )
+    log_file = log_path.open("wb")
+    try:
+        server_process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "tests.dashboard.dashboard_test_app:create_test_app",
+                "--factory",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8003",
+                "--log-level",
+                "info",  # Changed from warning to info for better debugging
+            ],
+            env=env,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            cwd=project_root,  # Set working directory to project root
+        )
+    finally:
+        # The child keeps its own copy of the descriptor; the parent handle is not needed.
+        log_file.close()
 
     # Wait for server to be ready
     max_retries = 40  # 20 seconds total
@@ -64,18 +83,10 @@ def test_server() -> Any:
 
         # Check if process died
         if server_process.poll() is not None:
-            stdout, stderr = server_process.communicate()
-            error_msg = f"Server process died after {retry} retries.\n"
+            error_msg = f"Server process died after {retry} retries (exit code {server_process.returncode}).\n"
             error_msg += f"Working directory: {project_root}\n"
             error_msg += f"Python executable: {sys.executable}\n"
-            if stdout:
-                error_msg += f"STDOUT:\n{stdout}\n"
-            else:
-                error_msg += "STDOUT: (empty)\n"
-            if stderr:
-                error_msg += f"STDERR:\n{stderr}\n"
-            else:
-                error_msg += "STDERR: (empty)\n"
+            error_msg += f"{_read_log_tail(log_path)}\n"
             raise RuntimeError(error_msg)
 
         time.sleep(0.5)
@@ -84,22 +95,15 @@ def test_server() -> Any:
     if not server_started:
         server_process.terminate()
         try:
-            stdout, stderr = server_process.communicate(timeout=2)
-            error_msg = "Test server failed to start after 20 seconds.\n"
-            error_msg += f"Working directory: {project_root}\n"
-            error_msg += f"Python executable: {sys.executable}\n"
-            if stdout:
-                error_msg += f"STDOUT:\n{stdout}\n"
-            else:
-                error_msg += "STDOUT: (empty)\n"
-            if stderr:
-                error_msg += f"STDERR:\n{stderr}\n"
-            else:
-                error_msg += "STDERR: (empty)\n"
-            raise RuntimeError(error_msg)
-        except subprocess.TimeoutExpired as e:
+            server_process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
             server_process.kill()
-            raise RuntimeError("Test server failed to start and didn't terminate cleanly") from e
+            server_process.wait()
+        error_msg = "Test server failed to start after 20 seconds.\n"
+        error_msg += f"Working directory: {project_root}\n"
+        error_msg += f"Python executable: {sys.executable}\n"
+        error_msg += f"{_read_log_tail(log_path)}\n"
+        raise RuntimeError(error_msg)
 
     yield
 
