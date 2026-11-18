@@ -1,3 +1,4 @@
+use crate::timestamp::UtcTimestamp;
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -145,7 +146,7 @@ pub fn detect_mb_dump_version(root: &Path) -> String {
         }
     }
 
-    let fallback = chrono::Utc::now().format("%Y%m%d").to_string();
+    let fallback = UtcTimestamp::now().compact_date();
     info!("📋 Using current date as MusicBrainz dump version: {}", fallback);
     fallback
 }

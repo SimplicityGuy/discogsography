@@ -7,6 +7,7 @@ use extractor::extractor::{
 use extractor::message_queue::MockMessagePublisher;
 use extractor::rules::{CompiledRulesConfig, RulesConfig};
 use extractor::state_marker::{PhaseStatus, ProcessingDecision, StateMarker};
+use extractor::timestamp::UtcTimestamp;
 use extractor::types::S3FileInfo;
 use extractor::types::{DataMessage, DataType, Source};
 use flate2::Compression;
@@ -2557,7 +2558,7 @@ impl extractor::message_queue::MessagePublisher for NackingPublisher {
     async fn send_extraction_complete(
         &self,
         _version: &str,
-        _started_at: chrono::DateTime<chrono::Utc>,
+        _started_at: UtcTimestamp,
         _record_counts: std::collections::HashMap<String, u64>,
         _data_types: &[DataType],
     ) -> anyhow::Result<()> {

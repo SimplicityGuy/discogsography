@@ -1,3 +1,4 @@
+use crate::timestamp::UtcTimestamp;
 use anyhow::{Context, Result};
 use lapin::{BasicProperties, Channel, Confirmation, Connection, ConnectionProperties, ExchangeKind, options::*, types::FieldTable};
 use std::collections::HashMap;
@@ -312,7 +313,7 @@ pub trait MessagePublisher: Send + Sync {
     async fn send_extraction_complete(
         &self,
         version: &str,
-        started_at: chrono::DateTime<chrono::Utc>,
+        started_at: UtcTimestamp,
         record_counts: std::collections::HashMap<String, u64>,
         data_types: &[DataType],
     ) -> Result<()>;
@@ -567,7 +568,7 @@ impl MessagePublisher for MessageQueue {
 
     async fn send_file_complete(&self, data_type: DataType, file_name: &str, total_processed: u64) -> Result<()> {
         let message =
-            FileCompleteMessage { data_type: data_type.to_string(), timestamp: chrono::Utc::now(), total_processed, file: file_name.to_string() };
+            FileCompleteMessage { data_type: data_type.to_string(), timestamp: UtcTimestamp::now(), total_processed, file: file_name.to_string() };
 
         self.publish(Message::FileComplete(message), data_type).await?;
 
@@ -579,11 +580,11 @@ impl MessagePublisher for MessageQueue {
     async fn send_extraction_complete(
         &self,
         version: &str,
-        started_at: chrono::DateTime<chrono::Utc>,
+        started_at: UtcTimestamp,
         record_counts: std::collections::HashMap<String, u64>,
         data_types: &[DataType],
     ) -> Result<()> {
-        let message = ExtractionCompleteMessage { version: version.to_string(), timestamp: chrono::Utc::now(), started_at, record_counts };
+        let message = ExtractionCompleteMessage { version: version.to_string(), timestamp: UtcTimestamp::now(), started_at, record_counts };
 
         // Publish to specified data type exchanges so every consumer queue receives it
         // Attempt all exchanges before returning, so a single failure doesn't prevent
