@@ -1,5 +1,6 @@
 use super::*;
 use crate::generated::catalog_contract::{DISCOGS_ENTITY_TYPES, MUSICBRAINZ_ENTITY_TYPES};
+use crate::timestamp::UtcTimestamp;
 
 #[test]
 fn data_type_vocabulary_matches_versioned_contract() {
@@ -123,7 +124,8 @@ fn test_message_serialization() {
 
 #[test]
 fn test_file_complete_message() {
-    let msg = FileCompleteMessage { data_type: "artists".to_string(), timestamp: Utc::now(), total_processed: 1000, file: "test.xml".to_string() };
+    let msg =
+        FileCompleteMessage { data_type: "artists".to_string(), timestamp: UtcTimestamp::now(), total_processed: 1000, file: "test.xml".to_string() };
 
     assert_eq!(msg.data_type, "artists");
     assert_eq!(msg.total_processed, 1000);
@@ -143,7 +145,8 @@ fn test_message_enum_data() {
 
 #[test]
 fn test_message_enum_file_complete() {
-    let file_msg = FileCompleteMessage { data_type: "labels".to_string(), timestamp: Utc::now(), total_processed: 500, file: "test.xml".to_string() };
+    let file_msg =
+        FileCompleteMessage { data_type: "labels".to_string(), timestamp: UtcTimestamp::now(), total_processed: 500, file: "test.xml".to_string() };
 
     let message = Message::FileComplete(file_msg);
     match message {
@@ -158,7 +161,8 @@ fn test_message_enum_extraction_complete() {
     record_counts.insert("artists".to_string(), 9957079);
     record_counts.insert("labels".to_string(), 2349729);
 
-    let msg = ExtractionCompleteMessage { version: "20260101".to_string(), timestamp: Utc::now(), started_at: Utc::now(), record_counts };
+    let msg =
+        ExtractionCompleteMessage { version: "20260101".to_string(), timestamp: UtcTimestamp::now(), started_at: UtcTimestamp::now(), record_counts };
 
     let message = Message::ExtractionComplete(msg);
     match message {
@@ -176,7 +180,8 @@ fn test_extraction_complete_serialization_format() {
     let mut record_counts = std::collections::HashMap::new();
     record_counts.insert("artists".to_string(), 100);
 
-    let msg = ExtractionCompleteMessage { version: "20260101".to_string(), timestamp: Utc::now(), started_at: Utc::now(), record_counts };
+    let msg =
+        ExtractionCompleteMessage { version: "20260101".to_string(), timestamp: UtcTimestamp::now(), started_at: UtcTimestamp::now(), record_counts };
 
     let message = Message::ExtractionComplete(msg);
     let json_str = serde_json::to_string(&message).unwrap();

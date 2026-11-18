@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use crate::timestamp::UtcTimestamp;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
@@ -184,7 +184,7 @@ pub struct DataMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileCompleteMessage {
     pub data_type: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: UtcTimestamp,
     pub total_processed: u64,
     pub file: String,
 }
@@ -193,8 +193,8 @@ pub struct FileCompleteMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractionCompleteMessage {
     pub version: String,
-    pub timestamp: DateTime<Utc>,
-    pub started_at: DateTime<Utc>,
+    pub timestamp: UtcTimestamp,
+    pub started_at: UtcTimestamp,
     pub record_counts: std::collections::HashMap<String, u64>,
 }
 

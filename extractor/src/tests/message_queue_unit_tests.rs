@@ -1,3 +1,4 @@
+use crate::timestamp::UtcTimestamp;
 use crate::types::{DataMessage, DataType, FileCompleteMessage, Message};
 use serde_json::json;
 
@@ -7,7 +8,7 @@ fn create_test_data_message(id: &str) -> DataMessage {
 }
 
 fn create_test_file_complete() -> FileCompleteMessage {
-    FileCompleteMessage { data_type: "artists".to_string(), timestamp: chrono::Utc::now(), total_processed: 100, file: "test.xml.gz".to_string() }
+    FileCompleteMessage { data_type: "artists".to_string(), timestamp: UtcTimestamp::now(), total_processed: 100, file: "test.xml.gz".to_string() }
 }
 
 #[test]
@@ -109,7 +110,7 @@ fn test_data_message_with_nested_data() {
 fn test_file_complete_message_fields() {
     let msg = FileCompleteMessage {
         data_type: "labels".to_string(),
-        timestamp: chrono::Utc::now(),
+        timestamp: UtcTimestamp::now(),
         total_processed: 12345,
         file: "discogs_20241201_labels.xml.gz".to_string(),
     };
