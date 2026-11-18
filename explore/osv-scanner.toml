@@ -1,0 +1,9 @@
+# https://github.com/advisories/GHSA-fc5q-39xc-vjpf
+# No patched picomatch release exists as of 2026-11-18. This dependency runs
+# only in frontend build/test tooling with repository-controlled glob patterns;
+# it is absent from the deployed Python/static-asset runtime. Revisit when a
+# patched release ships. Keep every other advisory blocking.
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+effectiveUntil = 2026-12-18
+reason = "Build/test-only picomatch receives trusted repository globs, not user patterns; no upstream fix is released. Temporary exception expires 2026-12-18."
