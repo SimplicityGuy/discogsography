@@ -15,6 +15,7 @@ pub mod parser;
 pub mod polite_http;
 pub mod rules;
 pub mod state_marker;
+pub mod timestamp;
 pub mod types;
 
 // Additional test modules
