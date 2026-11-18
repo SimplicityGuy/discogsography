@@ -1,5 +1,5 @@
+use crate::timestamp::UtcTimestamp;
 use anyhow::{Context, Result};
-use chrono::Utc;
 use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -774,7 +774,7 @@ fn extract_month_from_filename(filename: &str) -> String {
     {
         return date_part[0..6].to_string(); // YYYYMM
     }
-    Utc::now().format("%Y%m").to_string()
+    UtcTimestamp::now().compact_month()
 }
 
 #[async_trait]

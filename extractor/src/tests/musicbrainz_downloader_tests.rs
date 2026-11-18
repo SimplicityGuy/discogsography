@@ -1,4 +1,5 @@
 use super::*;
+use crate::timestamp::UtcTimestamp;
 use std::io::{Read, Write};
 use tempfile::TempDir;
 
@@ -265,7 +266,7 @@ fn test_detect_mb_dump_version_from_prefixed_dir() {
 fn test_detect_mb_dump_version_fallback_to_current_date() {
     let version = detect_mb_dump_version(Path::new("/data/musicbrainz"));
     // Should be today's date in YYYYMMDD format
-    let today = chrono::Utc::now().format("%Y%m%d").to_string();
+    let today = UtcTimestamp::now().compact_date();
     assert_eq!(version, today);
 }
 
@@ -273,7 +274,7 @@ fn test_detect_mb_dump_version_fallback_to_current_date() {
 fn test_detect_mb_dump_version_root_path() {
     // Edge case: root path "/"
     let version = detect_mb_dump_version(Path::new("/"));
-    let today = chrono::Utc::now().format("%Y%m%d").to_string();
+    let today = UtcTimestamp::now().compact_date();
     assert_eq!(version, today);
 }
 

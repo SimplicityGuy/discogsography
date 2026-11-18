@@ -1,4 +1,5 @@
 use super::*;
+use crate::timestamp::UtcTimestamp;
 
 #[test]
 fn test_exchange_names_default_prefix() {
@@ -127,7 +128,7 @@ fn test_message_serialization_data() {
 #[test]
 fn test_message_serialization_file_complete() {
     let file_complete_msg =
-        FileCompleteMessage { data_type: "artists".to_string(), timestamp: chrono::Utc::now(), total_processed: 100, file: "test.xml".to_string() };
+        FileCompleteMessage { data_type: "artists".to_string(), timestamp: UtcTimestamp::now(), total_processed: 100, file: "test.xml".to_string() };
 
     let message = Message::FileComplete(file_complete_msg.clone());
     let serialized = serde_json::to_vec(&message).unwrap();
@@ -176,8 +177,8 @@ fn test_extraction_complete_message_roundtrip() {
 
     let msg = ExtractionCompleteMessage {
         version: "20260101".to_string(),
-        timestamp: chrono::Utc::now(),
-        started_at: chrono::Utc::now(),
+        timestamp: UtcTimestamp::now(),
+        started_at: UtcTimestamp::now(),
         record_counts: record_counts.clone(),
     };
 
@@ -219,7 +220,7 @@ fn test_normalize_amqp_url_amqps_scheme() {
 fn test_file_complete_message_serialization_format() {
     let file_complete_msg = FileCompleteMessage {
         data_type: "artists".to_string(),
-        timestamp: chrono::Utc::now(),
+        timestamp: UtcTimestamp::now(),
         total_processed: 42,
         file: "discogs_20250101_artists.xml.gz".to_string(),
     };
