@@ -24,6 +24,7 @@ mod parser;
 mod polite_http;
 mod rules;
 mod state_marker;
+mod timestamp;
 mod types;
 
 use config::ExtractorConfig;

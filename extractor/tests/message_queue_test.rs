@@ -1,3 +1,4 @@
+use extractor::timestamp::UtcTimestamp;
 // Integration tests for message queue module
 
 use extractor::types::{DataMessage, DataType, FileCompleteMessage, Message};
@@ -26,7 +27,7 @@ fn test_data_message_deserialization() {
 fn test_file_complete_message_serialization() {
     let message = FileCompleteMessage {
         data_type: "artists".to_string(),
-        timestamp: chrono::Utc::now(),
+        timestamp: UtcTimestamp::now(),
         total_processed: 100,
         file: "test.xml.gz".to_string(),
     };
@@ -50,7 +51,7 @@ fn test_message_enum_data_variant() {
 #[test]
 fn test_message_enum_file_complete_variant() {
     let fc_msg =
-        FileCompleteMessage { data_type: "artists".to_string(), timestamp: chrono::Utc::now(), total_processed: 50, file: "test.xml".to_string() };
+        FileCompleteMessage { data_type: "artists".to_string(), timestamp: UtcTimestamp::now(), total_processed: 50, file: "test.xml".to_string() };
 
     let message = Message::FileComplete(fc_msg);
     let serialized = serde_json::to_string(&message).unwrap();
@@ -98,16 +99,14 @@ fn test_data_message_with_complex_data() {
 
 #[test]
 fn test_file_complete_message_timestamp() {
-    use chrono::Utc;
-
-    let now = Utc::now();
+    let now = UtcTimestamp::now();
     let message = FileCompleteMessage { data_type: "test".to_string(), timestamp: now, total_processed: 42, file: "file.xml".to_string() };
 
     let serialized = serde_json::to_string(&message).unwrap();
     let deserialized: FileCompleteMessage = serde_json::from_str(&serialized).unwrap();
 
     // Timestamps should be roughly equal (within a second)
-    let diff = (deserialized.timestamp - now).num_seconds().abs();
+    let diff = deserialized.timestamp.whole_seconds_since(now).abs();
     assert!(diff < 1);
 }
 
@@ -177,7 +176,7 @@ fn test_message_enum_tagged() {
     assert!(json_str.contains("\"type\":\"data\""));
 
     let fc_msg =
-        FileCompleteMessage { data_type: "test".to_string(), timestamp: chrono::Utc::now(), total_processed: 1, file: "test.xml".to_string() };
+        FileCompleteMessage { data_type: "test".to_string(), timestamp: UtcTimestamp::now(), total_processed: 1, file: "test.xml".to_string() };
     let message = Message::FileComplete(fc_msg);
     let json_str = serde_json::to_string(&message).unwrap();
     assert!(json_str.contains("\"type\":\"file_complete\""));
@@ -199,7 +198,7 @@ fn test_data_message_with_empty_data() {
 fn test_file_complete_message_serialization_fields() {
     let msg = FileCompleteMessage {
         data_type: "artists".to_string(),
-        timestamp: chrono::Utc::now(),
+        timestamp: UtcTimestamp::now(),
         total_processed: 999,
         file: "test_file.xml.gz".to_string(),
     };
@@ -290,7 +289,7 @@ fn test_message_size_estimation() {
 #[test]
 fn test_file_complete_message_with_zero_processed() {
     let msg =
-        FileCompleteMessage { data_type: "artists".to_string(), timestamp: chrono::Utc::now(), total_processed: 0, file: "empty.xml".to_string() };
+        FileCompleteMessage { data_type: "artists".to_string(), timestamp: UtcTimestamp::now(), total_processed: 0, file: "empty.xml".to_string() };
 
     let serialized = serde_json::to_string(&msg).unwrap();
     let deserialized: FileCompleteMessage = serde_json::from_str(&serialized).unwrap();
@@ -302,7 +301,7 @@ fn test_file_complete_message_with_zero_processed() {
 fn test_file_complete_message_with_large_count() {
     let msg = FileCompleteMessage {
         data_type: "releases".to_string(),
-        timestamp: chrono::Utc::now(),
+        timestamp: UtcTimestamp::now(),
         total_processed: 1_000_000_000, // 1 billion
         file: "large.xml.gz".to_string(),
     };

@@ -1,5 +1,5 @@
+use crate::timestamp::UtcTimestamp;
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -22,8 +22,8 @@ pub enum PhaseStatus {
 pub struct FileDownloadStatus {
     pub status: PhaseStatus,
     pub bytes_downloaded: u64,
-    pub started_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
+    pub started_at: Option<UtcTimestamp>,
+    pub completed_at: Option<UtcTimestamp>,
     /// SHA-256 of the bytes currently on disk for this file, once verified.
     ///
     /// This is what links the two otherwise-independent phase machines: a processing
@@ -43,8 +43,8 @@ impl Default for FileDownloadStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadPhase {
     pub status: PhaseStatus,
-    pub started_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
+    pub started_at: Option<UtcTimestamp>,
+    pub completed_at: Option<UtcTimestamp>,
     pub files_downloaded: usize,
     pub files_total: usize,
     pub bytes_downloaded: u64,
@@ -74,8 +74,8 @@ pub struct FileProcessingStatus {
     pub records_extracted: u64,
     pub messages_published: u64,
     pub batches_sent: u64,
-    pub started_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
+    pub started_at: Option<UtcTimestamp>,
+    pub completed_at: Option<UtcTimestamp>,
     /// Checksum of the downloaded byte-image this processing status was computed from.
     ///
     /// `None` means the provenance is unknown (a marker written before this field existed),
@@ -102,8 +102,8 @@ impl Default for FileProcessingStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessingPhase {
     pub status: PhaseStatus,
-    pub started_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
+    pub started_at: Option<UtcTimestamp>,
+    pub completed_at: Option<UtcTimestamp>,
     pub files_processed: usize,
     pub files_total: usize,
     pub records_extracted: u64,
@@ -135,7 +135,7 @@ pub struct PublishingPhase {
     pub messages_published: u64,
     pub batches_sent: u64,
     pub errors: Vec<String>,
-    pub last_amqp_heartbeat: Option<DateTime<Utc>>,
+    pub last_amqp_heartbeat: Option<UtcTimestamp>,
 }
 
 impl Default for PublishingPhase {
@@ -165,7 +165,7 @@ pub struct StateMarker {
     pub metadata_version: String,
 
     /// Last update timestamp
-    pub last_updated: DateTime<Utc>,
+    pub last_updated: UtcTimestamp,
 
     /// Discogs data version (e.g., "20260101")
     pub current_version: String,
@@ -188,7 +188,7 @@ impl StateMarker {
     pub fn new(version: String) -> Self {
         Self {
             metadata_version: "1.0".to_string(),
-            last_updated: Utc::now(),
+            last_updated: UtcTimestamp::now(),
             current_version: version,
             download_phase: DownloadPhase::default(),
             processing_phase: ProcessingPhase::default(),
@@ -248,7 +248,7 @@ impl StateMarker {
     /// the equivalent for the dump files it writes (`discogs_downloader.rs`'s
     /// `sync_data`).
     pub async fn save(&mut self, path: &Path) -> Result<()> {
-        self.last_updated = Utc::now();
+        self.last_updated = UtcTimestamp::now();
 
         let json = serde_json::to_string_pretty(self).context("Failed to serialize state marker")?;
 
@@ -357,7 +357,7 @@ impl StateMarker {
     /// Mark download phase as started
     pub fn start_download(&mut self, files_total: usize) {
         self.download_phase.status = PhaseStatus::InProgress;
-        self.download_phase.started_at = Some(Utc::now());
+        self.download_phase.started_at = Some(UtcTimestamp::now());
         self.download_phase.files_total = files_total;
         self.download_phase.files_downloaded = 0;
         self.download_phase.bytes_downloaded = 0;
@@ -366,7 +366,7 @@ impl StateMarker {
 
     /// Mark a file download as started
     pub fn start_file_download(&mut self, filename: &str) {
-        let status = FileDownloadStatus { status: PhaseStatus::InProgress, started_at: Some(Utc::now()), ..Default::default() };
+        let status = FileDownloadStatus { status: PhaseStatus::InProgress, started_at: Some(UtcTimestamp::now()), ..Default::default() };
         self.download_phase.downloads_by_file.insert(filename.to_string(), status);
     }
 
@@ -379,7 +379,7 @@ impl StateMarker {
         if let Some(status) = self.download_phase.downloads_by_file.get_mut(filename) {
             status.status = PhaseStatus::Completed;
             status.bytes_downloaded = bytes;
-            status.completed_at = Some(Utc::now());
+            status.completed_at = Some(UtcTimestamp::now());
         } else {
             // If not tracked, create entry
             self.download_phase.downloads_by_file.insert(
@@ -387,8 +387,8 @@ impl StateMarker {
                 FileDownloadStatus {
                     status: PhaseStatus::Completed,
                     bytes_downloaded: bytes,
-                    started_at: Some(Utc::now()),
-                    completed_at: Some(Utc::now()),
+                    started_at: Some(UtcTimestamp::now()),
+                    completed_at: Some(UtcTimestamp::now()),
                     checksum: None,
                 },
             );
@@ -459,14 +459,14 @@ impl StateMarker {
     /// Mark download phase as completed
     pub fn complete_download(&mut self) {
         self.download_phase.status = PhaseStatus::Completed;
-        self.download_phase.completed_at = Some(Utc::now());
+        self.download_phase.completed_at = Some(UtcTimestamp::now());
         info!("✅ Download phase completed: {} files, {} bytes", self.download_phase.files_downloaded, self.download_phase.bytes_downloaded);
     }
 
     /// Mark processing phase as started
     pub fn start_processing(&mut self, files_total: usize) {
         self.processing_phase.status = PhaseStatus::InProgress;
-        self.processing_phase.started_at = Some(Utc::now());
+        self.processing_phase.started_at = Some(UtcTimestamp::now());
         self.processing_phase.files_total = files_total;
         self.processing_phase.files_processed = 0;
         self.processing_phase.records_extracted = 0;
@@ -482,7 +482,8 @@ impl StateMarker {
         // re-download of different bytes can tell that the resulting status is stale.
         let source_checksum = self.download_phase.downloads_by_file.get(filename).and_then(|s| s.checksum.clone());
 
-        let status = FileProcessingStatus { status: PhaseStatus::InProgress, started_at: Some(Utc::now()), source_checksum, ..Default::default() };
+        let status =
+            FileProcessingStatus { status: PhaseStatus::InProgress, started_at: Some(UtcTimestamp::now()), source_checksum, ..Default::default() };
 
         self.processing_phase.progress_by_file.insert(filename.to_string(), status);
 
@@ -505,7 +506,7 @@ impl StateMarker {
         // Update publishing phase status if any messages have been published
         if self.publishing_phase.messages_published > 0 {
             self.publishing_phase.status = PhaseStatus::InProgress;
-            self.publishing_phase.last_amqp_heartbeat = Some(Utc::now());
+            self.publishing_phase.last_amqp_heartbeat = Some(UtcTimestamp::now());
         }
     }
 
@@ -513,7 +514,7 @@ impl StateMarker {
     pub fn complete_file_processing(&mut self, filename: &str, records: u64) {
         if let Some(status) = self.processing_phase.progress_by_file.get_mut(filename) {
             status.status = PhaseStatus::Completed;
-            status.completed_at = Some(Utc::now());
+            status.completed_at = Some(UtcTimestamp::now());
             status.records_extracted = records;
             // Only set messages_published if it was not tracked independently
             if status.messages_published == 0 {
@@ -540,7 +541,7 @@ impl StateMarker {
     /// Mark processing phase as completed
     pub fn complete_processing(&mut self) {
         self.processing_phase.status = PhaseStatus::Completed;
-        self.processing_phase.completed_at = Some(Utc::now());
+        self.processing_phase.completed_at = Some(UtcTimestamp::now());
         self.processing_phase.current_file = None;
 
         info!("✅ Processing phase completed: {} files, {} records", self.processing_phase.files_processed, self.processing_phase.records_extracted);
@@ -553,7 +554,7 @@ impl StateMarker {
 
         // Calculate total duration
         if let (Some(start), Some(end)) = (self.download_phase.started_at, self.processing_phase.completed_at) {
-            self.summary.total_duration_seconds = Some((end - start).num_seconds() as f64);
+            self.summary.total_duration_seconds = Some(end.whole_seconds_since(start) as f64);
         }
 
         info!("🎉 Extraction completed for version {}", self.current_version);

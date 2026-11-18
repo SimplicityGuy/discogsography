@@ -2,6 +2,8 @@
 // The module is fully exercised by rules_tests; suppress dead-code lints until then.
 #![allow(dead_code)]
 
+use crate::timestamp::UtcTimestamp;
+
 use anyhow::{Context, Result};
 use regex::Regex;
 use serde::Deserialize;
@@ -736,7 +738,7 @@ impl FlaggedRecordWriter {
             "field_value": violation.field_value,
             "xml_file": format!("{}.xml", safe_id),
             "json_file": format!("{}.json", safe_id),
-            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "timestamp": UtcTimestamp::now().to_rfc3339(),
         });
         if let Err(e) = writeln!(writer, "{}", serde_json::to_string(&entry).unwrap_or_default()) {
             tracing::warn!("⚠️ Failed to write violation entry: {}", e);
@@ -792,7 +794,7 @@ impl FlaggedRecordWriter {
             "field_value": skip_info.field_value,
             "xml_file": format!("{}.xml", safe_id),
             "json_file": format!("{}.json", safe_id),
-            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "timestamp": UtcTimestamp::now().to_rfc3339(),
         });
         if let Err(e) = writeln!(writer, "{}", serde_json::to_string(&entry).unwrap_or_default()) {
             tracing::warn!("\u{26a0}\u{fe0f} Failed to write skip entry: {}", e);
