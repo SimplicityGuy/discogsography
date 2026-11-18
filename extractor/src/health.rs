@@ -1,3 +1,4 @@
+use crate::timestamp::UtcTimestamp;
 use axum::{
     Router,
     extract::State,
@@ -5,7 +6,6 @@ use axum::{
     response::Json,
     routing::{get, post},
 };
-use chrono::Utc;
 use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -124,7 +124,7 @@ async fn health_handler(State((state, _)): State<AppState>) -> (StatusCode, Json
             "release_groups": state.last_extraction_time.get(&crate::types::DataType::ReleaseGroups).map(|t| t.elapsed().as_secs_f64()),
             "releases": state.last_extraction_time.get(&crate::types::DataType::Releases).map(|t| t.elapsed().as_secs_f64()),
         },
-        "timestamp": Utc::now().to_rfc3339(),
+        "timestamp": UtcTimestamp::now().to_rfc3339(),
     });
 
     (StatusCode::OK, Json(health))

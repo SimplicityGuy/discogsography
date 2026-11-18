@@ -1,3 +1,4 @@
+use crate::timestamp::UtcTimestamp;
 use anyhow::{Context, Result};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -110,7 +111,7 @@ pub async fn process_discogs_data(
     compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<bool> {
     // Record extraction start time for consumer cleanup coordination
-    let extraction_started_at = chrono::Utc::now();
+    let extraction_started_at = UtcTimestamp::now();
 
     // Mirror of the MusicBrainz guard: never begin a new run (status Running, S3 listing,
     // multi-GB downloads) when shutdown has already been requested. (discogsography-l114)
@@ -1430,7 +1431,7 @@ pub async fn process_musicbrainz_data(
     use crate::jsonl_parser::{build_mbid_discogs_map_from_file, parse_mb_jsonl_file};
     use crate::musicbrainz_downloader::{MbDownloader, discover_mb_dump_files};
 
-    let extraction_started_at = chrono::Utc::now();
+    let extraction_started_at = UtcTimestamp::now();
 
     // Never start a new run under shutdown: the prelude below (multi-GB download, dump
     // discovery, AMQP setup, full artist.jsonl.xz scan) has no natural exit point, and
